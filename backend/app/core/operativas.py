@@ -1,0 +1,59 @@
+"""Catálogo de OPERATIVAS (módulos independientes) y sus UTILIDADES.
+
+Cada operativa declara sus utilidades. Cada utilidad es un permiso con la forma
+`<slug_operativa>.<utilidad>`, por ejemplo `televentas_claro.cargar`.
+
+- La utilidad `ver` es el acceso a la operativa: sin ella, las demás no aplican.
+- El superadmin asigna utilidades a cada perfil en /admin/perfiles.
+- A cada usuario se le asignan las operativas en las que trabaja.
+
+Para agregar una operativa: sumarla acá con sus utilidades, crear su router en
+`api/v1/` protegido con `require_perm("<slug>.ver")` y sus páginas en el
+frontend (`src/app/<ruta>/`), y registrar la ruta en `src/lib/operativas.ts`.
+Para agregar una utilidad a una operativa existente: sumarla a su lista.
+Aparece sola en la matriz de perfiles, desmarcada para todos los perfiles.
+"""
+from __future__ import annotations
+
+
+UTILIDAD_VER = "ver"
+
+OPERATIVAS: list[dict] = [
+    {
+        "slug": "televentas_claro",
+        "name": "Televentas CLARO",
+        "description": "Operativa de televentas para Claro: gestión, producción e indicadores.",
+        "color": "#E6332A",
+        "available": True,
+        "utilidades": [
+            {"key": "ver", "name": "Acceso a la operativa", "description": "Ver la operativa en el hub y entrar a ella."},
+            {"key": "tablero", "name": "Tablero e indicadores", "description": "Ver el tablero con los indicadores de la operativa."},
+            {"key": "cargar", "name": "Cargar datos", "description": "Subir archivos de datos de la operativa."},
+            {"key": "publicar", "name": "Publicar reportes", "description": "Publicar reportes para que los vean los demás perfiles."},
+            {"key": "eliminar", "name": "Eliminar cargas y reportes", "description": "Borrar cargas de datos y reportes."},
+            {"key": "exportar", "name": "Exportar e imprimir", "description": "Descargar reportes y generar el PDF de impresión."},
+        ],
+    },
+]
+
+
+OPERATIVA_SLUGS: set[str] = {o["slug"] for o in OPERATIVAS}
+
+ALL_PERMISSIONS: set[str] = {
+    f"{o['slug']}.{u['key']}" for o in OPERATIVAS for u in o["utilidades"]
+}
+
+
+def get_operativa(slug: str) -> dict | None:
+    return next((o for o in OPERATIVAS if o["slug"] == slug), None)
+
+
+def filter_operativas(slugs: list[str] | None) -> list[str]:
+    """Solo slugs de operativas válidas, sin duplicados, en orden de catálogo."""
+    wanted = set(slugs or [])
+    return [o["slug"] for o in OPERATIVAS if o["slug"] in wanted]
+
+
+def filter_permissions(perms: list[str] | None) -> list[str]:
+    """Solo permisos que existen en el catálogo, ordenados."""
+    return sorted(set(perms or []) & ALL_PERMISSIONS)

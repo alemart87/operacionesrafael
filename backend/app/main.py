@@ -8,10 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from . import models  # noqa: F401  (registra los modelos en Base.metadata)
-from .api.v1 import audit, auth, modules, users
+from .api.v1 import audit, auth, operativas, perfiles, televentas_claro, users
 from .core.config import APP_NAME, settings
-from .core.database import Base, engine
+from .core.database import AsyncSessionLocal, Base, engine
 from .core.logging import configure_logging, logger
+from .core.operativas import filter_permissions
+from .core.perfiles import DEFAULT_PERMISSIONS, PERFILES
+from .models.profile import Profile
 
 
 # Migraciones idempotentes (DDL/DML) que corren en cada boot, DESPUÉS de create_all.
@@ -38,6 +41,18 @@ async def _run_migrations() -> dict[str, list[str]]:
     return {"ok": ok, "skipped": skipped}
 
 
+async def _seed_profiles() -> int:
+    """Crea los perfiles que falten con sus permisos iniciales. Nunca pisa los existentes."""
+    created = 0
+    async with AsyncSessionLocal() as db:
+        for p in PERFILES:
+            if await db.get(Profile, p["slug"]) is None:
+                db.add(Profile(slug=p["slug"], permissions=filter_permissions(DEFAULT_PERMISSIONS.get(p["slug"], []))))
+                created += 1
+        await db.commit()
+    return created
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
@@ -46,6 +61,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     result = await _run_migrations()
     logger.info(f"Boot: migrations ok={len(result['ok'])} skipped={len(result['skipped'])}")
+    logger.info(f"Boot: perfiles sembrados={await _seed_profiles()}")
     if settings.env == "production" and settings.secret_key in ("change-me", ""):
         logger.error("SECRET_KEY no configurada en producción: los tokens son inseguros.")
     yield
@@ -85,4 +101,8 @@ async def trigger_migrations(token: str | None = None) -> dict:
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
-app.include_router(modules.router, prefix="/api/v1")
+app.include_router(perfiles.router, prefix="/api/v1")
+app.include_router(operativas.router, prefix="/api/v1")
+
+# --- Operativas (módulos independientes) ---
+app.include_router(televentas_claro.router, prefix="/api/v1")

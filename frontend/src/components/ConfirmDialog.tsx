@@ -46,7 +46,7 @@ export function ConfirmDialog({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative w-full max-w-md card shadow-elevated overflow-hidden animate-pop"
+        className="relative w-full max-w-md card shadow-elevated overflow-y-auto max-h-[90vh] animate-pop"
       >
         <div className={`h-1.5 ${variant === "danger" ? "bg-brand-primary" : "bg-brand-cyan"}`} />
         <div className="p-6">

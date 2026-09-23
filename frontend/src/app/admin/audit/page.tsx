@@ -28,6 +28,7 @@ const ACTION_LABELS: Record<string, string> = {
   update_own_profile: "Edición de perfil propio",
   change_own_password: "Cambio de contraseña propia",
   upload_own_photo: "Foto de perfil propia",
+  update_profile_permissions: "Cambio de permisos de perfil",
 };
 
 export default function AuditPage() {

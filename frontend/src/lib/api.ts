@@ -9,14 +9,28 @@ export interface CurrentUserInfo {
   role: string;
   full_name: string;
   photo_url?: string | null;
-  allowed_modules?: string[] | null; // null = acceso a todos
+  /** Operativas asignadas (superadmin: todas). */
+  operativas?: string[];
+  /** Operativas que efectivamente puede abrir (asignada + perfil con acceso). */
+  visible_operativas?: string[];
+  /** Permisos efectivos "<operativa>.<utilidad>". Solo para UI: el backend valida siempre. */
+  permissions?: string[];
 }
 
 export const ROLE_LABELS: Record<string, string> = {
   superadmin: "Superadmin",
-  analyst: "Analista",
-  viewer: "Lector",
+  coordinador: "Coordinador",
+  supervisor: "Supervisor",
+  analista: "Analista",
+  cliente: "Cliente",
 };
+
+/** ¿El usuario tiene el permiso? Superadmin siempre. */
+export function can(user: CurrentUserInfo | null | undefined, perm: string): boolean {
+  if (!user) return false;
+  if (user.role === "superadmin") return true;
+  return (user.permissions ?? []).includes(perm);
+}
 
 interface TokenPair {
   access_token: string;
@@ -25,7 +39,7 @@ interface TokenPair {
   user_role: string;
   user_name: string;
   user_photo_url?: string | null;
-  user_allowed_modules?: string[] | null;
+  user_operativas?: string[];
 }
 
 function userFromTokens(data: TokenPair): CurrentUserInfo {
@@ -34,7 +48,7 @@ function userFromTokens(data: TokenPair): CurrentUserInfo {
     role: data.user_role,
     full_name: data.user_name,
     photo_url: data.user_photo_url ?? null,
-    allowed_modules: data.user_allowed_modules ?? null,
+    operativas: data.user_operativas ?? [],
   };
 }
 

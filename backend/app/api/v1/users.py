@@ -1,4 +1,7 @@
-"""Gestión de usuarios: solo el superadmin crea, edita y desactiva."""
+"""Gestión de usuarios: solo el superadmin crea, edita y desactiva.
+
+A cada usuario se le asigna un perfil y las operativas en las que trabaja.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import settings
 from ...core.database import get_db
-from ...core.modules import filter_valid_slugs
+from ...core.operativas import filter_operativas
 from ...core.security import hash_password
 from ...models.user import User
 from ...schemas.user import PasswordReset, UserCreate, UserRead, UserUpdate
@@ -53,15 +56,14 @@ async def create_user(
     if existing.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "Email ya registrado")
 
-    # allowed_modules solo aplica a lectores; analistas siempre ven todo.
-    allowed = filter_valid_slugs(payload.allowed_modules) if payload.role == "viewer" else None
+    operativas = filter_operativas(payload.operativas)
 
     new_user = User(
         email=email,
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name.strip(),
         role=payload.role,
-        allowed_modules=allowed,
+        operativas=operativas,
         created_by=None if user.is_superadmin else user.id,
     )
     db.add(new_user)
@@ -70,7 +72,7 @@ async def create_user(
 
     await record_action(db, user_id=user.id, action="create_user", resource_type="user",
                         resource_id=new_user.id, ip=client_ip(request),
-                        extra={"new_user_email": email, "role": payload.role, "allowed_modules": allowed})
+                        extra={"new_user_email": email, "role": payload.role, "operativas": operativas})
     return new_user
 
 
@@ -94,12 +96,9 @@ async def update_user(
     if payload.role is not None and payload.role != target.role:
         target.role = payload.role
         changes["role"] = payload.role
-        if payload.role == "analyst":
-            target.allowed_modules = None
-    # Distinguir "no enviado" de "enviado como null" (null = acceso a todos).
-    if "allowed_modules" in payload.model_fields_set and target.role == "viewer":
-        target.allowed_modules = filter_valid_slugs(payload.allowed_modules)
-        changes["allowed_modules"] = target.allowed_modules
+    if payload.operativas is not None:
+        target.operativas = filter_operativas(payload.operativas)
+        changes["operativas"] = target.operativas
 
     await db.commit()
     await db.refresh(target)

@@ -3,10 +3,10 @@
 Plataforma web de la **Gerencia Expansión RM**, operada por **Voicenter S.A.**
 Repo interno: `operacionesrafaelmartinez`.
 
-Este repositorio es el **esqueleto** del sistema: login, roles, gestión de
-usuarios, auditoría, perfil propio, hub de módulos, Docker y deploy en Render.
-Los módulos de negocio se suman sobre esta base (ver
-[Cómo agregar un módulo](#cómo-agregar-un-módulo)).
+Este repositorio es el **esqueleto** del sistema: login, operativas, perfiles con
+permisos configurables, gestión de usuarios, auditoría, perfil propio, hub de operativas, Docker y deploy en Render.
+Las operativas se suman sobre esta base (ver
+[Cómo agregar una operativa](#cómo-agregar-una-operativa)).
 
 Hereda la identidad visual y la arquitectura de *Operaciones Voicenter*
 (proyecto `cobranzasegurossuda`).
@@ -29,7 +29,7 @@ Hereda la identidad visual y la arquitectura de *Operaciones Voicenter*
 ```
                  Puerto público $PORT (8080)
 Navegador ──► Next.js (server.js) ──/api/*──► FastAPI (127.0.0.1:8000) ──► PostgreSQL
-              páginas + proxy                   auth · users · audit · modules
+              páginas + proxy                   auth · users · perfiles · operativas
 ```
 
 - Un solo contenedor corre los dos procesos (`start.sh`). El navegador solo
@@ -50,12 +50,13 @@ operacionesrafaelmartinez/
 │   │   │   ├── database.py      # Engine async + sesión
 │   │   │   ├── security.py      # JWT + bcrypt
 │   │   │   ├── rate_limit.py    # Anti fuerza bruta del login
-│   │   │   ├── modules.py       # Catálogo de módulos (slugs)
+│   │   │   ├── operativas.py    # Catálogo de operativas y utilidades
+│   │   │   ├── perfiles.py      # Perfiles y permisos iniciales
 │   │   │   └── logging.py
 │   │   ├── api/
-│   │   │   ├── deps.py          # CurrentUser, require_superadmin/manager/module
-│   │   │   └── v1/              # auth · users · audit · modules
-│   │   ├── models/              # User, AuditLog
+│   │   │   ├── deps.py          # CurrentUser, require_superadmin, require_perm
+│   │   │   └── v1/              # auth · users · perfiles · audit · operativas · televentas_claro
+│   │   ├── models/              # User, Profile, AuditLog
 │   │   ├── schemas/             # Pydantic
 │   │   └── services/            # audit_service
 │   ├── tests/                   # pytest (SQLite)
@@ -63,29 +64,58 @@ operacionesrafaelmartinez/
 ├── frontend/
 │   ├── public/                  # logo-voicenter-color.png
 │   └── src/
-│       ├── app/                 # login · inicio · perfil · admin/users · admin/audit
+│       ├── app/                 # login · inicio · televentas-claro · perfil · admin/*
 │       ├── components/          # AppShell · Brand · Avatar · ConfirmDialog
-│       └── lib/                 # api.ts (sesión + refresh automático) · format.ts
+│       └── lib/                 # api.ts (sesión + refresh) · operativas.ts · format.ts
 ├── Dockerfile · start.sh · docker-compose.yml · render.yaml · .env.example
 └── docs/deployment-render.md
 ```
 
-## Roles
+## Operativas, perfiles y permisos
 
-| Rol | Dónde vive | Qué puede hacer |
+El sistema se organiza en **operativas**: módulos independientes, cada uno con
+sus propias **utilidades**. La primera operativa es **Televentas CLARO**.
+
+| Concepto | Dónde se define | Quién lo cambia |
 |---|---|---|
-| **Superadmin** | `.env` (nunca en DB) | Todo. Gestiona usuarios y ve la auditoría. No edita su perfil desde la app. |
-| **Analista** (`analyst`) | DB | Ve todos los módulos. Carga datos y publica (cuando existan módulos). |
-| **Lector** (`viewer`) | DB | Solo lectura, sobre los módulos habilitados en `allowed_modules` (`null` = todos). |
+| Operativas y sus utilidades | `backend/app/core/operativas.py` | Desarrollo |
+| Perfiles (Coordinador, Supervisor, Analista, Cliente) | `backend/app/core/perfiles.py` | Desarrollo |
+| Utilidades de cada perfil | Tabla `profiles`, pantalla **Administración → Perfiles** | Superadmin |
+| Perfil y operativas de cada usuario | Pantalla **Administración → Usuarios** | Superadmin |
 
-En el backend se protege cada endpoint con las dependencias de `api/deps.py`:
+Cada utilidad es un permiso con la forma `<operativa>.<utilidad>`, por ejemplo
+`televentas_claro.cargar`. Un usuario puede usar una utilidad solo si se cumplen las tres condiciones:
+
+1. Su perfil tiene la utilidad.
+2. Su perfil tiene el acceso a la operativa (`<operativa>.ver`).
+3. La operativa está asignada al usuario.
+
+El **superadmin** vive en `.env`, ve todas las operativas y tiene todos los
+permisos. Es el único que gestiona usuarios, perfiles y auditoría. Los
+cambios de permisos se aplican en la siguiente request, sin volver a loguearse.
+
+Utilidades iniciales de Televentas CLARO y permisos sembrados la primera vez
+(el superadmin los ajusta después):
+
+| Utilidad | Coordinador | Supervisor | Analista | Cliente |
+|---|:-:|:-:|:-:|:-:|
+| Acceso a la operativa | ✓ | ✓ | ✓ | ✓ |
+| Tablero e indicadores | ✓ | ✓ | ✓ | ✓ |
+| Cargar datos | ✓ | | ✓ | |
+| Publicar reportes | ✓ | | ✓ | |
+| Eliminar cargas y reportes | ✓ | | | |
+| Exportar e imprimir | ✓ | ✓ | ✓ | |
+
+En el backend cada endpoint se protege con el permiso de su utilidad:
 
 ```python
-Depends(get_current_user)        # cualquier usuario logueado
-Depends(require_manager)         # superadmin o analista
-Depends(require_superadmin)      # solo superadmin
-Depends(require_module("slug"))  # acceso al módulo "slug"
+Depends(get_current_user)                        # cualquier usuario logueado
+Depends(require_superadmin)                      # solo superadmin
+Depends(require_perm("televentas_claro.cargar")) # utilidad concreta
 ```
+
+En el frontend, `useSession().can("televentas_claro.cargar")` muestra u oculta
+controles. Es solo cosmético: el backend valida siempre.
 
 ## Sistema de login
 
@@ -110,7 +140,10 @@ Depends(require_module("slug"))  # acceso al módulo "slug"
 | PATCH · DELETE | `/api/v1/users/{id}` | Superadmin |
 | POST | `/api/v1/users/{id}/reset-password` · `/photo` | Superadmin |
 | GET | `/api/v1/audit` · `/api/v1/audit/users-map` | Superadmin |
-| GET | `/api/v1/modules` | Logueado (filtrado por rol) |
+| GET · PUT | `/api/v1/perfiles` · `/api/v1/perfiles/{perfil}` | Superadmin |
+| GET | `/api/v1/perfiles/catalogo` | Superadmin |
+| GET | `/api/v1/operativas` | Logueado (solo las que puede abrir) |
+| GET | `/api/v1/televentas-claro` | `televentas_claro.ver` |
 | GET | `/health` · `/api/v1/health` | Público |
 | POST | `/api/v1/admin/migrate?token=<SECRET_KEY>` | Emergencia |
 
@@ -169,15 +202,19 @@ Tipografías: **Barlow Condensed** para titulares (sustituto de DIN) y
 `label`, `badge-*`, `nav-link`. Incluye estilos de impresión A4 horizontal
 con portada corporativa (`print-cover`) y membrete (`print-header`).
 
-## Cómo agregar un módulo
+## Cómo agregar una operativa
 
-1. **Catálogo**: sumar el módulo en `backend/app/core/modules.py` con `available: True`.
-2. **Modelos**: crear `backend/app/models/<modulo>.py` e importarlo en `models/__init__.py`.
-3. **API**: crear `backend/app/api/v1/<modulo>.py` con
-   `Depends(require_module("<slug>"))` y montarlo en `main.py`.
-4. **Frontend**: crear `frontend/src/app/<slug>/page.tsx` envuelto en `<AppShell>`
-   y agregar su ruta en `MODULE_HREF` de `src/app/inicio/page.tsx`.
-5. **Tests**: agregar `backend/tests/test_<modulo>.py`.
+1. **Catálogo**: sumarla en `backend/app/core/operativas.py` con sus utilidades
+   (la primera siempre `ver`). Opcional: permisos iniciales en `core/perfiles.py`.
+2. **Modelos**: `backend/app/models/<operativa>.py`, importado en `models/__init__.py`.
+3. **API**: `backend/app/api/v1/<operativa>.py`, cada endpoint con
+   `require_perm("<slug>.<utilidad>")`, montado en `main.py`.
+4. **Frontend**: páginas en `frontend/src/app/<ruta>/` envueltas en `<AppShell>`
+   y la ruta y su navegación en `frontend/src/lib/operativas.ts`.
+5. **Tests**: `backend/tests/test_<operativa>.py`.
+
+Para sumar una **utilidad** a una operativa existente alcanza con agregarla a
+su lista. Aparece sola en la matriz de perfiles, desmarcada para todos.
 
 ## Deploy en Render
 

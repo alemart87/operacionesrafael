@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core import rate_limit
 from ...core.config import settings
+from ...core.operativas import OPERATIVA_SLUGS
 from ...core.database import get_db
+from ...core.perfiles import perfil_name
 from ...core.security import (
     create_access_token,
     create_refresh_token,
@@ -52,7 +54,7 @@ def _user_payload(u: User) -> dict:
         "full_name": u.full_name,
         "role": u.role,
         "photo_url": u.photo_url,
-        "allowed_modules": u.allowed_modules,
+        "operativas": list(u.operativas or []),
     }
 
 
@@ -106,9 +108,10 @@ async def login(
             user_email=email,
             user_role="superadmin",
             user_name=settings.superadmin_name,
+            user_operativas=sorted(OPERATIVA_SLUGS),
         )
 
-    # Caso 2: analista o lector en DB
+    # Caso 2: usuario en DB (coordinador, supervisor, analista o cliente)
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if not user or not user.is_active or not verify_password(payload.password, user.hashed_password):
@@ -130,7 +133,7 @@ async def login(
         user_role=user.role,
         user_name=user.full_name,
         user_photo_url=user.photo_url,
-        user_allowed_modules=user.allowed_modules,
+        user_operativas=list(user.operativas or []),
     )
 
 
@@ -156,6 +159,7 @@ async def refresh_token(
             user_email=email,
             user_role="superadmin",
             user_name=settings.superadmin_name,
+            user_operativas=sorted(OPERATIVA_SLUGS),
         )
 
     result = await db.execute(select(User).where(User.email == email))
@@ -170,7 +174,7 @@ async def refresh_token(
         user_role=user.role,
         user_name=user.full_name,
         user_photo_url=user.photo_url,
-        user_allowed_modules=user.allowed_modules,
+        user_operativas=list(user.operativas or []),
     )
 
 
@@ -182,8 +186,13 @@ async def me(user: CurrentUser = Depends(get_current_user)) -> dict:
         "full_name": user.full_name,
         "role": user.role,
         "photo_url": user.photo_url,
-        "allowed_modules": user.allowed_modules,
-        "can_manage": user.can_manage,
+        "role_name": perfil_name(user.role),
+        # Operativas asignadas (superadmin: todas) y las que efectivamente puede abrir.
+        "operativas": user.operativas,
+        "visible_operativas": user.visible_operativas,
+        # Permisos efectivos "<operativa>.<utilidad>". El front los usa para
+        # mostrar u ocultar utilidades; el backend los valida igual en cada endpoint.
+        "permissions": sorted(user.permissions),
         # El superadmin no puede autoeditar perfil/contraseña (vive en .env).
         "can_edit_profile": not user.is_superadmin,
     }

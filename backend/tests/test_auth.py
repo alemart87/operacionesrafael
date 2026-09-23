@@ -60,7 +60,7 @@ def test_user_lifecycle(client):
 
     r = client.post("/api/v1/users", headers=_auth(admin_tok), json={
         "email": "Lector@Voicenter.com.py", "password": "Lector123!",
-        "full_name": "Lector Prueba", "role": "viewer", "allowed_modules": [],
+        "full_name": "Lector Prueba", "role": "cliente", "operativas": [],
     })
     assert r.status_code == 201, r.text
     uid = r.json()["id"]
@@ -69,13 +69,13 @@ def test_user_lifecycle(client):
     # Duplicado
     r = client.post("/api/v1/users", headers=_auth(admin_tok), json={
         "email": "lector@voicenter.com.py", "password": "Lector123!",
-        "full_name": "Otro", "role": "viewer",
+        "full_name": "Otro", "role": "cliente",
     })
     assert r.status_code == 409
 
-    # El lector entra, no ve módulos y no puede gestionar usuarios.
+    # Entra, no ve operativas (no tiene asignadas) y no puede gestionar usuarios.
     tok = _login(client, "lector@voicenter.com.py", "Lector123!").json()["access_token"]
-    assert client.get("/api/v1/modules", headers=_auth(tok)).json() == []
+    assert client.get("/api/v1/operativas", headers=_auth(tok)).json() == []
     assert client.get("/api/v1/users", headers=_auth(tok)).status_code == 403
     assert client.get("/api/v1/audit", headers=_auth(tok)).status_code == 403
 

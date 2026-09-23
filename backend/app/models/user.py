@@ -1,4 +1,4 @@
-"""Usuarios en DB (analistas y lectores). El superadmin vive solo en .env."""
+"""Usuarios en DB. El superadmin vive solo en .env."""
 from __future__ import annotations
 
 import uuid
@@ -21,13 +21,13 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    # Roles: 'analyst' (gestiona datos y publica) | 'viewer' (solo lectura)
-    role: Mapped[str] = mapped_column(String(20), nullable=False, default="analyst")
+    # Perfil: coordinador | supervisor | analista | cliente (ver core/perfiles.py)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="analista")
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     photo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    # Solo aplica a lectores. None = acceso a todos los módulos; lista = solo esos slugs.
-    allowed_modules: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Operativas asignadas (slugs). Lista vacía = ninguna.
+    operativas: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

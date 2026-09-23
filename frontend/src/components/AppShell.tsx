@@ -2,21 +2,38 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
 import { Brand } from "./Brand";
-import { CurrentUserInfo, ROLE_LABELS, apiFetch, clearSession, getToken, getUser, saveUser } from "@/lib/api";
+import { CurrentUserInfo, ROLE_LABELS, apiFetch, can, clearSession, getToken, getUser, saveUser } from "@/lib/api";
+import { operativaFromPath } from "@/lib/operativas";
 
 const ADMIN_NAV = [
   { href: "/admin/users", label: "Usuarios" },
+  { href: "/admin/perfiles", label: "Perfiles" },
   { href: "/admin/audit", label: "Auditoría" },
 ];
 
+interface Session {
+  user: CurrentUserInfo;
+  /** ¿Tiene el permiso "<operativa>.<utilidad>"? Superadmin siempre. */
+  can: (perm: string) => boolean;
+  isSuperadmin: boolean;
+}
+
+const SessionContext = createContext<Session | null>(null);
+
+/** Sesión del usuario logueado. Solo disponible dentro de <AppShell>. */
+export function useSession(): Session {
+  const s = useContext(SessionContext);
+  if (!s) throw new Error("useSession debe usarse dentro de <AppShell>");
+  return s;
+}
+
 /**
- * Cromo de la app: header con marca, navegación admin (solo superadmin),
- * perfil y cierre de sesión. Redirige a /login si no hay token.
- * Para sumar la navegación de un módulo, seguir el patrón del proyecto de
- * Cobranzas: una barra oscura secundaria visible solo dentro del módulo.
+ * Cromo de la app: header con marca, navegación de administración (solo
+ * superadmin), barra de la operativa activa, perfil y cierre de sesión.
+ * Carga los permisos desde /auth/me y bloquea las operativas sin acceso.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -29,125 +46,174 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
-    setUser(getUser());
-    // Sincroniza con el backend: cambios del superadmin se ven sin re-login.
+    // Los permisos siempre se piden al backend: el superadmin puede cambiarlos en cualquier momento.
     apiFetch<CurrentUserInfo>("/api/v1/auth/me")
       .then((me) => {
-        const next = {
+        const next: CurrentUserInfo = {
           email: me.email,
           role: me.role,
           full_name: me.full_name,
           photo_url: me.photo_url ?? null,
-          allowed_modules: me.allowed_modules ?? null,
+          operativas: me.operativas ?? [],
+          visible_operativas: me.visible_operativas ?? [],
+          permissions: me.permissions ?? [],
         };
         saveUser(next);
         setUser(next);
       })
-      .catch(() => {});
+      .catch(() => {
+        const cached = getUser();
+        if (cached) setUser(cached);
+      });
   }, [router]);
 
   useEffect(() => setMobileOpen(false), [pathname]);
+
+  const operativa = operativaFromPath(pathname);
+  const blocked = !!user && !!operativa && !can(user, `${operativa.slug}.ver`);
+  const adminOnly = !!user && !!pathname?.startsWith("/admin") && user.role !== "superadmin";
+
+  useEffect(() => {
+    if (blocked || adminOnly) router.replace("/inicio");
+  }, [blocked, adminOnly, router]);
 
   const onLogout = () => {
     clearSession();
     router.push("/login");
   };
 
-  if (!user) return null;
+  if (!user || blocked || adminOnly) return null;
 
   const isAdmin = user.role === "superadmin";
+  const session: Session = { user, can: (p) => can(user, p), isSuperadmin: isAdmin };
+  const opNav = operativa?.nav.filter((i) => can(user, `${operativa.slug}.${i.utilidad}`)) ?? [];
+
+  const pill = (active: boolean) =>
+    `px-3 py-1.5 text-xs font-semibold rounded transition-colors whitespace-nowrap ${
+      active ? "bg-brand-primary text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+    }`;
   const mobilePill = (active: boolean) =>
     `block px-3 py-2 rounded-md text-sm font-medium ${
       active ? "bg-brand-primary-light text-brand-primary-dark" : "text-brand-graphite hover:bg-brand-bg"
     }`;
+  const groupLabel = "px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider2 text-brand-mist font-semibold";
 
   return (
-    <div className="min-h-screen flex flex-col bg-brand-bg">
-      <header className="bg-white border-b border-brand-border shadow-soft sticky top-0 z-30">
-        <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-          <Link href="/inicio" className="hover:opacity-90 transition-opacity flex-shrink-0">
-            <Brand logoHeight={40} />
-          </Link>
+    <SessionContext.Provider value={session}>
+      <div className="min-h-screen flex flex-col bg-brand-bg">
+        <header className="bg-white border-b border-brand-border shadow-soft sticky top-0 z-30">
+          <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+            <Link href="/inicio" className="hover:opacity-90 transition-opacity flex-shrink-0">
+              <Brand logoHeight={40} />
+            </Link>
 
-          {isAdmin && (
-            <nav className="hidden md:flex items-center gap-1">
-              {ADMIN_NAV.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={pathname?.startsWith(item.href) ? "nav-link-active" : "nav-link"}
+            {isAdmin && (
+              <nav className="hidden md:flex items-center gap-1">
+                {ADMIN_NAV.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={pathname?.startsWith(item.href) ? "nav-link-active" : "nav-link"}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+            )}
+
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Link href="/perfil" className="flex items-center gap-3 group" title="Mi perfil">
+                <div className="text-right leading-tight hidden sm:block">
+                  <div className="text-sm font-semibold text-brand-ink group-hover:text-brand-primary transition-colors">
+                    {user.full_name}
+                  </div>
+                  <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">
+                    {ROLE_LABELS[user.role] ?? user.role}
+                  </div>
+                </div>
+                <Avatar name={user.full_name} photoUrl={user.photo_url} size={40} />
+              </Link>
+              <button onClick={onLogout} className="btn-ghost hidden md:inline-flex" title="Cerrar sesión">
+                Salir
+              </button>
+              <button
+                type="button"
+                className="md:hidden w-9 h-9 flex items-center justify-center rounded-md text-brand-ink hover:bg-brand-bg"
+                aria-label="Menú"
+                aria-expanded={mobileOpen}
+                onClick={() => setMobileOpen((o) => !o)}
+              >
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  {mobileOpen ? <path d="M18 6 6 18M6 6l12 12" /> : <path d="M3 6h18M3 12h18M3 18h18" />}
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {mobileOpen && (
+            <div className="md:hidden border-t border-brand-border bg-white animate-fade max-h-[75vh] overflow-y-auto">
+              <nav className="px-3 py-3 flex flex-col">
+                <Link href="/inicio" className={mobilePill(pathname === "/inicio")}>Operativas</Link>
+                <Link href="/perfil" className={mobilePill(pathname === "/perfil")}>Mi perfil</Link>
+                {operativa && opNav.length > 0 && (
+                  <>
+                    <div className={groupLabel}>{operativa.name}</div>
+                    {opNav.map((item) => (
+                      <Link key={item.href} href={item.href} className={mobilePill(pathname === item.href)}>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </>
+                )}
+                {isAdmin && (
+                  <>
+                    <div className={groupLabel}>Administración</div>
+                    {ADMIN_NAV.map((item) => (
+                      <Link key={item.href} href={item.href} className={mobilePill(!!pathname?.startsWith(item.href))}>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </>
+                )}
+                <button
+                  onClick={onLogout}
+                  className="mt-3 text-left px-3 py-2 rounded-md text-sm font-medium text-brand-primary hover:bg-brand-primary-light"
                 >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
+                  Cerrar sesión
+                </button>
+              </nav>
+            </div>
           )}
 
-          <div className="flex items-center gap-3 sm:gap-4">
-            <Link href="/perfil" className="flex items-center gap-3 group" title="Mi perfil">
-              <div className="text-right leading-tight hidden sm:block">
-                <div className="text-sm font-semibold text-brand-ink group-hover:text-brand-primary transition-colors">
-                  {user.full_name}
-                </div>
-                <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">
-                  {ROLE_LABELS[user.role] ?? user.role}
-                </div>
+          {/* Barra de la operativa activa (desktop) */}
+          {operativa && (
+            <div className="bg-brand-ink text-white hidden md:block">
+              <div className="px-4 sm:px-6 py-2 flex items-center gap-1 flex-wrap">
+                <Link href="/inicio" className="text-[10px] uppercase tracking-wider2 font-semibold text-white/55 hover:text-white">
+                  ← Operativas
+                </Link>
+                <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
+                <span className="text-[10px] uppercase tracking-wider2 font-bold text-white/80">{operativa.name}</span>
+                <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
+                {opNav.map((item) => (
+                  <Link key={item.href} href={item.href} className={pill(pathname === item.href)}>
+                    {item.label}
+                  </Link>
+                ))}
               </div>
-              <Avatar name={user.full_name} photoUrl={user.photo_url} size={40} />
-            </Link>
-            <button onClick={onLogout} className="btn-ghost hidden md:inline-flex" title="Cerrar sesión">
-              Salir
-            </button>
-            <button
-              type="button"
-              className="md:hidden w-9 h-9 flex items-center justify-center rounded-md text-brand-ink hover:bg-brand-bg"
-              aria-label="Menú"
-              aria-expanded={mobileOpen}
-              onClick={() => setMobileOpen((o) => !o)}
-            >
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                {mobileOpen ? <path d="M18 6 6 18M6 6l12 12" /> : <path d="M3 6h18M3 12h18M3 18h18" />}
-              </svg>
-            </button>
+            </div>
+          )}
+        </header>
+
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-8">{children}</main>
+
+        <footer className="border-t border-brand-border bg-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 text-[11px] uppercase tracking-wider2 text-brand-slate flex flex-wrap justify-between gap-2">
+            <span>Operaciones Voicenter · Gerencia Expansión RM</span>
+            <span>© {new Date().getFullYear()} Voicenter S.A.</span>
           </div>
-        </div>
-
-        {mobileOpen && (
-          <div className="md:hidden border-t border-brand-border bg-white animate-fade">
-            <nav className="px-3 py-3 flex flex-col">
-              <Link href="/inicio" className={mobilePill(pathname === "/inicio")}>Inicio</Link>
-              <Link href="/perfil" className={mobilePill(pathname === "/perfil")}>Mi perfil</Link>
-              {isAdmin && (
-                <>
-                  <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider2 text-brand-mist font-semibold">
-                    Administración
-                  </div>
-                  {ADMIN_NAV.map((item) => (
-                    <Link key={item.href} href={item.href} className={mobilePill(!!pathname?.startsWith(item.href))}>
-                      {item.label}
-                    </Link>
-                  ))}
-                </>
-              )}
-              <button
-                onClick={onLogout}
-                className="mt-3 text-left px-3 py-2 rounded-md text-sm font-medium text-brand-primary hover:bg-brand-primary-light"
-              >
-                Cerrar sesión
-              </button>
-            </nav>
-          </div>
-        )}
-      </header>
-
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-8">{children}</main>
-
-      <footer className="border-t border-brand-border bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 text-[11px] uppercase tracking-wider2 text-brand-slate flex flex-wrap justify-between gap-2">
-          <span>Operaciones Voicenter · Gerencia Expansión RM</span>
-          <span>© {new Date().getFullYear()} Voicenter S.A.</span>
-        </div>
-      </footer>
-    </div>
+        </footer>
+      </div>
+    </SessionContext.Provider>
   );
 }

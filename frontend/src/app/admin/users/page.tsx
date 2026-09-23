@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { ROLE_LABELS, apiFetch, getUser } from "@/lib/api";
+import { ROLE_LABELS, apiFetch } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 
 interface UserRow {
@@ -15,107 +14,131 @@ interface UserRow {
   role: string;
   is_active: boolean;
   photo_url: string | null;
-  allowed_modules: string[] | null;
+  operativas: string[];
   created_at: string;
   last_login_at: string | null;
 }
 
-interface ModuleInfo {
+interface PerfilDef {
   slug: string;
   name: string;
   description: string;
-  available: boolean;
-  color: string;
 }
 
-const ROLE_OPTIONS = [
-  { value: "analyst", title: "Analista", desc: "Carga datos, publica y ve todos los módulos." },
-  { value: "viewer", title: "Lector", desc: "Solo lectura, sobre los módulos que se le habiliten." },
-];
+interface OperativaDef {
+  slug: string;
+  name: string;
+  description: string;
+  color: string;
+  available: boolean;
+}
 
-const EMPTY_FORM = { email: "", password: "", full_name: "", role: "analyst", allowed_modules: null as string[] | null };
+const EMPTY_FORM = { email: "", password: "", full_name: "", role: "analista", operativas: [] as string[] };
 
-/** Selector de módulos: null = acceso a todos; lista = solo los marcados. */
-function ModulePicker({
-  modules,
+const ROLE_BADGE: Record<string, string> = {
+  coordinador: "badge-primary",
+  supervisor: "badge-cyan",
+  analista: "badge-success",
+  cliente: "badge-neutral",
+};
+
+/** Selector de operativas asignadas a un usuario. */
+function OperativasPicker({
+  operativas,
   value,
   onChange,
 }: {
-  modules: ModuleInfo[];
-  value: string[] | null;
-  onChange: (v: string[] | null) => void;
+  operativas: OperativaDef[];
+  value: string[];
+  onChange: (v: string[]) => void;
 }) {
-  const toggle = (slug: string) => {
-    const cur = value ?? modules.map((m) => m.slug);
-    onChange(cur.includes(slug) ? cur.filter((s) => s !== slug) : [...cur, slug]);
-  };
+  const toggle = (slug: string) =>
+    onChange(value.includes(slug) ? value.filter((s) => s !== slug) : [...value, slug]);
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <label className="label !mb-0">Módulos habilitados</label>
-        <button
-          type="button"
-          onClick={() => onChange(null)}
-          className={`text-[10px] uppercase tracking-wider2 font-semibold px-2 py-1 rounded ${
-            value === null ? "bg-brand-cyan text-white" : "bg-brand-bg text-brand-slate hover:bg-brand-border"
-          }`}
-        >
-          Acceso a todos
-        </button>
-      </div>
+      <label className="label">Operativas asignadas</label>
       <div className="space-y-2">
-        {modules.map((m) => {
-          const checked = value === null || value.includes(m.slug);
+        {operativas.map((o) => {
+          const checked = value.includes(o.slug);
           return (
             <label
-              key={m.slug}
+              key={o.slug}
               className={`flex items-start gap-2.5 p-2.5 rounded-md border cursor-pointer transition-colors ${
                 checked ? "border-brand-primary bg-brand-primary-light/30" : "border-brand-border"
               }`}
             >
-              <input type="checkbox" checked={checked} onChange={() => toggle(m.slug)} className="mt-0.5 accent-brand-primary" />
+              <input type="checkbox" checked={checked} onChange={() => toggle(o.slug)} className="mt-0.5 accent-brand-primary" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: m.color }} />
-                  <span className="text-sm font-semibold text-brand-ink">{m.name}</span>
-                  {!m.available && <span className="badge-neutral">Próximamente</span>}
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: o.color }} />
+                  <span className="text-sm font-semibold text-brand-ink">{o.name}</span>
                 </div>
-                <div className="text-[11px] text-brand-slate mt-0.5">{m.description}</div>
+                <div className="text-[11px] text-brand-slate mt-0.5">{o.description}</div>
               </div>
             </label>
           );
         })}
+      </div>
+      <p className="text-[11px] text-brand-mist mt-1.5">
+        Lo que puede hacer en cada operativa lo define su perfil (Administración → Perfiles).
+      </p>
+    </div>
+  );
+}
+
+function PerfilPicker({ perfiles, value, onChange }: { perfiles: PerfilDef[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="label">Perfil</label>
+      <div className="grid grid-cols-2 gap-2">
+        {perfiles.map((p) => (
+          <button
+            key={p.slug}
+            type="button"
+            onClick={() => onChange(p.slug)}
+            className={`p-3 text-left rounded-md border text-xs transition-all ${
+              value === p.slug
+                ? "border-brand-primary bg-brand-primary-light text-brand-primary-dark"
+                : "border-brand-border text-brand-slate hover:border-brand-mist"
+            }`}
+          >
+            <div className="font-semibold uppercase tracking-wider2 text-[10px] mb-0.5">{p.name}</div>
+            <div className="text-[11px] opacity-80">{p.description}</div>
+          </button>
+        ))}
       </div>
     </div>
   );
 }
 
 export default function AdminUsersPage() {
-  const router = useRouter();
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [modules, setModules] = useState<ModuleInfo[]>([]);
+  const [perfiles, setPerfiles] = useState<PerfilDef[]>([]);
+  const [operativas, setOperativas] = useState<OperativaDef[]>([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [editUser, setEditUser] = useState<UserRow | null>(null);
+  const [editRole, setEditRole] = useState("");
+  const [editOps, setEditOps] = useState<string[]>([]);
   const [resetUser, setResetUser] = useState<UserRow | null>(null);
   const [resetPwd, setResetPwd] = useState("");
-  const [modulesUser, setModulesUser] = useState<UserRow | null>(null);
-  const [modulesValue, setModulesValue] = useState<string[] | null>(null);
   const [confirmToggle, setConfirmToggle] = useState<UserRow | null>(null);
-  const [busy, setBusy] = useState(false);
   const photoRef = useRef<HTMLInputElement>(null);
   const [photoUser, setPhotoUser] = useState<UserRow | null>(null);
 
   const load = () => apiFetch<UserRow[]>("/api/v1/users").then(setUsers).catch((e) => setError(e.message));
 
   useEffect(() => {
-    if (getUser()?.role !== "superadmin") {
-      router.replace("/inicio");
-      return;
-    }
     load();
-    apiFetch<ModuleInfo[]>("/api/v1/modules").then(setModules).catch(() => {});
-  }, [router]);
+    apiFetch<{ perfiles: PerfilDef[]; operativas: OperativaDef[] }>("/api/v1/perfiles/catalogo")
+      .then((c) => {
+        setPerfiles(c.perfiles);
+        setOperativas(c.operativas);
+      })
+      .catch(() => {});
+  }, []);
 
   const run = async (fn: () => Promise<unknown>, success?: string) => {
     setError(null);
@@ -136,18 +159,24 @@ export default function AdminUsersPage() {
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload: Record<string, unknown> = {
-      email: form.email,
-      password: form.password,
-      full_name: form.full_name,
-      role: form.role,
-    };
-    if (form.role === "viewer") payload.allowed_modules = form.allowed_modules;
     const done = await run(
-      () => apiFetch("/api/v1/users", { method: "POST", body: JSON.stringify(payload) }),
-      `Usuario "${form.email}" creado como ${ROLE_LABELS[form.role]}.`,
+      () => apiFetch("/api/v1/users", { method: "POST", body: JSON.stringify(form) }),
+      `Usuario "${form.email}" creado con perfil ${ROLE_LABELS[form.role]}.`,
     );
     if (done) setForm(EMPTY_FORM);
+  };
+
+  const onSaveEdit = async () => {
+    if (!editUser) return;
+    const done = await run(
+      () =>
+        apiFetch(`/api/v1/users/${editUser.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ role: editRole, operativas: editOps }),
+        }),
+      `Acceso de ${editUser.email} actualizado.`,
+    );
+    if (done) setEditUser(null);
   };
 
   const onToggleActive = async () => {
@@ -176,15 +205,6 @@ export default function AdminUsersPage() {
     }
   };
 
-  const onSaveModules = async () => {
-    if (!modulesUser) return;
-    await run(
-      () => apiFetch(`/api/v1/users/${modulesUser.id}`, { method: "PATCH", body: JSON.stringify({ allowed_modules: modulesValue }) }),
-      `Módulos de ${modulesUser.email} actualizados.`,
-    );
-    setModulesUser(null);
-  };
-
   const onPhotoPicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !photoUser) return;
@@ -195,18 +215,18 @@ export default function AdminUsersPage() {
     if (photoRef.current) photoRef.current.value = "";
   };
 
-  const moduleSummary = (u: UserRow) => {
-    if (u.role !== "viewer" || u.allowed_modules === null) return "Todos los módulos";
-    if (u.allowed_modules.length === 0) return "Sin módulos";
-    return u.allowed_modules.map((s) => modules.find((m) => m.slug === s)?.name ?? s).join(", ");
-  };
+  const opsSummary = (u: UserRow) =>
+    u.operativas.length === 0
+      ? "Sin operativas asignadas"
+      : u.operativas.map((s) => operativas.find((o) => o.slug === s)?.name ?? s).join(", ");
 
   return (
     <AppShell>
       <div className="mb-6">
         <h1 className="font-display text-3xl text-brand-ink uppercase">Gestión de usuarios</h1>
         <p className="text-sm text-brand-slate mt-1">
-          Analistas (gestionan datos y ven todo) o lectores (solo lectura, por módulo).
+          Cada usuario tiene un perfil y las operativas en las que trabaja. Los permisos de cada perfil se configuran
+          en Perfiles.
         </p>
       </div>
 
@@ -215,39 +235,13 @@ export default function AdminUsersPage() {
           {error}
         </div>
       )}
-      {ok && (
-        <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-md px-3 py-2.5">{ok}</div>
-      )}
+      {ok && <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-md px-3 py-2.5">{ok}</div>}
 
       <div className="grid lg:grid-cols-5 gap-6">
         <form onSubmit={onCreate} className="card p-6 space-y-4 lg:col-span-2 h-fit">
           <h2 className="font-display text-xl text-brand-ink uppercase">Crear usuario</h2>
-
-          <div>
-            <label className="label">Tipo de usuario</label>
-            <div className="grid grid-cols-2 gap-2">
-              {ROLE_OPTIONS.map((r) => (
-                <button
-                  key={r.value}
-                  type="button"
-                  onClick={() => setForm({ ...form, role: r.value })}
-                  className={`p-3 text-left rounded-md border text-xs transition-all ${
-                    form.role === r.value
-                      ? "border-brand-primary bg-brand-primary-light text-brand-primary-dark"
-                      : "border-brand-border text-brand-slate hover:border-brand-mist"
-                  }`}
-                >
-                  <div className="font-semibold uppercase tracking-wider2 text-[10px] mb-0.5">{r.title}</div>
-                  <div className="text-[11px] opacity-80">{r.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {form.role === "viewer" && (
-            <ModulePicker modules={modules} value={form.allowed_modules} onChange={(v) => setForm({ ...form, allowed_modules: v })} />
-          )}
-
+          <PerfilPicker perfiles={perfiles} value={form.role} onChange={(role) => setForm({ ...form, role })} />
+          <OperativasPicker operativas={operativas} value={form.operativas} onChange={(ops) => setForm({ ...form, operativas: ops })} />
           <div>
             <label className="label">Email</label>
             <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" />
@@ -286,27 +280,26 @@ export default function AdminUsersPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-brand-ink truncate">{u.full_name}</span>
-                      <span className={u.role === "analyst" ? "badge-primary" : "badge-cyan"}>{ROLE_LABELS[u.role] ?? u.role}</span>
+                      <span className={ROLE_BADGE[u.role] ?? "badge-neutral"}>{ROLE_LABELS[u.role] ?? u.role}</span>
                       {!u.is_active && <span className="badge-neutral">Inactivo</span>}
                     </div>
                     <div className="text-xs text-brand-slate truncate">{u.email}</div>
                     <div className="text-[11px] text-brand-mist mt-0.5">
-                      {moduleSummary(u)} · Último acceso: {formatDate(u.last_login_at)}
+                      {opsSummary(u)} · Último acceso: {formatDate(u.last_login_at)}
                     </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5 sm:justify-end">
-                  {u.role === "viewer" && (
-                    <button
-                      className="btn-ghost !px-2 !py-1 text-xs"
-                      onClick={() => {
-                        setModulesUser(u);
-                        setModulesValue(u.allowed_modules);
-                      }}
-                    >
-                      Módulos
-                    </button>
-                  )}
+                  <button
+                    className="btn-ghost !px-2 !py-1 text-xs"
+                    onClick={() => {
+                      setEditUser(u);
+                      setEditRole(u.role);
+                      setEditOps(u.operativas);
+                    }}
+                  >
+                    Acceso
+                  </button>
                   <button
                     className="btn-ghost !px-2 !py-1 text-xs"
                     onClick={() => {
@@ -330,6 +323,22 @@ export default function AdminUsersPage() {
       </div>
 
       <input ref={photoRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onPhotoPicked} />
+
+      <ConfirmDialog
+        open={!!editUser}
+        title="Perfil y operativas"
+        message={
+          <div className="space-y-4 text-left">
+            <p>{editUser?.email}</p>
+            <PerfilPicker perfiles={perfiles} value={editRole} onChange={setEditRole} />
+            <OperativasPicker operativas={operativas} value={editOps} onChange={setEditOps} />
+          </div>
+        }
+        confirmLabel="Guardar"
+        loading={busy}
+        onConfirm={onSaveEdit}
+        onCancel={() => setEditUser(null)}
+      />
 
       <ConfirmDialog
         open={!!confirmToggle}
@@ -369,16 +378,6 @@ export default function AdminUsersPage() {
           setResetUser(null);
           setResetPwd("");
         }}
-      />
-
-      <ConfirmDialog
-        open={!!modulesUser}
-        title="Módulos del lector"
-        message={<ModulePicker modules={modules} value={modulesValue} onChange={setModulesValue} />}
-        confirmLabel="Guardar"
-        loading={busy}
-        onConfirm={onSaveModules}
-        onCancel={() => setModulesUser(null)}
       />
     </AppShell>
   );

@@ -16,7 +16,7 @@ class TokenPair(BaseModel):
     user_role: str
     user_name: str
     user_photo_url: Optional[str] = None
-    user_allowed_modules: Optional[List[str]] = None
+    user_operativas: List[str] = []
 
 
 class TokenRefresh(BaseModel):
