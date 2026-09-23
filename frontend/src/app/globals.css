@@ -1,0 +1,237 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Paleta oficial Voicenter */
+  --vc-primary: #e6332a;
+  --vc-primary-dark: #b81f18;
+  --vc-cyan: #00b2bf;
+  --vc-purple: #662483;
+  --vc-orange: #f39200;
+  --vc-ink: #0f1116;
+  --vc-bg: #f6f7fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  font-family: "Manrope", system-ui, "Segoe UI", Arial, sans-serif;
+  background-color: var(--vc-bg);
+  color: var(--vc-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: "Barlow Condensed", Impact, "Arial Narrow", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
+/* ========= Componentes corporativos reutilizables ========= */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md font-semibold tracking-wide transition-all duration-150;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn px-5 py-2.5 text-sm bg-brand-primary text-white hover:bg-brand-primary-dark active:scale-[0.98] shadow-soft;
+  }
+  .btn-secondary {
+    @apply btn px-5 py-2.5 text-sm bg-white text-brand-ink border border-brand-border hover:border-brand-primary hover:text-brand-primary;
+  }
+  .btn-ghost {
+    @apply btn px-3 py-2 text-sm text-brand-slate hover:bg-brand-bg hover:text-brand-ink;
+  }
+  .btn-danger {
+    @apply btn px-4 py-2 text-sm bg-white text-brand-primary border border-brand-primary hover:bg-brand-primary hover:text-white;
+  }
+
+  .input {
+    @apply w-full px-3.5 py-2.5 text-sm bg-white border border-brand-border rounded-md;
+    @apply focus:outline-none focus:border-brand-primary focus:shadow-focus transition-shadow;
+    @apply placeholder:text-brand-mist;
+  }
+
+  .card {
+    @apply bg-white rounded-lg shadow-soft border border-brand-border;
+  }
+
+  .label {
+    @apply block text-xs font-semibold uppercase tracking-wider2 text-brand-slate mb-1.5;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider2 rounded;
+  }
+  .badge-primary {
+    @apply badge bg-brand-primary-light text-brand-primary-dark;
+  }
+  .badge-cyan {
+    @apply badge bg-brand-cyan/10 text-brand-cyan;
+  }
+  .badge-success {
+    @apply badge bg-emerald-50 text-emerald-700;
+  }
+  .badge-neutral {
+    @apply badge bg-brand-bg text-brand-slate;
+  }
+
+  .nav-link {
+    @apply px-3 py-2 rounded-md text-sm font-semibold tracking-wide transition-colors;
+    @apply text-brand-slate hover:bg-brand-bg hover:text-brand-ink;
+  }
+  .nav-link-active {
+    @apply nav-link bg-brand-primary text-white hover:bg-brand-primary-dark hover:text-white;
+  }
+}
+
+/* Animaciones de modales/toasts */
+@keyframes vc-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes vc-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.animate-fade {
+  animation: vc-fade 0.12s ease-out;
+}
+.animate-pop {
+  animation: vc-pop 0.15s ease-out;
+}
+
+/* Shimmer (loader del agente mientras razona) */
+@keyframes vc-shimmer {
+  0% { background-position: -180% 0; }
+  100% { background-position: 180% 0; }
+}
+.shimmer-text {
+  background: linear-gradient(90deg, #94a3b8 25%, #00B2BF 50%, #94a3b8 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: vc-shimmer 1.6s linear infinite;
+}
+.shimmer-bar {
+  background: linear-gradient(90deg, rgba(0,178,191,0.06) 25%, rgba(0,178,191,0.22) 50%, rgba(0,178,191,0.06) 75%);
+  background-size: 200% 100%;
+  animation: vc-shimmer 1.6s linear infinite;
+}
+
+/* ===== Impresión / Guardar como PDF ===== */
+.print-only { display: none; }
+
+/* Portada corporativa (solo se ve al imprimir) */
+.print-cover {
+  page-break-after: always;
+  break-after: page;
+  min-height: 172mm;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.print-cover-band { height: 12mm; background: #E6332A; }
+.print-cover-band.bottom { background: #0F1116; height: 8mm; }
+.print-cover-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 24mm;
+}
+.print-cover-kicker { font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: #64748b; }
+.print-cover-title {
+  font-family: "Barlow Condensed", Impact, "Arial Narrow", sans-serif;
+  font-size: 44px; line-height: 1.05; text-transform: uppercase;
+  color: #0F1116; margin: 14px 0 0; max-width: 230mm; font-weight: 700;
+}
+.print-cover-rule { width: 90px; height: 4px; background: #00B2BF; margin: 18px 0; }
+.print-cover-period { font-size: 19px; color: #E6332A; font-weight: 600; }
+.print-cover-footer {
+  display: flex; justify-content: space-between;
+  padding: 5mm 16mm; font-size: 11px; color: #64748b;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Membrete (encabezado) de los reportes individuales */
+.print-header { border-top: 4px solid #E6332A; padding-top: 10px; margin-bottom: 14px; }
+.print-header-row { display: flex; align-items: center; justify-content: space-between; }
+.print-header-kicker { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #64748b; }
+.print-header-title { font-family: "Barlow Condensed", Impact, sans-serif; margin: 8px 0 2px; font-size: 24px; text-transform: uppercase; color: #0f172a; font-weight: 700; }
+.print-header-sub { font-size: 12px; color: #64748b; }
+@media print {
+  /* Horizontal: los dashboards (tablas anchas, gráficos apilados) entran mucho mejor */
+  @page { size: A4 landscape; margin: 10mm; }
+
+  /* Ocultar cromo de la app y todo lo marcado como no imprimible */
+  header, footer, .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  /* La portada mantiene su layout en columna y llena la hoja A4 horizontal */
+  .print-cover { display: flex !important; min-height: 186mm; }
+
+  /* Fondo BLANCO total: el gris de la app (bg del shell) imprime como "zonas
+     grises" alrededor de las tarjetas. Solo se blanquea el lienzo; los headers
+     de tabla y chips conservan su tono propio. */
+  html, body, main, .min-h-screen { background: #fff !important; }
+  main { padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; }
+
+  /* Tarjetas planas; evitar cortes feos entre páginas.
+     OJO: los <section> y las tablas largas SÍ pueden fluir entre páginas
+     (si no, cada bloque salta entero y quedan medias páginas vacías);
+     lo atómico son las tarjetas, las filas y cada gráfico. */
+  .card { box-shadow: none !important; border: 1px solid #e5e7eb !important; }
+  .card, tr, .recharts-wrapper { break-inside: avoid; page-break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+
+  /* Layout de escritorio SIEMPRE al imprimir: algunas impresiones evalúan un
+     viewport angosto y las grillas colapsan a 2 columnas (KPIs gigantes con
+     mucho vacío). Forzamos las columnas md:/lg: como en la web. */
+  [class*="md:grid-cols-2"], [class*="lg:grid-cols-2"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  [class*="md:grid-cols-3"], [class*="lg:grid-cols-3"] { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  [class*="md:grid-cols-4"], [class*="lg:grid-cols-4"] { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  [class*="md:grid-cols-5"] { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  [class*="md:grid-cols-6"] { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+
+  /* Tablas que no se desborden */
+  table { width: 100% !important; font-size: 11px !important; }
+
+  /* Gráficos: solo achicar si el SVG desborda el ancho de página. Usamos
+     max-width (no width) + height:auto; recharts emite viewBox, así que escala
+     proporcional y NO se distorsiona. */
+  svg.recharts-surface { max-width: 100% !important; height: auto !important; }
+
+  /* Colores exactos en gráficos/KPIs (no se respetan por defecto al imprimir). */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  a[href]:after { content: ""; }
+}
+
+/* Scrollbar corporativo en navegadores Webkit */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4d8e0;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b6bcc8;
+}

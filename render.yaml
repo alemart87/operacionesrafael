@@ -1,0 +1,44 @@
+# Blueprint SOLO para el web service. La base PostgreSQL se crea antes,
+# manualmente en el dashboard de Render, y su URL se pega como DATABASE_URL.
+#
+#   1) Render → New + → PostgreSQL
+#      - Name: operacionesrm-db · Region: oregon · copiar "Internal Database URL"
+#   2) Render → New + → Web Service → repo de este proyecto
+#      - Runtime: Docker · Region: oregon · Auto-Deploy: Yes
+#      - Disk: name=uploads, mount=/var/data, size=5GB
+#   3) Setear las env vars marcadas `sync: false` (ver README).
+
+services:
+  - type: web
+    name: operacionesrm
+    runtime: docker
+    plan: starter
+    region: oregon
+    autoDeploy: true
+    healthCheckPath: /api/v1/health
+    dockerfilePath: ./Dockerfile
+    disk:
+      name: uploads
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      # Secretos: setear manualmente en el dashboard
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: SUPERADMIN_EMAIL
+        sync: false
+      - key: SUPERADMIN_PASSWORD
+        sync: false
+      # Valores fijos
+      - key: SUPERADMIN_NAME
+        value: Administrador Voicenter
+      - key: ENV
+        value: production
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: BACKEND_URL
+        value: http://127.0.0.1:8000
+      - key: LOG_LEVEL
+        value: INFO

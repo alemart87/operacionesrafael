@@ -1,0 +1,41 @@
+# Entorno local completo: Postgres 16 + app (FastAPI + Next.js en un contenedor).
+#   docker compose up --build   →  http://localhost:8080
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: operacionesrm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d operacionesrm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/operacionesrm
+      SECRET_KEY: dev-secret-1234567890
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-admin@voicenter.com.py}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-CambiarEstaPassword123!}
+      SUPERADMIN_NAME: Administrador Voicenter
+      UPLOAD_DIR: /var/data/uploads
+      ENV: development
+      BACKEND_URL: http://127.0.0.1:8000
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads:/var/data
+
+volumes:
+  pgdata:
+  uploads:

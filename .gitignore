@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+.npm
+.eslintcache
+
+# Env
+.env
+.env.local
+.env.production
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+backend/uploads/
+backend/instance/
+/var/data/
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Build artifacts
+build/
+
+# Fixtures con datos sensibles - NO subir
+backend/tests/fixtures/*.xlsx
+backend/tests/fixtures/*.xls
+
+# Virtualenv local
+.venv/
+
+# Test artifacts
+backend/test_uploads/
+backend/test_smoke.db
+
+# Uploads locales
+uploads/
+test_uploads/
