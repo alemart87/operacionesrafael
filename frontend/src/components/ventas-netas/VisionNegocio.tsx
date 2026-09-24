@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { KpiCard } from "@/components/KpiCard";
-import { ESTADO_SDS_LABEL, fechaCorta, n, pct, type InformeData } from "./tipos";
+import { ESTADO_SDS_LABEL, fechaCorta, n, pct, type InformeData, type Vendedor } from "./tipos";
 import { BarraUso, PctUso, Seccion, Tabla } from "./ui";
+import { VendedorDetalle } from "./VendedorDetalle";
 
 // Con uso / sin uso: par validado (ΔE CVD 18.8). Un solo color para magnitudes por producto.
 const C_USO = "#00B2BF";
@@ -15,6 +17,7 @@ const tooltipStyle = { fontSize: 12, borderRadius: 6, border: "1px solid #e5e7eb
 /** Visión Negocio (gerencial): qué se vendió, cuánto está en uso, alertas y pendientes. */
 export function VisionNegocio({ d }: { d: InformeData }) {
   const k = d.kpis;
+  const [vendedorAbierto, setVendedorAbierto] = useState<Vendedor | null>(null);
   const porDia = d.por_dia.map((x) => ({ dia: x.dia?.slice(8, 10) ?? "", conUso: x.con_uso, sinUso: x.sin_uso, otros: x.total - x.pospago }));
   const porProducto = d.por_producto.map((x) => ({ producto: x.producto, total: x.total }));
 
@@ -137,7 +140,7 @@ export function VisionNegocio({ d }: { d: InformeData }) {
       <div className="grid lg:grid-cols-2 gap-6">
         <Seccion
           titulo="Vendedores en alerta"
-          sub={`Menos de ${k.umbral_uso_pct}% de líneas Pospago en uso con al menos ${k.min_lineas_alerta} líneas`}
+          sub={`Menos de ${k.umbral_uso_pct}% de líneas Pospago en uso con al menos ${k.min_lineas_alerta} líneas · clic para ver la ficha`}
         >
           <Tabla
             cols={[
@@ -148,6 +151,7 @@ export function VisionNegocio({ d }: { d: InformeData }) {
             ]}
             rows={d.alertas}
             vacio="Ningún vendedor por debajo del umbral."
+            onRowClick={setVendedorAbierto}
           />
         </Seccion>
 
@@ -219,6 +223,10 @@ export function VisionNegocio({ d }: { d: InformeData }) {
           </div>
         </div>
       </Seccion>
+
+      {vendedorAbierto && (
+        <VendedorDetalle d={d} vendedor={vendedorAbierto} onClose={() => setVendedorAbierto(null)} onCambiar={setVendedorAbierto} />
+      )}
     </div>
   );
 }

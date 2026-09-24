@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ESTADO_SDS_LABEL, fechaCorta, n, type DetalleNeta, type InformeData, type Pendiente, type Vendedor } from "./tipos";
 import { PctUso, Seccion, Tabla } from "./ui";
+import { VendedorDetalle } from "./VendedorDetalle";
 
 type Hoja = "vendedores" | "netas" | "pendientes" | "fuera";
 
@@ -13,6 +14,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
   const [q, setQ] = useState("");
   const [soloSinUso, setSoloSinUso] = useState(false);
   const [soloAlerta, setSoloAlerta] = useState(false);
+  const [vendedorAbierto, setVendedorAbierto] = useState<Vendedor | null>(null);
 
   const filtro = (s: (string | null | undefined)[]) => !q || s.some((x) => (x ?? "").toString().toLowerCase().includes(q.toLowerCase()));
 
@@ -71,7 +73,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
       </div>
 
       {hoja === "vendedores" && (
-        <Seccion titulo="Ventas netas por vendedor" sub={`${n(vendedores.length)} vendedores · filas en rojo: menos de ${k.umbral_uso_pct}% en uso`}>
+        <Seccion titulo="Ventas netas por vendedor" sub={`${n(vendedores.length)} vendedores · clic en un vendedor para ver su ficha · filas en rojo: menos de ${k.umbral_uso_pct}% en uso`}>
           <Tabla<Vendedor>
             cols={[
               { key: "vendedor", label: "Vendedor", render: (r) => <><b>{r.vendedor}</b> <span className="text-brand-mist text-xs">{r.subcanal}</span></> },
@@ -87,8 +89,13 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
             rows={vendedores}
             alerta={(r) => r.alerta}
             maxAlto="max-h-[70vh]"
+            onRowClick={setVendedorAbierto}
           />
         </Seccion>
+      )}
+
+      {vendedorAbierto && (
+        <VendedorDetalle d={d} vendedor={vendedorAbierto} onClose={() => setVendedorAbierto(null)} onCambiar={setVendedorAbierto} />
       )}
 
       {hoja === "netas" && (
@@ -103,7 +110,11 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
               { key: "portacion", label: "Port.", align: "center", render: (r) => (r.portacion === "SI" ? r.origen_portacion ?? "SI" : "Nativa") },
               { key: "consumo", label: "Consumo", render: (r) => consumo(r.consumo) },
               { key: "estado_linea", label: "Estado", align: "center", render: (r) => (r.estado_linea === "S" ? <span className="badge-primary">Susp.</span> : "Activa") },
-              { key: "vendedor", label: "Vendedor", render: (r) => <>{r.vendedor} <span className="text-brand-mist text-xs">{r.subcanal}</span></> },
+              { key: "vendedor", label: "Vendedor", render: (r) => (
+                <button className="text-left hover:text-brand-primary" onClick={() => { const v = d.vendedores.find((x) => x.vendedor === r.vendedor); if (v) setVendedorAbierto(v); }}>
+                  {r.vendedor} <span className="text-brand-mist text-xs">{r.subcanal}</span>
+                </button>
+              ) },
               { key: "ciudad", label: "Ciudad" },
             ]}
             rows={netas}

@@ -34,8 +34,8 @@ export type Col<T> = {
 };
 
 /** Tabla compacta con encabezado fijo. `alerta(row)` pinta la fila. */
-export function Tabla<T extends Record<string, any>>({ cols, rows, alerta, vacio = "Sin datos", maxAlto }: {
-  cols: Col<T>[]; rows: T[]; alerta?: (r: T) => boolean; vacio?: string; maxAlto?: string;
+export function Tabla<T extends Record<string, any>>({ cols, rows, alerta, vacio = "Sin datos", maxAlto, onRowClick }: {
+  cols: Col<T>[]; rows: T[]; alerta?: (r: T) => boolean; vacio?: string; maxAlto?: string; onRowClick?: (r: T) => void;
 }) {
   if (!rows.length) return <div className="text-sm text-brand-mist py-4">{vacio}</div>;
   const al = (a?: string) => (a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left");
@@ -51,7 +51,11 @@ export function Tabla<T extends Record<string, any>>({ cols, rows, alerta, vacio
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className={`border-b border-brand-border/60 ${alerta?.(r) ? "bg-brand-primary-light/60" : "hover:bg-brand-bg/50"}`}>
+            <tr
+              key={i}
+              onClick={onRowClick ? () => onRowClick(r) : undefined}
+              className={`border-b border-brand-border/60 ${alerta?.(r) ? "bg-brand-primary-light/60 hover:bg-brand-primary-light" : "hover:bg-brand-bg/50"} ${onRowClick ? "cursor-pointer" : ""}`}
+            >
               {cols.map((c) => (
                 <td key={c.key} className={`px-3 py-1.5 ${al(c.align)} ${c.className ?? ""}`}>
                   {c.render ? c.render(r) : r[c.key] ?? "—"}
