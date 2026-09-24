@@ -1,5 +1,5 @@
 """Negocio GPON: motor de cohorte y proyección anual, calibrados con las liquidaciones 385–389."""
-from app.services.analyzers.facturacion_gpon import PARAMETROS_GPON_DEFAULT, simular_gpon, simular_gpon_anual
+from app.operativas.televentas_claro.facturacion.analyzers.gpon import PARAMETROS_GPON_DEFAULT, simular_gpon, simular_gpon_anual
 
 
 def test_gpon_cohorte_reproduce_enero_2026():

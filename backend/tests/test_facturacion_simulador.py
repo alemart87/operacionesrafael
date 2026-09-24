@@ -1,5 +1,5 @@
 """Simulador de facturación (Televentas Claro): invariantes del motor."""
-from app.services.analyzers.facturacion_simulador import PARAMETROS_DEFAULT, simular_facturacion
+from app.operativas.televentas_claro.facturacion.analyzers.simulador import PARAMETROS_DEFAULT, simular_facturacion
 
 
 def test_mes0_y_retencion_a_6_y_12_meses():
@@ -128,7 +128,7 @@ def test_remuneracion_promedio_del_vendedor():
 
 
 def test_simulacion_anual_estructura_fija():
-    from app.services.analyzers.facturacion_simulador import simular_anual
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import simular_anual
     ventas = [1900, 1700, 1800, 2000, 1900, 1600, 1900, 2100, 1900, 1900, 1750, 1900]
     r = simular_anual({"objetivo_co": 1750}, ventas)
     assert len(r["meses"]) == 12 and r["headcount"]["vendedores"] == 95  # fijado por el mes 1 (1.900 ÷ 20)
@@ -155,7 +155,7 @@ def test_simulacion_anual_estructura_fija():
 
 
 def test_simulacion_a_18_meses():
-    from app.services.analyzers.facturacion_simulador import simular_anual
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import simular_anual
     r12 = simular_anual({"objetivo_co": 1750}, [1900] * 12, 12)
     r18 = simular_anual({"objetivo_co": 1750}, [1900] * 18, 18)
     assert len(r18["meses"]) == 18 and r18["horizonte"] == 18 and r12["horizonte"] == 12
@@ -187,7 +187,7 @@ def test_ajuste_de_comisiones():
     # y toda la mejora va al margen: margen mes 0 sube exactamente lo que subió la facturación
     assert mas5["margen"]["mes0"] - base["margen"]["mes0"] == mas5["bruto_mes0"] - base["bruto_mes0"]
     # también aplica en la simulación anual (cohortes)
-    from app.services.analyzers.facturacion_simulador import simular_anual
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import simular_anual
     a0 = simular_anual({"objetivo_co": 1750}, [1900] * 12)
     a5 = simular_anual({"objetivo_co": 1750, "ajuste_comisiones_pct": 5}, [1900] * 12)
     assert a5["anual"]["facturacion_bruta"] > a0["anual"]["facturacion_bruta"]
@@ -197,7 +197,7 @@ def test_ajuste_de_comisiones():
 
 def test_cierre_con_todas_las_caidas():
     """El puente de lo facturado al resultado final cierra en ambos simuladores."""
-    from app.services.analyzers.facturacion_simulador import simular_anual
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import simular_anual
     r = simular_facturacion({"ventas": 1900, "objetivo_co": 1750})
     ci = r["cierre"]
     # facturado − devoluciones + cobros == lo que queda a 12 meses
@@ -219,7 +219,7 @@ def test_cierre_con_todas_las_caidas():
 
 def test_subgerencia_comercial_en_analisis():
     """SubGerencia Comercial: 0 por defecto (no cambia nada); al cargarla suma al costo con IPS y aguinaldo."""
-    from app.services.analyzers.facturacion_simulador import simular_anual
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import simular_anual
     base = simular_facturacion({"ventas": 1900})
     assert PARAMETROS_DEFAULT["costos"]["subgerencia_salario"] == 0
     assert base["costos"]["rrhh"]["subgerencia"] == 0 and base["costos"]["headcount"]["subgerencia"] == 0
@@ -241,7 +241,7 @@ def test_subgerencia_comercial_en_analisis():
 def test_meses_afectados_en_la_anual():
     """Un mes afectado usa sus propias variaciones (porta, efectividad, mix, costos variables);
     el resto del año y la estructura no cambian."""
-    from app.services.analyzers.facturacion_simulador import simular_anual
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import simular_anual
     base = simular_anual({"objetivo_co": 1750}, [1900] * 12)
     con = simular_anual({"objetivo_co": 1750}, [1900] * 12, 12, {
         "7": {"porta_pct": 20, "efectividad_pct": 79, "costos": {"operativo_por_venta": 20000, "ventas_por_vendedor": 5}},
@@ -272,7 +272,7 @@ def test_meses_afectados_en_la_anual():
 def test_bono_adicional_y_nombres_de_meses():
     """Bono adicional a mano: entra a la facturación del mes (y al peso de bonos), no se devuelve;
     por defecto es 0. Nombres de meses editables en la anual."""
-    from app.services.analyzers.facturacion_simulador import simular_anual
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import simular_anual
     base = simular_facturacion({"ventas": 1900})
     assert base["mes0"]["bono_adicional"] == 0
     con = simular_facturacion({"ventas": 1900, "bono_adicional": 25_000_000})
@@ -294,7 +294,7 @@ def test_bono_adicional_y_nombres_de_meses():
 def test_anual_es_aditiva_al_guarani():
     """Todos los puentes cierran exacto: bruta + ajustes = neto; neto − costos = resultado;
     acumulado suma exacto; cola = cobros + devoluciones; final = resultado + cola."""
-    from app.services.analyzers.facturacion_simulador import _FLUJOS, simular_anual
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import _FLUJOS, simular_anual
     r = simular_anual({"objetivo_co": 1750}, [1900, 1500, 1900, 2100, 1900, 1700] * 3, 18, {"6": {"porta_pct": 20}}, [0, 0, 15_000_000])
     acum = 0
     for m in r["meses"]:
@@ -318,7 +318,7 @@ def test_anual_es_aditiva_al_guarani():
 
 def test_calibracion_con_liquidaciones_reales():
     """Defaults calibrados con las 7 liquidaciones (383-389) y el manual de conceptos de Claro."""
-    from app.services.analyzers.facturacion_simulador import RESIDUAL_CURVA_DEFAULT
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import RESIDUAL_CURVA_DEFAULT
     d = PARAMETROS_DEFAULT
     assert d["porta_pct"] == 90 and d["pct_bono_efectividad_cobrado"] == 87.5 and d["pct_recalculo_productividad"] is None
     assert d["pct_caidas_penalizables"] == 85 and d["recupero_pct"] == 12 and d["pct_abono_acreditado"] == 48
@@ -354,7 +354,7 @@ def test_calibracion_con_liquidaciones_reales():
 def test_ola_de_devoluciones_y_ventas_de_equilibrio():
     """Con ventas estables la ola de devoluciones heredadas crece y se estabiliza; si las ventas bajan,
     la ola sigue pegando y el mes queda en riesgo: hacen falta más ventas de las cargadas para no perder."""
-    from app.services.analyzers.facturacion_simulador import simular_anual
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import simular_anual
     ventas = [1900] * 8 + [1400] * 4
     r = simular_anual({"objetivo_co": 1750}, ventas)
     m = r["meses"]

@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from ...core.config import settings
-from . import core
-from .core import AgentNotConfigured
-from .facturacion_tools import (
+from .....core.config import settings
+from .....services.agent import core
+from .....services.agent.core import AgentNotConfigured
+from .tools import (
     fact_calidad_fecha_impl, fact_comparar_impl, fact_focus_impl, fact_listar_reportes_impl,
     fact_obtener_reporte_impl,
 )
-from .context import AgentContext
+from .....services.agent.context import AgentContext
 
 RunContextWrapper = None  # type: ignore  # se setea en _build_facturacion_agent
 

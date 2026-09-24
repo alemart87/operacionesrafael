@@ -9,11 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from . import models  # noqa: F401  (registra los modelos en Base.metadata)
-from .api.v1 import audit, auth, facturacion, facturacion_agent, operativas, perfiles, televentas_claro, users
+from . import operativas as modulos_operativas  # routers, workers y modelos de cada operativa
+from .api.v1 import audit, auth, operativas, perfiles, users
 from .core.config import APP_NAME, settings
 from .core.database import AsyncSessionLocal, Base, engine
 from .core.logging import configure_logging, logger
-from .jobs.facturacion_queue import facturacion_worker
 from .core.operativas import filter_permissions
 from .core.perfiles import DEFAULT_PERMISSIONS, PERFILES
 from .models.profile import Profile
@@ -73,8 +73,8 @@ async def lifespan(app: FastAPI):
     if settings.env == "production" and settings.secret_key in ("change-me", ""):
         logger.error("SECRET_KEY no configurada en producción: los tokens son inseguros.")
 
-    # Worker de la cola de Facturación, supervisado: si muere por cualquier
-    # excepción se loguea y se relanza solo (nunca queda la cola muerta).
+    # Workers de las operativas, supervisados: si uno muere por cualquier
+    # excepción se loguea y se relanza solo (nunca queda una cola muerta).
     async def _supervisar(nombre, factory):
         while True:
             try:
@@ -86,10 +86,11 @@ async def lifespan(app: FastAPI):
                 logger.exception(f"[supervisor] worker {nombre} murió ({exc}); relanzando en 10s")
             await asyncio.sleep(10)
 
-    facturacion_task = asyncio.create_task(_supervisar("facturacion", facturacion_worker))
-    logger.info("Boot: worker de facturación iniciado")
+    tasks = [asyncio.create_task(_supervisar(n, f)) for n, f in modulos_operativas.WORKERS.items()]
+    logger.info(f"Boot: workers iniciados: {', '.join(modulos_operativas.WORKERS) or 'ninguno'}")
     yield
-    facturacion_task.cancel()
+    for t in tasks:
+        t.cancel()
     logger.info("Shutdown")
 
 
@@ -129,7 +130,6 @@ app.include_router(audit.router, prefix="/api/v1")
 app.include_router(perfiles.router, prefix="/api/v1")
 app.include_router(operativas.router, prefix="/api/v1")
 
-# --- Operativas (módulos independientes) ---
-app.include_router(televentas_claro.router, prefix="/api/v1")
-app.include_router(facturacion.router, prefix="/api/v1")        # utilidad: facturación (solo superadmin)
-app.include_router(facturacion_agent.router, prefix="/api/v1")
+# --- Operativas (módulos independientes, ver app/operativas/) ---
+for r in modulos_operativas.ROUTERS:
+    app.include_router(r, prefix="/api/v1")

@@ -18,22 +18,22 @@ from fastapi import (
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...core.config import settings
-from ...core.database import get_db
-from ...jobs.facturacion_queue import signal_facturacion_queue
-from ...models.facturacion_report import FacturacionReport
-from ...models.facturacion_simulacion import FacturacionSimulacion
-from ...models.facturacion_upload import FacturacionUpload
-from ...schemas.facturacion import (
+from ....core.config import settings
+from ....core.database import get_db
+from .jobs.queue import signal_facturacion_queue
+from .models.report import FacturacionReport
+from .models.simulacion import FacturacionSimulacion
+from .models.upload import FacturacionUpload
+from .schemas import (
     CompareRequest, CompareResponse, FacturacionReportDetail, FacturacionReportList,
     FacturacionReportSummary, FacturacionUploadList, FacturacionUploadRead, PublishRequest,
     GponAnualRequest, SimulacionCreate, SimulacionUpdate, SimuladorAnualRequest, SimuladorRequest,
 )
-from ...services.analyzers.facturacion_compare import compare_facturacion
-from ...services.analyzers.facturacion_gpon import PARAMETROS_GPON_DEFAULT, simular_gpon, simular_gpon_anual
-from ...services.analyzers.facturacion_simulador import PARAMETROS_DEFAULT, simular_anual, simular_facturacion
-from ...services.audit_service import record_action
-from ..deps import CurrentUser, client_ip, require_perm
+from .analyzers.compare import compare_facturacion
+from .analyzers.gpon import PARAMETROS_GPON_DEFAULT, simular_gpon, simular_gpon_anual
+from .analyzers.simulador import PARAMETROS_DEFAULT, simular_anual, simular_facturacion
+from ....services.audit_service import record_action
+from ....api.deps import CurrentUser, client_ip, require_perm
 
 PERM = "televentas_claro.facturacion"
 require_facturacion_access = require_perm(PERM)

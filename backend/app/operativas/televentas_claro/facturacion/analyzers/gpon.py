@@ -32,7 +32,7 @@ import copy
 import math
 from typing import Any
 
-from .facturacion_simulador import _costos_y_margen, _escala
+from .simulador import _costos_y_margen, _escala
 
 PLANES_GPON_DEFAULT = [
     {"nombre": "Fibra 60 (IF60 / BAF7)", "cuota1": 400000, "cuota2": 280000, "penalidad_mora": 520000, "mix_pct": 70.0},

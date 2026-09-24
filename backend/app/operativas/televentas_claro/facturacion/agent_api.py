@@ -16,16 +16,16 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...core.config import settings
-from ...core.database import get_db, session_scope
-from ...core.logging import logger
-from ...models.agent import AgentConversation, AgentMessage
-from ...services.agent.core import AgentNotConfigured, current_month
-from ...services.agent.facturacion_agent import stream_facturacion_agent
-from ...services.agent.pricing import compute_cost_usd
-from ...services.agent.context import AgentContext
-from ...services.audit_service import record_action
-from ..deps import CurrentUser, client_ip, require_perm
+from ....core.config import settings
+from ....core.database import get_db, session_scope
+from ....core.logging import logger
+from ....models.agent import AgentConversation, AgentMessage
+from ....services.agent.core import AgentNotConfigured, current_month
+from .agent.agent import stream_facturacion_agent
+from ....services.agent.pricing import compute_cost_usd
+from ....services.agent.context import AgentContext
+from ....services.audit_service import record_action
+from ....api.deps import CurrentUser, client_ip, require_perm
 
 require_facturacion_access = require_perm("televentas_claro.facturacion")
 

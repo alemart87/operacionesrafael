@@ -55,11 +55,16 @@ operacionesrafaelmartinez/
 │   │   │   └── logging.py
 │   │   ├── api/
 │   │   │   ├── deps.py          # CurrentUser, require_superadmin, require_perm
-│   │   │   └── v1/              # auth · users · perfiles · audit · operativas · televentas_claro
-│   │   ├── models/              # User, Profile, AuditLog, Facturación, Agente
-│   │   ├── schemas/             # Pydantic
-│   │   ├── jobs/                # cola de facturación + ejecución aislada
-│   │   └── services/            # audit · parsers · analyzers (facturación) · agent
+│   │   │   └── v1/              # auth · users · perfiles · audit · operativas (plataforma)
+│   │   ├── models/              # User, Profile, AuditLog, Agente (plataforma)
+│   │   ├── schemas/             # Pydantic (plataforma)
+│   │   ├── jobs/isolated.py     # ejecución aislada en subproceso (compartida)
+│   │   ├── services/            # audit · agent (motor del agente IA, compartido)
+│   │   └── operativas/          # código de cada operativa (ROUTERS + WORKERS)
+│   │       └── televentas_claro/
+│   │           ├── router.py    # portada de la operativa
+│   │           └── facturacion/ # submódulo: api · agent_api · models/ · schemas
+│   │                            #   parser · analyzers/ · agent/ · jobs/
 │   ├── tests/                   # pytest (SQLite)
 │   └── requirements.txt
 ├── frontend/
@@ -142,12 +147,13 @@ Liquidación de comisiones de Claro (Telemarketing Fijo PGY), portada desde
 | Criterios | `…/criterios` | Reglas de liquidación sobre un escenario fijo |
 | Agente IA | `…/agente` | Analista de facturación sobre los reportes (requiere `OPENAI_API_KEY`) |
 
+Todo el código vive en `backend/app/operativas/televentas_claro/facturacion/`.
+
 - **Procesamiento:** el endpoint solo guarda el archivo; un worker supervisado
   reclama cada carga y la parsea en un **subproceso aislado** con timeout, para
-  que un archivo malo no pueda tumbar la API (`jobs/facturacion_queue.py`).
-- **Lógica:** parser en `services/parsers/facturacion_parser.py`; análisis,
-  comparativo y simuladores en `services/analyzers/facturacion*.py`. Los
-  simuladores tienen tests calibrados con liquidaciones reales.
+  que un archivo malo no pueda tumbar la API (`jobs/queue.py`).
+- **Lógica:** parser en `parser.py`; análisis, comparativo y simuladores en
+  `analyzers/`. Los simuladores tienen tests calibrados con liquidaciones reales.
 - **API:** `/api/v1/televentas-claro/facturacion/*` y
   `/api/v1/televentas-claro/facturacion-agent/*`, todo con `require_perm("televentas_claro.facturacion")`.
 
@@ -241,11 +247,20 @@ con portada corporativa (`print-cover`) y membrete (`print-header`).
 
 1. **Catálogo**: sumarla en `backend/app/core/operativas.py` con sus utilidades
    (la primera siempre `ver`). Opcional: permisos iniciales en `core/perfiles.py`.
-2. **Modelos**: `backend/app/models/<operativa>.py`, importado en `models/__init__.py`.
-3. **API**: `backend/app/api/v1/<operativa>.py`, cada endpoint con
-   `require_perm("<slug>.<utilidad>")`, montado en `main.py`.
+2. **Backend**: paquete `backend/app/operativas/<slug>/` con su `router.py`
+   (portada, `require_perm("<slug>.ver")`) y una carpeta por submódulo
+   (`api.py`, `models/`, `schemas.py`, lógica y `jobs/`). Cada endpoint con
+   `require_perm("<slug>.<utilidad>")`. El `__init__.py` de la operativa
+   expone `ROUTERS` y `WORKERS`; se registra sumándola a `_MODULOS` en
+   `app/operativas/__init__.py`, y `main.py` monta todo solo.
+3. **Compartido**: lo que sirve a más de una operativa (auditoría, motor del
+   agente IA, ejecución aislada) queda en `services/` y `jobs/`.
 4. **Frontend**: páginas en `frontend/src/app/<ruta>/` envueltas en `<AppShell>`
-   y la ruta y su navegación en `frontend/src/lib/operativas.ts`.
+   y la ruta en `frontend/src/lib/operativas.ts`. Cada utilidad con pantalla
+   propia es un **submódulo** (`submodulos`): la barra de la operativa muestra
+   solo *Inicio* y un acceso por submódulo; la navegación interna del submódulo
+   (su `nav`) aparece recién al entrar en él, con vuelta a la operativa. Todas
+   las rutas bajo el `href` del submódulo exigen su utilidad.
 5. **Tests**: `backend/tests/test_<operativa>.py`.
 
 Para sumar una **utilidad** a una operativa existente alcanza con agregarla a

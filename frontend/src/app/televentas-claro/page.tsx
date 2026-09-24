@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { ROLE_LABELS, apiFetch } from "@/lib/api";
-import type { OperativaInfo } from "@/lib/operativas";
+import { type OperativaInfo, operativaRoute } from "@/lib/operativas";
 
-/** Utilidades que ya tienen pantalla propia. */
-const UTILIDAD_HREF: Record<string, string> = {
-  facturacion: "/televentas-claro/facturacion",
-};
+/** Utilidades que ya tienen pantalla propia (submódulos de la operativa). */
+const UTILIDAD_HREF: Record<string, string> = Object.fromEntries(
+  (operativaRoute("televentas_claro")?.submodulos ?? []).map((s) => [s.utilidad, s.href]),
+);
 
 export default function TeleventasClaroPage() {
   return (
