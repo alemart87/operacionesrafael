@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo } from "react";
 import { fechaCorta, n, pct, type DetalleNeta, type InformeData, type Vendedor } from "./tipos";
-import { BarraUso, PctUso, Tabla } from "./ui";
+import { BarraUso, PctUso, Senales, Tabla } from "./ui";
+import { patronVendedor } from "./patrones";
 
 /** Ficha del vendedor: calidad de sus ventas (uso), resumen y detalle línea por línea. Panel lateral. */
 export function VendedorDetalle({ d, vendedor, onClose, onCambiar }: {
@@ -35,6 +36,7 @@ export function VendedorDetalle({ d, vendedor, onClose, onCambiar }: {
   const porOrigen = useMemo(() => grupo((r) => (r.portacion === "SI" ? `Portación ${r.origen_portacion ?? ""}`.trim() : "Nativa")), [lineas]);
   const porDia = useMemo(() => grupo((r) => r.fecha_activacion).sort((a, b) => a.label.localeCompare(b.label)), [lineas]);
   const sinUso = lineas.filter((r) => r.consumo === "NO");
+  const patron = useMemo(() => patronVendedor(d, vendedor, lineas), [d, vendedor, lineas]);
   const ultimoDia = porDia.length ? porDia[porDia.length - 1].label : null;
   const sinUsoRecientes = sinUso.filter((r) => r.fecha_activacion === ultimoDia).length;
 
@@ -57,7 +59,7 @@ export function VendedorDetalle({ d, vendedor, onClose, onCambiar }: {
   }
   if (vendedor.portadas) resumen.push(`${pct(Math.round((vendedor.portadas / vendedor.total) * 1000) / 10)} de sus ventas son portaciones${porOrigen[0] ? ` (la mayoría ${porOrigen[0].label === "Nativa" ? "nativas" : "desde " + porOrigen[0].label.replace("Portación ", "")})` : ""}.`);
   if (vendedor.suspendidas) resumen.push(`${n(vendedor.suspendidas)} línea${vendedor.suspendidas > 1 ? "s" : ""} suspendida${vendedor.suspendidas > 1 ? "s" : ""} al cierre.`);
-  if (fuera.length) resumen.push(`${n(fuera.length)} portación${fuera.length > 1 ? "es" : ""} suya${fuera.length > 1 ? "s" : ""} no llegaron a DDI (fuera de netas).`);
+  if (fuera.length) resumen.push(fuera.length > 1 ? `${n(fuera.length)} portaciones suyas no llegaron a DDI (fuera de netas).` : "1 portación suya no llegó a DDI (fuera de netas).");
   if (pendientes.length) resumen.push(`${n(pendientes.length)} carga${pendientes.length > 1 ? "s" : ""} pendiente${pendientes.length > 1 ? "s" : ""} de finalizar.`);
 
   const consumo = (c: DetalleNeta["consumo"]) =>
@@ -106,6 +108,12 @@ export function VendedorDetalle({ d, vendedor, onClose, onCambiar }: {
             <ul className="text-sm text-brand-graphite space-y-1.5 list-disc pl-5">
               {resumen.map((t, i) => <li key={i}>{t}</li>)}
             </ul>
+            {patron.senales.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-brand-border">
+                <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate mb-1.5">Patrón de comportamiento</div>
+                <Senales senales={patron.senales} />
+              </div>
+            )}
           </section>
 
           <div className="grid sm:grid-cols-3 gap-4">

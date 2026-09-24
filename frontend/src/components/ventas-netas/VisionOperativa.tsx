@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { ESTADO_SDS_LABEL, fechaCorta, n, type DetalleNeta, type InformeData, type Pendiente, type Vendedor } from "./tipos";
-import { PctUso, Seccion, Tabla } from "./ui";
+import { PctUso, Seccion, Senales, Tabla } from "./ui";
 import { VendedorDetalle } from "./VendedorDetalle";
+import { DIAS_SIN_USO_ANTIGUA, vendedoresCriticos } from "./patrones";
 
-type Hoja = "vendedores" | "netas" | "pendientes" | "fuera";
+type Hoja = "vendedores" | "criticos" | "netas" | "pendientes" | "fuera";
 
 /** Visión Operativa: las planillas de trabajo (vendedores, detalle línea por línea, pendientes). */
 export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeData; onDescargar: () => void; descargando: boolean }) {
@@ -17,6 +18,9 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
   const [vendedorAbierto, setVendedorAbierto] = useState<Vendedor | null>(null);
 
   const filtro = (s: (string | null | undefined)[]) => !q || s.some((x) => (x ?? "").toString().toLowerCase().includes(q.toLowerCase()));
+
+  const criticos = useMemo(() => vendedoresCriticos(d), [d]);
+  const criticosFiltrados = useMemo(() => criticos.filter((c) => filtro([c.v.vendedor, c.v.subcanal])), [criticos, q]);
 
   const vendedores = useMemo(
     () => d.vendedores.filter((v) => filtro([v.vendedor, v.subcanal]) && (!soloAlerta || v.alerta)),
@@ -34,6 +38,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
 
   const hojas: { value: Hoja; label: string; total: number }[] = [
     { value: "vendedores", label: "Por vendedor", total: d.vendedores.length },
+    { value: "criticos", label: "Ver críticos", total: criticos.length },
     { value: "netas", label: "Detalle de netas", total: d.detalle_netas.length },
     { value: "pendientes", label: "Pendientes", total: d.pendientes.total },
     { value: "fuera", label: "Fuera de netas", total: d.fuera_de_netas.total },
@@ -50,7 +55,10 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
             <button
               key={h.value}
               onClick={() => setHoja(h.value)}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${hoja === h.value ? "bg-brand-ink text-white" : "text-brand-slate hover:bg-brand-bg"}`}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                hoja === h.value ? (h.value === "criticos" ? "bg-brand-primary text-white" : "bg-brand-ink text-white")
+                : h.value === "criticos" ? "text-brand-primary hover:bg-brand-primary-light" : "text-brand-slate hover:bg-brand-bg"
+              }`}
             >
               {h.label} <span className={hoja === h.value ? "text-white/60" : "text-brand-mist"}>{n(h.total)}</span>
             </button>
@@ -96,6 +104,30 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
 
       {vendedorAbierto && (
         <VendedorDetalle d={d} vendedor={vendedorAbierto} onClose={() => setVendedorAbierto(null)} onCambiar={setVendedorAbierto} />
+      )}
+
+      {hoja === "criticos" && (
+        <Seccion
+          titulo="Operadores críticos"
+          sub={`${n(criticosFiltrados.length)} vendedores en alerta por uso (< ${k.umbral_uso_pct}%), con 3 o más líneas sin uso de ${DIAS_SIN_USO_ANTIGUA}+ días, o con 2 o más suspendidas · ordenados de más a menos crítico · clic para abrir la ficha`}
+        >
+          <Tabla<(typeof criticos)[number]>
+            cols={[
+              { key: "vendedor", label: "Vendedor", render: (r) => <><b>{r.v.vendedor}</b> <span className="text-brand-mist text-xs">{r.v.subcanal}</span></> },
+              { key: "pospago", label: "Pospago", align: "right", render: (r) => n(r.v.pospago) },
+              { key: "sin_uso", label: "Sin uso", align: "right", render: (r) => <b className="text-brand-primary">{n(r.v.sin_uso)}</b> },
+              { key: "antiguas", label: `Sin uso ${DIAS_SIN_USO_ANTIGUA}+ días`, align: "right", render: (r) => (r.patron.sinUsoAntiguas ? <b className="text-brand-primary">{n(r.patron.sinUsoAntiguas)}</b> : "0") },
+              { key: "pct_uso", label: "% en uso", align: "right", render: (r) => (r.v.pospago ? <PctUso v={r.v.pct_uso} umbral={k.umbral_uso_pct} /> : "—") },
+              { key: "susp", label: "Susp.", align: "right", render: (r) => (r.v.suspendidas ? <b className="text-brand-primary">{n(r.v.suspendidas)}</b> : "0") },
+              { key: "patron", label: "Patrón de comportamiento", render: (r) => <Senales senales={r.patron.senales} /> },
+            ]}
+            rows={criticosFiltrados}
+            alerta={(r) => r.v.alerta}
+            vacio="Ningún vendedor crítico en este corte."
+            maxAlto="max-h-[70vh]"
+            onRowClick={(r) => setVendedorAbierto(r.v)}
+          />
+        </Seccion>
       )}
 
       {hoja === "netas" && (
@@ -188,3 +220,4 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
     </div>
   );
 }
+

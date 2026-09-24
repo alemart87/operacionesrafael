@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ESTADO_LABEL, type EstadoInforme } from "./tipos";
+import type { Senal } from "./patrones";
 
 export function EstadoBadge({ estado }: { estado: EstadoInforme }) {
   const cls = estado === "published" ? "badge-success" : estado === "replaced" ? "badge-neutral line-through" : "badge-cyan";
@@ -113,6 +114,27 @@ export function Tabs<T extends string>({ value, onChange, items }: {
           {it.label}
           {it.hint && <span className="block text-[10px] font-normal text-brand-mist">{it.hint}</span>}
         </button>
+      ))}
+    </div>
+  );
+}
+
+const SENAL_CLS: Record<Senal["gravedad"], string> = {
+  alta: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30",
+  media: "bg-brand-orange/10 text-brand-graphite border-brand-orange/40",
+  info: "bg-brand-bg text-brand-slate border-brand-border",
+};
+
+/** Etiquetas del patrón de comportamiento (alta, media, info), con símbolo además del color. */
+export function Senales({ senales }: { senales: Senal[] }) {
+  if (!senales.length) return <span className="text-brand-mist text-xs">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1 py-0.5">
+      {senales.map((s, i) => (
+        <span key={i} className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] leading-tight ${SENAL_CLS[s.gravedad]}`}>
+          <span aria-hidden>{s.gravedad === "alta" ? "▲" : s.gravedad === "media" ? "●" : "○"}</span>
+          {s.texto}
+        </span>
       ))}
     </div>
   );
