@@ -108,6 +108,13 @@ export function AppShell({ children, workspace = false }: {
   const back = submodulo
     ? { href: operativa!.href, label: operativa!.name }
     : { href: "/inicio", label: "Operativas" };
+  // Agrupa los ítems consecutivos del mismo grupo para mostrar su rótulo una vez.
+  const opGroups: { grupo?: string; items: OperativaNavItem[] }[] = [];
+  for (const item of opNav) {
+    const last = opGroups[opGroups.length - 1];
+    if (last && last.grupo === item.grupo) last.items.push(item);
+    else opGroups.push({ grupo: item.grupo, items: [item] });
+  }
   const barTitle = operativa ? (submodulo ? `${operativa.name} · ${submodulo.label}` : operativa.name) : "";
 
   const pill = (active: boolean) =>
@@ -183,10 +190,15 @@ export function AppShell({ children, workspace = false }: {
                     {submodulo && (
                       <Link href={back.href} className={mobilePill(false)}>← {back.label}</Link>
                     )}
-                    {opNav.map((item) => (
-                      <Link key={item.href} href={item.href} className={mobilePill(isNavActive(item, pathname))}>
-                        {item.label}
-                      </Link>
+                    {opGroups.map((g) => (
+                      <div key={g.grupo ?? "_"}>
+                        {g.grupo && <div className={groupLabel}>{g.grupo}</div>}
+                        {g.items.map((item) => (
+                          <Link key={item.href} href={item.href} className={mobilePill(isNavActive(item, pathname))}>
+                            {item.label}
+                          </Link>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 )}
@@ -220,10 +232,18 @@ export function AppShell({ children, workspace = false }: {
                 <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
                 <span className="text-[10px] uppercase tracking-wider2 font-bold text-white/80">{barTitle}</span>
                 <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
-                {opNav.map((item) => (
-                  <Link key={item.href} href={item.href} className={pill(isNavActive(item, pathname))}>
-                    {item.label}
-                  </Link>
+                {opGroups.map((g, i) => (
+                  <span key={g.grupo ?? "_"} className="inline-flex items-center gap-1 flex-wrap">
+                    {i > 0 && <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />}
+                    {g.grupo && (
+                      <span className="text-[10px] uppercase tracking-wider2 font-semibold text-white/40 px-1">{g.grupo}</span>
+                    )}
+                    {g.items.map((item) => (
+                      <Link key={item.href} href={item.href} className={pill(isNavActive(item, pathname))}>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </span>
                 ))}
               </div>
             </div>

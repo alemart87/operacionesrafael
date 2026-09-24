@@ -34,6 +34,8 @@ export const PERM_FACTURACION = "televentas_claro.facturacion";
 export interface OperativaNavItem {
   href: string;
   label: string;
+  /** Grupo dentro del submódulo (los ítems del mismo grupo van juntos con su rótulo). */
+  grupo?: string;
   /** Activo solo con la ruta exacta (para rutas que son prefijo de otras). */
   exact?: boolean;
 }
@@ -71,14 +73,14 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         label: "Facturación",
         href: "/televentas-claro/facturacion",
         nav: [
-          { href: "/televentas-claro/facturacion", label: "Reportes", exact: true },
-          { href: "/televentas-claro/facturacion/compare", label: "Comparar" },
-          { href: "/televentas-claro/facturacion/simulador", label: "Simulador", exact: true },
-          { href: "/televentas-claro/facturacion/simulador-anual", label: "Simulador anual" },
-          { href: "/televentas-claro/facturacion/gpon", label: "GPON" },
-          { href: "/televentas-claro/facturacion/criterios", label: "Criterios" },
-          { href: "/televentas-claro/facturacion/agente", label: "Agente IA" },
-          { href: "/televentas-claro/facturacion/upload", label: "Subir liquidación" },
+          { href: "/televentas-claro/facturacion", label: "Liquidaciones", grupo: "Reportes", exact: true },
+          { href: "/televentas-claro/facturacion/compare", label: "Comparar", grupo: "Reportes" },
+          { href: "/televentas-claro/facturacion/upload", label: "Subir liquidación", grupo: "Reportes" },
+          { href: "/televentas-claro/facturacion/simulador", label: "Simulador", grupo: "Simuladores", exact: true },
+          { href: "/televentas-claro/facturacion/simulador-anual", label: "Anual", grupo: "Simuladores" },
+          { href: "/televentas-claro/facturacion/gpon", label: "GPON", grupo: "Simuladores" },
+          { href: "/televentas-claro/facturacion/criterios", label: "Criterios", grupo: "Herramientas" },
+          { href: "/televentas-claro/facturacion/agente", label: "Agente IA", grupo: "Herramientas" },
         ],
       },
     ],
