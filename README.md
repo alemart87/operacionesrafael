@@ -58,11 +58,12 @@ operacionesrafaelmartinez/
 │   │   │   └── v1/              # auth · users · perfiles · audit · operativas (plataforma)
 │   │   ├── models/              # User, Profile, AuditLog, Agente (plataforma)
 │   │   ├── schemas/             # Pydantic (plataforma)
-│   │   ├── jobs/isolated.py     # ejecución aislada en subproceso (compartida)
+│   │   ├── jobs/                # queue.py (cola genérica) · isolated.py (subproceso aislado)
 │   │   ├── services/            # audit · agent (motor del agente IA, compartido)
 │   │   └── operativas/          # código de cada operativa (ROUTERS + WORKERS)
 │   │       └── televentas_claro/
 │   │           ├── router.py    # portada de la operativa
+│   │           ├── ventas_netas/ # submódulo: api · models · schemas · parser · analyzer · exports · jobs
 │   │           └── facturacion/ # submódulo: api · agent_api · models/ · schemas
 │   │                            #   parser · analyzers/ · agent/ · jobs/
 │   ├── tests/                   # pytest (SQLite)
@@ -126,6 +127,42 @@ Depends(require_perm("televentas_claro.ventas_netas")) # utilidad concreta
 En el frontend, `useSession().can("televentas_claro.ventas_netas")` muestra u oculta
 controles. Es solo cosmético: el backend valida siempre.
 
+## Televentas CLARO · Ventas Netas
+
+Ventas cerradas del mes a partir del **corte diario** que envía Claro: un
+`.xlsx` con las hojas `DDI` (líneas activadas), `CARGAS` (ventas cargadas) y
+`PORTABILIDAD` (Pospago portado). Código en
+`backend/app/operativas/televentas_claro/ventas_netas/`.
+
+| Pantalla | Ruta | Qué hace |
+|---|---|---|
+| Informes | `/televentas-claro/ventas-netas` | Informes agrupados por mes: publicado, borradores y reemplazados |
+| Subir corte | `…/upload` | Sube el `.xlsx`; se procesa en cola y genera un borrador |
+| Informe | `…/reports/{id}` | **Visión Negocio** (gerencial, imprimible) y **Visión Operativa** (planillas, descargable) |
+
+Reglas del análisis (`analyzer.py`):
+
+- **Netas** = filas de DDI del período. El **período es el mes de la fecha de
+  activación/venta** (el mayoritario del archivo), no el de la carga.
+- **Uso**: `CONSUMO_DATOS` solo aplica a Pospago. Una línea sin uso es alerta
+  de posible PFI. Un vendedor entra en alerta con ≥ 5 líneas y < 50 % en uso.
+- **Vendedor** de una neta = `POS_NOMBRE` sin el prefijo del subcanal; las
+  cargas pendientes no traen POS y se atribuyen por `VENDEDOR_LEGAJO`.
+- Suspendidas y portadas que no llegaron a DDI se cuentan y se marcan, no se descartan.
+
+Publicación (`api.py`):
+
+- Cada corte genera un **borrador**; solo lo ve quien tiene *Gestión*.
+- **Una publicación por mes.** Publicar sobre un mes que ya tiene una exige
+  `confirm_replace=true` (la API responde `409 replace_required` y la pantalla
+  pide confirmación). El anterior queda como **Reemplazado** en el historial.
+- Los demás perfiles ven solo el publicado. Un publicado no se elimina: hay que despublicarlo antes.
+- Todo queda auditado (subida, publicación, reemplazo, despublicación, eliminación, descarga).
+
+Utilidades: `ventas_netas` (ver informes publicados y descargar) y
+`ventas_netas_gestion` (subir, publicar, reemplazar, eliminar); por defecto la
+segunda solo la tiene el Analista.
+
 ## Televentas CLARO · Facturación (solo superadmin)
 
 Liquidación de comisiones de Claro (Telemarketing Fijo PGY), portada desde
@@ -180,6 +217,8 @@ Todo el código vive en `backend/app/operativas/televentas_claro/facturacion/`.
 | GET | `/api/v1/perfiles/catalogo` | Superadmin |
 | GET | `/api/v1/operativas` | Logueado (solo las que puede abrir) |
 | GET | `/api/v1/televentas-claro` | `televentas_claro.ver` |
+| GET | `/api/v1/televentas-claro/ventas-netas/reports[/{id}][/export.xlsx]` | `televentas_claro.ventas_netas` |
+| POST · DELETE | `/api/v1/televentas-claro/ventas-netas/uploads` · `/reports/{id}[/publish\|/unpublish]` | `televentas_claro.ventas_netas_gestion` |
 | * | `/api/v1/televentas-claro/facturacion/*` · `/facturacion-agent/*` | Solo superadmin |
 | GET | `/health` · `/api/v1/health` | Público |
 | POST | `/api/v1/admin/migrate?token=<SECRET_KEY>` | Emergencia |

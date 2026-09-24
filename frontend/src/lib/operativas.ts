@@ -30,12 +30,17 @@ export interface OperativaInfo {
 
 /** Utilidad Facturación de Televentas CLARO: exclusiva del superadmin (no asignable a perfiles). */
 export const PERM_FACTURACION = "televentas_claro.facturacion";
+/** Ventas Netas: ver informes publicados / gestión (subir, publicar, reemplazar, eliminar). */
+export const PERM_VENTAS_NETAS = "televentas_claro.ventas_netas";
+export const PERM_VENTAS_NETAS_GESTION = "televentas_claro.ventas_netas_gestion";
 
 export interface OperativaNavItem {
   href: string;
   label: string;
   /** Grupo dentro del submódulo (los ítems del mismo grupo van juntos con su rótulo). */
   grupo?: string;
+  /** Utilidad extra que exige el ítem (además de la del submódulo). Sin ella no se muestra. */
+  utilidad?: string;
   /** Activo solo con la ruta exacta (para rutas que son prefijo de otras). */
   exact?: boolean;
 }
@@ -68,6 +73,15 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
     name: "Televentas CLARO",
     href: "/televentas-claro",
     submodulos: [
+      {
+        utilidad: "ventas_netas",
+        label: "Ventas Netas",
+        href: "/televentas-claro/ventas-netas",
+        nav: [
+          { href: "/televentas-claro/ventas-netas", label: "Informes", exact: true },
+          { href: "/televentas-claro/ventas-netas/upload", label: "Subir corte", utilidad: "ventas_netas_gestion" },
+        ],
+      },
       {
         utilidad: "facturacion", // solo superadmin
         label: "Facturación",

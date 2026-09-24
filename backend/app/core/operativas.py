@@ -32,8 +32,13 @@ OPERATIVAS: list[dict] = [
             {"key": "ver", "name": "Acceso a la operativa", "description": "Ver la operativa en el hub y entrar a ella."},
             {
                 "key": "ventas_netas",
-                "name": "Ventas Netas",
-                "description": "Ventas del mes calendario a partir del archivo de Claro: carga, vistas, informes y descargables.",
+                "name": "Ventas Netas · Ver informes",
+                "description": "Ver los informes publicados de ventas netas del mes (visión negocio y operativa) y descargarlos.",
+            },
+            {
+                "key": "ventas_netas_gestion",
+                "name": "Ventas Netas · Gestión",
+                "description": "Subir los cortes diarios de Claro, ver borradores, publicar (una publicación por mes), reemplazar y eliminar.",
             },
             {
                 "key": "facturacion",
