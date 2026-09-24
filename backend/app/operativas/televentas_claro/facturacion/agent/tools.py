@@ -10,9 +10,9 @@ from typing import Any, Optional
 
 from sqlalchemy import select
 
-from ...core.database import session_scope
-from ...models.facturacion_report import FacturacionReport
-from ...services.analyzers.facturacion_compare import compare_facturacion
+from .....core.database import session_scope
+from ..models.report import FacturacionReport
+from ..analyzers.compare import compare_facturacion
 
 
 def _summary(r: FacturacionReport) -> dict[str, Any]:
@@ -125,7 +125,7 @@ async def fact_calidad_fecha_impl(referencias: Optional[list[str]] = None,
                                   focus_refs: Optional[list[str]] = None) -> dict[str, Any]:
     """Cruza activaciones vs penalidades por FECHA de venta entre 2+ liquidaciones → fechas de
     ventas de MAYOR y MENOR calidad. Necesita ≥2 meses (idealmente con ~2 de maduración)."""
-    from ...services.analyzers.facturacion_compare import calidad_por_fecha
+    from ..analyzers.compare import calidad_por_fecha
     refs = referencias if (referencias and len(referencias) >= 2) else (focus_refs or [])
     reps = await _resolve_focus(refs)
     if len(reps) < 2:

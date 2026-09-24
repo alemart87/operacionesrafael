@@ -2,7 +2,7 @@
 
 El parseo del .txt (~37k filas) corre AISLADO en subproceso (memoria + timeout
 acotados) para que un archivo malo no pueda tumbar la API. El disparo y la
-concurrencia las maneja `facturacion_queue`; este runner asume que el upload ya
+concurrencia las maneja `jobs/queue.py`; este runner asume que el upload ya
 fue reclamado (status='processing').
 """
 from __future__ import annotations
@@ -12,13 +12,13 @@ from typing import Any
 
 from sqlalchemy import select
 
-from ..core.database import session_scope
-from ..core.logging import logger
-from ..models.facturacion_report import FacturacionReport
-from ..models.facturacion_upload import FacturacionUpload
-from ..services.analyzers.facturacion import analyze_facturacion
-from ..services.parsers.facturacion_parser import parse_facturacion
-from .isolated import friendly_error, run_isolated
+from .....core.database import session_scope
+from .....core.logging import logger
+from ..models.report import FacturacionReport
+from ..models.upload import FacturacionUpload
+from ..analyzers.analisis import analyze_facturacion
+from ..parser import parse_facturacion
+from .....jobs.isolated import friendly_error, run_isolated
 
 
 def _build(path: str) -> dict[str, Any]:

@@ -10,9 +10,9 @@ Cada operativa declara sus utilidades. Cada utilidad es un permiso con la forma
 - El superadmin asigna utilidades a cada perfil en /admin/perfiles.
 - A cada usuario se le asignan las operativas en las que trabaja.
 
-Para agregar una operativa: sumarla acá con sus utilidades, crear su router en
-`api/v1/` protegido con `require_perm("<slug>.ver")` y sus páginas en el
-frontend (`src/app/<ruta>/`), y registrar la ruta en `src/lib/operativas.ts`.
+Para agregar una operativa: sumarla acá con sus utilidades, crear su paquete en
+`app/operativas/<slug>/` (routers protegidos con `require_perm`) y sus páginas
+en el frontend (`src/app/<ruta>/`), y registrar la ruta en `src/lib/operativas.ts`.
 Para agregar una utilidad a una operativa existente: sumarla a su lista.
 Aparece sola en la matriz de perfiles, desmarcada para todos los perfiles.
 """

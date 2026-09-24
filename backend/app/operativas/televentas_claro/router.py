@@ -12,8 +12,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from ...core.operativas import get_operativa
-from ..deps import CurrentUser, require_perm
-from .operativas import operativa_for_user
+from ...api.deps import CurrentUser, require_perm
+from ...api.v1.operativas import operativa_for_user
 
 
 SLUG = "televentas_claro"

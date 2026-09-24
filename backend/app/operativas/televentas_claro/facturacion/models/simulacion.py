@@ -14,7 +14,7 @@ from typing import Optional
 from sqlalchemy import DateTime, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..core.database import Base
+from .....core.database import Base
 
 
 def gen_uuid() -> str:
