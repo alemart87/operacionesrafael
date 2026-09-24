@@ -6,7 +6,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
 import { Brand } from "./Brand";
 import { CurrentUserInfo, ROLE_LABELS, apiFetch, can, clearSession, getToken, getUser, saveUser } from "@/lib/api";
-import { OperativaNavItem, isNavActive, operativaFromPath, requiredUtilidades } from "@/lib/operativas";
+import { OperativaNavItem, isNavActive, operativaFromPath, requiredUtilidades, submoduloFromPath } from "@/lib/operativas";
 
 const ADMIN_NAV = [
   { href: "/admin/users", label: "Usuarios" },
@@ -74,6 +74,7 @@ export function AppShell({ children, workspace = false }: {
   useEffect(() => setMobileOpen(false), [pathname]);
 
   const operativa = operativaFromPath(pathname);
+  const submodulo = operativa ? submoduloFromPath(operativa, pathname) : undefined;
   const blocked =
     !!user && !!operativa && requiredUtilidades(operativa, pathname).some((u) => !can(user, `${operativa.slug}.${u}`));
   const adminOnly = !!user && !!pathname?.startsWith("/admin") && user.role !== "superadmin";
@@ -91,14 +92,23 @@ export function AppShell({ children, workspace = false }: {
 
   const isAdmin = user.role === "superadmin";
   const session: Session = { user, can: (p) => can(user, p), isSuperadmin: isAdmin };
-  const opNav = operativa?.nav.filter((i) => can(user, `${operativa.slug}.${i.utilidad}`)) ?? [];
-  // Agrupa los ítems consecutivos del mismo grupo para mostrar su rótulo una vez.
-  const opGroups: { grupo?: string; items: OperativaNavItem[] }[] = [];
-  for (const item of opNav) {
-    const last = opGroups[opGroups.length - 1];
-    if (last && last.grupo === item.grupo) last.items.push(item);
-    else opGroups.push({ grupo: item.grupo, items: [item] });
-  }
+  // Barra de la operativa en dos niveles:
+  //  - En la operativa: Inicio + un acceso por submódulo habilitado.
+  //  - Dentro de un submódulo: solo su navegación interna, con vuelta a la operativa.
+  const opNav: OperativaNavItem[] = !operativa
+    ? []
+    : submodulo
+      ? submodulo.nav
+      : [
+          { href: operativa.href, label: "Inicio", exact: true },
+          ...operativa.submodulos
+            .filter((s) => can(user, `${operativa.slug}.${s.utilidad}`))
+            .map((s) => ({ href: s.href, label: s.label })),
+        ];
+  const back = submodulo
+    ? { href: operativa!.href, label: operativa!.name }
+    : { href: "/inicio", label: "Operativas" };
+  const barTitle = operativa ? (submodulo ? `${operativa.name} · ${submodulo.label}` : operativa.name) : "";
 
   const pill = (active: boolean) =>
     `px-3 py-1.5 text-xs font-semibold rounded transition-colors whitespace-nowrap ${
@@ -167,17 +177,19 @@ export function AppShell({ children, workspace = false }: {
               <nav className="px-3 py-3 flex flex-col">
                 <Link href="/inicio" className={mobilePill(pathname === "/inicio")}>Operativas</Link>
                 <Link href="/perfil" className={mobilePill(pathname === "/perfil")}>Mi perfil</Link>
-                {operativa &&
-                  opGroups.map((g) => (
-                    <div key={g.grupo ?? "_"}>
-                      <div className={groupLabel}>{g.grupo ? `${operativa.name} · ${g.grupo}` : operativa.name}</div>
-                      {g.items.map((item) => (
-                        <Link key={item.href} href={item.href} className={mobilePill(isNavActive(item, pathname))}>
-                          {item.label}
-                        </Link>
-                      ))}
-                    </div>
-                  ))}
+                {operativa && (
+                  <div>
+                    <div className={groupLabel}>{barTitle}</div>
+                    {submodulo && (
+                      <Link href={back.href} className={mobilePill(false)}>← {back.label}</Link>
+                    )}
+                    {opNav.map((item) => (
+                      <Link key={item.href} href={item.href} className={mobilePill(isNavActive(item, pathname))}>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
                 {isAdmin && (
                   <>
                     <div className={groupLabel}>Administración</div>
@@ -202,26 +214,16 @@ export function AppShell({ children, workspace = false }: {
           {operativa && (
             <div className="bg-brand-ink text-white hidden md:block">
               <div className="px-4 sm:px-6 py-2 flex items-center gap-1 flex-wrap">
-                <Link href="/inicio" className="text-[10px] uppercase tracking-wider2 font-semibold text-white/55 hover:text-white">
-                  ← Operativas
+                <Link href={back.href} className="text-[10px] uppercase tracking-wider2 font-semibold text-white/55 hover:text-white">
+                  ← {back.label}
                 </Link>
                 <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
-                <span className="text-[10px] uppercase tracking-wider2 font-bold text-white/80">{operativa.name}</span>
+                <span className="text-[10px] uppercase tracking-wider2 font-bold text-white/80">{barTitle}</span>
                 <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
-                {opGroups.map((g) => (
-                  <span key={g.grupo ?? "_"} className="inline-flex items-center gap-1 flex-wrap">
-                    {g.grupo && (
-                      <>
-                        <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
-                        <span className="text-[10px] uppercase tracking-wider2 font-semibold text-white/40 px-1">{g.grupo}</span>
-                      </>
-                    )}
-                    {g.items.map((item) => (
-                      <Link key={item.href} href={item.href} className={pill(isNavActive(item, pathname))}>
-                        {item.label}
-                      </Link>
-                    ))}
-                  </span>
+                {opNav.map((item) => (
+                  <Link key={item.href} href={item.href} className={pill(isNavActive(item, pathname))}>
+                    {item.label}
+                  </Link>
                 ))}
               </div>
             </div>

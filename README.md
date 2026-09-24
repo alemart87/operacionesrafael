@@ -245,7 +245,11 @@ con portada corporativa (`print-cover`) y membrete (`print-header`).
 3. **API**: `backend/app/api/v1/<operativa>.py`, cada endpoint con
    `require_perm("<slug>.<utilidad>")`, montado en `main.py`.
 4. **Frontend**: páginas en `frontend/src/app/<ruta>/` envueltas en `<AppShell>`
-   y la ruta y su navegación en `frontend/src/lib/operativas.ts`.
+   y la ruta en `frontend/src/lib/operativas.ts`. Cada utilidad con pantalla
+   propia es un **submódulo** (`submodulos`): la barra de la operativa muestra
+   solo *Inicio* y un acceso por submódulo; la navegación interna del submódulo
+   (su `nav`) aparece recién al entrar en él, con vuelta a la operativa. Todas
+   las rutas bajo el `href` del submódulo exigen su utilidad.
 5. **Tests**: `backend/tests/test_<operativa>.py`.
 
 Para sumar una **utilidad** a una operativa existente alcanza con agregarla a
