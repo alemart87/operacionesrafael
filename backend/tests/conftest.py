@@ -13,3 +13,4 @@ os.environ["SUPERADMIN_PASSWORD_HASH"] = ""
 os.environ["UPLOAD_DIR"] = "./test_uploads"
 os.environ["SECRET_KEY"] = "test-secret-key-1234567890"
 os.environ["LOGIN_MAX_ATTEMPTS"] = "3"
+os.environ["OPENAI_API_KEY"] = ""  # los tests nunca llaman a OpenAI

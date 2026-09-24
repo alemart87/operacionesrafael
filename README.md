@@ -56,9 +56,10 @@ operacionesrafaelmartinez/
 │   │   ├── api/
 │   │   │   ├── deps.py          # CurrentUser, require_superadmin, require_perm
 │   │   │   └── v1/              # auth · users · perfiles · audit · operativas · televentas_claro
-│   │   ├── models/              # User, Profile, AuditLog
+│   │   ├── models/              # User, Profile, AuditLog, Facturación, Agente
 │   │   ├── schemas/             # Pydantic
-│   │   └── services/            # audit_service
+│   │   ├── jobs/                # cola de facturación + ejecución aislada
+│   │   └── services/            # audit · parsers · analyzers (facturación) · agent
 │   ├── tests/                   # pytest (SQLite)
 │   └── requirements.txt
 ├── frontend/
@@ -105,6 +106,13 @@ Utilidades iniciales de Televentas CLARO y permisos sembrados la primera vez
 | Publicar reportes | ✓ | | ✓ | |
 | Eliminar cargas y reportes | ✓ | | | |
 | Exportar e imprimir | ✓ | ✓ | ✓ | |
+| Facturación | Solo superadmin | | | |
+
+Las utilidades marcadas `solo_superadmin` en el catálogo (hoy: **Facturación**)
+no se pueden asignar a ningún perfil: la matriz las muestra bloqueadas, la API
+rechaza el cambio y, aunque figuren en la base, no se hacen efectivas. A los
+demás usuarios ni siquiera se les listan. Para delegarlas más adelante alcanza
+con quitar la marca en `core/operativas.py`.
 
 En el backend cada endpoint se protege con el permiso de su utilidad:
 
@@ -116,6 +124,32 @@ Depends(require_perm("televentas_claro.cargar")) # utilidad concreta
 
 En el frontend, `useSession().can("televentas_claro.cargar")` muestra u oculta
 controles. Es solo cosmético: el backend valida siempre.
+
+## Televentas CLARO · Facturación (solo superadmin)
+
+Liquidación de comisiones de Claro (Telemarketing Fijo PGY), portada desde
+*Operaciones Voicenter* (`cobranzasegurossuda`) sin cambios de lógica.
+
+| Pantalla | Ruta | Qué hace |
+|---|---|---|
+| Reportes | `/televentas-claro/facturacion` | Liquidaciones cargadas, publicar y eliminar |
+| Subir liquidación | `…/upload` | Sube el `.txt` (cp1252, `;`) a la cola de procesamiento |
+| Reporte | `…/reports/{id}` | Conceptos, drivers, ventas, suspensiones PFI, documentación, mix de planes |
+| Comparar | `…/compare` | Matriz por concepto y descomposición del cambio entre meses |
+| Simulador | `…/simulador` | Una cohorte de ventas: facturación del mes, retención a 6 y 12 meses, margen |
+| Simulador anual | `…/simulador-anual` | Proyección a 12 o 18 meses multicohorte, con registro de simulaciones |
+| GPON | `…/gpon` | El simulador anual con el motor y las variables del negocio fibra + TV |
+| Criterios | `…/criterios` | Reglas de liquidación sobre un escenario fijo |
+| Agente IA | `…/agente` | Analista de facturación sobre los reportes (requiere `OPENAI_API_KEY`) |
+
+- **Procesamiento:** el endpoint solo guarda el archivo; un worker supervisado
+  reclama cada carga y la parsea en un **subproceso aislado** con timeout, para
+  que un archivo malo no pueda tumbar la API (`jobs/facturacion_queue.py`).
+- **Lógica:** parser en `services/parsers/facturacion_parser.py`; análisis,
+  comparativo y simuladores en `services/analyzers/facturacion*.py`. Los
+  simuladores tienen tests calibrados con liquidaciones reales.
+- **API:** `/api/v1/televentas-claro/facturacion/*` y
+  `/api/v1/televentas-claro/facturacion-agent/*`, todo con `require_perm("televentas_claro.facturacion")`.
 
 ## Sistema de login
 
@@ -144,6 +178,7 @@ controles. Es solo cosmético: el backend valida siempre.
 | GET | `/api/v1/perfiles/catalogo` | Superadmin |
 | GET | `/api/v1/operativas` | Logueado (solo las que puede abrir) |
 | GET | `/api/v1/televentas-claro` | `televentas_claro.ver` |
+| * | `/api/v1/televentas-claro/facturacion/*` · `/facturacion-agent/*` | Solo superadmin |
 | GET | `/health` · `/api/v1/health` | Público |
 | POST | `/api/v1/admin/migrate?token=<SECRET_KEY>` | Emergencia |
 

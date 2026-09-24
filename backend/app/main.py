@@ -1,6 +1,7 @@
 """FastAPI app entrypoint."""
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
@@ -8,10 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from . import models  # noqa: F401  (registra los modelos en Base.metadata)
-from .api.v1 import audit, auth, operativas, perfiles, televentas_claro, users
+from .api.v1 import audit, auth, facturacion, facturacion_agent, operativas, perfiles, televentas_claro, users
 from .core.config import APP_NAME, settings
 from .core.database import AsyncSessionLocal, Base, engine
 from .core.logging import configure_logging, logger
+from .jobs.facturacion_queue import facturacion_worker
 from .core.operativas import filter_permissions
 from .core.perfiles import DEFAULT_PERMISSIONS, PERFILES
 from .models.profile import Profile
@@ -70,7 +72,24 @@ async def lifespan(app: FastAPI):
     logger.info(f"Boot: perfiles sembrados={await _seed_profiles()}")
     if settings.env == "production" and settings.secret_key in ("change-me", ""):
         logger.error("SECRET_KEY no configurada en producción: los tokens son inseguros.")
+
+    # Worker de la cola de Facturación, supervisado: si muere por cualquier
+    # excepción se loguea y se relanza solo (nunca queda la cola muerta).
+    async def _supervisar(nombre, factory):
+        while True:
+            try:
+                await factory()
+                logger.error(f"[supervisor] worker {nombre} terminó inesperadamente; relanzando en 10s")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception(f"[supervisor] worker {nombre} murió ({exc}); relanzando en 10s")
+            await asyncio.sleep(10)
+
+    facturacion_task = asyncio.create_task(_supervisar("facturacion", facturacion_worker))
+    logger.info("Boot: worker de facturación iniciado")
     yield
+    facturacion_task.cancel()
     logger.info("Shutdown")
 
 
@@ -112,3 +131,5 @@ app.include_router(operativas.router, prefix="/api/v1")
 
 # --- Operativas (módulos independientes) ---
 app.include_router(televentas_claro.router, prefix="/api/v1")
+app.include_router(facturacion.router, prefix="/api/v1")        # utilidad: facturación (solo superadmin)
+app.include_router(facturacion_agent.router, prefix="/api/v1")

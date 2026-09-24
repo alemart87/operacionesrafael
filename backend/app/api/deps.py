@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
 from ..core.database import get_db
-from ..core.operativas import ALL_PERMISSIONS, OPERATIVA_SLUGS, OPERATIVAS, UTILIDAD_VER
+from ..core.operativas import ALL_PERMISSIONS, ASSIGNABLE_PERMISSIONS, OPERATIVA_SLUGS, OPERATIVAS, UTILIDAD_VER
 from ..core.security import decode_token
 from ..models.profile import Profile
 from ..models.user import User
@@ -30,9 +30,10 @@ bearer = HTTPBearer(auto_error=False)
 
 
 def effective_permissions(role_perms: list[str] | None, operativas: list[str] | None) -> set[str]:
-    """Permisos del perfil acotados a las operativas asignadas y con acceso `ver`."""
+    """Permisos del perfil acotados a las operativas asignadas y con acceso `ver`.
+    Los permisos exclusivos del superadmin se descartan aunque figuren en la DB."""
     assigned = set(operativas or [])
-    perms = {p for p in (role_perms or []) if p in ALL_PERMISSIONS and p.split(".", 1)[0] in assigned}
+    perms = {p for p in (role_perms or []) if p in ASSIGNABLE_PERMISSIONS and p.split(".", 1)[0] in assigned}
     with_access = {p.split(".", 1)[0] for p in perms if p.endswith(f".{UTILIDAD_VER}")}
     return {p for p in perms if p.split(".", 1)[0] in with_access}
 

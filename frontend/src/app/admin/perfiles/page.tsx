@@ -18,6 +18,7 @@ interface UtilidadDef {
   key: string;
   name: string;
   description: string;
+  solo_superadmin?: boolean;
 }
 
 interface OperativaDef {
@@ -165,7 +166,11 @@ export default function PerfilesPage() {
                       <div className={`font-semibold ${u.key === "ver" ? "text-brand-primary-dark" : "text-brand-ink"}`}>{u.name}</div>
                       <div className="text-[11px] text-brand-slate">{u.description}</div>
                     </td>
-                    {perfiles.map((p) => {
+                    {u.solo_superadmin ? (
+                      <td colSpan={perfiles.length} className="px-3 py-3 text-center">
+                        <span className="badge-primary">Solo superadmin · no asignable</span>
+                      </td>
+                    ) : perfiles.map((p) => {
                       const set = draft[p.slug] ?? new Set<string>();
                       const checked = set.has(`${op.slug}.${u.key}`);
                       const sinAcceso = u.key !== "ver" && !set.has(`${op.slug}.ver`);

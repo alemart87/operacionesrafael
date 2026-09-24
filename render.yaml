@@ -31,6 +31,8 @@ services:
         sync: false
       - key: SUPERADMIN_PASSWORD
         sync: false
+      - key: OPENAI_API_KEY        # Agente de Facturación (opcional)
+        sync: false
       # Valores fijos
       - key: SUPERADMIN_NAME
         value: Administrador Voicenter

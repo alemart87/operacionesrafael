@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.operativas import OPERATIVAS, filter_permissions
+from ...core.operativas import ALL_PERMISSIONS, OPERATIVAS, SUPERADMIN_ONLY_PERMISSIONS, filter_permissions
 from ...core.perfiles import PERFIL_SLUGS, PERFILES
 from ...models.profile import Profile
 from ...models.user import User
@@ -62,10 +62,14 @@ async def update_perfil(
 ) -> dict:
     if slug not in PERFIL_SLUGS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Perfil inexistente")
-    perms = filter_permissions(payload.permissions)
-    unknown = sorted(set(payload.permissions) - set(perms))
+    reservados = sorted(set(payload.permissions) & SUPERADMIN_ONLY_PERMISSIONS)
+    if reservados:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"Estos permisos son exclusivos del superadmin: {', '.join(reservados)}")
+    unknown = sorted(set(payload.permissions) - ALL_PERMISSIONS)
     if unknown:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Permisos desconocidos: {', '.join(unknown)}")
+    perms = filter_permissions(payload.permissions)
 
     row = await db.get(Profile, slug)
     before = filter_permissions(row.permissions) if row else []

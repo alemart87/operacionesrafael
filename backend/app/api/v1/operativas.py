@@ -17,9 +17,11 @@ def operativa_for_user(op: dict, user: CurrentUser) -> dict:
         "description": op["description"],
         "color": op["color"],
         "available": op["available"],
+        # Las utilidades exclusivas del superadmin ni siquiera se muestran a los demás.
         "utilidades": [
             {**u, "habilitada": user.has_perm(f"{op['slug']}.{u['key']}")}
             for u in op["utilidades"]
+            if user.is_superadmin or not u.get("solo_superadmin")
         ],
     }
 

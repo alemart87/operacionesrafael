@@ -6,7 +6,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
 import { Brand } from "./Brand";
 import { CurrentUserInfo, ROLE_LABELS, apiFetch, can, clearSession, getToken, getUser, saveUser } from "@/lib/api";
-import { operativaFromPath } from "@/lib/operativas";
+import { OperativaNavItem, isNavActive, operativaFromPath, requiredUtilidades } from "@/lib/operativas";
 
 const ADMIN_NAV = [
   { href: "/admin/users", label: "Usuarios" },
@@ -35,7 +35,11 @@ export function useSession(): Session {
  * superadmin), barra de la operativa activa, perfil y cierre de sesión.
  * Carga los permisos desde /auth/me y bloquea las operativas sin acceso.
  */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, workspace = false }: {
+  children: React.ReactNode;
+  /** Pantalla completa sin márgenes ni footer (chat del agente). */
+  workspace?: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<CurrentUserInfo | null>(null);
@@ -70,7 +74,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => setMobileOpen(false), [pathname]);
 
   const operativa = operativaFromPath(pathname);
-  const blocked = !!user && !!operativa && !can(user, `${operativa.slug}.ver`);
+  const blocked =
+    !!user && !!operativa && requiredUtilidades(operativa, pathname).some((u) => !can(user, `${operativa.slug}.${u}`));
   const adminOnly = !!user && !!pathname?.startsWith("/admin") && user.role !== "superadmin";
 
   useEffect(() => {
@@ -87,6 +92,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isAdmin = user.role === "superadmin";
   const session: Session = { user, can: (p) => can(user, p), isSuperadmin: isAdmin };
   const opNav = operativa?.nav.filter((i) => can(user, `${operativa.slug}.${i.utilidad}`)) ?? [];
+  // Agrupa los ítems consecutivos del mismo grupo para mostrar su rótulo una vez.
+  const opGroups: { grupo?: string; items: OperativaNavItem[] }[] = [];
+  for (const item of opNav) {
+    const last = opGroups[opGroups.length - 1];
+    if (last && last.grupo === item.grupo) last.items.push(item);
+    else opGroups.push({ grupo: item.grupo, items: [item] });
+  }
 
   const pill = (active: boolean) =>
     `px-3 py-1.5 text-xs font-semibold rounded transition-colors whitespace-nowrap ${
@@ -100,7 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SessionContext.Provider value={session}>
-      <div className="min-h-screen flex flex-col bg-brand-bg">
+      <div className={`${workspace ? "h-screen overflow-hidden" : "min-h-screen"} flex flex-col bg-brand-bg`}>
         <header className="bg-white border-b border-brand-border shadow-soft sticky top-0 z-30">
           <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
             <Link href="/inicio" className="hover:opacity-90 transition-opacity flex-shrink-0">
@@ -155,16 +167,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <nav className="px-3 py-3 flex flex-col">
                 <Link href="/inicio" className={mobilePill(pathname === "/inicio")}>Operativas</Link>
                 <Link href="/perfil" className={mobilePill(pathname === "/perfil")}>Mi perfil</Link>
-                {operativa && opNav.length > 0 && (
-                  <>
-                    <div className={groupLabel}>{operativa.name}</div>
-                    {opNav.map((item) => (
-                      <Link key={item.href} href={item.href} className={mobilePill(pathname === item.href)}>
-                        {item.label}
-                      </Link>
-                    ))}
-                  </>
-                )}
+                {operativa &&
+                  opGroups.map((g) => (
+                    <div key={g.grupo ?? "_"}>
+                      <div className={groupLabel}>{g.grupo ? `${operativa.name} · ${g.grupo}` : operativa.name}</div>
+                      {g.items.map((item) => (
+                        <Link key={item.href} href={item.href} className={mobilePill(isNavActive(item, pathname))}>
+                          {item.label}
+                        </Link>
+                      ))}
+                    </div>
+                  ))}
                 {isAdmin && (
                   <>
                     <div className={groupLabel}>Administración</div>
@@ -195,24 +208,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
                 <span className="text-[10px] uppercase tracking-wider2 font-bold text-white/80">{operativa.name}</span>
                 <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
-                {opNav.map((item) => (
-                  <Link key={item.href} href={item.href} className={pill(pathname === item.href)}>
-                    {item.label}
-                  </Link>
+                {opGroups.map((g) => (
+                  <span key={g.grupo ?? "_"} className="inline-flex items-center gap-1 flex-wrap">
+                    {g.grupo && (
+                      <>
+                        <span className="w-px h-4 bg-white/15 mx-1.5" aria-hidden />
+                        <span className="text-[10px] uppercase tracking-wider2 font-semibold text-white/40 px-1">{g.grupo}</span>
+                      </>
+                    )}
+                    {g.items.map((item) => (
+                      <Link key={item.href} href={item.href} className={pill(isNavActive(item, pathname))}>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </span>
                 ))}
               </div>
             </div>
           )}
         </header>
 
-        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-8">{children}</main>
+        <main
+          className={workspace ? "flex-1 flex min-h-0 w-full" : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 py-8"}
+        >
+          {children}
+        </main>
 
+        {!workspace && (
         <footer className="border-t border-brand-border bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 text-[11px] uppercase tracking-wider2 text-brand-slate flex flex-wrap justify-between gap-2">
             <span>Operaciones Voicenter · Gerencia Expansión RM</span>
             <span>© {new Date().getFullYear()} Voicenter S.A.</span>
           </div>
         </footer>
+        )}
       </div>
     </SessionContext.Provider>
   );

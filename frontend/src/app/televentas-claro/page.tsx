@@ -1,9 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { ROLE_LABELS, apiFetch } from "@/lib/api";
 import type { OperativaInfo } from "@/lib/operativas";
+
+/** Utilidades que ya tienen pantalla propia. */
+const UTILIDAD_HREF: Record<string, string> = {
+  facturacion: "/televentas-claro/facturacion",
+};
 
 export default function TeleventasClaroPage() {
   return (
@@ -48,22 +54,34 @@ function Inicio() {
           </span>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {utilidades.map((u) => (
-            <div
+          {utilidades.map((u) => {
+            const href = u.habilitada ? UTILIDAD_HREF[u.key] : undefined;
+            const Box: any = href ? Link : "div";
+            return (
+            <Box
               key={u.key}
+              {...(href ? { href } : {})}
               className={`rounded-lg border p-4 ${
                 u.habilitada ? "border-brand-border bg-white" : "border-dashed border-brand-border bg-brand-bg-soft"
-              }`}
+              } ${href ? "hover:border-brand-primary hover:shadow-elevated transition-all" : ""}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className={`text-sm font-semibold ${u.habilitada ? "text-brand-ink" : "text-brand-mist"}`}>
                   {u.name}
                 </span>
-                {u.habilitada ? <span className="badge-success">Habilitada</span> : <span className="badge-neutral">Sin permiso</span>}
+                {u.solo_superadmin ? (
+                  <span className="badge-primary">Solo superadmin</span>
+                ) : u.habilitada ? (
+                  <span className="badge-success">Habilitada</span>
+                ) : (
+                  <span className="badge-neutral">Sin permiso</span>
+                )}
               </div>
               <p className={`text-xs mt-1.5 ${u.habilitada ? "text-brand-slate" : "text-brand-mist"}`}>{u.description}</p>
-            </div>
-          ))}
+              {href && <div className="text-xs font-semibold text-brand-primary mt-2">Abrir →</div>}
+            </Box>
+            );
+          })}
         </div>
         <p className="text-xs text-brand-mist mt-5">
           Las funcionalidades de cada utilidad se incorporan a medida que se construye la operativa. Los permisos de

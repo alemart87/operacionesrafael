@@ -4,6 +4,9 @@ Cada operativa declara sus utilidades. Cada utilidad es un permiso con la forma
 `<slug_operativa>.<utilidad>`, por ejemplo `televentas_claro.cargar`.
 
 - La utilidad `ver` es el acceso a la operativa: sin ella, las demás no aplican.
+- Una utilidad con `solo_superadmin: True` es exclusiva del superadmin: no se
+  puede asignar a ningún perfil (ni desde la matriz ni por API). Para delegarla
+  más adelante alcanza con quitar esa marca.
 - El superadmin asigna utilidades a cada perfil en /admin/perfiles.
 - A cada usuario se le asignan las operativas en las que trabaja.
 
@@ -32,6 +35,12 @@ OPERATIVAS: list[dict] = [
             {"key": "publicar", "name": "Publicar reportes", "description": "Publicar reportes para que los vean los demás perfiles."},
             {"key": "eliminar", "name": "Eliminar cargas y reportes", "description": "Borrar cargas de datos y reportes."},
             {"key": "exportar", "name": "Exportar e imprimir", "description": "Descargar reportes y generar el PDF de impresión."},
+            {
+                "key": "facturacion",
+                "name": "Facturación",
+                "description": "Liquidaciones de comisiones de Claro: reportes, comparativos, simuladores (móvil y GPON), criterios y agente IA.",
+                "solo_superadmin": True,
+            },
         ],
     },
 ]
@@ -42,6 +51,15 @@ OPERATIVA_SLUGS: set[str] = {o["slug"] for o in OPERATIVAS}
 ALL_PERMISSIONS: set[str] = {
     f"{o['slug']}.{u['key']}" for o in OPERATIVAS for u in o["utilidades"]
 }
+
+
+# Permisos exclusivos del superadmin (no asignables a perfiles).
+SUPERADMIN_ONLY_PERMISSIONS: set[str] = {
+    f"{o['slug']}.{u['key']}" for o in OPERATIVAS for u in o["utilidades"] if u.get("solo_superadmin")
+}
+
+# Permisos que el superadmin puede asignar a los perfiles.
+ASSIGNABLE_PERMISSIONS: set[str] = ALL_PERMISSIONS - SUPERADMIN_ONLY_PERMISSIONS
 
 
 def get_operativa(slug: str) -> dict | None:
@@ -55,5 +73,5 @@ def filter_operativas(slugs: list[str] | None) -> list[str]:
 
 
 def filter_permissions(perms: list[str] | None) -> list[str]:
-    """Solo permisos que existen en el catálogo, ordenados."""
-    return sorted(set(perms or []) & ALL_PERMISSIONS)
+    """Solo permisos asignables a perfiles (existen y no son exclusivos del superadmin)."""
+    return sorted(set(perms or []) & ASSIGNABLE_PERMISSIONS)

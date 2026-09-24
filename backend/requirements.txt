@@ -14,3 +14,8 @@ python-multipart==0.0.12
 httpx==0.27.2
 pytest==8.3.3
 pytest-asyncio==0.24.0
+# Agentes IA (OpenAI Agents SDK). Trae también `openai` y `mcp`.
+openai-agents==0.17.4
+# openai 2.45.0 volvió `cache_write_tokens` un campo requerido que openai-agents
+# 0.17.4 no envía (ValidationError en cada respuesta): se fija la última compatible.
+openai==2.44.0
