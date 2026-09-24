@@ -90,7 +90,7 @@ sus propias **utilidades**. La primera operativa es **Televentas CLARO**.
 | Perfil y operativas de cada usuario | Pantalla **Administración → Usuarios** | Superadmin |
 
 Cada utilidad es un permiso con la forma `<operativa>.<utilidad>`, por ejemplo
-`televentas_claro.cargar`. Un usuario puede usar una utilidad solo si se cumplen las tres condiciones:
+`televentas_claro.ventas_netas`. Un usuario puede usar una utilidad solo si se cumplen las tres condiciones:
 
 1. Su perfil tiene la utilidad.
 2. Su perfil tiene el acceso a la operativa (`<operativa>.ver`).
@@ -106,11 +106,7 @@ Utilidades iniciales de Televentas CLARO y permisos sembrados la primera vez
 | Utilidad | Coordinador | Supervisor | Analista | Cliente |
 |---|:-:|:-:|:-:|:-:|
 | Acceso a la operativa | ✓ | ✓ | ✓ | ✓ |
-| Tablero e indicadores | ✓ | ✓ | ✓ | ✓ |
-| Cargar datos | ✓ | | ✓ | |
-| Publicar reportes | ✓ | | ✓ | |
-| Eliminar cargas y reportes | ✓ | | | |
-| Exportar e imprimir | ✓ | ✓ | ✓ | |
+| Ventas Netas | ✓ | ✓ | ✓ | |
 | Facturación | Solo superadmin | | | |
 
 Las utilidades marcadas `solo_superadmin` en el catálogo (hoy: **Facturación**)
@@ -124,10 +120,10 @@ En el backend cada endpoint se protege con el permiso de su utilidad:
 ```python
 Depends(get_current_user)                        # cualquier usuario logueado
 Depends(require_superadmin)                      # solo superadmin
-Depends(require_perm("televentas_claro.cargar")) # utilidad concreta
+Depends(require_perm("televentas_claro.ventas_netas")) # utilidad concreta
 ```
 
-En el frontend, `useSession().can("televentas_claro.cargar")` muestra u oculta
+En el frontend, `useSession().can("televentas_claro.ventas_netas")` muestra u oculta
 controles. Es solo cosmético: el backend valida siempre.
 
 ## Televentas CLARO · Facturación (solo superadmin)

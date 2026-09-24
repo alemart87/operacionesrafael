@@ -1,7 +1,7 @@
 """Catálogo de OPERATIVAS (módulos independientes) y sus UTILIDADES.
 
 Cada operativa declara sus utilidades. Cada utilidad es un permiso con la forma
-`<slug_operativa>.<utilidad>`, por ejemplo `televentas_claro.cargar`.
+`<slug_operativa>.<utilidad>`, por ejemplo `televentas_claro.ventas_netas`.
 
 - La utilidad `ver` es el acceso a la operativa: sin ella, las demás no aplican.
 - Una utilidad con `solo_superadmin: True` es exclusiva del superadmin: no se
@@ -25,16 +25,16 @@ OPERATIVAS: list[dict] = [
     {
         "slug": "televentas_claro",
         "name": "Televentas CLARO",
-        "description": "Operativa de televentas para Claro: gestión, producción e indicadores.",
+        "description": "Operativa de televentas para Claro: ventas netas, facturación e indicadores.",
         "color": "#E6332A",
         "available": True,
         "utilidades": [
             {"key": "ver", "name": "Acceso a la operativa", "description": "Ver la operativa en el hub y entrar a ella."},
-            {"key": "tablero", "name": "Tablero e indicadores", "description": "Ver el tablero con los indicadores de la operativa."},
-            {"key": "cargar", "name": "Cargar datos", "description": "Subir archivos de datos de la operativa."},
-            {"key": "publicar", "name": "Publicar reportes", "description": "Publicar reportes para que los vean los demás perfiles."},
-            {"key": "eliminar", "name": "Eliminar cargas y reportes", "description": "Borrar cargas de datos y reportes."},
-            {"key": "exportar", "name": "Exportar e imprimir", "description": "Descargar reportes y generar el PDF de impresión."},
+            {
+                "key": "ventas_netas",
+                "name": "Ventas Netas",
+                "description": "Ventas del mes calendario a partir del archivo de Claro: carga, vistas, informes y descargables.",
+            },
             {
                 "key": "facturacion",
                 "name": "Facturación",
