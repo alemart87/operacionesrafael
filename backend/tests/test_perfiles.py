@@ -66,7 +66,7 @@ def test_perfiles_sembrados_con_defaults(client, admin):
 def test_superadmin_ve_todo(client, admin):
     me = client.get("/api/v1/auth/me", headers=admin).json()
     assert me["visible_operativas"] == [TC]
-    assert f"{TC}.eliminar" in me["permissions"]
+    assert f"{TC}.ventas_netas" in me["permissions"]
     ops = client.get("/api/v1/operativas", headers=admin).json()
     assert all(u["habilitada"] for u in ops[0]["utilidades"])
     assert client.get("/api/v1/televentas-claro", headers=admin).status_code == 200
@@ -92,30 +92,30 @@ def test_sin_operativa_asignada_no_accede(client, admin):
 
 
 def test_superadmin_cambia_permisos_y_se_aplica_en_vivo(client, admin):
-    _, tok = _new_user(client, admin, "supervisor", [TC])
+    _, tok = _new_user(client, admin, "cliente", [TC])
 
     ut = {u["key"]: u["habilitada"] for u in client.get("/api/v1/televentas-claro", headers=tok).json()["utilidades"]}
-    assert ut["tablero"] is True and ut["cargar"] is False
+    assert ut["ver"] is True and ut["ventas_netas"] is False
 
-    # Se le da "cargar" al perfil Supervisor: el mismo token ya lo refleja.
-    _set_perms(client, admin, "supervisor", [f"{TC}.ver", f"{TC}.tablero", f"{TC}.cargar"])
+    # Se le da "ventas_netas" al perfil Cliente: el mismo token ya lo refleja.
+    _set_perms(client, admin, "cliente", [f"{TC}.ver", f"{TC}.ventas_netas"])
     ut = {u["key"]: u["habilitada"] for u in client.get("/api/v1/televentas-claro", headers=tok).json()["utilidades"]}
-    assert ut["cargar"] is True and ut["exportar"] is False
+    assert ut["ventas_netas"] is True
 
     # Sin "ver", el perfil pierde el acceso completo aunque tenga otras utilidades.
-    _set_perms(client, admin, "supervisor", [f"{TC}.tablero", f"{TC}.cargar"])
+    _set_perms(client, admin, "cliente", [f"{TC}.ventas_netas"])
     assert client.get("/api/v1/televentas-claro", headers=tok).status_code == 403
     assert client.get("/api/v1/auth/me", headers=tok).json()["permissions"] == []
 
     # Restaurar defaults para no afectar otros tests.
-    _set_perms(client, admin, "supervisor", DEFAULT_PERMISSIONS["supervisor"])
+    _set_perms(client, admin, "cliente", DEFAULT_PERMISSIONS["cliente"])
 
 
 def test_cambio_de_perfil_de_un_usuario(client, admin):
     uid, tok = _new_user(client, admin, "cliente", [TC])
-    assert f"{TC}.cargar" not in client.get("/api/v1/auth/me", headers=tok).json()["permissions"]
+    assert f"{TC}.ventas_netas" not in client.get("/api/v1/auth/me", headers=tok).json()["permissions"]
     client.patch(f"/api/v1/users/{uid}", headers=admin, json={"role": "coordinador"})
-    assert f"{TC}.cargar" in client.get("/api/v1/auth/me", headers=tok).json()["permissions"]
+    assert f"{TC}.ventas_netas" in client.get("/api/v1/auth/me", headers=tok).json()["permissions"]
 
 
 def test_validaciones_de_perfiles(client, admin):
@@ -128,8 +128,8 @@ def test_validaciones_de_perfiles(client, admin):
 
 
 def test_cambio_de_permisos_queda_auditado(client, admin):
-    _set_perms(client, admin, "cliente", [f"{TC}.ver"])
+    _set_perms(client, admin, "cliente", [f"{TC}.ver", f"{TC}.ventas_netas"])
     _set_perms(client, admin, "cliente", DEFAULT_PERMISSIONS["cliente"])
     rows = client.get("/api/v1/audit?action=update_profile_permissions", headers=admin).json()
     assert rows and rows[0]["resource_id"] == "cliente"
-    assert rows[0]["extra"]["agregados"] == [f"{TC}.tablero"]
+    assert rows[0]["extra"]["quitados"] == [f"{TC}.ventas_netas"]

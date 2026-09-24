@@ -98,7 +98,7 @@ export function AppShell({ children, workspace = false }: {
   const opNav: OperativaNavItem[] = !operativa
     ? []
     : submodulo
-      ? submodulo.nav
+      ? submodulo.nav.filter((i) => !i.utilidad || can(user, `${operativa.slug}.${i.utilidad}`))
       : [
           { href: operativa.href, label: "Inicio", exact: true },
           ...operativa.submodulos

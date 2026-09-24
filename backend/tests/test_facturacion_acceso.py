@@ -75,7 +75,7 @@ def test_ningun_perfil_accede_aunque_tenga_todo(client, coordinador_con_todo):
     h = coordinador_con_todo
     assert client.get("/api/v1/televentas-claro", headers=h).status_code == 200  # la operativa sí
     ut = {u["key"]: u["habilitada"] for u in client.get("/api/v1/televentas-claro", headers=h).json()["utilidades"]}
-    assert ut["cargar"] is True and "facturacion" not in ut  # ni siquiera se lista
+    assert ut["ventas_netas"] is True and "facturacion" not in ut  # ni siquiera se lista
     assert FACT not in client.get("/api/v1/auth/me", headers=h).json()["permissions"]
     for path in ("/reports", "/uploads", "/simulador/parametros", "/gpon/parametros", "/simulaciones"):
         assert client.get(f"{BASE}{path}", headers=h).status_code == 403, path

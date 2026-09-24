@@ -123,7 +123,7 @@ async def require_superadmin(user: CurrentUser = Depends(get_current_user)) -> C
 
 
 def require_perm(perm: str):
-    """Factory: exige un permiso. Uso: Depends(require_perm("televentas_claro.cargar"))."""
+    """Factory: exige un permiso. Uso: Depends(require_perm("televentas_claro.ventas_netas"))."""
     if perm not in ALL_PERMISSIONS:
         raise ValueError(f"Permiso desconocido: {perm}")  # falla al importar, no en runtime
 

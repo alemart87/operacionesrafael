@@ -134,6 +134,39 @@ function redirectToLogin() {
   }
 }
 
+/** Error de la API con el status y el `detail` original (puede ser un objeto, p. ej. en un 409). */
+export class ApiError extends Error {
+  status: number;
+  detail: unknown;
+  constructor(message: string, status: number, detail: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+/** Descarga un archivo autenticado (blob) y lo guarda con el nombre que manda el backend. */
+export async function downloadFile(path: string, fallbackName = "descarga"): Promise<void> {
+  const token = getToken();
+  const res = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new Error("Sesión expirada");
+  }
+  if (!res.ok) throw new Error(`No se pudo descargar (error ${res.status})`);
+  const cd = res.headers.get("content-disposition") ?? "";
+  const name = /filename="?([^";]+)"?/.exec(cd)?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function apiFetch<T = any>(path: string, opts: RequestInit = {}, retried = false): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = { ...((opts.headers as Record<string, string>) || {}) };
@@ -151,13 +184,16 @@ export async function apiFetch<T = any>(path: string, opts: RequestInit = {}, re
   }
   if (!res.ok) {
     let detail = `Error ${res.status}`;
+    let raw: unknown = null;
     try {
       const body = await res.json();
+      raw = body.detail ?? body;
       if (typeof body.detail === "string") detail = body.detail;
       else if (Array.isArray(body.detail)) detail = body.detail.map((d: any) => d.msg).join(" · ");
+      else if (body.detail && typeof body.detail.message === "string") detail = body.detail.message;
       else detail = JSON.stringify(body);
     } catch {}
-    throw new Error(detail);
+    throw new ApiError(detail, res.status, raw);
   }
   return res.json() as Promise<T>;
 }

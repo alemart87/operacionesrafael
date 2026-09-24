@@ -84,8 +84,7 @@ function Inicio() {
           })}
         </div>
         <p className="text-xs text-brand-mist mt-5">
-          Las funcionalidades de cada utilidad se incorporan a medida que se construye la operativa. Los permisos de
-          cada perfil los define el superadmin.
+          Los permisos de cada perfil los define el superadmin.
         </p>
       </section>
     </>

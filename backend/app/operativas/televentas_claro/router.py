@@ -3,7 +3,7 @@
 Módulo independiente. Cada endpoint se protege con el permiso de la utilidad
 que implementa, por ejemplo:
 
-    @router.post("/cargas", dependencies=[Depends(require_perm(f"{SLUG}.cargar"))])
+    @router.post("/cargas", dependencies=[Depends(require_perm(f"{SLUG}.ventas_netas"))])
 
 Las utilidades disponibles están declaradas en `core/operativas.py`.
 """
