@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ESTADO_LABEL, type EstadoInforme } from "./tipos";
+import type { Senal } from "./patrones";
 
 export function EstadoBadge({ estado }: { estado: EstadoInforme }) {
   const cls = estado === "published" ? "badge-success" : estado === "replaced" ? "badge-neutral line-through" : "badge-cyan";
@@ -34,8 +35,8 @@ export type Col<T> = {
 };
 
 /** Tabla compacta con encabezado fijo. `alerta(row)` pinta la fila. */
-export function Tabla<T extends Record<string, any>>({ cols, rows, alerta, vacio = "Sin datos", maxAlto }: {
-  cols: Col<T>[]; rows: T[]; alerta?: (r: T) => boolean; vacio?: string; maxAlto?: string;
+export function Tabla<T extends Record<string, any>>({ cols, rows, alerta, vacio = "Sin datos", maxAlto, onRowClick }: {
+  cols: Col<T>[]; rows: T[]; alerta?: (r: T) => boolean; vacio?: string; maxAlto?: string; onRowClick?: (r: T) => void;
 }) {
   if (!rows.length) return <div className="text-sm text-brand-mist py-4">{vacio}</div>;
   const al = (a?: string) => (a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left");
@@ -51,7 +52,11 @@ export function Tabla<T extends Record<string, any>>({ cols, rows, alerta, vacio
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className={`border-b border-brand-border/60 ${alerta?.(r) ? "bg-brand-primary-light/60" : "hover:bg-brand-bg/50"}`}>
+            <tr
+              key={i}
+              onClick={onRowClick ? () => onRowClick(r) : undefined}
+              className={`border-b border-brand-border/60 ${alerta?.(r) ? "bg-brand-primary-light/60 hover:bg-brand-primary-light" : "hover:bg-brand-bg/50"} ${onRowClick ? "cursor-pointer" : ""}`}
+            >
               {cols.map((c) => (
                 <td key={c.key} className={`px-3 py-1.5 ${al(c.align)} ${c.className ?? ""}`}>
                   {c.render ? c.render(r) : r[c.key] ?? "—"}
@@ -109,6 +114,27 @@ export function Tabs<T extends string>({ value, onChange, items }: {
           {it.label}
           {it.hint && <span className="block text-[10px] font-normal text-brand-mist">{it.hint}</span>}
         </button>
+      ))}
+    </div>
+  );
+}
+
+const SENAL_CLS: Record<Senal["gravedad"], string> = {
+  alta: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30",
+  media: "bg-brand-orange/10 text-brand-graphite border-brand-orange/40",
+  info: "bg-brand-bg text-brand-slate border-brand-border",
+};
+
+/** Etiquetas del patrón de comportamiento (alta, media, info), con símbolo además del color. */
+export function Senales({ senales }: { senales: Senal[] }) {
+  if (!senales.length) return <span className="text-brand-mist text-xs">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1 py-0.5">
+      {senales.map((s, i) => (
+        <span key={i} className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] leading-tight ${SENAL_CLS[s.gravedad]}`}>
+          <span aria-hidden>{s.gravedad === "alta" ? "▲" : s.gravedad === "media" ? "●" : "○"}</span>
+          {s.texto}
+        </span>
       ))}
     </div>
   );
