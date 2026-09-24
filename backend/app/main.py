@@ -22,7 +22,13 @@ from .models.profile import Profile
 # cada columna nueva en un modelo existente va acá como
 #   "ALTER TABLE <tabla> ADD COLUMN IF NOT EXISTS <col> <tipo>"
 # Solo se ejecutan en PostgreSQL (SQLite local/tests usa create_all y listo).
-MIGRATIONS_IDEMPOTENT: list[str] = []
+MIGRATIONS_IDEMPOTENT: list[str] = [
+    # v0.2 · operativas y perfiles: operativas asignadas por usuario
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS operativas JSON NOT NULL DEFAULT '[]'::json",
+    # v0.2 · roles del esqueleto → perfiles nuevos
+    "UPDATE users SET role = 'analista' WHERE role = 'analyst'",
+    "UPDATE users SET role = 'cliente' WHERE role = 'viewer'",
+]
 
 
 async def _run_migrations() -> dict[str, list[str]]:
