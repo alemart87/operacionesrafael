@@ -80,7 +80,7 @@ function Tarjeta({ m, u, gestion }: { m: Submodulo; u: OperativaInfo["utilidades
         {u.solo_superadmin ? (
           <span className="badge-primary whitespace-nowrap">Solo superadmin</span>
         ) : habilitada ? (
-          <span className="badge-success whitespace-nowrap">{gestion ? "Ver y gestionar" : "Ver informes"}</span>
+          <span className="badge-success whitespace-nowrap">{gestion ? "Ver y gestionar" : m.acceso ?? "Ver informes"}</span>
         ) : (
           <span className="badge-neutral whitespace-nowrap">Sin permiso</span>
         )}

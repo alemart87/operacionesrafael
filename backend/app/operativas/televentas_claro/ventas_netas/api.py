@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
@@ -26,7 +25,7 @@ from ....core.database import get_db
 from ....models.user import User
 from ....services.audit_service import record_action
 from .exports import build_xlsx
-from .jobs import ANALYSIS_VERSION, analizar_archivo, analizar_guardado, aplicar_analisis, comprimir_parsed, queue
+from .jobs import ANALYSIS_VERSION, SinDatosGuardados, queue, recalcular_informe
 from .models import ESTADO_BORRADOR, ESTADO_PUBLICADO, ESTADO_REEMPLAZADO, VentasNetasReport, VentasNetasUpload
 from .schemas import PublishRequest, ReportDetail, ReportList, ReportSummary, UploadList, UploadRead
 
@@ -226,25 +225,12 @@ async def reprocess_report(
     report = await db.get(VentasNetasReport, report_id)
     if not report:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Informe no encontrado")
-    upload = await db.get(VentasNetasUpload, report.upload_id)
     try:
-        if upload and upload.parsed_gz:
-            analysis = analizar_guardado(upload.parsed_gz)
-        elif upload and upload.file_path and Path(upload.file_path).exists():
-            resultado = await analizar_archivo(upload.file_path)
-            analysis = resultado["analysis"]
-            upload.parsed_gz = comprimir_parsed(resultado["parsed"])  # de acá en más ya no depende del archivo
-        else:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                "Este corte se cargó antes de que el sistema guardara sus datos, y el archivo ya no está en el "
-                "servidor. Es la única vez: subí ese corte de nuevo y de ahí en más se recalcula solo.",
-            )
-    except HTTPException:
-        raise
+        await recalcular_informe(db, report)
+    except SinDatosGuardados as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"No se pudo recalcular el informe: {exc}") from exc
-    aplicar_analisis(report, analysis)
     await db.commit()
     await db.refresh(report)
     await record_action(

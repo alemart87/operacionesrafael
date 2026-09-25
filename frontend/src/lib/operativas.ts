@@ -33,6 +33,8 @@ export const PERM_FACTURACION = "televentas_claro.facturacion";
 /** Ventas Netas: ver informes publicados / gestión (subir, publicar, reemplazar, eliminar). */
 export const PERM_VENTAS_NETAS = "televentas_claro.ventas_netas";
 export const PERM_VENTAS_NETAS_GESTION = "televentas_claro.ventas_netas_gestion";
+/** Auditoría de ventas: riesgos, informes de auditoría, hallazgos y seguimiento. */
+export const PERM_AUDITORIA = "televentas_claro.auditoria";
 
 export interface OperativaNavItem {
   href: string;
@@ -63,6 +65,8 @@ export interface Submodulo {
   contenido?: string[];
   /** Utilidad de gestión del módulo, si la tiene: la tarjeta indica si el usuario puede operar. */
   gestion?: string;
+  /** Etiqueta de acceso en la tarjeta cuando el módulo no separa ver/gestionar (por defecto "Ver informes"). */
+  acceso?: string;
 }
 
 export interface OperativaRoute {
@@ -89,6 +93,18 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         nav: [
           { href: "/televentas-claro/ventas-netas", label: "Informes", exact: true },
           { href: "/televentas-claro/ventas-netas/upload", label: "Subir corte", utilidad: "ventas_netas_gestion" },
+        ],
+      },
+      {
+        utilidad: "auditoria",
+        label: "Auditoría de Ventas",
+        href: "/televentas-claro/auditoria",
+        descripcion: "Circuito de auditoría sobre las ventas: riesgos y ranking de vendedores, informes con hallazgos y evidencia, seguimiento, estados y PDF.",
+        contenido: ["Riesgos y datos llamativos", "Vendedores riesgosos", "Hallazgos con evidencia", "Seguimiento y estados", "Informe imprimible en PDF", "Datos congelados"],
+        acceso: "Ver y auditar",
+        nav: [
+          { href: "/televentas-claro/auditoria", label: "Informes de auditoría", exact: true },
+          { href: "/televentas-claro/auditoria/riesgos", label: "Riesgos" },
         ],
       },
       {

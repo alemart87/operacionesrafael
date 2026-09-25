@@ -4,6 +4,7 @@ from __future__ import annotations
 import gzip
 import json
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 from ....core.database import session_scope
@@ -48,6 +49,40 @@ def aplicar_analisis(report: VentasNetasReport, analysis: dict[str, Any]) -> Non
 async def analizar_archivo(path: str) -> dict[str, Any]:
     """Parsea y analiza el archivo en subproceso aislado. Devuelve {"parsed", "analysis"}."""
     return await run_isolated(_build, path)
+
+
+def version_analisis(report: VentasNetasReport) -> int:
+    """Versión del análisis con la que se generó el informe (0 si es anterior a que se guardara)."""
+    return int((report.data or {}).get("version") or 0)
+
+
+def desactualizado(report: VentasNetasReport) -> bool:
+    return version_analisis(report) < ANALYSIS_VERSION
+
+
+class SinDatosGuardados(Exception):
+    """El corte se cargó antes de que se guardaran los datos leídos y el archivo ya no está en el servidor."""
+
+
+async def recalcular_informe(db: Any, report: VentasNetasReport) -> None:
+    """Recalcula el informe con la versión vigente del análisis, sin volver a subir nada.
+
+    Usa los datos leídos que quedaron en la base; el archivo original es solo un
+    respaldo para cargas anteriores a que se guardaran esos datos. No hace commit.
+    """
+    upload = await db.get(VentasNetasUpload, report.upload_id)
+    if upload and upload.parsed_gz:
+        analysis = analizar_guardado(upload.parsed_gz)
+    elif upload and upload.file_path and Path(upload.file_path).exists():
+        resultado = await analizar_archivo(upload.file_path)
+        analysis = resultado["analysis"]
+        upload.parsed_gz = comprimir_parsed(resultado["parsed"])  # de acá en más ya no depende del archivo
+    else:
+        raise SinDatosGuardados(
+            "Este corte se cargó antes de que el sistema guardara sus datos, y el archivo ya no está en el "
+            "servidor. Es la única vez: subí ese corte de nuevo y de ahí en más se recalcula solo."
+        )
+    aplicar_analisis(report, analysis)
 
 
 async def run_ventas_netas(upload_id: str) -> None:

@@ -41,6 +41,11 @@ OPERATIVAS: list[dict] = [
                 "description": "Subir los cortes diarios de Claro, ver borradores, publicar (una publicación por mes), reemplazar y eliminar.",
             },
             {
+                "key": "auditoria",
+                "name": "Auditoría de ventas",
+                "description": "Circuito de auditoría: riesgos y ranking de vendedores, informes de auditoría con hallazgos, seguimiento, estados y PDF. Los datos analizados quedan congelados en cada informe.",
+            },
+            {
                 "key": "facturacion",
                 "name": "Facturación",
                 "description": "Liquidaciones de comisiones de Claro: reportes, comparativos, simuladores (móvil y GPON), criterios y agente IA.",

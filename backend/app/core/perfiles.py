@@ -23,7 +23,7 @@ _TC = "televentas_claro"
 DEFAULT_PERMISSIONS: dict[str, list[str]] = {
     "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas")],
     "supervisor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas")],
-    "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion")],
+    "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion", "auditoria")],
     "cliente": [f"{_TC}.{u}" for u in ("ver",)],
 }
 
