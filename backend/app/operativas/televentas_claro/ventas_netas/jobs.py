@@ -30,7 +30,7 @@ def analizar_guardado(parsed_gz: bytes) -> dict[str, Any]:
     return analyze_ventas_netas(json.loads(gzip.decompress(parsed_gz).decode("utf-8")))
 
 
-ANALYSIS_VERSION = 4  # sube cuando el análisis agrega bloques: los informes viejos se pueden actualizar
+ANALYSIS_VERSION = 5  # sube cuando el análisis agrega bloques: los informes viejos se pueden actualizar
 
 
 def aplicar_analisis(report: VentasNetasReport, analysis: dict[str, Any]) -> None:

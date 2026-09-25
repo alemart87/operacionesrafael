@@ -2,7 +2,7 @@
 
 export const VN_API = "/api/v1/televentas-claro/ventas-netas";
 /** Debe coincidir con ANALYSIS_VERSION del backend (jobs.py). */
-export const VERSION_ANALISIS = 4;
+export const VERSION_ANALISIS = 5;
 export const VN_HREF = "/televentas-claro/ventas-netas";
 
 export type EstadoInforme = "draft" | "published" | "replaced";
@@ -200,7 +200,20 @@ export interface DetalleCarga {
   riesgosa: boolean;
 }
 
+/** Portaciones "Sali Hablando" (SI-SaliHbl): la línea salió hablando de la otra operadora. */
+export interface SaliHablando {
+  kpis: { total: number; sin_uso: number; con_uso: number; pct_sin_uso: number; en_ddi: number; fuera_ddi: number; vendedores: number; primer_dia: string | null; ultimo_dia: string | null; activadas_mes_anterior: number };
+  por_dia: { dia: string; total: number; sin_uso: number; con_uso: number; pct_sin_uso: number }[];
+  por_dia_activacion: { dia: string; total: number; sin_uso: number; con_uso: number; pct_sin_uso: number }[];
+  por_vendedor: { vendedor: string; subcanal: string | null; total: number; sin_uso: number; con_uso: number; pct_sin_uso: number }[];
+  por_origen: { origen: string; total: number; sin_uso: number; con_uso: number; pct_sin_uso: number }[];
+  por_plan: { plan: string; total: number; sin_uso: number; con_uso: number; pct_sin_uso: number }[];
+  detalle: (DetalleNeta & { fecha_portacion: string | null; dias_activacion_a_portacion: number | null; dias_desde_portacion: number | null; en_ddi: boolean; riesgo: string | null; sin_uso: boolean })[];
+}
+
 export interface InformeData {
+  /** Ausente en informes anteriores a la versión 5. */
+  sali_hablando?: SaliHablando;
   /** Versión del análisis con que se generó. Sin ella o menor a la actual: informe de una versión anterior. */
   version?: number;
   /** Ausente en informes generados antes de la pestaña Productividad. */

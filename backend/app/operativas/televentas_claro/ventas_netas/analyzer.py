@@ -280,11 +280,86 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
             "por_razon": [{"razon": k, "total": n} for k, n in Counter(r.get("linea_razon_cierre") or "—" for r in suspendidas).most_common()],
         },
         "fuera_de_netas": fuera_de_netas,
+        "sali_hablando": _sali_hablando(por_all, ddi_all, {r["sds_number"]: r for r in cargas_all}, fecha_dato),
         "pendientes": pendientes,
         "finalizadas_sin_activar": [_detalle_carga(r) for r in finalizadas_sin_activar],
         "detalle_netas": [_detalle_neta(r, "DDI") for r in ddi],
         "productividad": productividad,
         "hojas": parsed.get("hojas", []),
+    }
+
+
+TIPO_SALI_HABLANDO = "SI-SaliHbl"
+
+
+def _sali_hablando(por_all: list[dict], ddi_all: list[dict], cargas_por_sds: dict[str, dict],
+                   fecha_dato: date | None) -> dict[str, Any]:
+    """Portaciones "Sali Hablando" (PORTACION_TIPO = SI-SaliHbl): la línea salió hablando de la
+    otra operadora. Suelen activarse el mes anterior y completar la portación en el período, por
+    lo que no figuran en DDI ni en CARGAS del mes. El día del evolutivo es la fecha de portación.
+    """
+    sds_ddi = {r["sds_number"] for r in ddi_all}
+    filas = [r for r in por_all if r.get("portacion_tipo") == TIPO_SALI_HABLANDO]
+    # También las que ya llegaron a DDI con ese tipo (no duplicar).
+    vistos = {r["sds_number"] for r in filas}
+    filas += [r for r in ddi_all if r.get("portacion_tipo") == TIPO_SALI_HABLANDO and r["sds_number"] not in vistos]
+
+    detalle: list[dict[str, Any]] = []
+    for r in filas:
+        d = _detalle_neta(r, "DDI" if r["sds_number"] in sds_ddi else "PORTABILIDAD")
+        fp = r.get("portacion_fecha") or r.get("fecha_activacion")
+        fa, fpd = _to_date(r.get("fecha_activacion")), _to_date(fp)
+        carga = cargas_por_sds.get(r["sds_number"])
+        d.update({
+            "fecha_portacion": fp,
+            "dias_activacion_a_portacion": (fpd - fa).days if (fa and fpd) else None,
+            "dias_desde_portacion": (fecha_dato - fpd).days if (fecha_dato and fpd) else None,
+            "en_ddi": r["sds_number"] in sds_ddi,
+            "riesgo": ((carga or {}).get("riesgo_ori") or "").upper() or None,
+            "sin_uso": r.get("consumo_datos") != "SI",
+        })
+        detalle.append(d)
+    detalle.sort(key=lambda x: (not x["sin_uso"], x["fecha_portacion"] or "", x["sds_number"]))
+
+    def grupo(key, label):
+        g: dict[str, dict] = {}
+        for x in detalle:
+            k = key(x) or "—"
+            f = g.setdefault(k, {label: k, "total": 0, "sin_uso": 0, "con_uso": 0})
+            f["total"] += 1
+            f["sin_uso" if x["sin_uso"] else "con_uso"] += 1
+        out = list(g.values())
+        for f in out:
+            f["pct_sin_uso"] = _pct(f["sin_uso"], f["total"])
+        return out
+
+    por_dia = sorted(grupo(lambda x: x["fecha_portacion"], "dia"), key=lambda f: f["dia"])
+    por_dia_activacion = sorted(grupo(lambda x: x["fecha_activacion"], "dia"), key=lambda f: f["dia"])
+    por_vendedor = grupo(lambda x: x["vendedor"], "vendedor")
+    for f in por_vendedor:
+        f["subcanal"] = next((x["subcanal"] for x in detalle if x["vendedor"] == f["vendedor"]), None)
+    por_vendedor.sort(key=lambda f: (-f["sin_uso"], -f["total"], f["vendedor"]))
+    total = len(detalle)
+    sin_uso = sum(1 for x in detalle if x["sin_uso"])
+    return {
+        "kpis": {
+            "total": total,
+            "sin_uso": sin_uso,
+            "con_uso": total - sin_uso,
+            "pct_sin_uso": _pct(sin_uso, total),
+            "en_ddi": sum(1 for x in detalle if x["en_ddi"]),
+            "fuera_ddi": sum(1 for x in detalle if not x["en_ddi"]),
+            "vendedores": len(por_vendedor),
+            "primer_dia": por_dia[0]["dia"] if por_dia else None,
+            "ultimo_dia": por_dia[-1]["dia"] if por_dia else None,
+            "activadas_mes_anterior": sum(1 for x in detalle if (x["dias_activacion_a_portacion"] or 0) > 0),
+        },
+        "por_dia": por_dia,
+        "por_dia_activacion": por_dia_activacion,
+        "por_vendedor": por_vendedor,
+        "por_origen": sorted(grupo(lambda x: x["origen_portacion"], "origen"), key=lambda f: -f["total"]),
+        "por_plan": sorted(grupo(lambda x: x["plan"], "plan"), key=lambda f: -f["total"]),
+        "detalle": detalle,
     }
 
 

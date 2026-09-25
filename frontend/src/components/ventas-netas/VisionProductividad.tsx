@@ -6,6 +6,7 @@ import { KpiCard } from "@/components/KpiCard";
 import { ESTADO_SDS_LABEL, fechaCorta, n, pct, type InformeData, type Productividad } from "./tipos";
 import { Seccion, Tabla } from "./ui";
 import { VendedorDetalle } from "./VendedorDetalle";
+import { SaliHablando } from "./SaliHablando";
 
 // Paletas validadas (ΔE CVD ≥ 15 en pares adyacentes); el contraste bajo se cubre con etiquetas y tablas.
 const C_ESTADO: Record<string, string> = { Vta_Finalizada: "#00B2BF", Vta_A_Confirmar: "#F39200", Vta_Procesado: "#7B3FA0", Vta_Rechazada: "#E6332A" };
@@ -147,6 +148,9 @@ export function VisionProductividad({ d }: { d: InformeData }) {
           />
         </div>
       </Seccion>
+
+      {/* Sali Hablando: portaciones SI-SaliHbl, revisión por día, vendedor y línea */}
+      <SaliHablando d={d} onVendedor={setVendedorAbierto} />
 
       {/* Estados en general + productos */}
       <div className="grid lg:grid-cols-2 gap-6">

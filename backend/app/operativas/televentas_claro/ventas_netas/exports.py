@@ -79,6 +79,15 @@ def build_xlsx(report) -> bytes:
         ("Legajo", "legajo"), ("Cargado por", "cargado_por"), ("Ciudad", "ciudad"), ("Comentario", "comentario"),
     ], d.get("pendientes", {}).get("detalle", []))
 
+    sh = d.get("sali_hablando", {})
+    _sheet(wb, "Sali hablando", [
+        ("Sin uso", "sin_uso"), ("Fecha portación", "fecha_portacion"), ("Activación", "fecha_activacion"),
+        ("Días act. → port.", "dias_activacion_a_portacion"), ("Días desde portación", "dias_desde_portacion"),
+        ("SDS", "sds_number"), ("Línea", "linea"), ("Plan", "plan"), ("Origen", "origen_portacion"), ("Consumo", "consumo"),
+        ("Estado línea", "estado_linea"), ("Razón cierre", "razon_cierre"), ("Vendedor", "vendedor"), ("Subcanal", "subcanal"),
+        ("Ciudad", "ciudad"), ("En DDI", "en_ddi"), ("Riesgo carga", "riesgo"),
+    ], sh.get("detalle", []), alerta_key="sin_uso")
+
     _sheet(wb, "Fuera de netas", [
         ("SDS", "sds_number"), ("Línea", "linea"), ("Fecha activación", "fecha_activacion"), ("Plan", "plan"),
         ("Tipo portación", "tipo_port"), ("Origen", "origen_portacion"), ("Consumo", "consumo"),

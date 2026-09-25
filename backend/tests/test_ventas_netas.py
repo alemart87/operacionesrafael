@@ -120,6 +120,12 @@ def test_parser_y_analisis(xlsx):
     assert (k["pospago_sin_uso"], k["pospago_con_uso"], k["pct_sin_uso"]) == (2, 2, 50.0)
     assert k["suspendidas"] == 1 and a["suspendidas"]["por_razon"] == [{"razon": "PNT", "total": 1}]
     assert k["fuera_de_netas"] == 1 and a["fuera_de_netas"]["sin_uso"] == 1
+    # Sali Hablando: la portación SI-SaliHbl (3001), sin uso, atribuida a su vendedor.
+    sh = a["sali_hablando"]
+    assert sh["kpis"] == {**sh["kpis"], "total": 1, "sin_uso": 1, "con_uso": 0, "pct_sin_uso": 100.0, "en_ddi": 0, "fuera_ddi": 1, "vendedores": 1}
+    assert sh["por_dia"] == [{"dia": "2026-09-11", "total": 1, "sin_uso": 1, "con_uso": 0, "pct_sin_uso": 100.0}]
+    assert sh["por_vendedor"][0]["vendedor"] == "ANA PEREZ" and sh["detalle"][0]["sds_number"] == "3001"
+    assert sh["detalle"][0]["fecha_portacion"] == "2026-09-11" and sh["detalle"][0]["dias_desde_portacion"] == 11
     assert k["finalizadas_sin_activar"] == 1 and a["finalizadas_sin_activar"][0]["sds_number"] == "1009"
 
     # Vendedor = POS_NOMBRE sin prefijo; "JUAN LOPEZ" con espacios dobles es el mismo vendedor.
@@ -305,7 +311,7 @@ async def test_flujo_publicacion(xlsx, monkeypatch, tmp_path):
         r = await ac.post(f"{BASE}/reports/{r2}/reprocess", headers=analista)
         assert r.status_code == 200 and r.json()["netas"] == 6 and r.json()["status"] == "published"
         det = (await ac.get(f"{BASE}/reports/{r2}", headers=analista)).json()
-        assert det["data"]["version"] == 4 and det["data"]["productividad"]["kpis"]["cargas"] == 11
+        assert det["data"]["version"] == 5 and det["data"]["productividad"]["kpis"]["cargas"] == 11
 
         # No se elimina un publicado; despublicar lo vuelve borrador y ahí sí.
         assert (await ac.delete(f"{BASE}/reports/{r2}", headers=analista)).status_code == 400

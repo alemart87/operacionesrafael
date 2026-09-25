@@ -149,6 +149,11 @@ Reglas del análisis (`analyzer.py`):
 - **Vendedor** de una neta = `POS_NOMBRE` sin el prefijo del subcanal; las
   cargas pendientes no traen POS y se atribuyen por `VENDEDOR_LEGAJO`.
 - Suspendidas y portadas que no llegaron a DDI se cuentan y se marcan, no se descartan.
+- **Sali Hablando** (`PORTACION_TIPO = SI-SaliHbl`): la línea salió hablando de
+  la otra operadora. Suelen activarse el mes anterior y completar la portación
+  en el período, por lo que no figuran en DDI ni en CARGAS del mes; el
+  evolutivo usa la fecha de portación. Se revisan por día, vendedor y línea,
+  con el uso de cada una (casi todas sin uso: alerta PFI).
 - **Productividad** (hoja CARGAS): evolutivo por fecha de alta de la venta,
   estados (finalizada, a confirmar, procesado, rechazada), Pospago (CO) vs
   Internet (IF) e IPTV, y **zonas**: Capital y Central por un lado, Interior por
