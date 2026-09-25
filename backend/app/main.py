@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
@@ -80,11 +81,35 @@ def _check_upload_dir() -> None:
     logger.info(f"Boot: UPLOAD_DIR={path} escribible={escribible}")
     if not escribible:
         logger.error(f"UPLOAD_DIR={path} no es escribible: las cargas van a fallar.")
-    elif settings.env == "production" and not path.is_mount() and not any(p.is_mount() for p in path.parents):
+    elif settings.env == "production" and not _en_disco_montado(path):
         logger.error(
-            f"UPLOAD_DIR={path} no está en un disco montado: en Render los archivos se pierden en cada "
-            "despliegue. Configurá UPLOAD_DIR dentro del mount path del disco (p. ej. /var/data/uploads)."
+            f"UPLOAD_DIR={path} NO está dentro de un disco montado: los archivos se pierden en cada despliegue. "
+            f"Discos montados detectados: {', '.join(_discos_montados()) or 'ninguno'}. "
+            "Configurá la variable UPLOAD_DIR dentro del mount path del disco (p. ej. <mount path>/uploads)."
         )
+
+
+def _discos_montados() -> list[str]:
+    """Puntos de montaje de discos de datos (excluye el raíz y los del sistema)."""
+    ignorar = ("/proc", "/sys", "/dev", "/run", "/etc", "/boot", "/snap")
+    puntos: list[str] = []
+    try:
+        for linea in Path("/proc/mounts").read_text().splitlines():
+            partes = linea.split()
+            if len(partes) < 3:
+                continue
+            punto, tipo = partes[1], partes[2]
+            if punto == "/" or punto.startswith(ignorar) or tipo in ("proc", "sysfs", "tmpfs", "devpts", "cgroup", "cgroup2", "overlay", "squashfs", "mqueue"):
+                continue
+            puntos.append(punto)
+    except OSError:
+        pass
+    return puntos
+
+
+def _en_disco_montado(path: Path) -> bool:
+    # El raíz siempre es un punto de montaje: no cuenta. Solo vale un disco real por encima de la ruta.
+    return any(p.is_mount() for p in [path, *path.parents] if str(p) != "/")
 
 
 @asynccontextmanager

@@ -38,6 +38,8 @@ services:
         value: Administrador Voicenter
       - key: ENV
         value: production
+      # DEBE quedar dentro del mount path del disco (arriba). Si el disco se creó a mano
+      # con otro mount path, poné esa ruta acá: <mount path>/uploads.
       - key: UPLOAD_DIR
         value: /var/data/uploads
       - key: BACKEND_URL
