@@ -63,6 +63,30 @@ async def _seed_profiles() -> int:
     return created
 
 
+def _check_upload_dir() -> None:
+    """Deja en los logs dónde se guardan los archivos y avisa si en producción no parece un disco persistente.
+
+    En Render el disco se monta en la ruta elegida al crearlo (p. ej. /var/data): UPLOAD_DIR
+    tiene que estar DENTRO de esa ruta o los archivos se pierden en cada despliegue.
+    """
+    path = settings.upload_path.resolve()
+    try:
+        probe = path / ".write-test"
+        probe.write_text("ok")
+        probe.unlink()
+        escribible = True
+    except OSError:
+        escribible = False
+    logger.info(f"Boot: UPLOAD_DIR={path} escribible={escribible}")
+    if not escribible:
+        logger.error(f"UPLOAD_DIR={path} no es escribible: las cargas van a fallar.")
+    elif settings.env == "production" and not path.is_mount() and not any(p.is_mount() for p in path.parents):
+        logger.error(
+            f"UPLOAD_DIR={path} no está en un disco montado: en Render los archivos se pierden en cada "
+            "despliegue. Configurá UPLOAD_DIR dentro del mount path del disco (p. ej. /var/data/uploads)."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
@@ -72,6 +96,7 @@ async def lifespan(app: FastAPI):
     result = await _run_migrations()
     logger.info(f"Boot: migrations ok={len(result['ok'])} skipped={len(result['skipped'])}")
     logger.info(f"Boot: perfiles sembrados={await _seed_profiles()}")
+    _check_upload_dir()
     if settings.env == "production" and settings.secret_key in ("change-me", ""):
         logger.error("SECRET_KEY no configurada en producción: los tokens son inseguros.")
 

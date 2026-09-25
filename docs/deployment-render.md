@@ -27,7 +27,7 @@ También se puede crear desde el blueprint `render.yaml` (New + → Blueprint).
 | `SUPERADMIN_PASSWORD` | Contraseña fuerte del administrador |
 | `SUPERADMIN_NAME` | `Administrador Voicenter` |
 | `ENV` | `production` |
-| `UPLOAD_DIR` | `/var/data/uploads` |
+| `UPLOAD_DIR` | `/var/data/uploads` — **tiene que estar dentro del mount path del disco**. Si el disco se montó en otra ruta (p. ej. `/persistenT`), poné `UPLOAD_DIR=/persistenT/uploads` o cambiá el mount path a `/var/data`. Si no coinciden, los archivos se pierden en cada despliegue; el log de arranque lo avisa (`Boot: UPLOAD_DIR=…`). |
 | `BACKEND_URL` | `http://127.0.0.1:8000` |
 
 ## 4. Verificación
