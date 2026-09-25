@@ -11,6 +11,7 @@ from openpyxl.utils import get_column_letter
 _HEADER_FILL = PatternFill("solid", fgColor="0F1116")
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _ALERT_FILL = PatternFill("solid", fgColor="FDE2E0")
+_ESTADO_LABEL = {"Vta_Finalizada": "Finalizadas", "Vta_A_Confirmar": "A confirmar", "Vta_Procesado": "Procesadas", "Vta_Rechazada": "Rechazadas"}
 
 
 def _sheet(wb: Workbook, title: str, headers: list[tuple[str, str]], rows: list[dict[str, Any]],
@@ -83,6 +84,24 @@ def build_xlsx(report) -> bytes:
         ("Tipo portación", "tipo_port"), ("Origen", "origen_portacion"), ("Consumo", "consumo"),
         ("Estado línea", "estado_linea"), ("Razón cierre", "razon_cierre"), ("Vendedor", "vendedor"), ("Ciudad", "ciudad"),
     ], d.get("fuera_de_netas", {}).get("detalle", []))
+
+    prod = d.get("productividad", {})
+    estados = prod.get("estados", [])
+    est_cols = [(_ESTADO_LABEL.get(e, e), e) for e in estados]
+    _sheet(wb, "Evolutivo diario", [
+        ("Día", "dia"), ("Cargas", "total"), ("Acumulado", "acumulado"), *est_cols, ("% finalización", "pct_finalizacion"),
+        ("Pospago", "pospago"), ("Internet (IF)", "internet"), ("IPTV", "iptv"),
+        ("Capital y Central", "capital_central"), ("Interior", "interior"),
+    ], prod.get("por_dia", []))
+    _sheet(wb, "Cargas por vendedor", [
+        ("Vendedor", "vendedor"), ("Subcanal", "subcanal"), ("Cargas", "total"), *est_cols, ("% finalización", "pct_finalizacion"),
+        ("Pospago", "pospago"), ("Internet (IF)", "internet"), ("IPTV", "iptv"),
+        ("Capital y Central", "capital_central"), ("Interior", "interior"), ("Atribuidas por legajo", "por_legajo"),
+    ], prod.get("por_vendedor", []))
+    _sheet(wb, "Zonas", [
+        ("Departamento", "departamento"), ("Zona", "zona"), ("Cargas", "total"), *est_cols, ("% finalización", "pct_finalizacion"),
+        ("Pospago", "pospago"), ("Internet (IF)", "internet"), ("IPTV", "iptv"),
+    ], prod.get("por_departamento", []))
 
     buf = BytesIO()
     wb.save(buf)

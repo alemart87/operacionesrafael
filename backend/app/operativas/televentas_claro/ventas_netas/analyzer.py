@@ -12,6 +12,11 @@ Reglas acordadas con el negocio:
 * Vendedor de una neta = `POS_NOMBRE` (sin el prefijo del subcanal). Las cargas
   pendientes no traen POS: se atribuyen por `VENDEDOR_LEGAJO`.
 * Alerta de vendedor: al menos MIN_LINEAS_ALERTA Pospago y menos de UMBRAL_USO_PCT en uso.
+* Productividad (hoja CARGAS): evolutivo diario por fecha de alta de la venta,
+  estados, Pospago vs Internet (IF) e IPTV, y zonas: Capital y Central por un
+  lado, Interior por el otro (`DEPARTAMENTO_FACT`). Las cargas pendientes no
+  traen POS: se atribuyen al vendedor cuando el legajo que cargó siempre carga
+  para un único POS; si no, quedan como "cargado por <legajo>".
 """
 from __future__ import annotations
 
@@ -226,6 +231,8 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "detalle": detalle_pend,
     }
 
+    productividad = _productividad(cargas, cargas_all, fecha_dato)
+
     kpis = {
         "periodo": periodo,
         "fecha_dato": fecha_dato.isoformat() if fecha_dato else None,
@@ -274,6 +281,7 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "pendientes": pendientes,
         "finalizadas_sin_activar": [_detalle_carga(r) for r in finalizadas_sin_activar],
         "detalle_netas": [_detalle_neta(r, "DDI") for r in ddi],
+        "productividad": productividad,
         "hojas": parsed.get("hojas", []),
     }
 
@@ -313,4 +321,178 @@ def _detalle_carga(r: dict[str, Any]) -> dict[str, Any]:
         "tipo_port": r.get("tipo_port"),
         "legajo": r.get("vendedor_legajo"),
         "vendedor": vendedor_de(r.get("pos_nombre"), r.get("subcanal"))[0] if r.get("pos_nombre") else None,
+    }
+
+
+# ---------------- Productividad diaria (hoja CARGAS) ----------------
+ZONA_CAPITAL_CENTRAL = "Capital y Central"
+ZONA_INTERIOR = "Interior"
+ZONA_SIN_DATO = "Sin zona"
+ESTADOS_ORDEN = ["Vta_Finalizada", "Vta_A_Confirmar", "Vta_Procesado", "Vta_Rechazada"]
+
+
+def zona_de(departamento: str | None) -> str:
+    if not departamento:
+        return ZONA_SIN_DATO
+    return ZONA_CAPITAL_CENTRAL if departamento.strip().upper() in ("CAPITAL", "CENTRAL") else ZONA_INTERIOR
+
+
+def producto_de(r: dict[str, Any]) -> str:
+    """Pospago (CO) · Internet (IF) · IPTV, según el tipo de negocio de la carga."""
+    neg = (r.get("tipo_negocio_orig") or "").upper()
+    if neg == "IF":
+        return "Internet"
+    if neg == "IPTV":
+        return "IPTV"
+    if neg == "CO":
+        return "Pospago"
+    return {"GPON": "Internet"}.get((r.get("tipo_producto") or "").upper(), r.get("tipo_producto") or "Otros")
+
+
+def _mapa_legajo_pos(cargas_all: list[dict]) -> dict[str, tuple[str, str | None]]:
+    """Legajo -> vendedor cuando ese legajo cargó siempre para un único POS."""
+    por_legajo: dict[str, set[tuple[str, str | None]]] = defaultdict(set)
+    for r in cargas_all:
+        if r.get("vendedor_legajo") and r.get("pos_nombre"):
+            por_legajo[r["vendedor_legajo"]].add(vendedor_de(r.get("pos_nombre"), r.get("subcanal")))
+    return {leg: next(iter(v)) for leg, v in por_legajo.items() if len(v) == 1}
+
+
+def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date | None) -> dict[str, Any]:
+    mapa = _mapa_legajo_pos(cargas_all)
+    estados = [e for e in ESTADOS_ORDEN if any(r.get("sds_estado") == e for r in cargas)]
+    estados += sorted({r.get("sds_estado") for r in cargas} - set(estados) - {None})
+    productos = ["Pospago", "Internet", "IPTV"]
+    zonas = [ZONA_CAPITAL_CENTRAL, ZONA_INTERIOR]
+
+    def fila_vacia(**extra) -> dict[str, Any]:
+        f = {"total": 0, "finalizadas": 0, **{e: 0 for e in estados}, **{p.lower(): 0 for p in productos},
+             "capital_central": 0, "interior": 0, **extra}
+        return f
+
+    def sumar(f: dict[str, Any], r: dict[str, Any]) -> None:
+        f["total"] += 1
+        e = r.get("sds_estado")
+        if e in f:
+            f[e] += 1
+        if e == ESTADO_FINALIZADA:
+            f["finalizadas"] += 1
+        p = producto_de(r).lower()
+        if p in f:
+            f[p] += 1
+        z = zona_de(r.get("departamento_fact"))
+        if z == ZONA_CAPITAL_CENTRAL:
+            f["capital_central"] += 1
+        elif z == ZONA_INTERIOR:
+            f["interior"] += 1
+
+    def cerrar(f: dict[str, Any]) -> dict[str, Any]:
+        f["pct_finalizacion"] = _pct(f["finalizadas"], f["total"])
+        return f
+
+    # Evolutivo diario
+    dias: dict[str, dict] = {}
+    for r in cargas:
+        d = r.get("sds_fecha_alta_venta")
+        if not d:
+            continue
+        sumar(dias.setdefault(d, fila_vacia(dia=d)), r)
+    por_dia = [cerrar(dias[d]) for d in sorted(dias)]
+    acum = 0
+    for f in por_dia:
+        acum += f["total"]
+        f["acumulado"] = acum
+
+    # Totales, estados y productos
+    total = fila_vacia()
+    for r in cargas:
+        sumar(total, r)
+    cerrar(total)
+    por_estado = [{"estado": e, "total": total[e], "pct": _pct(total[e], total["total"])} for e in estados]
+    por_producto = []
+    for p in productos:
+        f = fila_vacia(producto=p)
+        for r in cargas:
+            if producto_de(r) == p:
+                sumar(f, r)
+        if f["total"]:
+            por_producto.append(cerrar(f))
+
+    # Zonas: Capital y Central vs Interior, con el detalle de departamentos del Interior
+    por_zona = []
+    for z in zonas + [ZONA_SIN_DATO]:
+        f = fila_vacia(zona=z)
+        for r in cargas:
+            if zona_de(r.get("departamento_fact")) == z:
+                sumar(f, r)
+        if f["total"]:
+            por_zona.append(cerrar(f))
+    deptos: dict[str, dict] = {}
+    for r in cargas:
+        dep = (r.get("departamento_fact") or "—").strip().upper()
+        sumar(deptos.setdefault(dep, fila_vacia(departamento=dep, zona=zona_de(r.get("departamento_fact")))), r)
+    por_departamento = sorted((cerrar(f) for f in deptos.values()), key=lambda f: -f["total"])
+    ciudades: dict[str, dict] = {}
+    for r in cargas:
+        c = (r.get("ciudad_fact") or "—").strip().upper()
+        sumar(ciudades.setdefault(c, fila_vacia(ciudad=c, zona=zona_de(r.get("departamento_fact")))), r)
+    por_ciudad = sorted((cerrar(f) for f in ciudades.values()), key=lambda f: -f["total"])[:25]
+
+    # Vendedores: POS de la carga; si no trae, el vendedor único del legajo; si no, "cargado por".
+    vend: dict[str, dict] = {}
+    sin_atribuir = 0
+    for r in cargas:
+        if r.get("pos_nombre"):
+            nombre, subcanal = vendedor_de(r.get("pos_nombre"), r.get("subcanal"))
+            atrib = "pos"
+        elif r.get("vendedor_legajo") in mapa:
+            nombre, subcanal = mapa[r["vendedor_legajo"]]
+            atrib = "legajo"
+        else:
+            quien = " ".join(x for x in (r.get("vendedor_nombre"), r.get("vendedor_apellido")) if x)
+            nombre, subcanal = f"CARGADO POR {r.get('vendedor_legajo') or '—'} {quien}".strip(), None
+            atrib = "sin_atribuir"
+            sin_atribuir += 1
+        f = vend.setdefault(nombre, fila_vacia(vendedor=nombre, subcanal=subcanal, por_legajo=0))
+        if atrib == "legajo":
+            f["por_legajo"] += 1
+        sumar(f, r)
+    por_vendedor = sorted((cerrar(f) for f in vend.values()), key=lambda f: (-f["total"], f["vendedor"]))
+
+    dias_habiles = len(por_dia)
+    mejor = max(por_dia, key=lambda f: f["total"]) if por_dia else None
+    return {
+        "estados": estados,
+        "productos": [p for p in productos if total[p.lower()]],
+        "zonas": zonas,
+        "kpis": {
+            "cargas": total["total"],
+            "finalizadas": total["finalizadas"],
+            "pct_finalizacion": total["pct_finalizacion"],
+            "a_confirmar": total.get("Vta_A_Confirmar", 0),
+            "rechazadas": total.get("Vta_Rechazada", 0),
+            "procesadas": total.get("Vta_Procesado", 0),
+            "pospago": total["pospago"],
+            "internet": total["internet"],
+            "iptv": total["iptv"],
+            "capital_central": total["capital_central"],
+            "interior": total["interior"],
+            "pct_interior": _pct(total["interior"], total["total"]),
+            "dias_con_cargas": dias_habiles,
+            "promedio_diario": round(total["total"] / dias_habiles, 1) if dias_habiles else 0.0,
+            "mejor_dia": mejor["dia"] if mejor else None,
+            "mejor_dia_total": mejor["total"] if mejor else 0,
+            "ultimo_dia": por_dia[-1]["dia"] if por_dia else None,
+            "ultimo_dia_total": por_dia[-1]["total"] if por_dia else 0,
+            "vendedores": len(por_vendedor),
+            "sin_atribuir": sin_atribuir,
+            "fecha_dato": fecha_dato.isoformat() if fecha_dato else None,
+        },
+        "por_dia": por_dia,
+        "por_estado": por_estado,
+        "por_producto": por_producto,
+        "por_zona": por_zona,
+        "por_departamento": por_departamento,
+        "por_ciudad": por_ciudad,
+        "por_vendedor": por_vendedor,
     }
