@@ -133,7 +133,39 @@ export interface Kpis {
   min_lineas_alerta: number;
 }
 
+/** Fila de productividad (CARGAS): totales, estados, productos y zonas. */
+export type FilaProd = {
+  total: number;
+  finalizadas: number;
+  pct_finalizacion: number;
+  pospago: number;
+  internet: number;
+  iptv: number;
+  capital_central: number;
+  interior: number;
+} & Record<string, number | string | null>;
+
+export interface Productividad {
+  estados: string[];
+  productos: string[];
+  zonas: string[];
+  kpis: {
+    cargas: number; finalizadas: number; pct_finalizacion: number; a_confirmar: number; rechazadas: number; procesadas: number;
+    pospago: number; internet: number; iptv: number; capital_central: number; interior: number; pct_interior: number;
+    dias_con_cargas: number; promedio_diario: number; mejor_dia: string | null; mejor_dia_total: number;
+    ultimo_dia: string | null; ultimo_dia_total: number; vendedores: number; sin_atribuir: number; fecha_dato: string | null;
+  };
+  por_dia: (FilaProd & { dia: string; acumulado: number })[];
+  por_estado: { estado: string; total: number; pct: number }[];
+  por_producto: (FilaProd & { producto: string })[];
+  por_zona: (FilaProd & { zona: string })[];
+  por_departamento: (FilaProd & { departamento: string; zona: string })[];
+  por_ciudad: (FilaProd & { ciudad: string; zona: string })[];
+  por_vendedor: (FilaProd & { vendedor: string; subcanal: string | null; por_legajo: number })[];
+}
+
 export interface InformeData {
+  productividad: Productividad;
   kpis: Kpis;
   por_producto: ({ producto: string } & UsoStats)[];
   por_plan: ({ producto: string; plan: string } & UsoStats)[];

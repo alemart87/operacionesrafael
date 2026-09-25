@@ -25,7 +25,7 @@ DDI_COLS = ["FECHA_ACTIVACION", "PERIODO_ACTIVACION", "TIPO_PRODUCTO", "PLAN_DES
             "CONSUMO_DATOS", "SDS_NUMBER", "LINEA_ORIG", "LINEA_ESTADO_CIERRE", "LINEA_RAZON_CIERRE", "VENTA", "TOTAL_NETO"]
 CAR_COLS = ["PERIODO_CARGA_VENTA", "SDS_NUMBER", "SDS_FECHA_ALTA_VENTA", "SDS_FECHA_VENTA", "SDS_ESTADO", "SDS_CANC_ADM",
             "TIPO_PRODUCTO", "PLAN_DESCRIPCION_ORIG", "CAMPANIA_DESCRIPCION", "FECHA_ACTIVACION", "TIPO_PORT",
-            "ORIGEN_PORTACION", "RIESGO_ORI", "CIUDAD_FACT", "VENDEDOR_LEGAJO", "VENDEDOR_NOMBRE", "VENDEDOR_APELLIDO",
+            "ORIGEN_PORTACION", "RIESGO_ORI", "DEPARTAMENTO_FACT", "CIUDAD_FACT", "VENDEDOR_LEGAJO", "VENDEDOR_NOMBRE", "VENDEDOR_APELLIDO",
             "POS_NOMBRE", "SUBCANAL", "COMENTARIO", "FECHA_DATO"]
 POR_COLS = ["FECHA_ACTIVACION", "TIPO_PRODUCTO", "PLAN_DESCRIPCION", "PORTACION_TIPO", "ORIGEN_PORTACION", "POS_NOMBRE",
             "SUBCANAL", "CONSUMO_DATOS", "SDS_NUMBER", "LINEA_ORIG", "LINEA_ESTADO_CIERRE", "LINEA_RAZON_CIERRE", "CIUDAD"]
@@ -39,9 +39,9 @@ def _ddi(sds, fecha, producto, plan, port, consumo, pos, estado="A", razon="PNPI
             "TIGO" if port == "SI" else None, "ASUNCION", "MASIVO", "TKM", "1", pos, consumo, sds, f"L{sds}", estado, razon, 1, 0]
 
 
-def _carga(sds, alta, estado, producto="Pospago", venta=None, port="SI-PreSusp", legajo="EXP1", pos=None, riesgo="M"):
+def _carga(sds, alta, estado, producto="Pospago", venta=None, port="SI-PreSusp", legajo="EXP1", pos=None, riesgo="M", depto="CAPITAL"):
     return ["202609", sds, alta, venta, estado, "NO", producto, "Control 15GB", "CAMPAÑA X", venta, port,
-            "TIGO" if port != "NO" else None, riesgo, "ASUNCION", legajo, "NILDA", "CACERES", pos, "TKM" if pos else None, None, CORTE]
+            "TIGO" if port != "NO" else None, riesgo, depto, "ASUNCION", legajo, "NILDA", "CACERES", pos, "TKM" if pos else None, None, CORTE]
 
 
 def _por(sds, fecha, tipo, consumo, pos):
@@ -74,12 +74,12 @@ def build_xlsx(path, *, sin_portabilidad=False, ddi_extra=(), cargas_extra=()):
     for f in [
         *[_carga(s, D(2026, 9, 5), "Vta_Finalizada", venta=D(2026, 9, 5), pos="TKM - ANA PEREZ") for s in (1001, 1002, 1003, 1004)],
         _carga(1005, D(2026, 9, 9), "Vta_Finalizada", producto="GPON", venta=D(2026, 9, 9), port="NO", pos="TKM - ANA PEREZ"),
-        _carga(1006, D(2026, 9, 9), "Vta_Finalizada", producto="IPTV", venta=D(2026, 9, 9), port="NO", pos="ADG - LUIS SOSA"),
+        _carga(1006, D(2026, 9, 9), "Vta_Finalizada", producto="IPTV", venta=D(2026, 9, 9), port="NO", legajo="EXP3", pos="ADG - LUIS SOSA"),
         _carga(1009, D(2026, 9, 10), "Vta_Finalizada", venta=D(2026, 9, 10)),  # finalizada sin activar
         _carga(2001, D(2026, 9, 21), "Vta_A_Confirmar"),                          # 1 día
         _carga(2002, D(2026, 9, 12), "Vta_A_Confirmar", legajo="EXP2"),           # 10 días
         _carga(2003, D(2026, 9, 1), "Vta_Procesado"),                             # 21 días
-        _carga(2004, D(2026, 9, 18), "Vta_Rechazada", port="NO"),                 # 4 días, nativa
+        _carga(2004, D(2026, 9, 18), "Vta_Rechazada", port="NO", depto="ALTO PARANA"),  # 4 días, nativa, Interior
         *cargas_extra,
     ]:
         ws.append(f)
@@ -136,6 +136,22 @@ def test_parser_y_analisis(xlsx):
     assert {f["rango"]: f["total"] for f in p["por_antiguedad"]} == {"0-2 días": 1, "3-7 días": 1, "8-15 días": 1, "más de 15 días": 1}
     assert p["por_legajo"][0] == {"legajo": "EXP1", "cargado_por": "NILDA CACERES", "total": 3, "mas_de_7_dias": 1}
     assert a["detalle_netas"][4]["consumo"] is None  # GPON no tiene consumo
+
+    # Productividad (CARGAS): evolutivo por fecha de alta, estados, Pospago/Internet y zonas.
+    pr = a["productividad"]
+    pk = pr["kpis"]
+    assert (pk["cargas"], pk["finalizadas"], pk["pct_finalizacion"]) == (11, 7, 63.6)
+    assert (pk["pospago"], pk["internet"], pk["iptv"]) == (9, 1, 1)
+    assert (pk["capital_central"], pk["interior"]) == (10, 1)
+    assert [(z["zona"], z["total"]) for z in pr["por_zona"]] == [("Capital y Central", 10), ("Interior", 1)]
+    assert pr["por_departamento"][1] == {**pr["por_departamento"][1], "departamento": "ALTO PARANA", "zona": "Interior", "Vta_Rechazada": 1}
+    assert pk["mejor_dia"] == "2026-09-05" and pk["mejor_dia_total"] == 4
+    assert [(f["dia"], f["total"], f["acumulado"]) for f in pr["por_dia"]][:2] == [("2026-09-01", 1, 1), ("2026-09-05", 4, 5)]
+    assert pr["por_estado"][0] == {"estado": "Vta_Finalizada", "total": 7, "pct": 63.6}
+    # Las pendientes sin POS se atribuyen al vendedor único del legajo (EXP1 -> ANA PEREZ); EXP2 no cargó con POS.
+    pv = {v["vendedor"]: v for v in pr["por_vendedor"]}
+    assert pv["ANA PEREZ"]["total"] == 9 and pv["ANA PEREZ"]["por_legajo"] == 4 and pv["ANA PEREZ"]["Vta_A_Confirmar"] == 1
+    assert pv["CARGADO POR EXP2 NILDA CACERES"]["total"] == 1 and pk["sin_atribuir"] == 1
 
 
 def test_alerta_por_vendedor(tmp_path):

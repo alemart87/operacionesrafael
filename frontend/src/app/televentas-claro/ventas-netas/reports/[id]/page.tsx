@@ -8,12 +8,13 @@ import { PrintButton, PrintHeader } from "@/components/PrintButton";
 import { usePublicar } from "@/components/ventas-netas/PublicarDialog";
 import { VisionNegocio } from "@/components/ventas-netas/VisionNegocio";
 import { VisionOperativa } from "@/components/ventas-netas/VisionOperativa";
+import { VisionProductividad } from "@/components/ventas-netas/VisionProductividad";
 import { EstadoBadge, Tabs } from "@/components/ventas-netas/ui";
 import { VN_API, VN_HREF, fechaCorta, fechaHora, nombrePeriodo, type InformeDetalle } from "@/components/ventas-netas/tipos";
 import { apiFetch, downloadFile } from "@/lib/api";
 import { PERM_VENTAS_NETAS_GESTION } from "@/lib/operativas";
 
-type Vista = "negocio" | "operativa";
+type Vista = "negocio" | "productividad" | "operativa";
 
 export default function VentasNetasReportPage() {
   return (
@@ -92,12 +93,15 @@ function Informe() {
         value={vista}
         onChange={setVista}
         items={[
-          { value: "negocio", label: "Visión Negocio", hint: "Gerencial · imprimible" },
+          { value: "negocio", label: "Visión Negocio", hint: "Netas · gerencial" },
+          { value: "productividad", label: "Productividad", hint: "Evolutivo de cargas · zonas" },
           { value: "operativa", label: "Visión Operativa", hint: "Planillas · descargable" },
         ]}
       />
 
-      {vista === "negocio" ? <VisionNegocio d={r.data} /> : <VisionOperativa d={r.data} onDescargar={descargar} descargando={descargando} />}
+      {vista === "negocio" && <VisionNegocio d={r.data} />}
+      {vista === "productividad" && <VisionProductividad d={r.data} />}
+      {vista === "operativa" && <VisionOperativa d={r.data} onDescargar={descargar} descargando={descargando} />}
 
       {dialogo}
     </>

@@ -138,7 +138,7 @@ Ventas cerradas del mes a partir del **corte diario** que envía Claro: un
 |---|---|---|
 | Informes | `/televentas-claro/ventas-netas` | Informes agrupados por mes: publicado, borradores y reemplazados |
 | Subir corte | `…/upload` | Sube el `.xlsx`; se procesa en cola y genera un borrador |
-| Informe | `…/reports/{id}` | **Visión Negocio** (gerencial, imprimible) y **Visión Operativa** (planillas, descargable) |
+| Informe | `…/reports/{id}` | **Visión Negocio** (netas, gerencial), **Productividad** (evolutivo de cargas, estados, Pospago vs Internet, zonas, vendedores) y **Visión Operativa** (planillas, críticos, ficha por vendedor, descargable) |
 
 Reglas del análisis (`analyzer.py`):
 
@@ -149,6 +149,12 @@ Reglas del análisis (`analyzer.py`):
 - **Vendedor** de una neta = `POS_NOMBRE` sin el prefijo del subcanal; las
   cargas pendientes no traen POS y se atribuyen por `VENDEDOR_LEGAJO`.
 - Suspendidas y portadas que no llegaron a DDI se cuentan y se marcan, no se descartan.
+- **Productividad** (hoja CARGAS): evolutivo por fecha de alta de la venta,
+  estados (finalizada, a confirmar, procesado, rechazada), Pospago (CO) vs
+  Internet (IF) e IPTV, y **zonas**: Capital y Central por un lado, Interior por
+  el otro (`DEPARTAMENTO_FACT`). Las cargas pendientes no traen POS: se
+  atribuyen al vendedor cuando el legajo que cargó siempre carga para un único
+  POS; si no, quedan como "cargado por <legajo>".
 
 Publicación (`api.py`):
 
