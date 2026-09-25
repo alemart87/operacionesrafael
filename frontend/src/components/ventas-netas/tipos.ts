@@ -2,7 +2,7 @@
 
 export const VN_API = "/api/v1/televentas-claro/ventas-netas";
 /** Debe coincidir con ANALYSIS_VERSION del backend (jobs.py). */
-export const VERSION_ANALISIS = 3;
+export const VERSION_ANALISIS = 4;
 export const VN_HREF = "/televentas-claro/ventas-netas";
 
 export type EstadoInforme = "draft" | "published" | "replaced";
@@ -175,6 +175,29 @@ export interface Productividad {
   por_ciudad: (FilaProd & { ciudad: string; zona: string })[];
   por_vendedor: (FilaProd & { vendedor: string; subcanal: string | null; por_legajo: number })[];
   riesgo_uso?: { riesgo: string; cargas: number; con_uso: number; sin_uso: number; pct_sin_uso: number }[];
+  detalle_cargas?: DetalleCarga[];
+}
+
+/** Una venta cargada (hoja CARGAS) con su riesgo y, si finalizó en Pospago, su uso. */
+export interface DetalleCarga {
+  sds_number: string;
+  fecha_alta: string | null;
+  estado: string;
+  producto: string;
+  plan: string | null;
+  campania: string | null;
+  portacion: "SI" | "NO";
+  origen_portacion: string | null;
+  riesgo: string | null;
+  zona: string;
+  departamento: string | null;
+  ciudad: string | null;
+  vendedor: string;
+  atribucion: "pos" | "legajo" | "sin_atribuir";
+  legajo: string | null;
+  uso: "SI" | "NO" | null;
+  /** Finalizada Pospago sin consumo: alerta PFI. */
+  riesgosa: boolean;
 }
 
 export interface InformeData {

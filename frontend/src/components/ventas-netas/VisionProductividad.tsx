@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, LabelList, Legend, Line, LineChart, Respo
 import { KpiCard } from "@/components/KpiCard";
 import { ESTADO_SDS_LABEL, fechaCorta, n, pct, type InformeData, type Productividad } from "./tipos";
 import { Seccion, Tabla } from "./ui";
+import { VendedorDetalle } from "./VendedorDetalle";
 
 // Paletas validadas (ΔE CVD ≥ 15 en pares adyacentes); el contraste bajo se cubre con etiquetas y tablas.
 const C_ESTADO: Record<string, string> = { Vta_Finalizada: "#00B2BF", Vta_A_Confirmar: "#F39200", Vta_Procesado: "#7B3FA0", Vta_Rechazada: "#E6332A" };
@@ -40,13 +41,25 @@ export function VisionProductividad({ d }: { d: InformeData }) {
   const [zonaVend, setZonaVend] = useState<"todas" | "capital_central" | "interior">("todas");
   const [q, setQ] = useState("");
   const [soloSinUso, setSoloSinUso] = useState(false);
+  const [orden, setOrden] = useState<"volumen" | "riesgo">("volumen");
+  const [verTodos, setVerTodos] = useState(false);
+  const [vendedorAbierto, setVendedorAbierto] = useState<string | null>(null);
 
   const porDia = useMemo(() => p.por_dia.map((f) => ({ ...f, diaCorto: dd(f.dia) })), [p.por_dia]);
   const vendedores = useMemo(
-    () => p.por_vendedor.filter((v) => (!q || v.vendedor.toLowerCase().includes(q.toLowerCase())) && (zonaVend === "todas" || (v[zonaVend] as number) > 0) && (!soloSinUso || (v.sin_uso as number) > 0)),
-    [p.por_vendedor, q, zonaVend, soloSinUso],
+    () => {
+      const lista = p.por_vendedor.filter((v) => (!q || v.vendedor.toLowerCase().includes(q.toLowerCase())) && (zonaVend === "todas" || (v[zonaVend] as number) > 0) && (!soloSinUso || (v.sin_uso as number) > 0));
+      // "Más riesgosos": primero por líneas sin uso, después por % sin uso y por cargas de riesgo alto sin uso.
+      return orden === "riesgo"
+        ? [...lista].sort((a, b) => b.sin_uso - a.sin_uso || b.pct_sin_uso - a.pct_sin_uso || b.sin_uso_riesgo_A - a.sin_uso_riesgo_A || b.riesgo_A - a.riesgo_A)
+        : lista;
+    },
+    [p.por_vendedor, q, zonaVend, soloSinUso, orden],
   );
-  const topVend = useMemo(() => vendedores.slice(0, 15).map((v) => ({ ...v, nombre: v.vendedor.length > 26 ? v.vendedor.slice(0, 25) + "…" : v.vendedor })), [vendedores]);
+  const topVend = useMemo(
+    () => (verTodos ? vendedores : vendedores.slice(0, 15)).map((v) => ({ ...v, nombre: v.vendedor.length > 26 ? v.vendedor.slice(0, 25) + "…" : v.vendedor })),
+    [vendedores, verTodos],
+  );
   const interior = p.por_departamento.filter((x) => x.zona === "Interior");
   const zonaCC = p.por_zona.find((z) => z.zona === "Capital y Central");
   const zonaInt = p.por_zona.find((z) => z.zona === "Interior");
@@ -247,6 +260,10 @@ export function VisionProductividad({ d }: { d: InformeData }) {
             <label className="text-xs text-brand-graphite flex items-center gap-1.5 cursor-pointer">
               <input type="checkbox" checked={soloSinUso} onChange={(e) => setSoloSinUso(e.target.checked)} /> Solo con líneas sin uso
             </label>
+            <div className="flex gap-1">
+              <button onClick={() => setOrden("volumen")} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${orden === "volumen" ? "bg-brand-ink text-white" : "text-brand-slate hover:bg-brand-bg"}`}>Por volumen</button>
+              <button onClick={() => { setOrden("riesgo"); setSoloSinUso(true); }} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${orden === "riesgo" ? "bg-brand-primary text-white" : "text-brand-primary hover:bg-brand-primary-light"}`}>▲ Más riesgosos</button>
+            </div>
           </div>
         }
       >
@@ -259,7 +276,14 @@ export function VisionProductividad({ d }: { d: InformeData }) {
 
         <div style={{ height: Math.max(220, topVend.length * 26 + 40) }}>
           <ResponsiveContainer>
-            <BarChart data={topVend} layout="vertical" margin={{ left: 8, right: 40, top: 4, bottom: 4 }} barCategoryGap={4}>
+            <BarChart
+              data={topVend}
+              layout="vertical"
+              margin={{ left: 8, right: 40, top: 4, bottom: 4 }}
+              barCategoryGap={4}
+              onClick={(e: any) => { const v = e?.activePayload?.[0]?.payload?.vendedor; if (v) setVendedorAbierto(v); }}
+              style={{ cursor: "pointer" }}
+            >
               <XAxis type="number" hide />
               <YAxis type="category" dataKey="nombre" width={190} tick={{ fontSize: 11, fill: "#4b5563" }} axisLine={false} tickLine={false} />
               <Tooltip
@@ -279,7 +303,16 @@ export function VisionProductividad({ d }: { d: InformeData }) {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <p className="text-[11px] text-brand-mist mb-3">Gráfico: los 15 primeros del filtro. La tabla trae todos. Filas en rojo: 5 o más finalizadas Pospago con más de {UMBRAL_SIN_USO}% sin uso.</p>
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <p className="text-[11px] text-brand-mist">
+            {verTodos ? `Gráfico: los ${n(vendedores.length)} vendedores del filtro.` : `Gráfico: los 15 primeros del filtro (${n(vendedores.length)} en total).`} Clic en una barra o en una fila para abrir la ficha con sus ventas. Filas en rojo: 5 o más finalizadas Pospago con más de {UMBRAL_SIN_USO}% sin uso.
+          </p>
+          {vendedores.length > 15 && (
+            <button onClick={() => setVerTodos((v) => !v)} className="btn-secondary no-print py-1.5 text-xs">
+              {verTodos ? "Ver los 15 primeros" : `Expandir a todos (${n(vendedores.length)})`}
+            </button>
+          )}
+        </div>
         <Tabla
           cols={[
             { key: "vendedor", label: "Vendedor", render: (r: any) => <><b className={r.vendedor.startsWith("CARGADO POR") ? "text-brand-slate font-normal" : ""}>{r.vendedor}</b> <span className="text-brand-mist text-xs">{r.subcanal}</span>{r.por_legajo > 0 && <span className="text-brand-mist text-[10px] ml-1" title="Cargas atribuidas por legajo">({r.por_legajo} por legajo)</span>}</> },
@@ -300,7 +333,12 @@ export function VisionProductividad({ d }: { d: InformeData }) {
           rows={vendedores}
           alerta={(r: any) => r.con_uso + r.sin_uso >= 5 && r.pct_sin_uso > UMBRAL_SIN_USO}
           maxAlto="max-h-[70vh]"
+          onRowClick={(r: any) => setVendedorAbierto(r.vendedor)}
         />
+
+        {vendedorAbierto && (
+          <VendedorDetalle d={d} nombre={vendedorAbierto} lista={vendedores.map((v) => v.vendedor)} onClose={() => setVendedorAbierto(null)} onCambiar={setVendedorAbierto} />
+        )}
 
         <div className="mt-5 grid lg:grid-cols-2 gap-6">
           <div>

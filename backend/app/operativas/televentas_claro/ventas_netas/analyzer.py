@@ -467,6 +467,7 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
     # Vendedores: POS de la carga; si no trae, el vendedor único del legajo; si no, "cargado por".
     vend: dict[str, dict] = {}
     sin_atribuir = 0
+    detalle_cargas: list[dict[str, Any]] = []
     for r in cargas:
         if r.get("pos_nombre"):
             nombre, subcanal = vendedor_de(r.get("pos_nombre"), r.get("subcanal"))
@@ -483,6 +484,30 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
         if atrib == "legajo":
             f["por_legajo"] += 1
         sumar(f, r)
+        prod = producto_de(r)
+        finalizada = r.get("sds_estado") == ESTADO_FINALIZADA
+        uso = None
+        if finalizada and prod == "Pospago" and r["sds_number"] in uso_por_sds:
+            uso = "SI" if uso_por_sds[r["sds_number"]] else "NO"
+        detalle_cargas.append({
+            "sds_number": r["sds_number"],
+            "fecha_alta": r.get("sds_fecha_alta_venta"),
+            "estado": r.get("sds_estado"),
+            "producto": prod,
+            "plan": r.get("plan_descripcion_orig"),
+            "campania": r.get("campania_descripcion"),
+            "portacion": "SI" if (r.get("tipo_port") or "NO") != "NO" else "NO",
+            "origen_portacion": r.get("origen_portacion"),
+            "riesgo": (r.get("riesgo_ori") or "").upper() or None,
+            "zona": zona_de(r.get("departamento_fact")),
+            "departamento": r.get("departamento_fact"),
+            "ciudad": r.get("ciudad_fact"),
+            "vendedor": nombre,
+            "atribucion": atrib,
+            "legajo": r.get("vendedor_legajo"),
+            "uso": uso,
+            "riesgosa": uso == "NO",  # finalizada Pospago sin consumo: alerta PFI
+        })
     por_vendedor = sorted((cerrar(f) for f in vend.values()), key=lambda f: (-f["total"], f["vendedor"]))
 
     # Riesgo × uso sobre las finalizadas Pospago con dato de consumo.
@@ -538,4 +563,5 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
         "por_ciudad": por_ciudad,
         "por_vendedor": por_vendedor,
         "riesgo_uso": riesgo_uso,
+        "detalle_cargas": detalle_cargas,
     }

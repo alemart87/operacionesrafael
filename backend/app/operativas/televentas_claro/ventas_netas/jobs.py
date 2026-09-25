@@ -18,7 +18,7 @@ def _build(path: str) -> dict[str, Any]:
     return analyze_ventas_netas(parse_ventas_netas(path))
 
 
-ANALYSIS_VERSION = 3  # sube cuando el análisis agrega bloques: los informes viejos se pueden actualizar
+ANALYSIS_VERSION = 4  # sube cuando el análisis agrega bloques: los informes viejos se pueden actualizar
 
 
 def aplicar_analisis(report: VentasNetasReport, analysis: dict[str, Any]) -> None:

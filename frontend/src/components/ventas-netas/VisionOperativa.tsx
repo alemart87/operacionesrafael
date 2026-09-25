@@ -15,7 +15,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
   const [q, setQ] = useState("");
   const [soloSinUso, setSoloSinUso] = useState(false);
   const [soloAlerta, setSoloAlerta] = useState(false);
-  const [vendedorAbierto, setVendedorAbierto] = useState<Vendedor | null>(null);
+  const [vendedorAbierto, setVendedorAbierto] = useState<string | null>(null);
 
   const filtro = (s: (string | null | undefined)[]) => !q || s.some((x) => (x ?? "").toString().toLowerCase().includes(q.toLowerCase()));
 
@@ -97,13 +97,19 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
             rows={vendedores}
             alerta={(r) => r.alerta}
             maxAlto="max-h-[70vh]"
-            onRowClick={setVendedorAbierto}
+            onRowClick={(r) => setVendedorAbierto(r.vendedor)}
           />
         </Seccion>
       )}
 
       {vendedorAbierto && (
-        <VendedorDetalle d={d} vendedor={vendedorAbierto} onClose={() => setVendedorAbierto(null)} onCambiar={setVendedorAbierto} />
+        <VendedorDetalle
+          d={d}
+          nombre={vendedorAbierto}
+          lista={(hoja === "criticos" ? criticosFiltrados.map((c) => c.v) : vendedores).map((v) => v.vendedor)}
+          onClose={() => setVendedorAbierto(null)}
+          onCambiar={setVendedorAbierto}
+        />
       )}
 
       {hoja === "criticos" && (
@@ -125,7 +131,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
             alerta={(r) => r.v.alerta}
             vacio="Ningún vendedor crítico en este corte."
             maxAlto="max-h-[70vh]"
-            onRowClick={(r) => setVendedorAbierto(r.v)}
+            onRowClick={(r) => setVendedorAbierto(r.v.vendedor)}
           />
         </Seccion>
       )}
@@ -143,7 +149,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
               { key: "consumo", label: "Consumo", render: (r) => consumo(r.consumo) },
               { key: "estado_linea", label: "Estado", align: "center", render: (r) => (r.estado_linea === "S" ? <span className="badge-primary">Susp.</span> : "Activa") },
               { key: "vendedor", label: "Vendedor", render: (r) => (
-                <button className="text-left hover:text-brand-primary" onClick={() => { const v = d.vendedores.find((x) => x.vendedor === r.vendedor); if (v) setVendedorAbierto(v); }}>
+                <button className="text-left hover:text-brand-primary" onClick={() => setVendedorAbierto(r.vendedor)}>
                   {r.vendedor} <span className="text-brand-mist text-xs">{r.subcanal}</span>
                 </button>
               ) },
