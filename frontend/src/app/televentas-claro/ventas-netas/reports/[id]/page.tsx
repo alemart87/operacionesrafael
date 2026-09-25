@@ -10,7 +10,7 @@ import { VisionNegocio } from "@/components/ventas-netas/VisionNegocio";
 import { VisionOperativa } from "@/components/ventas-netas/VisionOperativa";
 import { VisionProductividad } from "@/components/ventas-netas/VisionProductividad";
 import { EstadoBadge, Tabs } from "@/components/ventas-netas/ui";
-import { VN_API, VN_HREF, fechaCorta, fechaHora, nombrePeriodo, type InformeDetalle } from "@/components/ventas-netas/tipos";
+import { VERSION_ANALISIS, VN_API, VN_HREF, fechaCorta, fechaHora, nombrePeriodo, type InformeDetalle } from "@/components/ventas-netas/tipos";
 import { apiFetch, downloadFile } from "@/lib/api";
 import { PERM_VENTAS_NETAS_GESTION } from "@/lib/operativas";
 
@@ -43,6 +43,16 @@ function Informe() {
   useEffect(() => { load(); }, [load]);
 
   const { publicar, dialogo, loading: publicando, error: errorPublicar } = usePublicar(load);
+  const [actualizando, setActualizando] = useState(false);
+
+  // Informe generado por una versión anterior del análisis: le faltan bloques nuevos.
+  const desactualizado = !!r && (!r.data?.productividad || (r.data.version ?? 1) < VERSION_ANALISIS);
+  const actualizar = async () => {
+    setActualizando(true);
+    try { await apiFetch(`${VN_API}/reports/${id}/reprocess`, { method: "POST" }); await load(); }
+    catch (e: any) { setError(e.message); }
+    finally { setActualizando(false); }
+  };
 
   const descargar = async () => {
     setDescargando(true);
@@ -88,6 +98,19 @@ function Informe() {
       </div>
 
       {errorPublicar && <div className="card p-4 text-brand-primary mb-4">{errorPublicar}</div>}
+      {desactualizado && (
+        <div className="rounded-md border border-brand-orange/40 bg-brand-orange/10 text-sm text-brand-graphite p-3 mb-4 flex items-center justify-between gap-3 flex-wrap print:hidden">
+          <span>
+            Este informe se generó con una <b>versión anterior</b> del análisis y le faltan secciones nuevas (por ejemplo, Productividad).
+            {gestion ? " Se puede recalcular a partir del archivo ya subido, sin volver a cargarlo." : " Pedile a gestión que lo actualice."}
+          </span>
+          {gestion && (
+            <button onClick={actualizar} disabled={actualizando} className="btn-primary">
+              {actualizando ? "Recalculando…" : "Actualizar informe"}
+            </button>
+          )}
+        </div>
+      )}
 
       <Tabs<Vista>
         value={vista}
@@ -100,7 +123,9 @@ function Informe() {
       />
 
       {vista === "negocio" && <VisionNegocio d={r.data} />}
-      {vista === "productividad" && <VisionProductividad d={r.data} />}
+      {vista === "productividad" && (r.data?.productividad
+        ? <VisionProductividad d={r.data} />
+        : <div className="card p-10 text-center text-brand-slate">La sección Productividad no está en este informe. Actualizalo con el botón de arriba.</div>)}
       {vista === "operativa" && <VisionOperativa d={r.data} onDescargar={descargar} descargando={descargando} />}
 
       {dialogo}

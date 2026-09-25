@@ -1,6 +1,8 @@
 /** Contratos de la API de Ventas Netas (Televentas CLARO). */
 
 export const VN_API = "/api/v1/televentas-claro/ventas-netas";
+/** Debe coincidir con ANALYSIS_VERSION del backend (jobs.py). */
+export const VERSION_ANALISIS = 2;
 export const VN_HREF = "/televentas-claro/ventas-netas";
 
 export type EstadoInforme = "draft" | "published" | "replaced";
@@ -165,7 +167,10 @@ export interface Productividad {
 }
 
 export interface InformeData {
-  productividad: Productividad;
+  /** Versión del análisis con que se generó. Sin ella o menor a la actual: informe de una versión anterior. */
+  version?: number;
+  /** Ausente en informes generados antes de la pestaña Productividad. */
+  productividad?: Productividad;
   kpis: Kpis;
   por_producto: ({ producto: string } & UsoStats)[];
   por_plan: ({ producto: string; plan: string } & UsoStats)[];
