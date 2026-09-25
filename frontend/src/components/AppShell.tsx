@@ -133,7 +133,7 @@ export function AppShell({ children, workspace = false }: {
         <header className="bg-white border-b border-brand-border shadow-soft sticky top-0 z-30">
           <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
             <Link href="/inicio" className="hover:opacity-90 transition-opacity flex-shrink-0">
-              <Brand logoHeight={40} />
+              <Brand logoHeight={40} compactOnPhone />
             </Link>
 
             {isAdmin && (
@@ -152,7 +152,7 @@ export function AppShell({ children, workspace = false }: {
 
             <div className="flex items-center gap-3 sm:gap-4">
               <Link href="/perfil" className="flex items-center gap-3 group" title="Mi perfil">
-                <div className="text-right leading-tight hidden sm:block">
+                <div className={`text-right leading-tight hidden ${isAdmin ? "lg:block" : "sm:block"}`}>
                   <div className="text-sm font-semibold text-brand-ink group-hover:text-brand-primary transition-colors">
                     {user.full_name}
                   </div>

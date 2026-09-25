@@ -46,7 +46,10 @@ function Panel() {
             Informes de auditoría sobre las ventas netas. Cada informe congela los datos que analizó, arranca con los hallazgos automáticos y sigue su circuito: borrador, revisión, cierre y archivo.
           </p>
         </div>
-        <Link href={`${AUD_HREF}/riesgos`} className="btn-primary">Nuevo informe de auditoría</Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href={`${AUD_HREF}/guia`} className="btn-secondary">Guía del auditor</Link>
+          <Link href={`${AUD_HREF}/riesgos`} className="btn-primary">Nuevo informe de auditoría</Link>
+        </div>
       </div>
 
       {error && <div className="card p-4 text-brand-primary mb-4">{error}</div>}

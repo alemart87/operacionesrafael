@@ -100,11 +100,12 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         label: "Auditoría de Ventas",
         href: "/televentas-claro/auditoria",
         descripcion: "Circuito de auditoría sobre las ventas: riesgos y ranking de vendedores, informes con hallazgos y evidencia, seguimiento, estados y PDF.",
-        contenido: ["Riesgos y datos llamativos", "Vendedores riesgosos", "Hallazgos con evidencia", "Seguimiento y estados", "Informe imprimible en PDF", "Datos congelados"],
+        contenido: ["Riesgos y datos llamativos", "Vendedores riesgosos", "Hallazgos con evidencia", "Seguimiento y estados", "Informe imprimible en PDF", "Guía del auditor"],
         acceso: "Ver y auditar",
         nav: [
           { href: "/televentas-claro/auditoria", label: "Informes de auditoría", exact: true },
           { href: "/televentas-claro/auditoria/riesgos", label: "Riesgos" },
+          { href: "/televentas-claro/auditoria/guia", label: "Guía del auditor" },
         ],
       },
       {

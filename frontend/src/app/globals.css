@@ -221,6 +221,8 @@ h3,
   .informe-impreso .tabla-evidencia table { font-size: 9px !important; }
   .informe-impreso .tabla-evidencia th, .informe-impreso .tabla-evidencia td { padding: 2px 4px !important; white-space: normal !important; }
   .informe-anexo { break-before: page; page-break-before: always; }
+  /* Guía del auditor: cada sección arranca en hoja nueva (sin títulos huérfanos al pie) */
+  .guia-seccion { break-before: page; page-break-before: always; }
 
   /* Gráficos: solo achicar si el SVG desborda el ancho de página. Usamos
      max-width (no width) + height:auto; recharts emite viewBox, así que escala

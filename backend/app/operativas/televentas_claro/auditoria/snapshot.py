@@ -17,6 +17,9 @@ from typing import Any
 
 from ..ventas_netas.jobs import ANALYSIS_VERSION
 
+# ------------------------------------------------------------------ reglas
+# Única fuente de verdad: el motor las aplica, cada snapshot las guarda y la
+# Guía del auditor las muestra (GET /parametros). Cambiarlas acá cambia todo.
 UMBRAL_USO_PCT = 50.0          # alerta de vendedor: menos de esto en uso…
 MIN_LINEAS_ALERTA = 5          # …con al menos estas líneas Pospago
 DIAS_SIN_USO_ANTIGUA = 3       # una línea sin uso con estos días o más ya no es "reciente"
@@ -24,6 +27,33 @@ UMBRAL_SIN_USO_ATENCION = 15.0
 UMBRAL_SIN_USO_CRITICO = 30.0
 MAX_HALLAZGOS_VENDEDOR = 30
 MAX_EVIDENCIA = 60
+
+# Nivel del vendedor: alcanza con una condición. Además es crítico con la alerta de uso o con más de
+# UMBRAL_SIN_USO_CRITICO % sin uso, y de atención con más de UMBRAL_SIN_USO_ATENCION % (con MIN_LINEAS_ALERTA líneas).
+NIVEL_CRITICO = {"sin_uso_antiguas": 5, "sali_sin_uso": 5, "suspendidas": 3}
+NIVEL_ATENCION = {"sin_uso_antiguas": 3, "sali_sin_uso": 3, "suspendidas": 1, "sin_uso_riesgo_A": 2}
+# Puntaje de riesgo (ordena a los vendedores riesgosos): puntos por línea y por la alerta de uso.
+PESOS = {"sin_uso_antigua": 3, "sin_uso_reciente": 1, "sali_sin_uso": 3, "suspendida": 2, "sin_uso_riesgo_A": 2, "alerta_uso": 8}
+# Señales del patrón: desde cuántas líneas la señal pasa de gravedad media a alta.
+SENAL_ALTA_DESDE = {"sin_uso_antiguas": 3, "sali_sin_uso": 3, "suspendidas": 2}
+# Patrones de concentración: la señal aparece con al menos `min` líneas y `pct` % o más en el mismo valor.
+PATRONES = {
+    "sin_uso_mismo_dia": {"min": 3, "pct": 50},      # sus sin uso, activadas el mismo día
+    "pospago_mismo_dia": {"min": 6, "pct": 40},      # sus Pospago, activadas el mismo día (entrega en ráfaga)
+    "sin_uso_mismo_plan": {"min": 3, "pct": 70},
+    "sin_uso_mismo_origen": {"min": 3, "pct": 70},   # misma operadora de origen (o todas nativas)
+    "nativas_sin_uso": {"min": 3, "pct": 60},        # sobre sus nativas
+    "sin_uso_misma_ciudad": {"min": 4, "pct": 75},
+}
+# Datos llamativos y hallazgos generales.
+LLAMATIVOS = {
+    "sali_pct_sin_uso_alta": 50,     # Sali Hablando sin uso: gravedad alta desde este %
+    "pendientes_dias": 7,            # una carga pendiente es "vieja" con más de estos días (Ventas Netas usa el mismo corte)
+    "pendientes_viejas_media": 20,   # pendientes viejas: gravedad media desde esta cantidad (si no, baja)
+    "concentracion_top": 5,          # vendedores que se miran en la concentración de líneas sin uso…
+    "concentracion_pct_media": 40,   # …gravedad media si concentran este % o más
+    "dia_sin_uso_min": 10,           # "día con más líneas sin uso": se informa desde esta cantidad
+}
 
 NIVEL_LABEL = {"critico": "Crítico", "atencion": "Atención", "normal": "Normal"}
 
@@ -65,6 +95,23 @@ def _nombre_periodo(periodo: str) -> str:
         return periodo
 
 
+def parametros() -> dict[str, Any]:
+    """Reglas vigentes del análisis (las guarda cada snapshot y las muestra la Guía del auditor)."""
+    return {
+        "umbral_uso_pct": UMBRAL_USO_PCT, "min_lineas_alerta": MIN_LINEAS_ALERTA, "dias_sin_uso_antigua": DIAS_SIN_USO_ANTIGUA,
+        "umbral_sin_uso_atencion": UMBRAL_SIN_USO_ATENCION, "umbral_sin_uso_critico": UMBRAL_SIN_USO_CRITICO,
+        "analysis_version": ANALYSIS_VERSION,
+        "nivel_critico": dict(NIVEL_CRITICO), "nivel_atencion": dict(NIVEL_ATENCION), "pesos": dict(PESOS),
+        "senal_alta_desde": dict(SENAL_ALTA_DESDE), "patrones": {k: dict(v) for k, v in PATRONES.items()},
+        "llamativos": dict(LLAMATIVOS), "max_hallazgos_vendedor": MAX_HALLAZGOS_VENDEDOR, "max_evidencia": MAX_EVIDENCIA,
+    }
+
+
+def _concentrado(top: tuple[str, int] | None, total: int, regla: dict[str, int]) -> bool:
+    """¿El valor más repetido alcanza la regla? (mínimo de líneas y % en aritmética entera, sin redondeos)."""
+    return bool(top) and total >= regla["min"] and top[1] * 100 >= regla["pct"] * total
+
+
 def _top(rows: list[dict], key) -> tuple[str, int] | None:
     c: Counter = Counter()
     for r in rows:
@@ -85,34 +132,34 @@ def _senales_vendedor(v: dict[str, Any], lineas: list[dict], sin_uso: list[dict]
     if v["alerta"]:
         s.append({"gravedad": "alta", "texto": f"{v['pct_uso']}% en uso: bajo el umbral de {_g(UMBRAL_USO_PCT)}%"})
     if antiguas:
-        s.append({"gravedad": "alta" if antiguas >= 3 else "media", "texto": f"{antiguas} sin uso con {DIAS_SIN_USO_ANTIGUA}+ días desde la activación"})
+        s.append({"gravedad": "alta" if antiguas >= SENAL_ALTA_DESDE["sin_uso_antiguas"] else "media", "texto": f"{antiguas} sin uso con {DIAS_SIN_USO_ANTIGUA}+ días desde la activación"})
     if recientes and recientes == len(sin_uso) and sin_uso:
         s.append({"gravedad": "info", "texto": f"Todas las sin uso ({recientes}) son de los últimos {DIAS_SIN_USO_ANTIGUA - 1} días"})
     if v["sali_sin_uso"]:
-        s.append({"gravedad": "alta" if v["sali_sin_uso"] >= 3 else "media", "texto": f"{v['sali_sin_uso']} Sali Hablando sin uso"})
+        s.append({"gravedad": "alta" if v["sali_sin_uso"] >= SENAL_ALTA_DESDE["sali_sin_uso"] else "media", "texto": f"{v['sali_sin_uso']} Sali Hablando sin uso"})
 
     dia = _top(sin_uso, lambda r: r.get("fecha_activacion"))
-    if dia and len(sin_uso) >= 3 and dia[1] / len(sin_uso) >= 0.5:
+    if _concentrado(dia, len(sin_uso), PATRONES["sin_uso_mismo_dia"]):
         s.append({"gravedad": "media", "texto": f"{dia[1]} de {len(sin_uso)} sin uso activadas el {_fmt_fecha(dia[0])}"})
     dia_total = _top(pospago, lambda r: r.get("fecha_activacion"))
-    if dia_total and len(pospago) >= 6 and dia_total[1] / len(pospago) >= 0.4:
+    if _concentrado(dia_total, len(pospago), PATRONES["pospago_mismo_dia"]):
         s.append({"gravedad": "media", "texto": f"{_g(_pct(dia_total[1], len(pospago)))}% de sus Pospago en un solo día ({_fmt_fecha(dia_total[0])})"})
     plan = _top(sin_uso, lambda r: r.get("plan"))
-    if plan and len(sin_uso) >= 3 and plan[1] / len(sin_uso) >= 0.7:
+    if _concentrado(plan, len(sin_uso), PATRONES["sin_uso_mismo_plan"]):
         s.append({"gravedad": "media", "texto": f"Sin uso concentradas en {plan[0]} ({plan[1]} de {len(sin_uso)})"})
     origen = _top(sin_uso, lambda r: (f"portación {r.get('origen_portacion') or ''}".strip() if r.get("portacion") == "SI" else "nativa"))
-    if origen and len(sin_uso) >= 3 and origen[1] / len(sin_uso) >= 0.7:
+    if _concentrado(origen, len(sin_uso), PATRONES["sin_uso_mismo_origen"]):
         s.append({"gravedad": "info", "texto": f"Sin uso casi todas de {origen[0]} ({origen[1]} de {len(sin_uso)})"})
     nativas = [r for r in pospago if r.get("portacion") != "SI"]
     nativas_su = [r for r in nativas if r.get("consumo") == "NO"]
-    if len(nativas) >= 3 and len(nativas_su) / len(nativas) >= 0.6:
+    if _concentrado(("nativas", len(nativas_su)), len(nativas), PATRONES["nativas_sin_uso"]):
         s.append({"gravedad": "media", "texto": f"Nativas sin uso: {len(nativas_su)} de {len(nativas)}"})
     ciudad = _top(sin_uso, lambda r: r.get("ciudad"))
-    if ciudad and len(sin_uso) >= 4 and ciudad[1] / len(sin_uso) >= 0.75:
+    if _concentrado(ciudad, len(sin_uso), PATRONES["sin_uso_misma_ciudad"]):
         s.append({"gravedad": "info", "texto": f"Sin uso concentradas en {ciudad[0]} ({ciudad[1]} de {len(sin_uso)})"})
     if v["suspendidas"]:
         n = v["suspendidas"]
-        s.append({"gravedad": "alta" if n >= 2 else "media", "texto": f"{n} línea{'s' if n > 1 else ''} suspendida{'s' if n > 1 else ''} al cierre"})
+        s.append({"gravedad": "alta" if n >= SENAL_ALTA_DESDE["suspendidas"] else "media", "texto": f"{n} línea{'s' if n > 1 else ''} suspendida{'s' if n > 1 else ''} al cierre"})
     if v["sin_uso_riesgo_A"]:
         s.append({"gravedad": "media", "texto": f"{v['sin_uso_riesgo_A']} sin uso con riesgo alto en la carga"})
     if v["fuera_ddi"] and v["fuera_ddi"] > v["sali"]:
@@ -124,16 +171,18 @@ def _senales_vendedor(v: dict[str, Any], lineas: list[dict], sin_uso: list[dict]
 def _nivel_y_puntaje(v: dict[str, Any]) -> tuple[str, int]:
     base = v["con_uso"] + v["sin_uso"]
     critico = (
-        v["alerta"] or v["sin_uso_antiguas"] >= 5 or v["sali_sin_uso"] >= 5 or v["suspendidas"] >= 3
+        v["alerta"] or any(v[k] >= n for k, n in NIVEL_CRITICO.items())
         or (base >= MIN_LINEAS_ALERTA and v["pct_sin_uso"] > UMBRAL_SIN_USO_CRITICO)
     )
     atencion = (
-        v["sin_uso_antiguas"] >= 3 or v["sali_sin_uso"] >= 3 or v["suspendidas"] >= 1 or v["sin_uso_riesgo_A"] >= 2
+        any(v[k] >= n for k, n in NIVEL_ATENCION.items())
         or (base >= MIN_LINEAS_ALERTA and v["pct_sin_uso"] > UMBRAL_SIN_USO_ATENCION)
     )
+    p = PESOS
     puntaje = (
-        v["sin_uso_antiguas"] * 3 + (v["sin_uso"] - v["sin_uso_antiguas"]) + v["sali_sin_uso"] * 3
-        + v["suspendidas"] * 2 + v["sin_uso_riesgo_A"] * 2 + (8 if v["alerta"] else 0)
+        v["sin_uso_antiguas"] * p["sin_uso_antigua"] + (v["sin_uso"] - v["sin_uso_antiguas"]) * p["sin_uso_reciente"]
+        + v["sali_sin_uso"] * p["sali_sin_uso"] + v["suspendidas"] * p["suspendida"] + v["sin_uso_riesgo_A"] * p["sin_uso_riesgo_A"]
+        + (p["alerta_uso"] if v["alerta"] else 0)
     )
     return ("critico" if critico else "atencion" if atencion else "normal"), puntaje
 
@@ -297,7 +346,7 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
             f["total"] += x.get("total", 0) or 0
             f["mas_de_7_dias"] += x.get("mas_de_7_dias", 0) or 0
         for x in pend.get("detalle", []):
-            if (x.get("dias") or 0) > 7:
+            if (x.get("dias") or 0) > LLAMATIVOS["pendientes_dias"]:
                 pendientes_viejas.append({**x, "periodo": periodo})
         for x in d.get("finalizadas_sin_activar", []):
             finalizadas_sin_activar.append({**x, "periodo": periodo})
@@ -378,11 +427,7 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
     sali_lineas.sort(key=lambda x: (not x.get("sin_uso"), x.get("fecha_portacion") or ""))
     return {
         "generado_en": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-        "parametros": {
-            "umbral_uso_pct": UMBRAL_USO_PCT, "min_lineas_alerta": MIN_LINEAS_ALERTA, "dias_sin_uso_antigua": DIAS_SIN_USO_ANTIGUA,
-            "umbral_sin_uso_atencion": UMBRAL_SIN_USO_ATENCION, "umbral_sin_uso_critico": UMBRAL_SIN_USO_CRITICO,
-            "analysis_version": ANALYSIS_VERSION,
-        },
+        "parametros": parametros(),
         "advertencias": advertencias,
         "fuentes": fuentes,
         "periodos": periodos,
@@ -408,7 +453,7 @@ def _datos_llamativos(k: dict, ranking: list[dict], series: dict, lineas_sin_uso
         out.append({"gravedad": gravedad, "categoria": categoria, "titulo": titulo, "detalle": detalle, "cifra": cifra})
 
     if k["sali_total"]:
-        add("alta" if k["sali_pct_sin_uso"] >= 50 else "media", "sali_hablando",
+        add("alta" if k["sali_pct_sin_uso"] >= LLAMATIVOS["sali_pct_sin_uso_alta"] else "media", "sali_hablando",
             "Sali Hablando sin uso",
             f"{k['sali_sin_uso']} de {k['sali_total']} portaciones Sali Hablando no tienen consumo. Salieron hablando de la otra operadora y no usan la línea: riesgo alto de primera factura impaga.",
             f"{_g(k['sali_pct_sin_uso'])}%")
@@ -428,21 +473,22 @@ def _datos_llamativos(k: dict, ranking: list[dict], series: dict, lineas_sin_uso
             f"{k['finalizadas_sin_activar']} cargas en estado finalizada no figuran en DDI ni en PORTABILIDAD del período. Conviene conciliar con Claro.",
             str(k["finalizadas_sin_activar"]))
     if k["pendientes_mas_7"]:
-        add("media" if k["pendientes_mas_7"] >= 20 else "baja", "pendientes", "Cargas pendientes con más de 7 días",
-            f"{k['pendientes_mas_7']} de {k['pendientes']} cargas pendientes llevan más de 7 días sin finalizar.",
+        add("media" if k["pendientes_mas_7"] >= LLAMATIVOS["pendientes_viejas_media"] else "baja", "pendientes",
+            f"Cargas pendientes con más de {LLAMATIVOS['pendientes_dias']} días",
+            f"{k['pendientes_mas_7']} de {k['pendientes']} cargas pendientes llevan más de {LLAMATIVOS['pendientes_dias']} días sin finalizar.",
             str(k["pendientes_mas_7"]))
     if k["suspendidas"]:
         add("baja", "suspendidas", "Líneas suspendidas al cierre",
             f"{k['suspendidas']} líneas netas estaban suspendidas al corte.", str(k["suspendidas"]))
     if lineas_sin_uso:
-        top5 = sorted(ranking, key=lambda v: -v["sin_uso"])[:5]
+        top5 = sorted(ranking, key=lambda v: -v["sin_uso"])[:LLAMATIVOS["concentracion_top"]]
         parte = sum(v["sin_uso"] for v in top5)
-        add("media" if _pct(parte, len(lineas_sin_uso)) >= 40 else "info", "vendedor", "Concentración de líneas sin uso",
-            f"{_g(_pct(parte, len(lineas_sin_uso)))}% de las líneas sin uso ({parte} de {len(lineas_sin_uso)}) se concentra en 5 vendedores: "
+        add("media" if _pct(parte, len(lineas_sin_uso)) >= LLAMATIVOS["concentracion_pct_media"] else "info", "vendedor", "Concentración de líneas sin uso",
+            f"{_g(_pct(parte, len(lineas_sin_uso)))}% de las líneas sin uso ({parte} de {len(lineas_sin_uso)}) se concentra en {LLAMATIVOS['concentracion_top']} vendedores: "
             + ", ".join(f"{v['vendedor']} ({v['sin_uso']})" for v in top5) + ".",
             f"{_g(_pct(parte, len(lineas_sin_uso)))}%")
     dia = max(series.get("netas_por_dia", []), key=lambda x: x["sin_uso"], default=None)
-    if dia and dia["sin_uso"] >= 10:
+    if dia and dia["sin_uso"] >= LLAMATIVOS["dia_sin_uso_min"]:
         add("info", "sin_uso", "Día con más líneas sin uso",
             f"El {_fmt_fecha(dia['dia'])} se activaron {dia['sin_uso']} líneas que no registran uso ({_g(_pct(dia['sin_uso'], dia['total']))}% de las activaciones del día).",
             _fmt_fecha(dia["dia"]))
@@ -515,9 +561,9 @@ def hallazgos_automaticos(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 
     if k["pendientes_mas_7"]:
         out.append({
-            "titulo": f"Cargas pendientes con más de 7 días ({k['pendientes_mas_7']})",
-            "severidad": "media" if k["pendientes_mas_7"] >= 20 else "baja", "categoria": "pendientes", "vendedor": None,
-            "descripcion": f"{k['pendientes_mas_7']} cargas llevan más de 7 días sin finalizar. Legajos con más pendientes viejas: "
+            "titulo": f"Cargas pendientes con más de {LLAMATIVOS['pendientes_dias']} días ({k['pendientes_mas_7']})",
+            "severidad": "media" if k["pendientes_mas_7"] >= LLAMATIVOS["pendientes_viejas_media"] else "baja", "categoria": "pendientes", "vendedor": None,
+            "descripcion": f"{k['pendientes_mas_7']} cargas llevan más de {LLAMATIVOS['pendientes_dias']} días sin finalizar. Legajos con más pendientes viejas: "
                            + ", ".join(f"{x['legajo']} ({x['mas_de_7_dias']})" for x in snapshot["pendientes_por_legajo"] if x["mas_de_7_dias"])[:300] + ".",
             "recomendacion": "Depurar las cargas a confirmar: rechazar las que no van a completarse y reclamar a Claro las que dependen de la operadora.",
             "evidencia": {"lineas": snapshot["pendientes_viejas"][:MAX_EVIDENCIA], "total": len(snapshot["pendientes_viejas"])},

@@ -77,6 +77,12 @@ async def test_circuito_de_auditoria(tmp_path, monkeypatch):
         s = r.json()
         assert s["kpis"]["netas"] == 6 and s["kpis"]["sali_sin_uso"] == 1 and s["periodos"] == ["2026-09"]
         assert s["advertencias"] == [] and s["fuentes"][0]["version"] == s["parametros"]["analysis_version"]
+        # Las reglas que muestra la Guía del auditor son las mismas que aplicó el análisis.
+        assert (await ac.get(f"{BASE}/parametros", headers=supervisor)).status_code == 403
+        reglas = (await ac.get(f"{BASE}/parametros", headers=analista)).json()
+        assert reglas == s["parametros"]
+        assert reglas["umbral_uso_pct"] == 50 and reglas["pesos"]["sali_sin_uso"] == 3 and reglas["nivel_critico"]["sin_uso_antiguas"] == 5
+        assert reglas["patrones"]["pospago_mismo_dia"] == {"min": 6, "pct": 40} and reglas["llamativos"]["pendientes_dias"] == 7
         f1 = (await ac.get(f"{BASE}/fuentes", headers=analista)).json()[0]
         assert f1["actualizada"] and f1["netas"] == 6
         det = (await ac.get(f"{VN}/reports/{r1}", headers=analista)).json()

@@ -184,6 +184,7 @@ Ventas Netas. Código en `backend/app/operativas/televentas_claro/auditoria/`.
 | Informes de auditoría | `/televentas-claro/auditoria` | Lista por estado con hallazgos abiertos y de severidad alta |
 | Riesgos | `…/riesgos` | Elegir fuentes (un informe de Ventas Netas por mes) y ver el análisis en vivo; crear el informe |
 | Informe | `…/informes/{id}` | Resumen, hallazgos, gráficos, seguimiento, redacción y vista para imprimir en PDF |
+| Guía del auditor | `…/guia` | Esquemas de riesgo, Sali Hablando, líneas sin uso, patrones de venta y entrega, semáforo del vendedor, alertas de negocio, checklist y recomendaciones tipo; imprimible en PDF |
 
 - Al crear un informe (`AUD-AAAA-NNN`) se **congela** una copia de los datos
   analizados (`snapshot`): aunque después se eliminen los informes de origen,
@@ -207,6 +208,14 @@ Ventas Netas. Código en `backend/app/operativas/televentas_claro/auditoria/`.
   elegidos por el auditor, vendedores riesgosos, conclusiones, recomendaciones
   y bitácora). Las líneas de evidencia de cada hallazgo van en un **anexo
   opcional** (casilla en la pestaña), porque multiplican las páginas.
+- Reglas del análisis: `snapshot.py` concentra en constantes con nombre los
+  umbrales, las condiciones de nivel del vendedor, los pesos del puntaje, los
+  patrones de concentración y las reglas de los datos llamativos.
+  `GET /auditoria/parametros` las expone y la **Guía del auditor** las muestra,
+  así que la guía siempre dice lo que el sistema aplica; además, cada snapshot
+  guarda las reglas con las que se evaluó. Los ejemplos de la guía usan cifras
+  agregadas del corte de septiembre 2026 (sin vendedores ni líneas), y no incluye
+  montos de comisión (Facturación es solo superadmin).
 - Utilidad `auditoria`: Analista por defecto; el superadmin la asigna a
   Coordinador desde Perfiles. Todo queda en el registro de auditoría general.
 
@@ -266,7 +275,7 @@ Todo el código vive en `backend/app/operativas/televentas_claro/facturacion/`.
 | GET | `/api/v1/televentas-claro` | `televentas_claro.ver` |
 | GET | `/api/v1/televentas-claro/ventas-netas/reports[/{id}][/export.xlsx]` | `televentas_claro.ventas_netas` |
 | POST · DELETE | `/api/v1/televentas-claro/ventas-netas/uploads` · `/reports/{id}[/publish\|/unpublish\|/reprocess]` | `televentas_claro.ventas_netas_gestion` |
-| * | `/api/v1/televentas-claro/auditoria/*` (fuentes, riesgos, informes, hallazgos, seguimientos, estado) | `televentas_claro.auditoria` |
+| * | `/api/v1/televentas-claro/auditoria/*` (fuentes, parametros, riesgos, informes, hallazgos, seguimientos, estado) | `televentas_claro.auditoria` |
 | * | `/api/v1/televentas-claro/facturacion/*` · `/facturacion-agent/*` | Solo superadmin |
 | GET | `/health` · `/api/v1/health` | Público |
 | POST | `/api/v1/admin/migrate?token=<SECRET_KEY>` | Emergencia |
