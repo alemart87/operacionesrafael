@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Date, DateTime, Float, Integer, JSON, String, Text, func
+from sqlalchemy import Date, DateTime, Float, Integer, JSON, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ....core.database import Base
@@ -28,6 +28,10 @@ class VentasNetasUpload(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Datos ya leídos del archivo (JSON gzip). Es la fuente para recalcular el
+    # informe cuando cambia el análisis: no depende de que el .xlsx siga en disco.
+    parsed_gz: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
 
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

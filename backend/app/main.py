@@ -30,6 +30,8 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     # v0.2 · roles del esqueleto → perfiles nuevos
     "UPDATE users SET role = 'analista' WHERE role = 'analyst'",
     "UPDATE users SET role = 'cliente' WHERE role = 'viewer'",
+    # v0.4 · ventas netas: datos leídos del corte guardados en la base (recalcular sin el archivo)
+    "ALTER TABLE ventas_netas_uploads ADD COLUMN IF NOT EXISTS parsed_gz BYTEA",
 ]
 
 

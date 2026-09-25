@@ -44,13 +44,15 @@ function Informe() {
 
   const { publicar, dialogo, loading: publicando, error: errorPublicar } = usePublicar(load);
   const [actualizando, setActualizando] = useState(false);
+  const [errorActualizar, setErrorActualizar] = useState<string | null>(null);
 
   // Informe generado por una versión anterior del análisis: le faltan bloques nuevos.
   const desactualizado = !!r && (!r.data?.productividad || (r.data.version ?? 1) < VERSION_ANALISIS);
   const actualizar = async () => {
     setActualizando(true);
+    setErrorActualizar(null);
     try { await apiFetch(`${VN_API}/reports/${id}/reprocess`, { method: "POST" }); await load(); }
-    catch (e: any) { setError(e.message); }
+    catch (e: any) { setErrorActualizar(e.message); }
     finally { setActualizando(false); }
   };
 
@@ -109,6 +111,7 @@ function Informe() {
               {actualizando ? "Recalculando…" : "Actualizar informe"}
             </button>
           )}
+          {errorActualizar && <div className="w-full text-brand-primary-dark">{errorActualizar}</div>}
         </div>
       )}
 

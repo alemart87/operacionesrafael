@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from datetime import date, datetime
 
@@ -296,6 +297,11 @@ async def test_flujo_publicacion(xlsx, monkeypatch, tmp_path):
         det = (await ac.get(f"{BASE}/reports/{r2}", headers=analista)).json()
         assert "productividad" not in det["data"] and det["netas"] == 0
         assert (await ac.post(f"{BASE}/reports/{r2}/reprocess", headers=supervisor)).status_code == 403
+        # El archivo ya no está en el servidor (deploy nuevo, disco efímero): se recalcula desde la base.
+        async with session_scope() as db:
+            up = await db.get(VentasNetasUpload, (await db.get(VentasNetasReport, r2)).upload_id)
+            assert up.parsed_gz and len(up.parsed_gz) < 20_000
+            os.remove(up.file_path)
         r = await ac.post(f"{BASE}/reports/{r2}/reprocess", headers=analista)
         assert r.status_code == 200 and r.json()["netas"] == 6 and r.json()["status"] == "published"
         det = (await ac.get(f"{BASE}/reports/{r2}", headers=analista)).json()

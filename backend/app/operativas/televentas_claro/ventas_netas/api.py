@@ -26,7 +26,7 @@ from ....core.database import get_db
 from ....models.user import User
 from ....services.audit_service import record_action
 from .exports import build_xlsx
-from .jobs import ANALYSIS_VERSION, analizar_archivo, aplicar_analisis, queue
+from .jobs import ANALYSIS_VERSION, analizar_archivo, analizar_guardado, aplicar_analisis, comprimir_parsed, queue
 from .models import ESTADO_BORRADOR, ESTADO_PUBLICADO, ESTADO_REEMPLAZADO, VentasNetasReport, VentasNetasUpload
 from .schemas import PublishRequest, ReportDetail, ReportList, ReportSummary, UploadList, UploadRead
 
@@ -218,15 +218,30 @@ async def reprocess_report(
     report_id: str, request: Request,
     user: CurrentUser = Depends(require_gestion), db: AsyncSession = Depends(get_db),
 ) -> VentasNetasReport:
-    """Recalcula el informe a partir del archivo ya subido (para informes generados por una versión anterior)."""
+    """Recalcula el informe (para informes generados por una versión anterior del análisis).
+
+    Usa los datos leídos que quedaron guardados en la base; el archivo original
+    es solo un respaldo para cargas anteriores a que se guardaran esos datos.
+    """
     report = await db.get(VentasNetasReport, report_id)
     if not report:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Informe no encontrado")
     upload = await db.get(VentasNetasUpload, report.upload_id)
-    if not upload or not upload.file_path or not Path(upload.file_path).exists():
-        raise HTTPException(status.HTTP_409_CONFLICT, "El archivo original ya no está disponible: subí el corte de nuevo.")
     try:
-        analysis = await analizar_archivo(upload.file_path)
+        if upload and upload.parsed_gz:
+            analysis = analizar_guardado(upload.parsed_gz)
+        elif upload and upload.file_path and Path(upload.file_path).exists():
+            resultado = await analizar_archivo(upload.file_path)
+            analysis = resultado["analysis"]
+            upload.parsed_gz = comprimir_parsed(resultado["parsed"])  # de acá en más ya no depende del archivo
+        else:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Este corte se cargó antes de que el sistema guardara sus datos, y el archivo ya no está en el "
+                "servidor. Es la única vez: subí ese corte de nuevo y de ahí en más se recalcula solo.",
+            )
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"No se pudo recalcular el informe: {exc}") from exc
     aplicar_analisis(report, analysis)
