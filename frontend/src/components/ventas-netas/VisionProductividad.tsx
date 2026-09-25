@@ -20,7 +20,7 @@ type Serie = "estados" | "productos" | "zonas";
 
 /** Productividad diaria (hoja CARGAS): evolutivo de ventas, estados, Pospago vs Internet y zonas. */
 export function VisionProductividad({ d }: { d: InformeData }) {
-  const p: Productividad = d.productividad;
+  const p: Productividad = d.productividad!;
   const k = p.kpis;
   const [serie, setSerie] = useState<Serie>("estados");
   const [zonaVend, setZonaVend] = useState<"todas" | "capital_central" | "interior">("todas");

@@ -277,6 +277,20 @@ async def test_flujo_publicacion(xlsx, monkeypatch, tmp_path):
         assert items[r1]["status"] == "replaced" and items[r1]["replaced_by_report_id"] == r2
         assert [x["id"] for x in (await ac.get(f"{BASE}/reports", headers=supervisor)).json()["items"]] == [r2]
 
+        # Informe de una versión anterior (sin Productividad): se recalcula desde el archivo ya subido.
+        async with session_scope() as db:
+            rep = await db.get(VentasNetasReport, r2)
+            rep.data = {k: v for k, v in rep.data.items() if k not in ("productividad", "version")}
+            rep.netas = 0
+            await db.commit()
+        det = (await ac.get(f"{BASE}/reports/{r2}", headers=analista)).json()
+        assert "productividad" not in det["data"] and det["netas"] == 0
+        assert (await ac.post(f"{BASE}/reports/{r2}/reprocess", headers=supervisor)).status_code == 403
+        r = await ac.post(f"{BASE}/reports/{r2}/reprocess", headers=analista)
+        assert r.status_code == 200 and r.json()["netas"] == 6 and r.json()["status"] == "published"
+        det = (await ac.get(f"{BASE}/reports/{r2}", headers=analista)).json()
+        assert det["data"]["version"] == 2 and det["data"]["productividad"]["kpis"]["cargas"] == 11
+
         # No se elimina un publicado; despublicar lo vuelve borrador y ahí sí.
         assert (await ac.delete(f"{BASE}/reports/{r2}", headers=analista)).status_code == 400
         assert (await ac.post(f"{BASE}/reports/{r2}/unpublish", headers=analista)).json()["status"] == "draft"
@@ -287,5 +301,6 @@ async def test_flujo_publicacion(xlsx, monkeypatch, tmp_path):
 
         acciones = [a["action"] for a in (await ac.get("/api/v1/audit", headers=admin)).json()]
         for esperada in ("create_ventas_netas_upload", "publish_ventas_netas_report", "replace_ventas_netas_report",
-                         "unpublish_ventas_netas_report", "delete_ventas_netas_report", "export_ventas_netas_report"):
+                         "unpublish_ventas_netas_report", "delete_ventas_netas_report", "export_ventas_netas_report",
+                         "reprocess_ventas_netas_report"):
             assert esperada in acciones, esperada

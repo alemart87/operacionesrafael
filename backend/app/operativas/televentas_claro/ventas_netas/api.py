@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
@@ -25,7 +26,7 @@ from ....core.database import get_db
 from ....models.user import User
 from ....services.audit_service import record_action
 from .exports import build_xlsx
-from .jobs import queue
+from .jobs import ANALYSIS_VERSION, analizar_archivo, aplicar_analisis, queue
 from .models import ESTADO_BORRADOR, ESTADO_PUBLICADO, ESTADO_REEMPLAZADO, VentasNetasReport, VentasNetasUpload
 from .schemas import PublishRequest, ReportDetail, ReportList, ReportSummary, UploadList, UploadRead
 
@@ -208,6 +209,33 @@ async def publish_report(
         action="replace_ventas_netas_report" if actual else "publish_ventas_netas_report",
         resource_type="ventas_netas_report", resource_id=report_id, ip=client_ip(request),
         extra={"periodo": report.periodo, "reemplaza_a": actual.id if actual else None},
+    )
+    return report
+
+
+@router.post("/reports/{report_id}/reprocess", response_model=ReportSummary)
+async def reprocess_report(
+    report_id: str, request: Request,
+    user: CurrentUser = Depends(require_gestion), db: AsyncSession = Depends(get_db),
+) -> VentasNetasReport:
+    """Recalcula el informe a partir del archivo ya subido (para informes generados por una versión anterior)."""
+    report = await db.get(VentasNetasReport, report_id)
+    if not report:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Informe no encontrado")
+    upload = await db.get(VentasNetasUpload, report.upload_id)
+    if not upload or not upload.file_path or not Path(upload.file_path).exists():
+        raise HTTPException(status.HTTP_409_CONFLICT, "El archivo original ya no está disponible: subí el corte de nuevo.")
+    try:
+        analysis = await analizar_archivo(upload.file_path)
+    except Exception as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"No se pudo recalcular el informe: {exc}") from exc
+    aplicar_analisis(report, analysis)
+    await db.commit()
+    await db.refresh(report)
+    await record_action(
+        db, user_id=user.id, action="reprocess_ventas_netas_report",
+        resource_type="ventas_netas_report", resource_id=report_id, ip=client_ip(request),
+        extra={"periodo": report.periodo, "version": ANALYSIS_VERSION},
     )
     return report
 
