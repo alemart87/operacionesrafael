@@ -2,7 +2,7 @@
 
 export const VN_API = "/api/v1/televentas-claro/ventas-netas";
 /** Debe coincidir con ANALYSIS_VERSION del backend (jobs.py). */
-export const VERSION_ANALISIS = 2;
+export const VERSION_ANALISIS = 3;
 export const VN_HREF = "/televentas-claro/ventas-netas";
 
 export type EstadoInforme = "draft" | "published" | "replaced";
@@ -145,6 +145,15 @@ export type FilaProd = {
   iptv: number;
   capital_central: number;
   interior: number;
+  con_uso: number;
+  sin_uso: number;
+  sin_dato_uso: number;
+  fin_fija: number;
+  pct_sin_uso: number;
+  riesgo_A: number;
+  riesgo_M: number;
+  riesgo_B: number;
+  sin_uso_riesgo_A: number;
 } & Record<string, number | string | null>;
 
 export interface Productividad {
@@ -156,6 +165,7 @@ export interface Productividad {
     pospago: number; internet: number; iptv: number; capital_central: number; interior: number; pct_interior: number;
     dias_con_cargas: number; promedio_diario: number; mejor_dia: string | null; mejor_dia_total: number;
     ultimo_dia: string | null; ultimo_dia_total: number; vendedores: number; sin_atribuir: number; fecha_dato: string | null;
+    con_uso: number; sin_uso: number; sin_dato_uso: number; pct_sin_uso: number; riesgo_alto: number; sin_uso_riesgo_alto: number;
   };
   por_dia: (FilaProd & { dia: string; acumulado: number })[];
   por_estado: { estado: string; total: number; pct: number }[];
@@ -164,6 +174,7 @@ export interface Productividad {
   por_departamento: (FilaProd & { departamento: string; zona: string })[];
   por_ciudad: (FilaProd & { ciudad: string; zona: string })[];
   por_vendedor: (FilaProd & { vendedor: string; subcanal: string | null; por_legajo: number })[];
+  riesgo_uso?: { riesgo: string; cargas: number; con_uso: number; sin_uso: number; pct_sin_uso: number }[];
 }
 
 export interface InformeData {

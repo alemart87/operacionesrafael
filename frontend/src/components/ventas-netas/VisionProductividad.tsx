@@ -11,6 +11,20 @@ const C_ESTADO: Record<string, string> = { Vta_Finalizada: "#00B2BF", Vta_A_Conf
 const C_PRODUCTO: Record<string, string> = { Pospago: "#7B3FA0", Internet: "#00B2BF", IPTV: "#F39200" };
 const C_ZONA = { capital_central: "#7B3FA0", interior: "#00B2BF" };
 const PROD_LABEL: Record<string, string> = { Pospago: "Pospago", Internet: "Internet (IF)", IPTV: "IPTV" };
+// Salud por vendedor: seis series validadas (con uso, sin uso, Internet/IPTV, a confirmar, procesado, rechazada).
+const C_SALUD = { con_uso: "#00B2BF", sin_uso: "#D6336C", fin_fija: "#7B3FA0", Vta_A_Confirmar: "#F39200", Vta_Procesado: "#4C6EF5", Vta_Rechazada: "#E6332A" };
+const SERIES_SALUD = [
+  { key: "con_uso", label: "Finalizada · Pospago con uso", color: C_SALUD.con_uso },
+  { key: "sin_uso", label: "Finalizada · Pospago SIN USO", color: C_SALUD.sin_uso },
+  { key: "sin_dato_uso", label: "Finalizada · sin dato de uso", color: "#b8bec7" },
+  { key: "fin_fija", label: "Finalizada · Internet / IPTV", color: C_SALUD.fin_fija },
+  { key: "Vta_A_Confirmar", label: "A confirmar", color: C_SALUD.Vta_A_Confirmar },
+  { key: "Vta_Procesado", label: "Procesado", color: C_SALUD.Vta_Procesado },
+  { key: "Vta_Rechazada", label: "Rechazada", color: C_SALUD.Vta_Rechazada },
+];
+const RIESGO_LABEL: Record<string, string> = { A: "A · alto", M: "M · medio", B: "B · bajo" };
+/** % de líneas Pospago finalizadas sin uso a partir del cual el vendedor queda en rojo. */
+const UMBRAL_SIN_USO = 30;
 
 const tooltipStyle = { fontSize: 12, borderRadius: 6, border: "1px solid #e5e7eb", boxShadow: "0 4px 12px rgba(0,0,0,.08)" };
 const dd = (iso: string) => iso.slice(8, 10);
@@ -25,11 +39,12 @@ export function VisionProductividad({ d }: { d: InformeData }) {
   const [serie, setSerie] = useState<Serie>("estados");
   const [zonaVend, setZonaVend] = useState<"todas" | "capital_central" | "interior">("todas");
   const [q, setQ] = useState("");
+  const [soloSinUso, setSoloSinUso] = useState(false);
 
   const porDia = useMemo(() => p.por_dia.map((f) => ({ ...f, diaCorto: dd(f.dia) })), [p.por_dia]);
   const vendedores = useMemo(
-    () => p.por_vendedor.filter((v) => (!q || v.vendedor.toLowerCase().includes(q.toLowerCase())) && (zonaVend === "todas" || (v[zonaVend] as number) > 0)),
-    [p.por_vendedor, q, zonaVend],
+    () => p.por_vendedor.filter((v) => (!q || v.vendedor.toLowerCase().includes(q.toLowerCase())) && (zonaVend === "todas" || (v[zonaVend] as number) > 0) && (!soloSinUso || (v.sin_uso as number) > 0)),
+    [p.por_vendedor, q, zonaVend, soloSinUso],
   );
   const topVend = useMemo(() => vendedores.slice(0, 15).map((v) => ({ ...v, nombre: v.vendedor.length > 26 ? v.vendedor.slice(0, 25) + "…" : v.vendedor })), [vendedores]);
   const interior = p.por_departamento.filter((x) => x.zona === "Interior");
@@ -217,48 +232,112 @@ export function VisionProductividad({ d }: { d: InformeData }) {
         </div>
       </Seccion>
 
-      {/* Estados por vendedor */}
+      {/* Salud de ventas por vendedor: estados + uso + riesgo */}
       <Seccion
-        titulo="Estados de ventas por vendedor"
-        sub={`${n(k.vendedores)} vendedores · las cargas sin POS se atribuyen por el legajo que las cargó cuando siempre carga para el mismo vendedor (${n(k.sin_atribuir)} quedan como "cargado por")`}
+        titulo="Salud de las ventas por vendedor"
+        sub={`${n(k.vendedores)} vendedores · finalizadas Pospago cruzadas con el consumo de DDI y con el riesgo de la carga · las cargas sin POS se atribuyen por legajo (${n(k.sin_atribuir)} quedan como "cargado por")`}
         accion={
-          <div className="flex items-center gap-2 no-print">
-            <input className="input max-w-[200px]" placeholder="Buscar vendedor…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="flex items-center gap-2 no-print flex-wrap">
+            <input className="input max-w-[180px]" placeholder="Buscar vendedor…" value={q} onChange={(e) => setQ(e.target.value)} />
             <select className="input max-w-[170px]" value={zonaVend} onChange={(e) => setZonaVend(e.target.value as any)}>
               <option value="todas">Todas las zonas</option>
               <option value="capital_central">Con ventas en Cap./Central</option>
               <option value="interior">Con ventas en Interior</option>
             </select>
+            <label className="text-xs text-brand-graphite flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={soloSinUso} onChange={(e) => setSoloSinUso(e.target.checked)} /> Solo con líneas sin uso
+            </label>
           </div>
         }
       >
+        <div className="grid sm:grid-cols-4 gap-3 mb-4">
+          <Mini label="Pospago con uso" value={n(k.con_uso)} color={C_SALUD.con_uso} />
+          <Mini label="Pospago SIN USO" value={`${n(k.sin_uso)} · ${pct(k.pct_sin_uso)}`} color={C_SALUD.sin_uso} hint={`${n(k.sin_uso_riesgo_alto)} en riesgo alto`} />
+          <Mini label="Sin dato de uso" value={n(k.sin_dato_uso)} color="#9ca3af" hint="Finalizadas que no están en DDI" />
+          <Mini label="Riesgo alto (A)" value={n(k.riesgo_alto)} color="#0F1116" hint={`${pct(Math.round((k.riesgo_alto / Math.max(k.cargas, 1)) * 1000) / 10)} de las cargas`} />
+        </div>
+
         <div style={{ height: Math.max(220, topVend.length * 26 + 40) }}>
           <ResponsiveContainer>
             <BarChart data={topVend} layout="vertical" margin={{ left: 8, right: 40, top: 4, bottom: 4 }} barCategoryGap={4}>
               <XAxis type="number" hide />
               <YAxis type="category" dataKey="nombre" width={190} tick={{ fontSize: 11, fill: "#4b5563" }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(0,0,0,.04)" }} labelFormatter={(_, pl: any) => pl?.[0]?.payload?.vendedor ?? ""} />
+              <Tooltip
+                contentStyle={tooltipStyle}
+                cursor={{ fill: "rgba(0,0,0,.04)" }}
+                labelFormatter={(_, pl: any) => {
+                  const r = pl?.[0]?.payload;
+                  return r ? `${r.vendedor} · ${pct(r.pct_sin_uso)} sin uso · riesgo alto ${n(r.riesgo_A)} (${n(r.sin_uso_riesgo_A)} sin uso)` : "";
+                }}
+              />
               <Legend iconType="square" iconSize={10} wrapperStyle={{ fontSize: 12 }} />
-              {p.estados.map((e, i) => (
-                <Bar key={e} dataKey={e} name={estadoLabel(e)} stackId="a" fill={C_ESTADO[e] ?? "#9ca3af"} radius={i === p.estados.length - 1 ? [0, 4, 4, 0] : 0}>
-                  {i === p.estados.length - 1 && <LabelList dataKey="total" position="right" formatter={(v: number) => n(v)} style={{ fontSize: 11, fill: "#111827" }} />}
+              {SERIES_SALUD.filter((sr) => sr.key.startsWith("Vta_") ? p.estados.includes(sr.key) : true).map((sr, i, arr) => (
+                <Bar key={sr.key} dataKey={sr.key} name={sr.label} stackId="a" fill={sr.color} radius={i === arr.length - 1 ? [0, 4, 4, 0] : 0}>
+                  {i === arr.length - 1 && <LabelList dataKey="total" position="right" formatter={(v: number) => n(v)} style={{ fontSize: 11, fill: "#111827" }} />}
                 </Bar>
               ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <p className="text-[11px] text-brand-mist mb-3">Gráfico: los 15 primeros del filtro. La tabla trae todos.</p>
+        <p className="text-[11px] text-brand-mist mb-3">Gráfico: los 15 primeros del filtro. La tabla trae todos. Filas en rojo: 5 o más finalizadas Pospago con más de {UMBRAL_SIN_USO}% sin uso.</p>
         <Tabla
           cols={[
             { key: "vendedor", label: "Vendedor", render: (r: any) => <><b className={r.vendedor.startsWith("CARGADO POR") ? "text-brand-slate font-normal" : ""}>{r.vendedor}</b> <span className="text-brand-mist text-xs">{r.subcanal}</span>{r.por_legajo > 0 && <span className="text-brand-mist text-[10px] ml-1" title="Cargas atribuidas por legajo">({r.por_legajo} por legajo)</span>}</> },
-            ...colsProd(),
+            { key: "salud", label: "Salud", render: (r: any) => <Salud r={r} /> },
+            { key: "total", label: "Cargas", align: "right", render: (r: any) => <b>{n(r.total)}</b> },
+            { key: "finalizadas", label: "Final.", align: "right", render: (r: any) => n(r.finalizadas) },
+            { key: "con_uso", label: "Con uso", align: "right", render: (r: any) => n(r.con_uso) },
+            { key: "sin_uso", label: "SIN USO", align: "right", render: (r: any) => (r.sin_uso ? <b style={{ color: C_SALUD.sin_uso }}>{n(r.sin_uso)}</b> : "0") },
+            { key: "pct_sin_uso", label: "% sin uso", align: "right", render: (r: any) => (r.con_uso + r.sin_uso ? pct(r.pct_sin_uso) : "—") },
+            { key: "riesgo_A", label: "Riesgo A", align: "right", render: (r: any) => (r.riesgo_A ? <>{n(r.riesgo_A)}{r.sin_uso_riesgo_A ? <span className="text-brand-primary text-xs"> ({n(r.sin_uso_riesgo_A)} s/uso)</span> : null}</> : "0") },
+            { key: "riesgo_M", label: "M", align: "right", render: (r: any) => n(r.riesgo_M) },
+            { key: "riesgo_B", label: "B", align: "right", render: (r: any) => n(r.riesgo_B) },
+            ...p.estados.filter((e) => e !== "Vta_Finalizada").map((e) => ({ key: e, label: estadoLabel(e), align: "right" as const, render: (r: any) => n(r[e]) })),
+            { key: "pct_finalizacion", label: "% final.", align: "right", render: (r: any) => pct(r.pct_finalizacion) },
+            { key: "fin_fija", label: "Internet/IPTV", align: "right", render: (r: any) => n(r.fin_fija) },
             ...colsZona,
           ]}
           rows={vendedores}
-          alerta={(r: any) => r.total >= 5 && r.pct_finalizacion < 70}
+          alerta={(r: any) => r.con_uso + r.sin_uso >= 5 && r.pct_sin_uso > UMBRAL_SIN_USO}
           maxAlto="max-h-[70vh]"
         />
+
+        <div className="mt-5 grid lg:grid-cols-2 gap-6">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider2 text-brand-slate mb-1">Riesgo de la carga × uso de la línea</div>
+            <Tabla
+              cols={[
+                { key: "riesgo", label: "Riesgo", render: (r: any) => <b>{RIESGO_LABEL[r.riesgo] ?? r.riesgo}</b> },
+                { key: "cargas", label: "Cargas", align: "right", render: (r: any) => n(r.cargas) },
+                { key: "con_uso", label: "Con uso", align: "right", render: (r: any) => n(r.con_uso) },
+                { key: "sin_uso", label: "Sin uso", align: "right", render: (r: any) => <b style={{ color: C_SALUD.sin_uso }}>{n(r.sin_uso)}</b> },
+                { key: "pct_sin_uso", label: "% sin uso", align: "right", render: (r: any) => pct(r.pct_sin_uso) },
+              ]}
+              rows={p.riesgo_uso ?? []}
+            />
+            <p className="text-[11px] text-brand-mist mt-2">Sobre las finalizadas Pospago con dato de consumo. Riesgo según `RIESGO_ORI` de la carga.</p>
+          </div>
+        </div>
       </Seccion>
     </div>
   );
+}
+
+function Mini({ label, value, color, hint }: { label: string; value: string; color: string; hint?: string }) {
+  return (
+    <div className="rounded-lg border border-brand-border p-3 border-l-[3px]" style={{ borderLeftColor: color }}>
+      <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">{label}</div>
+      <div className="font-display text-2xl text-brand-ink mt-0.5">{value}</div>
+      {hint && <div className="text-[11px] text-brand-slate">{hint}</div>}
+    </div>
+  );
+}
+
+/** Semáforo de salud del vendedor según % sin uso de sus finalizadas Pospago (con al menos 5 con dato). */
+function Salud({ r }: { r: any }) {
+  const base = r.con_uso + r.sin_uso;
+  if (base < 5) return <span className="text-brand-mist text-xs">{base ? `${n(base)} líneas` : "—"}</span>;
+  const v = r.pct_sin_uso as number;
+  const [txt, cls, sym] = v > UMBRAL_SIN_USO ? ["Crítica", "text-brand-primary", "▲"] : v > 15 ? ["Atención", "text-brand-orange", "●"] : ["Buena", "text-emerald-700", "○"];
+  return <span className={`text-xs font-semibold ${cls}`}><span aria-hidden>{sym}</span> {txt}</span>;
 }
