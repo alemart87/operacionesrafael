@@ -83,6 +83,9 @@ h3,
   .badge-success {
     @apply badge bg-emerald-50 text-emerald-700;
   }
+  .badge-orange {
+    @apply badge bg-brand-orange/10 text-brand-orange;
+  }
   .badge-neutral {
     @apply badge bg-brand-bg text-brand-slate;
   }
@@ -139,7 +142,7 @@ h3,
   page-break-after: always;
   break-after: page;
   min-height: 172mm;
-  display: flex;
+  /* display lo fija @media print: en pantalla manda .print-only (oculta) */
   flex-direction: column;
   position: relative;
 }
@@ -181,8 +184,9 @@ h3,
   /* Ocultar cromo de la app y todo lo marcado como no imprimible */
   header, footer, .no-print { display: none !important; }
   .print-only { display: block !important; }
-  /* La portada mantiene su layout en columna y llena la hoja A4 horizontal */
-  .print-cover { display: flex !important; min-height: 186mm; }
+  /* La portada mantiene su layout en columna y llena la hoja A4 horizontal
+     (con holgura: si supera el alto útil, la banda inferior cae en una hoja vacía) */
+  .print-cover { display: flex !important; min-height: 178mm; }
 
   /* Fondo BLANCO total: el gris de la app (bg del shell) imprime como "zonas
      grises" alrededor de las tarjetas. Solo se blanquea el lienzo; los headers
@@ -209,6 +213,14 @@ h3,
 
   /* Tablas que no se desborden */
   table { width: 100% !important; font-size: 11px !important; }
+  /* Informe de auditoría: el documento va sin la tarjeta de pantalla y las
+     tablas de evidencia (muchas columnas) se compactan para entrar en la hoja */
+  .informe-impreso-card { padding: 0 !important; border: 0 !important; box-shadow: none !important; }
+  .informe-impreso .overflow-auto { overflow: visible !important; max-height: none !important; }
+  .informe-impreso thead { position: static !important; }
+  .informe-impreso .tabla-evidencia table { font-size: 9px !important; }
+  .informe-impreso .tabla-evidencia th, .informe-impreso .tabla-evidencia td { padding: 2px 4px !important; white-space: normal !important; }
+  .informe-anexo { break-before: page; page-break-before: always; }
 
   /* Gráficos: solo achicar si el SVG desborda el ancho de página. Usamos
      max-width (no width) + height:auto; recharts emite viewBox, así que escala

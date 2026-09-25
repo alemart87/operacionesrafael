@@ -174,6 +174,42 @@ Utilidades: `ventas_netas` (ver informes publicados y descargar) y
 `ventas_netas_gestion` (subir, publicar, reemplazar, eliminar); por defecto la
 segunda solo la tiene el Analista.
 
+## Televentas CLARO · Auditoría de Ventas
+
+Circuito de trabajo del área de Auditoría de Ventas sobre los informes de
+Ventas Netas. Código en `backend/app/operativas/televentas_claro/auditoria/`.
+
+| Pantalla | Ruta | Qué hace |
+|---|---|---|
+| Informes de auditoría | `/televentas-claro/auditoria` | Lista por estado con hallazgos abiertos y de severidad alta |
+| Riesgos | `…/riesgos` | Elegir fuentes (un informe de Ventas Netas por mes) y ver el análisis en vivo; crear el informe |
+| Informe | `…/informes/{id}` | Resumen, hallazgos, gráficos, seguimiento, redacción y vista para imprimir en PDF |
+
+- Al crear un informe (`AUD-AAAA-NNN`) se **congela** una copia de los datos
+  analizados (`snapshot`): aunque después se eliminen los informes de origen,
+  la auditoría conserva todo. `snapshot.py` consolida las fuentes: ranking de
+  vendedores con nivel (crítico / atención / normal), puntaje y señales, datos
+  llamativos, series para gráficos, líneas sin uso y Sali Hablando como
+  evidencia, y los **hallazgos automáticos** (uno por vendedor riesgoso más
+  los generales: Sali Hablando, riesgo alto sin uso, finalizadas sin activar,
+  pendientes viejas, suspendidas).
+- Estados: **Borrador → En revisión → Cerrado → Archivado** (se puede reabrir).
+  En Borrador y En revisión se edita todo; Cerrado fija la redacción, los
+  gráficos y los hallazgos pero sigue el seguimiento (estado, responsable,
+  notas); Archivado es solo lectura. Un borrador lo elimina su autor o el superadmin.
+- Fuentes: informes de Ventas Netas publicados y borradores (los reemplazados
+  no), uno por mes. Si una fuente fue generada por una versión anterior del
+  análisis, la auditoría la **recalcula sola** desde los datos guardados al
+  analizarla (queda en el registro como `reprocess_ventas_netas_report`, origen
+  `auditoria`); si no se puede, se usa como está y el snapshot lo advierte.
+- El PDF sale de la pestaña Informe (portada, datos, alcance, resumen,
+  indicadores, datos llamativos, hallazgos con su evidencia resumida, gráficos
+  elegidos por el auditor, vendedores riesgosos, conclusiones, recomendaciones
+  y bitácora). Las líneas de evidencia de cada hallazgo van en un **anexo
+  opcional** (casilla en la pestaña), porque multiplican las páginas.
+- Utilidad `auditoria`: Analista por defecto; el superadmin la asigna a
+  Coordinador desde Perfiles. Todo queda en el registro de auditoría general.
+
 ## Televentas CLARO · Facturación (solo superadmin)
 
 Liquidación de comisiones de Claro (Telemarketing Fijo PGY), portada desde
@@ -229,7 +265,8 @@ Todo el código vive en `backend/app/operativas/televentas_claro/facturacion/`.
 | GET | `/api/v1/operativas` | Logueado (solo las que puede abrir) |
 | GET | `/api/v1/televentas-claro` | `televentas_claro.ver` |
 | GET | `/api/v1/televentas-claro/ventas-netas/reports[/{id}][/export.xlsx]` | `televentas_claro.ventas_netas` |
-| POST · DELETE | `/api/v1/televentas-claro/ventas-netas/uploads` · `/reports/{id}[/publish\|/unpublish]` | `televentas_claro.ventas_netas_gestion` |
+| POST · DELETE | `/api/v1/televentas-claro/ventas-netas/uploads` · `/reports/{id}[/publish\|/unpublish\|/reprocess]` | `televentas_claro.ventas_netas_gestion` |
+| * | `/api/v1/televentas-claro/auditoria/*` (fuentes, riesgos, informes, hallazgos, seguimientos, estado) | `televentas_claro.auditoria` |
 | * | `/api/v1/televentas-claro/facturacion/*` · `/facturacion-agent/*` | Solo superadmin |
 | GET | `/health` · `/api/v1/health` | Público |
 | POST | `/api/v1/admin/migrate?token=<SECRET_KEY>` | Emergencia |
