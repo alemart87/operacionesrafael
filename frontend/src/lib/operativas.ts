@@ -57,6 +57,12 @@ export interface Submodulo {
   /** Raíz del submódulo: su pantalla de entrada. */
   href: string;
   nav: OperativaNavItem[];
+  /** Qué hace el módulo, en una frase (tarjeta del inicio de la operativa). */
+  descripcion?: string;
+  /** Qué se visualiza: etiquetas cortas para la tarjeta. */
+  contenido?: string[];
+  /** Utilidad de gestión del módulo, si la tiene: la tarjeta indica si el usuario puede operar. */
+  gestion?: string;
 }
 
 export interface OperativaRoute {
@@ -77,6 +83,9 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         utilidad: "ventas_netas",
         label: "Ventas Netas",
         href: "/televentas-claro/ventas-netas",
+        descripcion: "Ventas cerradas del mes a partir del corte diario de Claro, con una publicación válida por mes.",
+        contenido: ["Salud y gestión de riesgos", "Líneas sin uso (alerta PFI)", "Productividad diaria", "Vendedores críticos", "Zonas: Capital-Central e Interior", "Planilla descargable"],
+        gestion: "ventas_netas_gestion",
         nav: [
           { href: "/televentas-claro/ventas-netas", label: "Informes", exact: true },
           { href: "/televentas-claro/ventas-netas/upload", label: "Subir corte", utilidad: "ventas_netas_gestion" },
@@ -86,6 +95,8 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         utilidad: "facturacion", // solo superadmin
         label: "Facturación",
         href: "/televentas-claro/facturacion",
+        descripcion: "Liquidación de comisiones de Claro: qué se cobró, por qué y cómo proyectarlo.",
+        contenido: ["Reportes de liquidación", "Comparativo entre meses", "Simuladores móvil y GPON", "Criterios", "Agente IA"],
         nav: [
           { href: "/televentas-claro/facturacion", label: "Liquidaciones", grupo: "Reportes", exact: true },
           { href: "/televentas-claro/facturacion/compare", label: "Comparar", grupo: "Reportes" },

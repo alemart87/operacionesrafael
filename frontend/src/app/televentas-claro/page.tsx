@@ -4,12 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { ROLE_LABELS, apiFetch } from "@/lib/api";
-import { type OperativaInfo, operativaRoute } from "@/lib/operativas";
+import { type OperativaInfo, type Submodulo, operativaRoute } from "@/lib/operativas";
 
-/** Utilidades que ya tienen pantalla propia (submódulos de la operativa). */
-const UTILIDAD_HREF: Record<string, string> = Object.fromEntries(
-  (operativaRoute("televentas_claro")?.submodulos ?? []).map((s) => [s.utilidad, s.href]),
-);
+const RUTA = operativaRoute("televentas_claro")!;
 
 export default function TeleventasClaroPage() {
   return (
@@ -20,7 +17,7 @@ export default function TeleventasClaroPage() {
 }
 
 function Inicio() {
-  const { user, isSuperadmin } = useSession();
+  const { user, isSuperadmin, can } = useSession();
   const [op, setOp] = useState<OperativaInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,7 +30,9 @@ function Inicio() {
   if (error) return <div className="card p-6 text-sm text-brand-primary-dark">{error}</div>;
   if (!op) return <div className="text-brand-slate">Cargando…</div>;
 
-  const utilidades = op.utilidades.filter((u) => u.key !== "ver");
+  // Una tarjeta por módulo real (submódulo con pantalla), no por permiso.
+  const utilidades = Object.fromEntries(op.utilidades.map((u) => [u.key, u]));
+  const modulos = RUTA.submodulos.filter((s) => utilidades[s.utilidad]);
 
   return (
     <>
@@ -45,48 +44,67 @@ function Inicio() {
         <p className="text-base text-brand-slate mt-2 max-w-2xl">{op.description}</p>
       </div>
 
-      <section className="card p-6">
+      <section>
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-5">
-          <h2 className="font-display text-xl text-brand-ink uppercase">Utilidades de la operativa</h2>
+          <h2 className="font-display text-xl text-brand-ink uppercase">Módulos</h2>
           <span className="text-xs text-brand-slate">
             Perfil: <strong>{ROLE_LABELS[user.role] ?? user.role}</strong>
             {isSuperadmin && " · acceso total"}
           </span>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {utilidades.map((u) => {
-            const href = u.habilitada ? UTILIDAD_HREF[u.key] : undefined;
-            const Box: any = href ? Link : "div";
-            return (
-            <Box
-              key={u.key}
-              {...(href ? { href } : {})}
-              className={`rounded-lg border p-4 ${
-                u.habilitada ? "border-brand-border bg-white" : "border-dashed border-brand-border bg-brand-bg-soft"
-              } ${href ? "hover:border-brand-primary hover:shadow-elevated transition-all" : ""}`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className={`text-sm font-semibold ${u.habilitada ? "text-brand-ink" : "text-brand-mist"}`}>
-                  {u.name}
-                </span>
-                {u.solo_superadmin ? (
-                  <span className="badge-primary">Solo superadmin</span>
-                ) : u.habilitada ? (
-                  <span className="badge-success">Habilitada</span>
-                ) : (
-                  <span className="badge-neutral">Sin permiso</span>
-                )}
-              </div>
-              <p className={`text-xs mt-1.5 ${u.habilitada ? "text-brand-slate" : "text-brand-mist"}`}>{u.description}</p>
-              {href && <div className="text-xs font-semibold text-brand-primary mt-2">Abrir →</div>}
-            </Box>
-            );
-          })}
+        <div className="grid md:grid-cols-2 gap-5">
+          {modulos.map((m) => (
+            <Tarjeta key={m.utilidad} m={m} u={utilidades[m.utilidad]} gestion={!!m.gestion && can(`${RUTA.slug}.${m.gestion}`)} />
+          ))}
         </div>
-        <p className="text-xs text-brand-mist mt-5">
-          Los permisos de cada perfil los define el superadmin.
-        </p>
+        <p className="text-xs text-brand-mist mt-5">Los permisos de cada perfil los define el superadmin en Administración → Perfiles.</p>
       </section>
     </>
+  );
+}
+
+function Tarjeta({ m, u, gestion }: { m: Submodulo; u: OperativaInfo["utilidades"][number]; gestion: boolean }) {
+  const habilitada = u.habilitada;
+  const Box: any = habilitada ? Link : "div";
+  return (
+    <Box
+      {...(habilitada ? { href: m.href } : {})}
+      className={`group card p-6 flex flex-col gap-4 border-t-[3px] ${
+        habilitada ? "border-t-brand-primary hover:shadow-elevated hover:border-brand-primary transition-all" : "border-t-brand-mist border-dashed bg-brand-bg-soft"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h3 className={`font-display text-3xl uppercase leading-none ${habilitada ? "text-brand-ink group-hover:text-brand-primary transition-colors" : "text-brand-mist"}`}>
+          {m.label}
+        </h3>
+        {u.solo_superadmin ? (
+          <span className="badge-primary whitespace-nowrap">Solo superadmin</span>
+        ) : habilitada ? (
+          <span className="badge-success whitespace-nowrap">{gestion ? "Ver y gestionar" : "Ver informes"}</span>
+        ) : (
+          <span className="badge-neutral whitespace-nowrap">Sin permiso</span>
+        )}
+      </div>
+      <p className={`text-sm leading-relaxed ${habilitada ? "text-brand-graphite" : "text-brand-mist"}`}>{m.descripcion ?? u.description}</p>
+      {m.contenido && (
+        <ul className="flex flex-wrap gap-1.5">
+          {m.contenido.map((c) => (
+            <li key={c} className={`rounded border px-2 py-0.5 text-[11px] ${habilitada ? "border-brand-border bg-white text-brand-slate" : "border-brand-border text-brand-mist"}`}>
+              {c}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-auto pt-1 flex items-center justify-between text-xs">
+        {habilitada ? (
+          <>
+            <span className="text-brand-slate">{gestion ? "Podés subir cortes, publicar y eliminar." : m.gestion ? "Solo consulta de informes publicados." : ""}</span>
+            <span className="font-semibold text-brand-primary">Abrir →</span>
+          </>
+        ) : (
+          <span className="text-brand-mist">Tu perfil no tiene acceso a este módulo.</span>
+        )}
+      </div>
+    </Box>
   );
 }
