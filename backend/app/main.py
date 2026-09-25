@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -36,11 +37,33 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
 ]
 
 
+_ADD_COLUMN = re.compile(r"ALTER TABLE (\w+) ADD COLUMN IF NOT EXISTS (\w+) (.+)", re.IGNORECASE)
+_SQLITE_TYPES = {"BYTEA": "BLOB"}
+
+
 async def _run_migrations() -> dict[str, list[str]]:
     ok: list[str] = []
     skipped: list[str] = []
     if engine.dialect.name != "postgresql":
-        return {"ok": ok, "skipped": MIGRATIONS_IDEMPOTENT[:]}
+        # SQLite (dev/tests): solo las columnas nuevas, comprobando antes si existen.
+        for stmt in MIGRATIONS_IDEMPOTENT:
+            m = _ADD_COLUMN.match(stmt)
+            if not m:
+                skipped.append(stmt)
+                continue
+            tabla, col, tipo = m.group(1), m.group(2), m.group(3).split()[0]
+            try:
+                async with engine.begin() as conn:
+                    cols = {r[1] for r in (await conn.execute(text(f"PRAGMA table_info({tabla})"))).all()}
+                    if col in cols:
+                        skipped.append(stmt)
+                        continue
+                    await conn.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {col} {_SQLITE_TYPES.get(tipo.upper(), tipo)}"))
+                ok.append(stmt)
+            except Exception as exc:
+                logger.error(f"[migration] {stmt} -> {exc}")
+                skipped.append(stmt)
+        return {"ok": ok, "skipped": skipped}
     for stmt in MIGRATIONS_IDEMPOTENT:
         try:
             async with engine.begin() as conn:

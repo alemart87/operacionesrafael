@@ -26,7 +26,7 @@ export default function VentasNetasReportPage() {
 
 function Informe() {
   const { id } = useParams<{ id: string }>();
-  const { can } = useSession();
+  const { can, isSuperadmin } = useSession();
   const gestion = can(PERM_VENTAS_NETAS_GESTION);
   const [r, setR] = useState<InformeDetalle | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,13 +45,18 @@ function Informe() {
   const { publicar, dialogo, loading: publicando, error: errorPublicar } = usePublicar(load);
   const [actualizando, setActualizando] = useState(false);
   const [errorActualizar, setErrorActualizar] = useState<string | null>(null);
+  const [reprocesadoEn, setReprocesadoEn] = useState<string | null>(null);
 
   // Informe generado por una versión anterior del análisis: le faltan bloques nuevos.
   const desactualizado = !!r && (!r.data?.productividad || (r.data.version ?? 1) < VERSION_ANALISIS);
   const actualizar = async () => {
     setActualizando(true);
     setErrorActualizar(null);
-    try { await apiFetch(`${VN_API}/reports/${id}/reprocess`, { method: "POST" }); await load(); }
+    try {
+      await apiFetch(`${VN_API}/reports/${id}/reprocess`, { method: "POST" });
+      await load();
+      setReprocesadoEn(new Date().toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    }
     catch (e: any) { setErrorActualizar(e.message); }
     finally { setActualizando(false); }
   };
@@ -87,6 +92,17 @@ function Informe() {
           </p>
         </div>
         <div className="flex gap-2">
+          {isSuperadmin && (
+            // Prueba del superadmin: recalcula desde los datos guardados en la base, sin volver a subir el archivo.
+            <button
+              onClick={actualizar}
+              disabled={actualizando}
+              className="btn-ghost text-xs"
+              title="Recalcular el informe desde los datos guardados (sin subir el archivo)"
+            >
+              {actualizando ? "Reprocesando…" : reprocesadoEn ? `Reprocesado ${reprocesadoEn} ↻` : "Reprocesar ↻"}
+            </button>
+          )}
           <PrintButton label="Imprimir" />
           <button onClick={descargar} disabled={descargando} className="btn-secondary">
             {descargando ? "Generando…" : "Planilla .xlsx"}
@@ -100,6 +116,7 @@ function Informe() {
       </div>
 
       {errorPublicar && <div className="card p-4 text-brand-primary mb-4">{errorPublicar}</div>}
+      {errorActualizar && !desactualizado && <div className="card p-4 text-brand-primary mb-4">{errorActualizar}</div>}
       {desactualizado && (
         <div className="rounded-md border border-brand-orange/40 bg-brand-orange/10 text-sm text-brand-graphite p-3 mb-4 flex items-center justify-between gap-3 flex-wrap print:hidden">
           <span>
