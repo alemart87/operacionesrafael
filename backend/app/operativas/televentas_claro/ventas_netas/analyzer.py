@@ -231,7 +231,9 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "detalle": detalle_pend,
     }
 
-    productividad = _productividad(cargas, cargas_all, fecha_dato)
+    # Uso por SDS (solo Pospago de DDI) para cruzar las cargas finalizadas con su consumo.
+    uso_por_sds = {r["sds_number"]: (r.get("consumo_datos") == "SI") for r in ddi_all if r.get("tipo_producto") == "Pospago"}
+    productividad = _productividad(cargas, cargas_all, fecha_dato, uso_por_sds)
 
     kpis = {
         "periodo": periodo,
@@ -358,8 +360,13 @@ def _mapa_legajo_pos(cargas_all: list[dict]) -> dict[str, tuple[str, str | None]
     return {leg: next(iter(v)) for leg, v in por_legajo.items() if len(v) == 1}
 
 
-def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date | None) -> dict[str, Any]:
+RIESGOS = ["A", "M", "B"]  # alto · medio · bajo (RIESGO_ORI de la carga)
+
+
+def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date | None,
+                   uso_por_sds: dict[str, bool] | None = None) -> dict[str, Any]:
     mapa = _mapa_legajo_pos(cargas_all)
+    uso_por_sds = uso_por_sds or {}
     estados = [e for e in ESTADOS_ORDEN if any(r.get("sds_estado") == e for r in cargas)]
     estados += sorted({r.get("sds_estado") for r in cargas} - set(estados) - {None})
     productos = ["Pospago", "Internet", "IPTV"]
@@ -367,7 +374,11 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
 
     def fila_vacia(**extra) -> dict[str, Any]:
         f = {"total": 0, "finalizadas": 0, **{e: 0 for e in estados}, **{p.lower(): 0 for p in productos},
-             "capital_central": 0, "interior": 0, **extra}
+             "capital_central": 0, "interior": 0,
+             # Salud de las finalizadas: Pospago con/sin uso (cruce con DDI), Internet/IPTV y sin dato.
+             "con_uso": 0, "sin_uso": 0, "sin_dato_uso": 0, "fin_fija": 0,
+             **{f"riesgo_{x}": 0 for x in RIESGOS}, **{f"sin_uso_riesgo_{x}": 0 for x in RIESGOS},
+             **extra}
         return f
 
     def sumar(f: dict[str, Any], r: dict[str, Any]) -> None:
@@ -385,9 +396,24 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
             f["capital_central"] += 1
         elif z == ZONA_INTERIOR:
             f["interior"] += 1
+        riesgo = (r.get("riesgo_ori") or "").upper()
+        if riesgo in RIESGOS:
+            f[f"riesgo_{riesgo}"] += 1
+        if e == ESTADO_FINALIZADA:
+            if p != "pospago":
+                f["fin_fija"] += 1
+            elif r["sds_number"] not in uso_por_sds:
+                f["sin_dato_uso"] += 1
+            elif uso_por_sds[r["sds_number"]]:
+                f["con_uso"] += 1
+            else:
+                f["sin_uso"] += 1
+                if riesgo in RIESGOS:
+                    f[f"sin_uso_riesgo_{riesgo}"] += 1
 
     def cerrar(f: dict[str, Any]) -> dict[str, Any]:
         f["pct_finalizacion"] = _pct(f["finalizadas"], f["total"])
+        f["pct_sin_uso"] = _pct(f["sin_uso"], f["con_uso"] + f["sin_uso"])
         return f
 
     # Evolutivo diario
@@ -459,6 +485,16 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
         sumar(f, r)
     por_vendedor = sorted((cerrar(f) for f in vend.values()), key=lambda f: (-f["total"], f["vendedor"]))
 
+    # Riesgo × uso sobre las finalizadas Pospago con dato de consumo.
+    riesgo_uso = []
+    for x in RIESGOS:
+        fila = {"riesgo": x, "cargas": total[f"riesgo_{x}"], "con_uso": 0, "sin_uso": total[f"sin_uso_riesgo_{x}"]}
+        fila["con_uso"] = sum(1 for r in cargas if (r.get("riesgo_ori") or "").upper() == x
+                              and r.get("sds_estado") == ESTADO_FINALIZADA and uso_por_sds.get(r["sds_number"]) is True)
+        fila["pct_sin_uso"] = _pct(fila["sin_uso"], fila["con_uso"] + fila["sin_uso"])
+        if fila["cargas"]:
+            riesgo_uso.append(fila)
+
     dias_habiles = len(por_dia)
     mejor = max(por_dia, key=lambda f: f["total"]) if por_dia else None
     return {
@@ -484,6 +520,12 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
             "mejor_dia_total": mejor["total"] if mejor else 0,
             "ultimo_dia": por_dia[-1]["dia"] if por_dia else None,
             "ultimo_dia_total": por_dia[-1]["total"] if por_dia else 0,
+            "con_uso": total["con_uso"],
+            "sin_uso": total["sin_uso"],
+            "sin_dato_uso": total["sin_dato_uso"],
+            "pct_sin_uso": total["pct_sin_uso"],
+            "riesgo_alto": total["riesgo_A"],
+            "sin_uso_riesgo_alto": total["sin_uso_riesgo_A"],
             "vendedores": len(por_vendedor),
             "sin_atribuir": sin_atribuir,
             "fecha_dato": fecha_dato.isoformat() if fecha_dato else None,
@@ -495,4 +537,5 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
         "por_departamento": por_departamento,
         "por_ciudad": por_ciudad,
         "por_vendedor": por_vendedor,
+        "riesgo_uso": riesgo_uso,
     }

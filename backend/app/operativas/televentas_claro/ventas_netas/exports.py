@@ -96,7 +96,10 @@ def build_xlsx(report) -> bytes:
     _sheet(wb, "Cargas por vendedor", [
         ("Vendedor", "vendedor"), ("Subcanal", "subcanal"), ("Cargas", "total"), *est_cols, ("% finalización", "pct_finalizacion"),
         ("Pospago", "pospago"), ("Internet (IF)", "internet"), ("IPTV", "iptv"),
-        ("Capital y Central", "capital_central"), ("Interior", "interior"), ("Atribuidas por legajo", "por_legajo"),
+        ("Capital y Central", "capital_central"), ("Interior", "interior"),
+        ("Pospago con uso", "con_uso"), ("Pospago SIN USO", "sin_uso"), ("% sin uso", "pct_sin_uso"), ("Sin dato de uso", "sin_dato_uso"),
+        ("Riesgo A", "riesgo_A"), ("Riesgo M", "riesgo_M"), ("Riesgo B", "riesgo_B"), ("Sin uso riesgo A", "sin_uso_riesgo_A"),
+        ("Atribuidas por legajo", "por_legajo"),
     ], prod.get("por_vendedor", []))
     _sheet(wb, "Zonas", [
         ("Departamento", "departamento"), ("Zona", "zona"), ("Cargas", "total"), *est_cols, ("% finalización", "pct_finalizacion"),

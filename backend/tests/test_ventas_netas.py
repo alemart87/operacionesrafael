@@ -152,6 +152,12 @@ def test_parser_y_analisis(xlsx):
     pv = {v["vendedor"]: v for v in pr["por_vendedor"]}
     assert pv["ANA PEREZ"]["total"] == 9 and pv["ANA PEREZ"]["por_legajo"] == 4 and pv["ANA PEREZ"]["Vta_A_Confirmar"] == 1
     assert pv["CARGADO POR EXP2 NILDA CACERES"]["total"] == 1 and pk["sin_atribuir"] == 1
+    # Salud: finalizadas Pospago cruzadas con el consumo de DDI y el riesgo de la carga (todas riesgo M).
+    ana = pv["ANA PEREZ"]
+    assert (ana["con_uso"], ana["sin_uso"], ana["fin_fija"], ana["sin_dato_uso"]) == (2, 2, 1, 1)  # 1009 finalizada sin DDI
+    assert ana["pct_sin_uso"] == 50.0 and ana["sin_uso_riesgo_M"] == 2 and ana["riesgo_M"] == 9
+    assert (pk["con_uso"], pk["sin_uso"], pk["sin_dato_uso"], pk["riesgo_alto"]) == (2, 2, 1, 0)
+    assert pr["riesgo_uso"] == [{"riesgo": "M", "cargas": 11, "con_uso": 2, "sin_uso": 2, "pct_sin_uso": 50.0}]
 
 
 def test_alerta_por_vendedor(tmp_path):
@@ -289,7 +295,7 @@ async def test_flujo_publicacion(xlsx, monkeypatch, tmp_path):
         r = await ac.post(f"{BASE}/reports/{r2}/reprocess", headers=analista)
         assert r.status_code == 200 and r.json()["netas"] == 6 and r.json()["status"] == "published"
         det = (await ac.get(f"{BASE}/reports/{r2}", headers=analista)).json()
-        assert det["data"]["version"] == 2 and det["data"]["productividad"]["kpis"]["cargas"] == 11
+        assert det["data"]["version"] == 3 and det["data"]["productividad"]["kpis"]["cargas"] == 11
 
         # No se elimina un publicado; despublicar lo vuelve borrador y ahí sí.
         assert (await ac.delete(f"{BASE}/reports/{r2}", headers=analista)).status_code == 400
