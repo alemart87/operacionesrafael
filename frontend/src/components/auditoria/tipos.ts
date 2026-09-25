@@ -1,5 +1,7 @@
 /** Contratos y catálogos de Auditoría de Ventas (Televentas CLARO). */
 
+import type { ReglasAuditoria } from "./guia/datos";
+
 export const AUD_API = "/api/v1/televentas-claro/auditoria";
 export const AUD_HREF = "/televentas-claro/auditoria";
 
@@ -106,7 +108,8 @@ export interface LineaEvidencia {
 
 export interface Snapshot {
   generado_en: string;
-  parametros: Record<string, number>;
+  /** Reglas con las que se evaluó (los informes viejos solo tienen los umbrales básicos). */
+  parametros: Partial<ReglasAuditoria>;
   /** Fuentes que no se pudieron recalcular a la versión vigente del análisis. */
   advertencias?: string[];
   fuentes: FuenteUsada[];

@@ -33,7 +33,7 @@ export function PrintHeader({ titulo, subtitulo }: { titulo: string; subtitulo?:
 }
 
 /** Portada corporativa de página completa (solo impresión): logo + título elegido. */
-export function PrintCover({ titulo, periodo }: { titulo: string; periodo?: string }) {
+export function PrintCover({ titulo, periodo, leyenda = "Informe generado el" }: { titulo: string; periodo?: string; leyenda?: string }) {
   const fecha = new Date().toLocaleDateString("es-PY", { day: "2-digit", month: "long", year: "numeric" });
   return (
     <div className="print-only print-cover">
@@ -47,7 +47,7 @@ export function PrintCover({ titulo, periodo }: { titulo: string; periodo?: stri
       </div>
       <div className="print-cover-footer">
         <span>Plataforma operada por Voicenter S.A.</span>
-        <span>Informe generado el {fecha}</span>
+        <span>{leyenda} {fecha}</span>
       </div>
       <div className="print-cover-band bottom" />
     </div>

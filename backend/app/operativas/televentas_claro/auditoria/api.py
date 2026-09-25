@@ -29,7 +29,7 @@ from .schemas import (
     AuditoriaCreate, AuditoriaDetalle, AuditoriaLista, AuditoriaResumen, AuditoriaUpdate, EstadoRequest,
     FuenteDisponible, HallazgoCreate, HallazgoRead, HallazgoUpdate, RiesgosRequest, SeguimientoCreate, SeguimientoRead,
 )
-from .snapshot import construir_snapshot, hallazgos_automaticos, resumen_automatico
+from .snapshot import construir_snapshot, hallazgos_automaticos, parametros, resumen_automatico
 
 PERM = "televentas_claro.auditoria"
 require_auditoria = require_perm(PERM)
@@ -158,6 +158,12 @@ async def fuentes(user: CurrentUser = Depends(require_auditoria), db: AsyncSessi
         FuenteDisponible.model_validate(r).model_copy(update={"analysis_version": version_analisis(r), "actualizada": not desactualizado(r)})
         for r in rows
     ]
+
+
+@router.get("/parametros")
+async def parametros_vigentes(user: CurrentUser = Depends(require_auditoria)) -> dict[str, Any]:
+    """Reglas vigentes del análisis de riesgos: umbrales, niveles, pesos y patrones (las muestra la Guía del auditor)."""
+    return parametros()
 
 
 @router.post("/riesgos")
