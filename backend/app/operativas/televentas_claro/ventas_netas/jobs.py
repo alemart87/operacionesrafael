@@ -1,6 +1,7 @@
 """Cola y runner de Ventas Netas: parsea cada corte en subproceso aislado y genera el informe (borrador)."""
 from __future__ import annotations
 
+import asyncio
 import gzip
 import json
 from datetime import date, datetime
@@ -31,7 +32,7 @@ def analizar_guardado(parsed_gz: bytes) -> dict[str, Any]:
     return analyze_ventas_netas(json.loads(gzip.decompress(parsed_gz).decode("utf-8")))
 
 
-ANALYSIS_VERSION = 5  # sube cuando el análisis agrega bloques: los informes viejos se pueden actualizar
+ANALYSIS_VERSION = 7  # sube cuando el análisis agrega bloques: los informes viejos se pueden actualizar
 
 
 def aplicar_analisis(report: VentasNetasReport, analysis: dict[str, Any]) -> None:
@@ -72,7 +73,7 @@ async def recalcular_informe(db: Any, report: VentasNetasReport) -> None:
     """
     upload = await db.get(VentasNetasUpload, report.upload_id)
     if upload and upload.parsed_gz:
-        analysis = analizar_guardado(upload.parsed_gz)
+        analysis = await asyncio.to_thread(analizar_guardado, upload.parsed_gz)  # sin bloquear el servidor
     elif upload and upload.file_path and Path(upload.file_path).exists():
         resultado = await analizar_archivo(upload.file_path)
         analysis = resultado["analysis"]
@@ -121,3 +122,33 @@ async def run_ventas_netas(upload_id: str) -> None:
 
 
 queue = JobQueue("ventas_netas", VentasNetasUpload, run_ventas_netas)
+
+
+async def actualizar_desactualizados() -> int:
+    """Al arrancar: recalcula con el análisis vigente los informes generados por una versión anterior.
+
+    Usa los datos guardados de cada corte (nadie tiene que volver a subir ni
+    reprocesar a mano). Uno por vez y en su propia sesión: si uno falla, sigue
+    con el resto. Devuelve cuántos actualizó.
+    """
+    from sqlalchemy import select
+
+    async with session_scope() as db:
+        ids = list((await db.execute(select(VentasNetasReport.id))).scalars().all())
+    n = 0
+    for rid in ids:
+        try:
+            async with session_scope() as db:
+                r = await db.get(VentasNetasReport, rid)
+                if not r or not desactualizado(r):
+                    continue
+                anterior = version_analisis(r)
+                await recalcular_informe(db, r)
+                await db.commit()
+                n += 1
+                logger.info("Ventas Netas: informe %s (%s) actualizado de v%s a v%s", rid, r.periodo, anterior, ANALYSIS_VERSION)
+        except SinDatosGuardados:
+            logger.warning("Ventas Netas: informe %s desactualizado sin datos guardados; queda como está", rid)
+        except Exception:  # noqa: BLE001 — un informe que falla no frena el arranque ni al resto
+            logger.exception("Ventas Netas: no se pudo actualizar el informe %s", rid)
+    return n

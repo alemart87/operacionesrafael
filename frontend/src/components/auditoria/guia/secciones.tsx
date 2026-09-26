@@ -25,7 +25,7 @@ export function PorQue({ r, num }: P) {
         <Impacto cifra={`${d} días`} titulo="sin uso = alerta" texto={`Desde el día ${d} una línea sin consumo deja de ser reciente y pasa a contar como alerta PFI.`} />
       </div>
       <Callout tipo="caso" titulo={`Caso testigo · corte al ${CT.corte}`}>
-        En {CT.periodo} había <b>{fmt(CT.total_sin_uso)} líneas sin uso</b>: {fmt(CT.pospago_sin_uso)} Pospago netas y {fmt(CT.sali.sin_uso)} portaciones Sali Hablando. Son {fmt(CT.total_sin_uso)} ventas con la comisión en riesgo si no se verifican a tiempo.
+        En {CT.periodo} había <b>{fmt(CT.total_sin_uso)} líneas sin uso</b>: {fmt(CT.pospago_sin_uso)} Pospago netas con {r.dias_sin_uso_antigua}+ días y {fmt(CT.sali.sin_uso)} portaciones Sali Hablando. Son {fmt(CT.total_sin_uso)} ventas con la comisión en riesgo si no se verifican a tiempo. Otras {fmt(CT.en_espera)} estaban en espera de uso y no se cuentan.
       </Callout>
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Principio titulo="Objetividad" texto="Nombrá hechos y cifras, no intenciones. Hablamos de riesgo y de PFI; calificar una conducta le corresponde a quien decide, después de verificar." />
@@ -98,7 +98,7 @@ export function SaliHablando({ r, num }: P) {
             <Sub>Señales que la delatan</Sub>
             <ul className="mt-2 space-y-1.5 text-[13px] text-brand-graphite">
               <Linea s="alta">Dato llamativo de gravedad alta cuando {L.sali_pct_sin_uso_alta}% o más de las SH del período no tienen uso.</Linea>
-              <Linea s="alta">Señal alta en la ficha del vendedor desde {r.senal_alta_desde.sali_sin_uso} SH sin uso; con {r.nivel_atencion.sali_sin_uso} pasa a atención y con {r.nivel_critico.sali_sin_uso}, a crítico.</Linea>
+              <Linea s="alta">Señal alta en la ficha del vendedor desde {r.senal_alta_desde.sali_sin_uso} SH sin uso; con {r.nivel_atencion.sali_sin_uso} queda en alerta media.</Linea>
               <Linea s="media">Muchas activaciones el mismo día (entrega en ráfaga), sobre todo en un fin de semana o a fin de mes.</Linea>
               <Linea s="info">Casi todas de la misma operadora de origen o de la misma ciudad.</Linea>
             </ul>
@@ -141,34 +141,33 @@ export function SinUso({ r, num }: P) {
   const d = r.dias_sin_uso_antigua, m = r.min_lineas_alerta;
   return (
     <Seccion id="sin-uso" num={num} titulo="Líneas sin uso"
-      lead={<>Una línea Pospago neta sin consumo de datos (<code className="text-[13px] bg-brand-bg px-1 rounded">CONSUMO_DATOS = NO</code>). Es el anticipo más directo de la PFI. Lo primero es separar las recientes de las antiguas.</>}>
+      lead={<>Una línea Pospago neta sin consumo de datos (<code className="text-[13px] bg-brand-bg px-1 rounded">CONSUMO_DATOS = NO</code>). Es el anticipo más directo de la PFI. Las activadas hace menos de 3 días quedan en espera de uso y no se cuentan.</>}>
       <RelojUso r={r} />
       <div className="grid md:grid-cols-3 gap-3">
         <Umbral titulo="En todo el período" filas={[
-          ["alta", `Más de ${fmt(r.umbral_sin_uso_critico)}% de Pospago netas sin uso`],
+          ["alta", `Más de ${fmt(r.umbral_sin_uso_critico)}% de Pospago netas sin uso (sin contar las en espera)`],
           ["media", `Más de ${fmt(r.umbral_sin_uso_atencion)}%`],
           ["info", `Hasta ${fmt(r.umbral_sin_uso_atencion)}%: se informa`],
         ]} />
-        <Umbral titulo="Por vendedor · uso" filas={[
-          ["alta", `Menos de ${fmt(r.umbral_uso_pct)}% de sus Pospago en uso, con ${m} o más: alerta de uso y nivel crítico`],
+        <Umbral titulo="Por vendedor · crítico" filas={[
+          ["alta", `Más de ${fmt(r.umbral_sin_uso_critico)}% de sus líneas con ${d}+ días sin uso, con ${m} o más evaluables. Es la única regla de crítico.`],
         ]} />
-        <Umbral titulo="Por vendedor · sin uso" filas={[
-          ["alta", `Más de ${fmt(r.umbral_sin_uso_critico)}% sin uso (con ${m}+ líneas): crítico`],
-          ["media", `Más de ${fmt(r.umbral_sin_uso_atencion)}%: atención`],
+        <Umbral titulo="Por vendedor · alerta media" filas={[
+          ["media", `Más de ${fmt(r.umbral_sin_uso_atencion)}% sin uso, ${r.nivel_atencion.sin_uso_antiguas}+ líneas sin uso, SH sin uso, suspendidas o sin uso con riesgo A`],
         ]} />
       </div>
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="space-y-4">
-          <Callout tipo="ojo" titulo="Mirá la fecha antes de alarmarte">
-            Las activaciones de los últimos {d - 1} días todavía no pueden mostrar uso. En el caso testigo, el “día con más líneas sin uso” fue el <b>22/09, el mismo día del corte</b>: 49 líneas que aún no habían tenido tiempo de usarse. Esas se miran en el corte siguiente.
+          <Callout tipo="clave" titulo="En espera de uso: no es alerta">
+            Una Pospago sin consumo activada hace menos de {d} días al corte todavía no tuvo tiempo de usarse. El sistema la marca <b>◷ En espera</b> en todas las tablas y la deja fuera de los porcentajes, del nivel y del puntaje del vendedor y del “día con más líneas sin uso”. En el caso testigo fueron <b>{fmt(CT.en_espera)} líneas</b> ({CT.en_espera_dia_corte} del mismo día del corte). Se evalúan en el corte siguiente.
           </Callout>
           <Callout tipo="caso" titulo={`Caso testigo · corte al ${CT.corte}`}>
-            {fmt(CT.pospago_sin_uso)} de {fmt(CT.pospago)} Pospago netas sin uso (<b>{fmt(CT.pct_sin_uso)}%</b>), {CT.sin_uso_antiguas} de ellas con {d} días o más. Por zona, el Interior tenía <b>{fmt(CT.zonas.interior.pct)}% sin uso</b> contra {fmt(CT.zonas.capital.pct)}% de Capital y Central.
+            {fmt(CT.pospago_sin_uso)} de {fmt(CT.pospago - CT.en_espera)} Pospago netas evaluables sin uso (<b>{fmt(CT.pct_sin_uso)}%</b>) y {fmt(CT.en_espera)} en espera. Por zona, el Interior tenía <b>{fmt(CT.zonas.interior.pct)}% sin uso</b> contra {fmt(CT.zonas.capital.pct)}% de Capital y Central.
           </Callout>
         </div>
         <div className="space-y-4">
           <Verificar items={[
-            <>Separar recientes de antiguas: columna <b>Días</b> de la evidencia.</>,
+            <>Las marcadas <b>◷ En espera</b> no se verifican todavía: se revisan en el corte siguiente.</>,
             "Nativas contra portadas: muchas nativas sin uso es una señal propia.",
             "Plan acorde al perfil del cliente: planes altos sin uso merecen llamada.",
             "Lotes: activaciones del mismo día y del mismo vendedor.",
@@ -201,8 +200,8 @@ export function RiesgoCarga({ r, num }: P) {
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="card p-4 text-[13px] text-brand-graphite leading-relaxed space-y-2">
           <p>Si las cargas <b>A</b> tienen más sin uso que las <b>M</b>, el sistema lo marca como dato llamativo de gravedad media y arma un hallazgo con esas cargas.</p>
-          <p>Por vendedor: con <b>{r.nivel_atencion.sin_uso_riesgo_A} o más</b> sin uso con riesgo A pasa a atención, y cada una suma <b>{r.pesos.sin_uso_riesgo_A} puntos</b>.</p>
-          <p className="text-brand-slate">En el caso testigo las A tenían {fmt(CT.riesgo[0].pct)}% sin uso contra {fmt(CT.riesgo[1].pct)}% de las M: la alerta de Claro anticipaba el no uso.</p>
+          <p>Por vendedor: con <b>{r.nivel_atencion.sin_uso_riesgo_A} o más</b> sin uso con riesgo A queda en alerta media, y cada una suma <b>{r.pesos.sin_uso_riesgo_A} puntos</b>.</p>
+          <p className="text-brand-slate">En el caso testigo las A tenían {fmt(CT.riesgo[0].pct)}% sin uso contra {fmt(CT.riesgo[1].pct)}% de las M: la alerta de Claro anticipaba el no uso. Las cargas en espera de uso no entran en este cruce.</p>
         </div>
         <Recomendacion texto="Reforzar la validación de las ventas con riesgo alto antes de finalizarlas (verificación de identidad y domicilio, confirmación telefónica)." />
       </div>
@@ -216,9 +215,9 @@ type Patron = { icono: ReactNode; titulo: string; sev: Severidad; sevTexto?: str
 export function Patrones({ r, num }: P) {
   const d = r.dias_sin_uso_antigua, m = r.min_lineas_alerta, pt = r.patrones, sa = r.senal_alta_desde;
   const lista: Patron[] = [
-    { icono: <Gauge size={18} />, titulo: "Uso bajo el umbral", sev: "alta", regla: `Menos de ${fmt(r.umbral_uso_pct)}% de sus Pospago en uso, con ${m} o más.`, indica: "Ventas que no se usan de forma sistemática: el riesgo es del vendedor, no de un caso aislado.", verificar: "Muestra de llamadas a titulares y revisión del proceso de venta con el supervisor.", visual: { tipo: "umbral", pct: r.umbral_uso_pct } },
+    { icono: <Gauge size={18} />, titulo: `Más de ${fmt(r.umbral_sin_uso_critico)}% sin uso`, sev: "alta", sevTexto: "Crítico", regla: `Más de ${fmt(r.umbral_sin_uso_critico)}% de sus líneas con ${d}+ días sin uso, con ${m} o más evaluables.`, indica: "Ventas que no se usan de forma sistemática: el riesgo es del vendedor, no de un caso aislado.", verificar: "Muestra de llamadas a titulares y revisión del proceso de venta con el supervisor.", visual: { tipo: "umbral", pct: r.umbral_sin_uso_critico } },
     { icono: <Clock size={18} />, titulo: `Sin uso con ${d}+ días`, sev: "alta", sevTexto: `Alta desde ${sa.sin_uso_antiguas}`, regla: `Líneas sin consumo con ${d} días o más desde la activación.`, indica: "Riesgo PFI concreto: la ventana para actuar se está cerrando.", verificar: "Contacto con el titular: tenencia del chip, activación y uso.", visual: { tipo: "reloj" } },
-    { icono: <Info size={18} />, titulo: "Solo sin uso recientes", sev: "info", regla: `Todas sus sin uso tienen menos de ${d} días.`, indica: "Puede ser normal: las líneas todavía no tuvieron tiempo de usarse.", verificar: "Volver a mirarlo en el corte siguiente antes de concluir.", visual: { tipo: "reloj" } },
+    { icono: <Info size={18} />, titulo: "En espera de uso", sev: "info", sevTexto: "No es alerta", regla: `Pospago sin consumo activadas hace menos de ${d} días al corte.`, indica: "Nada todavía: las líneas no tuvieron tiempo de usarse. No suman puntos ni cambian el nivel.", verificar: "Nada por ahora; volver a mirarlas en el corte siguiente.", visual: { tipo: "reloj" } },
     { icono: <Repeat2 size={18} />, titulo: "Sali Hablando sin uso", sev: "alta", sevTexto: `Alta desde ${sa.sali_sin_uso}`, regla: "Portaciones Sali Hablando del vendedor que no registran consumo.", indica: "Portaciones que no se usan: el riesgo más alto del período.", verificar: "Titular, número portado y solicitud de portación en el legajo.", visual: { tipo: "portacion" } },
     { icono: <Zap size={18} />, titulo: "Entrega en ráfaga", sev: "media", regla: `${pt.pospago_mismo_dia.pct}% o más de sus Pospago activadas el mismo día (con ${pt.pospago_mismo_dia.min} o más).`, indica: "Ventas acumuladas y entregadas juntas: carga en lote, cierre de meta o una base de contactos puntual.", verificar: "Fecha de venta contra fecha de activación en CARGAS; grabaciones y documentación de ese día.", visual: { tipo: "rafaga" } },
     { icono: <CalendarDays size={18} />, titulo: "Sin uso del mismo día", sev: "media", regla: `${pt.sin_uso_mismo_dia.pct}% o más de sus sin uso activadas el mismo día (con ${pt.sin_uso_mismo_dia.min} o más).`, indica: "Un lote puntual con problemas.", verificar: "Qué pasó ese día: clientes, zona, plan y quién cargó.", visual: { tipo: "rafaga" } },
@@ -240,7 +239,7 @@ export function Patrones({ r, num }: P) {
         {lista.map((x) => <TarjetaPatron key={x.titulo} x={x} />)}
       </div>
       <Callout tipo="caso" titulo={`Caso testigo · corte al ${CT.corte}`}>
-        Las señales más frecuentes fueron: sin uso concentradas en una ciudad (25 vendedores), casi todas del mismo origen (18), sin uso activadas el mismo día (17), mismo plan (11) y entrega en ráfaga (5). En Sali Hablando, 68 de las 113 se activaron el mismo sábado.
+        Las señales de riesgo más frecuentes fueron: sin uso activadas el mismo día ({CT.senales.mismo_dia} vendedores), casi todas del mismo origen ({CT.senales.origen}), mismo plan ({CT.senales.plan}), concentradas en una ciudad ({CT.senales.ciudad}) y entrega en ráfaga ({CT.senales.rafaga}). Además, {CT.senales.en_espera} vendedores tenían líneas en espera de uso, que no cuentan. En Sali Hablando, 68 de las 113 se activaron el mismo sábado.
       </Callout>
     </Seccion>
   );
@@ -270,7 +269,7 @@ function TarjetaPatron({ x }: { x: Patron }) {
 export function Semaforo({ r, num }: P) {
   return (
     <Seccion id="semaforo" num={num} titulo="Semáforo del vendedor"
-      lead="Cada vendedor queda en crítico, atención o normal: alcanza con cumplir una condición. Dentro de cada nivel, el puntaje ordena a quién mirar primero.">
+      lead={`Crítico es solo el vendedor con más de ${fmt(r.umbral_sin_uso_critico)}% de sus líneas sin uso (con ${r.dias_sin_uso_antigua}+ días de activadas). Los demás riesgos son alertas medias. Dentro de cada nivel, el puntaje ordena a quién mirar primero.`}>
       <SemaforoVendedor r={r} />
       <Sub>Puntaje de riesgo</Sub>
       <Puntaje r={r} />
@@ -279,7 +278,7 @@ export function Semaforo({ r, num }: P) {
           El puntaje no es una nota del vendedor: es el <b>orden de revisión</b>. Un vendedor con muchas ventas puede sumar más puntos con el mismo porcentaje de sin uso; por eso se mira junto con el nivel y su patrón.
         </Callout>
         <Callout tipo="caso" titulo={`Caso testigo · corte al ${CT.corte}`}>
-          De {CT.vendedores.total} vendedores con actividad: <b>{CT.vendedores.criticos} críticos</b>, {CT.vendedores.atencion} en atención y {CT.vendedores.total - CT.vendedores.criticos - CT.vendedores.atencion} normales. El sistema crea un hallazgo por cada vendedor riesgoso (hasta {r.max_hallazgos_vendedor}).
+          De {CT.vendedores.total} vendedores con actividad: <b>{CT.vendedores.criticos} críticos</b>, {CT.vendedores.atencion} en alerta media y {CT.vendedores.total - CT.vendedores.criticos - CT.vendedores.atencion} normales. El sistema crea un hallazgo por cada vendedor riesgoso (hasta {r.max_hallazgos_vendedor}).
         </Callout>
       </div>
     </Seccion>
@@ -291,14 +290,14 @@ export function Alertas({ r, num }: P) {
   const L = r.llamativos, d = r.dias_sin_uso_antigua;
   const filas: { alerta: string; regla: string; sev: Severidad[]; impacto: string; accion: string; hallazgo: string }[] = [
     { alerta: "Sali Hablando sin uso", regla: `Hay SH sin consumo. Alta desde ${L.sali_pct_sin_uso_alta}% de las SH sin uso; si no, media.`, sev: ["alta", "media"], impacto: "Primeras facturas impagas: líneas suspendidas y comisión descontada.", accion: "Verificar titulares, retener la comisión de las SH sin uso y revisar a los vendedores con más casos.", hallazgo: "Sí" },
-    { alerta: "Pospago netas sin uso", regla: `Más de ${fmt(r.umbral_sin_uso_critico)}%: alta · más de ${fmt(r.umbral_sin_uso_atencion)}%: media · si no, informativa.`, sev: ["alta", "media", "info"], impacto: "Comisión en riesgo por PFI en cada línea sin uso.", accion: `Separar recientes de antiguas y contactar a los titulares de las de ${d}+ días.`, hallazgo: "Por vendedor" },
-    { alerta: "Vendedores con riesgo", regla: "Alta si hay algún vendedor crítico; media si solo hay en atención.", sev: ["alta", "media"], impacto: "La pérdida se concentra en pocos vendedores.", accion: "Abrir la ficha de cada crítico y trabajar su hallazgo.", hallazgo: `Uno por vendedor (hasta ${r.max_hallazgos_vendedor})` },
+    { alerta: "Pospago netas sin uso", regla: `Sobre las líneas con ${d}+ días (las en espera no cuentan). Más de ${fmt(r.umbral_sin_uso_critico)}%: alta · más de ${fmt(r.umbral_sin_uso_atencion)}%: media · si no, informativa.`, sev: ["alta", "media", "info"], impacto: "Comisión en riesgo por PFI en cada línea sin uso.", accion: `Contactar a los titulares de las líneas sin uso; las en espera se revisan en el corte siguiente.`, hallazgo: "Por vendedor" },
+    { alerta: "Vendedores con riesgo", regla: `Alta si hay algún crítico (más de ${fmt(r.umbral_sin_uso_critico)}% sin uso); media si solo hay alertas medias.`, sev: ["alta", "media"], impacto: "La pérdida se concentra en pocos vendedores.", accion: "Abrir la ficha de cada crítico y trabajar su hallazgo.", hallazgo: `Uno por vendedor (hasta ${r.max_hallazgos_vendedor})` },
     { alerta: "Riesgo de la carga y uso", regla: "Media si las cargas A tienen más sin uso que las M; si no, informativa.", sev: ["media", "info"], impacto: "La validación previa no frena las ventas riesgosas.", accion: "Reforzar la validación de las cargas A antes de finalizarlas.", hallazgo: "Sí, con las A sin uso" },
     { alerta: "Finalizadas sin activar", regla: "Cargas finalizadas que no figuran en DDI ni en PORTABILIDAD del período.", sev: ["media"], impacto: "Ventas que no cobran comisión o que activan tarde.", accion: "Conciliar con Claro y con el corte siguiente; no liquidar hasta confirmar.", hallazgo: "Sí" },
     { alerta: `Pendientes de más de ${L.pendientes_dias} días`, regla: `Media desde ${L.pendientes_viejas_media} cargas; si no, baja.`, sev: ["media", "baja"], impacto: "Ventas que se pierden por no completarse.", accion: "Depurar: rechazar las que no siguen y reclamar a Claro las que dependen de la operadora.", hallazgo: "Sí" },
     { alerta: "Suspendidas al cierre", regla: "Líneas netas suspendidas a la fecha del corte.", sev: ["baja"], impacto: "Ventas que pueden descontarse.", accion: "Verificar el motivo de la suspensión.", hallazgo: "Sí" },
     { alerta: "Concentración de sin uso", regla: `Los ${L.concentracion_top} vendedores con más sin uso: media si concentran ${L.concentracion_pct_media}% o más.`, sev: ["media", "info"], impacto: "El riesgo se corrige con pocas acciones bien dirigidas.", accion: "Priorizar a esos vendedores en la verificación.", hallazgo: "No" },
-    { alerta: "Día con más sin uso", regla: `Se informa desde ${L.dia_sin_uso_min} líneas sin uso activadas el mismo día.`, sev: ["info"], impacto: "Posible lote o problema puntual.", accion: `Mirar la fecha: si es de los últimos ${d - 1} días del corte, esperar al siguiente.`, hallazgo: "No" },
+    { alerta: "Día con más sin uso", regla: `Se informa desde ${L.dia_sin_uso_min} líneas sin uso activadas el mismo día. Los días en espera de uso (menos de ${d} días al corte) nunca se informan.`, sev: ["info"], impacto: "Posible lote o problema puntual.", accion: "Revisar las ventas de ese día: vendedores, plan y zona.", hallazgo: "No" },
     { alerta: "Uso por zona", regla: "Compara el % sin uso del Interior con el de Capital y Central.", sev: ["info"], impacto: "Diferencias regionales en la calidad de la venta.", accion: "Comparar vendedores por zona y reforzar donde hay más sin uso.", hallazgo: "No" },
   ];
   return (
@@ -341,7 +340,7 @@ export function Checklist({ num }: { num: string }) {
     { titulo: "2 · Analizar (Riesgos)", items: [
       "Leer los datos llamativos de mayor a menor gravedad.",
       "Sali Hablando: por día de portación, por vendedor y línea por línea.",
-      "Separar sin uso recientes de antiguas.",
+      "Revisar las líneas sin uso; las marcadas En espera quedan para el corte siguiente.",
       "Abrir la ficha de cada vendedor crítico: patrón y evidencia.",
       "Cruzar riesgo de la carga con uso; comparar Interior con Capital y Central.",
     ] },
@@ -415,8 +414,8 @@ export function Glosario({ r, num }: P) {
     ["PORTABILIDAD", "Hoja de portaciones del período, con tipo, origen y fecha de portación."],
     ["Sali Hablando (SH)", "Portación con modalidad SI-SaliHbl: la línea sale activa antes de completar la portación."],
     ["Nativa", "Línea nueva, que no viene de otra operadora."],
-    ["Sin uso", "Línea sin consumo de datos (CONSUMO_DATOS = NO)."],
-    ["Reciente / antigua", `Sin uso con menos de ${r.dias_sin_uso_antigua} días desde la activación / con ${r.dias_sin_uso_antigua} o más.`],
+    ["Sin uso", `Línea sin consumo de datos (CONSUMO_DATOS = NO) con ${r.dias_sin_uso_antigua} días o más de activada: alerta PFI.`],
+    ["En espera de uso", `Pospago sin consumo activada hace menos de ${r.dias_sin_uso_antigua} días al corte. No es alerta: se evalúa en el corte siguiente.`],
     ["PFI", "Primera factura impaga: suspensión de la línea que descuenta la comisión de la venta."],
     ["Riesgo de la carga", "RIESGO_ORI que asigna Claro al cargar: A alto, M medio, B bajo."],
     ["Entrega en ráfaga", "Muchas activaciones del mismo vendedor en un solo día."],

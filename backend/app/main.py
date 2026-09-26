@@ -163,6 +163,16 @@ async def lifespan(app: FastAPI):
 
     tasks = [asyncio.create_task(_supervisar(n, f)) for n, f in modulos_operativas.WORKERS.items()]
     logger.info(f"Boot: workers iniciados: {', '.join(modulos_operativas.WORKERS) or 'ninguno'}")
+
+    # Tareas de arranque (p. ej. actualizar informes a la versión vigente del análisis):
+    # en segundo plano, para que el servidor responda desde el primer momento.
+    async def _al_arrancar(nombre, factory):
+        try:
+            logger.info(f"Boot: {nombre} → {await factory()}")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(f"Boot: {nombre} falló ({exc})")
+
+    tasks += [asyncio.create_task(_al_arrancar(n, f)) for n, f in modulos_operativas.AL_ARRANCAR.items()]
     yield
     for t in tasks:
         t.cancel()

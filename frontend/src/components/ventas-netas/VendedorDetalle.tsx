@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ESTADO_SDS_LABEL, fechaCorta, n, pct, type DetalleCarga, type DetalleNeta, type InformeData } from "./tipos";
-import { BarraUso, PctUso, Senales, Tabla } from "./ui";
-import { patronVendedor } from "./patrones";
+import { BarraUso, PctUso, Senales, Tabla, UsoBadge } from "./ui";
+import { estadoUso, patronVendedor, umbralCritico } from "./patrones";
 
 const RIESGO_LABEL: Record<string, string> = { A: "Alto", M: "Medio", B: "Bajo" };
 
@@ -43,7 +43,7 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
     for (const r of lineas) {
       const g = m.get(key(r) ?? "—") ?? { label: key(r) ?? "—", total: 0, sin_uso: 0, pospago: 0 };
       g.total += 1;
-      if (r.producto === "Pospago") { g.pospago += 1; if (r.consumo !== "SI") g.sin_uso += 1; }
+      if (r.producto === "Pospago") { g.pospago += 1; if (estadoUso(r, d.kpis.fecha_dato) === "NO") g.sin_uso += 1; }
       m.set(g.label, g);
     }
     return [...m.values()].sort((a, b) => b.total - a.total);
@@ -51,10 +51,9 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
   const porPlan = useMemo(() => grupo((r) => r.plan && `${r.producto} · ${r.plan}`), [lineas]);
   const porOrigen = useMemo(() => grupo((r) => (r.portacion === "SI" ? `Portación ${r.origen_portacion ?? ""}`.trim() : "Nativa")), [lineas]);
   const porDia = useMemo(() => grupo((r) => r.fecha_activacion).sort((a, b) => a.label.localeCompare(b.label)), [lineas]);
-  const sinUso = lineas.filter((r) => r.consumo === "NO");
+  const sinUso = lineas.filter((r) => estadoUso(r, d.kpis.fecha_dato) === "NO");
+  const enEspera = lineas.filter((r) => estadoUso(r, d.kpis.fecha_dato) === "ESPERA").length;
   const patron = useMemo(() => (vendedor ? patronVendedor(d, vendedor, lineas) : null), [d, vendedor, lineas]);
-  const ultimoDia = porDia.length ? porDia[porDia.length - 1].label : null;
-  const sinUsoRecientes = sinUso.filter((r) => r.fecha_activacion === ultimoDia).length;
   const riesgosas = cargas.filter((c) => c.riesgosa);
   const riesgosasAlto = riesgosas.filter((c) => c.riesgo === "A").length;
 
@@ -73,8 +72,8 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
         `${pct(vendedor.pct_uso)} de sus líneas Pospago están en uso (${n(vendedor.con_uso)} de ${n(vendedor.pospago)}), ${difEquipo! >= 0 ? `${pct(Math.abs(difEquipo!))} por encima` : `${pct(Math.abs(difEquipo!))} por debajo`} del promedio del equipo (${pct(k.pct_uso)}).` +
         (posUso >= 0 ? ` Puesto ${posUso + 1} de ${conPospago.length} en calidad de uso.` : ""),
       );
-      if (vendedor.alerta) resumen.push(`En alerta PFI: menos de ${k.umbral_uso_pct}% en uso con ${n(vendedor.pospago)} líneas. Revisar las ${n(vendedor.sin_uso)} sin uso.`);
-      if (sinUsoRecientes) resumen.push(`${n(sinUsoRecientes)} de las ${n(vendedor.sin_uso)} sin uso se activaron el ${fechaCorta(ultimoDia)}: todavía pueden empezar a consumir.`);
+      if (vendedor.alerta) resumen.push(`Crítico: ${pct(vendedor.pct_sin_uso)} de sus líneas con 3+ días están sin uso (más del ${umbralCritico(d)}%). Revisar las ${n(vendedor.sin_uso)} sin uso.`);
+      if (enEspera) resumen.push(`${n(enEspera)} línea${enEspera > 1 ? "s" : ""} en espera de uso: activada${enEspera > 1 ? "s" : ""} hace menos de 3 días al corte, no ${enEspera > 1 ? "son" : "es"} alerta todavía.`);
     }
     if (vendedor.portadas) resumen.push(`${pct(Math.round((vendedor.portadas / vendedor.total) * 1000) / 10)} de sus ventas son portaciones${porOrigen[0] ? ` (la mayoría ${porOrigen[0].label === "Nativa" ? "nativas" : "desde " + porOrigen[0].label.replace("Portación ", "")})` : ""}.`);
     if (vendedor.suspendidas) resumen.push(`${n(vendedor.suspendidas)} línea${vendedor.suspendidas > 1 ? "s" : ""} suspendida${vendedor.suspendidas > 1 ? "s" : ""} al cierre.`);
@@ -88,8 +87,7 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
   if (fuera.length) resumen.push(fuera.length > 1 ? `${n(fuera.length)} portaciones suyas no llegaron a DDI (fuera de netas).` : "1 portación suya no llegó a DDI (fuera de netas).");
   if (pendientes.length) resumen.push(`${n(pendientes.length)} carga${pendientes.length > 1 ? "s" : ""} pendiente${pendientes.length > 1 ? "s" : ""} de finalizar.`);
 
-  const consumo = (c: DetalleNeta["consumo"]) =>
-    c === null ? <span className="text-brand-mist">—</span> : c === "SI" ? <span className="text-emerald-700 font-semibold">Con uso</span> : <span className="text-brand-primary font-semibold">Sin uso</span>;
+  const consumo = (r: DetalleNeta) => <UsoBadge estado={estadoUso(r, d.kpis.fecha_dato)} />;
   const subcanal = vendedor?.subcanal ?? (prod?.subcanal as string | null) ?? null;
   const alerta = vendedor?.alerta || (prod ? (prod.con_uso + prod.sin_uso >= 5 && prod.pct_sin_uso > 30) : false);
 
@@ -164,7 +162,7 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
                   { key: "estado", label: "Estado", render: (c) => ESTADO_SDS_LABEL[c.estado] ?? c.estado },
                   { key: "producto", label: "Negocio", render: (c) => (c.producto === "Internet" ? "Internet (IF)" : c.producto) },
                   { key: "plan", label: "Plan" },
-                  { key: "uso", label: "Uso", render: (c) => (c.uso === null ? <span className="text-brand-mist">—</span> : c.uso === "SI" ? <span className="text-emerald-700 font-semibold">Con uso</span> : <span className="text-brand-primary font-semibold">Sin uso</span>) },
+                  { key: "uso", label: "Uso", render: (c) => <UsoBadge estado={c.uso as any} /> },
                   { key: "riesgo", label: "Riesgo", align: "center", render: (c) => (c.riesgo ? <span className={c.riesgo === "A" ? "font-semibold text-brand-primary" : ""}>{c.riesgo} · {RIESGO_LABEL[c.riesgo] ?? ""}</span> : "—") },
                   { key: "portacion", label: "Port.", align: "center", render: (c) => (c.portacion === "SI" ? c.origen_portacion ?? "SI" : "Nativa") },
                   { key: "zona", label: "Zona", render: (c) => <>{c.zona === "Interior" ? "Interior" : "Cap./Central"} <span className="text-brand-mist text-xs">{c.ciudad}</span></> },
@@ -198,12 +196,12 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
                   { key: "producto", label: "Producto" },
                   { key: "plan", label: "Plan" },
                   { key: "portacion", label: "Port.", render: (r) => (r.portacion === "SI" ? r.origen_portacion ?? "SI" : "Nativa") },
-                  { key: "consumo", label: "Consumo", render: (r) => consumo(r.consumo) },
+                  { key: "consumo", label: "Consumo", render: (r) => consumo(r) },
                   { key: "estado_linea", label: "Estado", render: (r) => (r.estado_linea === "S" ? <span className="badge-primary">Susp.</span> : "Activa") },
                   { key: "ciudad", label: "Ciudad" },
                 ]}
-                rows={[...lineas].sort((a, b) => (a.consumo === "NO" ? 0 : 1) - (b.consumo === "NO" ? 0 : 1) || (b.fecha_activacion ?? "").localeCompare(a.fecha_activacion ?? ""))}
-                alerta={(r) => r.consumo === "NO"}
+                rows={[...lineas].sort((a, b) => (estadoUso(a, d.kpis.fecha_dato) === "NO" ? 0 : 1) - (estadoUso(b, d.kpis.fecha_dato) === "NO" ? 0 : 1) || (b.fecha_activacion ?? "").localeCompare(a.fecha_activacion ?? ""))}
+                alerta={(r) => estadoUso(r, d.kpis.fecha_dato) === "NO"}
                 maxAlto="max-h-[50vh]"
               />
             </section>
@@ -220,7 +218,7 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
                   { key: "linea", label: "Línea", className: "tabular-nums" },
                   { key: "plan", label: "Plan" },
                   { key: "tipo_port", label: "Tipo" },
-                  { key: "consumo", label: "Consumo", render: (r) => consumo(r.consumo) },
+                  { key: "consumo", label: "Consumo", render: (r) => consumo(r) },
                 ]}
                 rows={fuera}
               />

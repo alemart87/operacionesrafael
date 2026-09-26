@@ -4,6 +4,23 @@ import type { ReactNode } from "react";
 import { ESTADO_LABEL, type EstadoInforme } from "./tipos";
 import type { Senal } from "./patrones";
 
+/**
+ * Uso de una línea con la misma marca en toda la plataforma. "En espera": Pospago sin consumo
+ * activada hace menos de 3 días al corte; todavía no se evalúa y no es alerta.
+ */
+export function UsoBadge({ estado }: { estado: "SI" | "NO" | "ESPERA" | null | undefined }) {
+  if (estado === "SI") return <span className="text-emerald-700 font-semibold">Con uso</span>;
+  if (estado === "NO") return <span className="text-brand-primary font-semibold">Sin uso</span>;
+  if (estado === "ESPERA")
+    return (
+      <span className="inline-flex items-center gap-1 rounded border border-brand-border bg-brand-bg px-1.5 py-0.5 text-[11px] font-semibold text-brand-slate whitespace-nowrap"
+        title="Activada hace menos de 3 días al corte: todavía no tuvo tiempo de usarse. No es alerta; se evalúa en el corte siguiente.">
+        <span aria-hidden>◷</span>En espera
+      </span>
+    );
+  return <span className="text-brand-mist">—</span>;
+}
+
 export function EstadoBadge({ estado }: { estado: EstadoInforme }) {
   const cls = estado === "published" ? "badge-success" : estado === "replaced" ? "badge-neutral line-through" : "badge-cyan";
   return <span className={cls}>{ESTADO_LABEL[estado]}</span>;

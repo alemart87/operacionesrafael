@@ -149,6 +149,13 @@ Reglas del análisis (`analyzer.py`):
 - **Vendedor** de una neta = `POS_NOMBRE` sin el prefijo del subcanal; las
   cargas pendientes no traen POS y se atribuyen por `VENDEDOR_LEGAJO`.
 - Suspendidas y portadas que no llegaron a DDI se cuentan y se marcan, no se descartan.
+- **En espera de uso**: una Pospago sin consumo activada hace menos de 3 días al
+  corte (`DIAS_ESPERA_USO`) todavía no tuvo tiempo de usarse. No es alerta: no
+  cuenta como sin uso en ningún porcentaje, alerta de vendedor, críticos, riesgo ×
+  uso ni "día con más sin uso"; se marca "◷ En espera" en todas las tablas y se
+  evalúa en el corte siguiente. Auditoría usa el mismo criterio (lo importa del
+  analizador). Al arrancar, la plataforma recalcula sola, desde los datos
+  guardados, los informes generados por una versión anterior del análisis.
 - **Sali Hablando** (`PORTACION_TIPO = SI-SaliHbl`): la línea salió hablando de
   la otra operadora. Suelen activarse el mes anterior y completar la portación
   en el período, por lo que no figuran en DDI ni en CARGAS del mes; el
@@ -216,6 +223,18 @@ Ventas Netas. Código en `backend/app/operativas/televentas_claro/auditoria/`.
   guarda las reglas con las que se evaluó. Los ejemplos de la guía usan cifras
   agregadas del corte de septiembre 2026 (sin vendedores ni líneas), y no incluye
   montos de comisión (Facturación es solo superadmin).
+- **Crítico** es solo el vendedor con más de 35% de sus líneas Pospago sin uso con
+  3+ días de activadas (`UMBRAL_CRITICO_SIN_USO_PCT`, con 5 o más evaluables; las
+  en espera no cuentan). Rige igual en Ventas Netas ("Ver críticos") y en
+  Auditoría. Todo otro riesgo del vendedor es **alerta media**.
+- Informe final en dos versiones, cada una en PDF para enviar: **ejecutivo**
+  (resumen del auditor, indicadores, hallazgos generales y críticos, alertas medias
+  en una tabla, gráficos con los comentarios del auditor, críticos, conclusiones y
+  recomendaciones) y **extenso** (todas las detecciones con su evidencia completa).
+- Un informe en Borrador o En revisión hecho con reglas anteriores muestra un aviso
+  y se puede **actualizar con el criterio vigente**: se vuelven a congelar los datos
+  de las mismas fuentes; los hallazgos automáticos intactos se regeneran y los que
+  el auditor trabajó (editados, con estado o notas) y los manuales se conservan.
 - Utilidad `auditoria`: Analista por defecto; el superadmin la asigna a
   Coordinador desde Perfiles. Todo queda en el registro de auditoría general.
 

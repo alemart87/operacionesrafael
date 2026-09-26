@@ -38,6 +38,7 @@ export function GraficoAuditoria({ s, clave, alto = 260, fijo = false }: { s: Sn
           <Legend iconType="square" iconSize={10} wrapperStyle={{ fontSize: 12 }} />
           <Bar dataKey="con_uso" name="Pospago con uso" stackId="a" fill={C.con_uso} />
           <Bar dataKey="sin_uso" name="Pospago sin uso" stackId="a" fill={C.sin_uso} />
+          {ser.netas_por_dia.some((x) => x.en_espera) && <Bar dataKey="en_espera" name="En espera de uso (no es alerta)" stackId="a" fill="#CBD5E1" />}
           <Bar dataKey="otros" name="GPON + IPTV" stackId="a" fill={C.otros} radius={[4, 4, 0, 0]}>
             <LabelList dataKey="total" position="top" style={{ fontSize: 10, fill: "#111827" }} />
           </Bar>

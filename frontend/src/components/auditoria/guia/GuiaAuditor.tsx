@@ -96,7 +96,7 @@ function Portada({ r, delSistema }: { r: ReglasAuditoria; delSistema: boolean })
           </div>
         </div>
         <div className="grid sm:grid-cols-3 lg:grid-cols-1 gap-3 content-center">
-          <Dato cifra={`${fmt(r.umbral_uso_pct)}%`} texto="umbral de uso por vendedor" />
+          <Dato cifra={`+${fmt(r.umbral_sin_uso_critico)}%`} texto="sin uso: vendedor crítico" />
           <Dato cifra={`${r.dias_sin_uso_antigua} días`} texto="sin uso: pasa a ser alerta PFI" />
           <Dato cifra={`~${DIAS_PFI} días`} texto="de la venta a la suspensión por PFI" />
           <div className={`sm:col-span-3 lg:col-span-1 text-[11px] flex items-center gap-1.5 ${delSistema ? "text-white/60" : "text-brand-orange"}`}>

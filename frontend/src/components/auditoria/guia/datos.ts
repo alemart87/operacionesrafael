@@ -12,12 +12,13 @@ export interface ReglasAuditoria {
   umbral_uso_pct: number;
   min_lineas_alerta: number;
   dias_sin_uso_antigua: number;
+  /** Activadas hace menos de estos días al corte: "en espera de uso", no son alerta. */
+  dias_espera_uso: number;
   umbral_sin_uso_atencion: number;
   umbral_sin_uso_critico: number;
   analysis_version: number;
-  nivel_critico: { sin_uso_antiguas: number; sali_sin_uso: number; suspendidas: number };
   nivel_atencion: { sin_uso_antiguas: number; sali_sin_uso: number; suspendidas: number; sin_uso_riesgo_A: number };
-  pesos: { sin_uso_antigua: number; sin_uso_reciente: number; sali_sin_uso: number; suspendida: number; sin_uso_riesgo_A: number; alerta_uso: number };
+  pesos: { sin_uso_antigua: number; sali_sin_uso: number; suspendida: number; sin_uso_riesgo_A: number; alerta_uso: number };
   senal_alta_desde: { sin_uso_antiguas: number; sali_sin_uso: number; suspendidas: number };
   patrones: {
     sin_uso_mismo_dia: Regla; pospago_mismo_dia: Regla; sin_uso_mismo_plan: Regla;
@@ -32,17 +33,16 @@ export interface ReglasAuditoria {
 }
 
 export const REGLAS_REFERENCIA: ReglasAuditoria = {
-  umbral_uso_pct: 50, min_lineas_alerta: 5, dias_sin_uso_antigua: 3, umbral_sin_uso_atencion: 15, umbral_sin_uso_critico: 30, analysis_version: 5,
-  nivel_critico: { sin_uso_antiguas: 5, sali_sin_uso: 5, suspendidas: 3 },
+  umbral_uso_pct: 65, min_lineas_alerta: 5, dias_sin_uso_antigua: 3, dias_espera_uso: 3, umbral_sin_uso_atencion: 15, umbral_sin_uso_critico: 35, analysis_version: 5,
   nivel_atencion: { sin_uso_antiguas: 3, sali_sin_uso: 3, suspendidas: 1, sin_uso_riesgo_A: 2 },
-  pesos: { sin_uso_antigua: 3, sin_uso_reciente: 1, sali_sin_uso: 3, suspendida: 2, sin_uso_riesgo_A: 2, alerta_uso: 8 },
+  pesos: { sin_uso_antigua: 3, sali_sin_uso: 3, suspendida: 2, sin_uso_riesgo_A: 2, alerta_uso: 8 },
   senal_alta_desde: { sin_uso_antiguas: 3, sali_sin_uso: 3, suspendidas: 2 },
   patrones: {
     sin_uso_mismo_dia: { min: 3, pct: 50 }, pospago_mismo_dia: { min: 6, pct: 40 }, sin_uso_mismo_plan: { min: 3, pct: 70 },
     sin_uso_mismo_origen: { min: 3, pct: 70 }, nativas_sin_uso: { min: 3, pct: 60 }, sin_uso_misma_ciudad: { min: 4, pct: 75 },
   },
   llamativos: { sali_pct_sin_uso_alta: 50, pendientes_dias: 7, pendientes_viejas_media: 20, concentracion_top: 5, concentracion_pct_media: 40, dia_sin_uso_min: 10 },
-  max_hallazgos_vendedor: 30, max_evidencia: 60,
+  max_hallazgos_vendedor: 30, max_evidencia: 1000,
 };
 
 /** Combina lo que devolvió la API con la referencia (clave por clave, también en los grupos anidados). */
@@ -67,9 +67,13 @@ export const DIAS_PFI = 60;
 export const CASO_TESTIGO = {
   corte: "22/09/2026",
   periodo: "septiembre 2026",
-  netas: 1183, pospago: 1000, pospago_sin_uso: 205, pct_sin_uso: 20.5, sin_uso_antiguas: 105, total_sin_uso: 314,
+  netas: 1183, pospago: 1000, pospago_sin_uso: 105, pct_sin_uso: 11.7, total_sin_uso: 214,
+  /** Sin consumo pero activadas del 21 al 23/09: en espera de uso, no son alerta (49 del día del corte). */
+  en_espera: 100, en_espera_dia_corte: 49,
   cargas: 1433, finalizadas_sin_activar: 201, pendientes: 155, pendientes_viejas: 66, suspendidas: 19,
-  vendedores: { total: 101, criticos: 18, atencion: 25 },
+  vendedores: { total: 101, criticos: 6, atencion: 29 },
+  /** Señales más frecuentes en la ficha de los vendedores (cantidad de vendedores). */
+  senales: { en_espera: 47, mismo_dia: 9, origen: 8, plan: 7, ciudad: 6, rafaga: 5 },
   sali: {
     total: 113, sin_uso: 109, pct: 96.5, origen: [["TIGO", 73], ["PERS", 40]] as [string, number][],
     /** [día, activaciones] del mes anterior. */
@@ -82,11 +86,11 @@ export const CASO_TESTIGO = {
     ] as [string, number, number][],
   },
   riesgo: [
-    { r: "A", label: "Alto", cargas: 135, con_uso: 60, sin_uso: 22, pct: 26.8 },
-    { r: "M", label: "Medio", cargas: 1186, con_uso: 618, sin_uso: 137, pct: 18.1 },
-    { r: "B", label: "Bajo", cargas: 112, con_uso: 52, sin_uso: 17, pct: 24.6 },
+    { r: "A", label: "Alto", cargas: 135, con_uso: 60, sin_uso: 13, pct: 17.8 },
+    { r: "M", label: "Medio", cargas: 1186, con_uso: 618, sin_uso: 72, pct: 10.4 },
+    { r: "B", label: "Bajo", cargas: 112, con_uso: 52, sin_uso: 7, pct: 11.9 },
   ],
-  zonas: { interior: { cargas: 493, pct: 28.1 }, capital: { cargas: 940, pct: 12.7 } },
+  zonas: { interior: { cargas: 493, pct: 19.3 }, capital: { cargas: 940, pct: 5.1 } },
 };
 
 /** Número con separador de miles y coma decimal (es-PY). */

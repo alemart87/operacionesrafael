@@ -95,6 +95,10 @@ export interface DetalleNeta {
   tipo_port: string | null;
   origen_portacion: string | null;
   consumo: "SI" | "NO" | null;
+  /** Pospago sin consumo activada hace menos de 3 días al corte: en espera de uso, no es alerta. */
+  en_espera?: boolean;
+  /** Días desde la activación hasta el corte. */
+  dias?: number | null;
   estado_linea: string | null;
   razon_cierre: string | null;
   vendedor: string;
@@ -118,6 +122,8 @@ export interface Kpis {
   pct_portacion: number;
   pospago_sin_uso: number;
   pospago_con_uso: number;
+  /** Pospago sin consumo activadas hace menos de 3 días al corte: no cuentan como sin uso. */
+  pospago_en_espera?: number;
   pct_sin_uso: number;
   pct_uso: number;
   suspendidas: number;
@@ -132,6 +138,8 @@ export interface Kpis {
   pendientes_mas_de_7_dias: number;
   fuera_periodo: number;
   umbral_uso_pct: number;
+  /** Vendedor crítico: más de este % de sus líneas evaluables sin uso (informes v7+; antes, 100 − umbral_uso_pct). */
+  umbral_critico_sin_uso_pct?: number;
   min_lineas_alerta: number;
 }
 
@@ -165,7 +173,7 @@ export interface Productividad {
     pospago: number; internet: number; iptv: number; capital_central: number; interior: number; pct_interior: number;
     dias_con_cargas: number; promedio_diario: number; mejor_dia: string | null; mejor_dia_total: number;
     ultimo_dia: string | null; ultimo_dia_total: number; vendedores: number; sin_atribuir: number; fecha_dato: string | null;
-    con_uso: number; sin_uso: number; sin_dato_uso: number; pct_sin_uso: number; riesgo_alto: number; sin_uso_riesgo_alto: number;
+    con_uso: number; sin_uso: number; sin_dato_uso: number; en_espera?: number; pct_sin_uso: number; riesgo_alto: number; sin_uso_riesgo_alto: number;
   };
   por_dia: (FilaProd & { dia: string; acumulado: number })[];
   por_estado: { estado: string; total: number; pct: number }[];
@@ -195,7 +203,8 @@ export interface DetalleCarga {
   vendedor: string;
   atribucion: "pos" | "legajo" | "sin_atribuir";
   legajo: string | null;
-  uso: "SI" | "NO" | null;
+  /** ESPERA: activada hace menos de 3 días al corte, todavía no se evalúa (no es alerta). */
+  uso: "SI" | "NO" | "ESPERA" | null;
   /** Finalizada Pospago sin consumo: alerta PFI. */
   riesgosa: boolean;
 }

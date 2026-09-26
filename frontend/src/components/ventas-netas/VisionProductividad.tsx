@@ -26,7 +26,7 @@ const SERIES_SALUD = [
 ];
 const RIESGO_LABEL: Record<string, string> = { A: "A · alto", M: "M · medio", B: "B · bajo" };
 /** % de líneas Pospago finalizadas sin uso a partir del cual el vendedor queda en rojo. */
-const UMBRAL_SIN_USO = 30;
+const UMBRAL_SIN_USO = 35; // mismo umbral de "crítico" que Ventas Netas y Auditoría
 
 const tooltipStyle = { fontSize: 12, borderRadius: 6, border: "1px solid #e5e7eb", boxShadow: "0 4px 12px rgba(0,0,0,.08)" };
 const dd = (iso: string) => iso.slice(8, 10);
@@ -273,7 +273,7 @@ export function VisionProductividad({ d }: { d: InformeData }) {
       >
         <div className="grid sm:grid-cols-4 gap-3 mb-4">
           <Mini label="Pospago con uso" value={n(k.con_uso)} color={C_SALUD.con_uso} />
-          <Mini label="Pospago SIN USO" value={`${n(k.sin_uso)} · ${pct(k.pct_sin_uso)}`} color={C_SALUD.sin_uso} hint={`${n(k.sin_uso_riesgo_alto)} en riesgo alto`} />
+          <Mini label="Pospago SIN USO" value={`${n(k.sin_uso)} · ${pct(k.pct_sin_uso)}`} color={C_SALUD.sin_uso} hint={`${n(k.sin_uso_riesgo_alto)} en riesgo alto${k.en_espera ? ` · ${n(k.en_espera)} en espera` : ""}`} />
           <Mini label="Sin dato de uso" value={n(k.sin_dato_uso)} color="#9ca3af" hint="Finalizadas que no están en DDI" />
           <Mini label="Riesgo alto (A)" value={n(k.riesgo_alto)} color="#0F1116" hint={`${pct(Math.round((k.riesgo_alto / Math.max(k.cargas, 1)) * 1000) / 10)} de las cargas`} />
         </div>

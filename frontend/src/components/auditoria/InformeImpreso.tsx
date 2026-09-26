@@ -9,7 +9,8 @@ import {
   type AuditoriaDetalle,
 } from "./tipos";
 
-const MAX_LINEAS_ANEXO = 40;
+/** Informe extenso: todas las detecciones congeladas en cada hallazgo, sin recorte. */
+const MAX_LINEAS_ANEXO = Number.MAX_SAFE_INTEGER;
 
 function Parrafo({ texto, vacio }: { texto: string | null; vacio: string }) {
   if (!texto?.trim()) return <p className="text-sm text-brand-mist italic">{vacio}</p>;
@@ -32,7 +33,7 @@ function Titulo({ num, children }: { num: string; children: React.ReactNode }) {
  * conclusiones, recomendaciones y bitácora; con `conEvidencia`, un anexo con las
  * líneas de cada hallazgo. Los gráficos van con ancho fijo para la impresión.
  */
-export function InformeImpreso({ a, conEvidencia = false }: { a: AuditoriaDetalle; conEvidencia?: boolean }) {
+export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle; conEvidencia?: boolean }) {
   const s = a.snapshot;
   const k = s.kpis;
   const nombre = (id: string | null) => (id && a.usuarios[id]) || "—";
@@ -41,12 +42,12 @@ export function InformeImpreso({ a, conEvidencia = false }: { a: AuditoriaDetall
 
   return (
     <div className="informe-impreso bg-white text-brand-ink">
-      <PrintCover titulo={`Informe de auditoría de ventas · ${a.codigo}`} periodo={a.titulo.toLowerCase().includes(periodo.toLowerCase()) ? a.titulo : `${a.titulo} · ${periodo}`} />
-      <PrintHeader titulo={`${a.codigo} · ${a.titulo}`} subtitulo={`Auditoría de Ventas · Televentas CLARO · ${periodo} · ${ESTADO_AUD_LABEL[a.status]}`} />
+      <PrintCover titulo={`Informe extenso de auditoría · ${a.codigo}`} periodo={a.titulo.toLowerCase().includes(periodo.toLowerCase()) ? a.titulo : `${a.titulo} · ${periodo}`} />
+      <PrintHeader titulo={`${a.codigo} · ${a.titulo}`} subtitulo={`Informe extenso · Auditoría de Ventas · Televentas CLARO · ${periodo} · ${ESTADO_AUD_LABEL[a.status]}`} />
 
       {/* Encabezado en pantalla (la portada solo sale al imprimir) */}
       <div className="print:hidden border-b border-brand-border pb-4 mb-2">
-        <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">Informe de auditoría de ventas · {a.codigo}</div>
+        <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">Informe extenso · detecciones completas · {a.codigo}</div>
         <h1 className="font-display text-3xl text-brand-ink uppercase leading-tight">{a.titulo}</h1>
         <div className="text-sm text-brand-slate">{periodo} · {ESTADO_AUD_LABEL[a.status]}</div>
       </div>
@@ -59,6 +60,7 @@ export function InformeImpreso({ a, conEvidencia = false }: { a: AuditoriaDetall
             ["Elaborado por", `${nombre(a.created_by)} · ${fechaHora(a.created_at)}`],
             ["Cerrado por", a.closed_at ? `${nombre(a.closed_by)} · ${fechaHora(a.closed_at)}` : "—"],
             ["Datos congelados el", fechaHora(s.generado_en)],
+            ...(k.en_espera ? [["En espera de uso", `${n(k.en_espera)} líneas activadas hace menos de 3 días al corte: no son alerta y no se cuentan`]] : []),
             ...(s.advertencias?.length ? [["Advertencias", s.advertencias.join(" ")]] : []),
           ].map(([l, v]) => (
             <tr key={l as string}><td className="pr-4 py-0.5 text-[11px] uppercase tracking-wider2 text-brand-slate whitespace-nowrap align-top">{l}</td><td className="py-0.5 text-brand-graphite">{v}</td></tr>
@@ -76,9 +78,9 @@ export function InformeImpreso({ a, conEvidencia = false }: { a: AuditoriaDetall
       <div className="grid md:grid-cols-4 gap-3">
         {[
           ["Ventas netas", n(k.netas), `${n(k.pospago)} Pospago · ${n(k.gpon)} GPON · ${n(k.iptv)} IPTV`],
-          ["Pospago sin uso", pct(k.pct_sin_uso), `${n(k.pospago_sin_uso)} líneas · ${n(k.sin_uso_antiguas)} con 3+ días`],
+          ["Pospago sin uso", pct(k.pct_sin_uso), `${n(k.pospago_sin_uso)} líneas con 3+ días${k.en_espera ? ` · ${n(k.en_espera)} en espera de uso` : ""}`],
           ["Sali Hablando sin uso", `${n(k.sali_sin_uso)} · ${pct(k.sali_pct_sin_uso)}`, `${n(k.sali_total)} portaciones`],
-          ["Vendedores con riesgo", `${n(k.vendedores_criticos)} · ${n(k.vendedores_atencion)}`, `críticos · atención, de ${n(k.vendedores)}`],
+          ["Vendedores con riesgo", `${n(k.vendedores_criticos)} · ${n(k.vendedores_atencion)}`, `críticos · alerta media, de ${n(k.vendedores)}`],
           ["Cargas", n(k.cargas), `${pct(k.pct_finalizacion)} finalizadas · ${n(k.pendientes)} pendientes`],
           ["Riesgo alto sin uso", n(k.sin_uso_riesgo_alto), `de ${n(k.riesgo_alto)} cargas con riesgo A`],
           ["Finalizadas sin activar", n(k.finalizadas_sin_activar), "no figuran en DDI ni PORTABILIDAD"],
@@ -184,7 +186,7 @@ export function InformeImpreso({ a, conEvidencia = false }: { a: AuditoriaDetall
       {conEvidencia && hallazgos.some((h) => h.estado !== "descartado" && ((h.evidencia?.lineas?.length ?? 0) > 0 || (h.evidencia?.sali?.length ?? 0) > 0)) && (
         <div className="informe-anexo mt-10">
           <Titulo num="A">Anexo · Evidencia por hallazgo</Titulo>
-          <p className="text-xs text-brand-slate mb-3">Líneas congeladas al crear el informe. Se listan hasta {MAX_LINEAS_ANEXO} por hallazgo; el resto queda disponible en el sistema.</p>
+          <p className="text-xs text-brand-slate mb-3">Todas las líneas congeladas en cada hallazgo al crear o actualizar el informe.</p>
           {hallazgos.filter((h) => h.estado !== "descartado" && ((h.evidencia?.lineas?.length ?? 0) > 0 || (h.evidencia?.sali?.length ?? 0) > 0)).map((h) => (
             <section key={`anexo-${h.id}`} className="mb-5 tabla-evidencia">
               <h3 className="font-display text-base text-brand-ink uppercase leading-tight mb-1">{h.codigo} · {h.titulo}</h3>
