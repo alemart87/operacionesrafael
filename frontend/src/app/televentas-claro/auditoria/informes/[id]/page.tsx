@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { GraficoAuditoria, tituloGrafico } from "@/components/auditoria/GraficoAuditoria";
 import { Hallazgos } from "@/components/auditoria/Hallazgos";
+import { InformeEjecutivo } from "@/components/auditoria/InformeEjecutivo";
 import { InformeImpreso } from "@/components/auditoria/InformeImpreso";
 import { RiesgosView } from "@/components/auditoria/RiesgosView";
 import { Seguimiento } from "@/components/auditoria/Seguimiento";
@@ -38,7 +39,8 @@ function Informe() {
   const [nota, setNota] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [eliminar, setEliminar] = useState(false);
-  const [conEvidencia, setConEvidencia] = useState(false);
+  const [modo, setModo] = useState<"ejecutivo" | "extenso">("ejecutivo");
+  const [actualizar, setActualizar] = useState(false);
 
   const load = useCallback(async () => {
     try { setA(await apiFetch<AuditoriaDetalle>(`${AUD_API}/informes/${id}`)); } catch (e: any) { setError(e.message); }
@@ -55,9 +57,17 @@ function Informe() {
       await load();
     } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
   };
-  const imprimir = () => {
+  const imprimir = (m: "ejecutivo" | "extenso") => {
+    setModo(m);
     setVista("informe");
-    setTimeout(() => window.print(), 500);
+    setTimeout(() => window.print(), 600);
+  };
+  const actualizarDatos = async () => {
+    setOcupado(true);
+    try {
+      setA(await apiFetch<AuditoriaDetalle>(`${AUD_API}/informes/${id}/actualizar`, { method: "POST" }));
+      setActualizar(false);
+    } catch (e: any) { setError(e.message); setActualizar(false); } finally { setOcupado(false); }
   };
 
   if (error && !a) return <div className="card p-8 text-brand-primary">{error}</div>;
@@ -87,11 +97,20 @@ function Informe() {
                 {ACCION_ESTADO[t][a.status]}
               </button>
             ))}
-            <button onClick={imprimir} className="btn-secondary">Imprimir PDF</button>
+            <button onClick={() => setVista("informe")} className="btn-secondary">Informe PDF</button>
             {a.puede_eliminar && <button onClick={() => setEliminar(true)} className="btn-ghost text-brand-primary">Eliminar</button>}
           </div>
         </div>
         {error && <div className="card p-3 text-brand-primary text-sm mt-3">{error}</div>}
+        {a.reglas_desactualizadas && (
+          <div className="mt-4 rounded-lg border border-brand-orange/40 bg-brand-orange/10 p-4 flex items-center justify-between gap-4 flex-wrap">
+            <div className="text-sm text-brand-graphite max-w-3xl">
+              <b className="text-[#B86E00]">Este informe se generó con reglas anteriores.</b> Hoy las líneas activadas hace menos de 3 días al corte quedan en espera de uso y no son alerta, y crítico es el vendedor con más de 35% de líneas sin uso.
+              {a.editable ? " Podés actualizar los datos: los hallazgos que ya trabajaste se conservan." : " Está cerrado: conserva los datos con los que se emitió."}
+            </div>
+            {a.editable && <button onClick={() => setActualizar(true)} className="btn-primary whitespace-nowrap">Actualizar con el criterio vigente</button>}
+          </div>
+        )}
       </div>
 
       <div className="print:hidden">
@@ -116,19 +135,44 @@ function Informe() {
       {vista === "redaccion" && <Redaccion a={a} onChange={load} />}
       {vista === "informe" && (
         <>
-          <div className="card p-4 mb-4 no-print flex items-center justify-between gap-3 flex-wrap">
-            <label className="flex items-center gap-2 text-sm text-brand-graphite cursor-pointer">
-              <input type="checkbox" checked={conEvidencia} onChange={(e) => setConEvidencia(e.target.checked)} />
-              Incluir anexo con las líneas de evidencia de cada hallazgo <span className="text-xs text-brand-slate">(hace el PDF mucho más largo)</span>
-            </label>
-            <button onClick={imprimir} className="btn-primary">Imprimir PDF</button>
+          <div className="grid md:grid-cols-2 gap-4 mb-5 no-print">
+            {([
+              ["ejecutivo", "Informe ejecutivo", "Para la Gerencia: resumen del auditor, indicadores, hallazgos, gráficos con tus comentarios, vendedores críticos, conclusiones y recomendaciones.", ["Resumen", "Indicadores", "Hallazgos", "Gráficos y comentarios", "Críticos", "Conclusiones"]],
+              ["extenso", "Informe extenso", "Con todas las detecciones: datos llamativos, hallazgos con su evidencia línea por línea, vendedores riesgosos, bitácora de seguimiento y anexo completo.", ["Todo el ejecutivo", "Datos llamativos", "Evidencia completa", "Vendedores riesgosos", "Seguimiento", "Anexo"]],
+            ] as const).map(([m, titulo, texto, chips]) => (
+              <div key={m} role="button" tabIndex={0} onClick={() => setModo(m)} onKeyDown={(e) => e.key === "Enter" && setModo(m)}
+                className={`card p-5 cursor-pointer transition-all border-2 ${modo === m ? "border-brand-primary shadow-elevated" : "border-transparent hover:border-brand-border"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">{m === "ejecutivo" ? "Versión corta" : "Versión completa"}</div>
+                    <div className="font-display text-2xl uppercase text-brand-ink leading-tight">{titulo}</div>
+                  </div>
+                  <span className={`w-5 h-5 rounded-full border-2 grid place-items-center ${modo === m ? "border-brand-primary" : "border-brand-mist"}`}>{modo === m && <span className="w-2.5 h-2.5 rounded-full bg-brand-primary" />}</span>
+                </div>
+                <p className="text-sm text-brand-graphite mt-2 leading-snug">{texto}</p>
+                <div className="flex flex-wrap gap-1.5 mt-3">{chips.map((c) => <span key={c} className="rounded border border-brand-border px-2 py-0.5 text-[11px] text-brand-slate">{c}</span>)}</div>
+                <button onClick={(e) => { e.stopPropagation(); imprimir(m); }} className={`mt-4 w-full ${modo === m ? "btn-primary" : "btn-secondary"}`}>
+                  Descargar PDF para enviar
+                </button>
+              </div>
+            ))}
           </div>
+          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate mb-2 no-print">Vista previa · {modo === "ejecutivo" ? "informe ejecutivo" : "informe extenso"}</div>
           <div className="card p-8 informe-impreso-card">
-            <InformeImpreso a={a} conEvidencia={conEvidencia} />
+            {modo === "ejecutivo" ? <InformeEjecutivo a={a} /> : <InformeImpreso a={a} />}
           </div>
         </>
       )}
 
+      <ConfirmDialog
+        open={actualizar}
+        title="Actualizar con el criterio vigente"
+        confirmLabel="Actualizar datos"
+        loading={ocupado}
+        onCancel={() => setActualizar(false)}
+        onConfirm={actualizarDatos}
+        message="Se vuelven a congelar los datos desde las mismas fuentes con las reglas de hoy. Los hallazgos automáticos que nadie tocó se regeneran; los manuales y los que editaste, cambiaste de estado o comentaste se conservan. Queda registrado en el seguimiento."
+      />
       <ConfirmDialog
         open={!!transicion}
         variant={transicion === "cerrado" || transicion === "archivado" ? "danger" : "default"}

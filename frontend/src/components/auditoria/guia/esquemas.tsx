@@ -258,7 +258,7 @@ export function RelojUso({ r }: { r: ReglasAuditoria }) {
         </div>
         <div className="rounded-md p-3" style={{ background: "rgba(214,51,108,0.08)" }}>
           <div className="font-bold" style={{ color: "#B0204F" }}>Sin uso · {d} días o más</div>
-          <p className="text-brand-graphite text-[13px] leading-snug mt-0.5">Alerta PFI. Suman {r.pesos.sin_uso_antigua} puntos por línea. Con {r.nivel_atencion.sin_uso_antiguas} el vendedor pasa a atención; con {r.nivel_critico.sin_uso_antiguas}, a crítico.</p>
+          <p className="text-brand-graphite text-[13px] leading-snug mt-0.5">Alerta PFI. Suman {r.pesos.sin_uso_antigua} puntos por línea. Con {r.nivel_atencion.sin_uso_antiguas} el vendedor pasa a alerta media; es crítico si superan el {fmt(r.umbral_sin_uso_critico)}% de sus líneas.</p>
         </div>
       </div>
     </div>
@@ -301,21 +301,18 @@ export function RiesgoCargaUso() {
 
 // ============================================================== Semáforo del vendedor
 export function SemaforoVendedor({ r }: { r: ReglasAuditoria }) {
-  const d = r.dias_sin_uso_antigua, m = r.min_lineas_alerta, c = r.nivel_critico, a = r.nivel_atencion;
+  const d = r.dias_sin_uso_antigua, m = r.min_lineas_alerta, a = r.nivel_atencion;
   const plural = (n: number, s: string, p: string) => (n === 1 ? s : p);
   const niveles: { nombre: string; color: string; fondo: string; lema: string; reglas: string[] }[] = [
     {
-      nombre: "Crítico", color: "#E6332A", fondo: "bg-brand-primary-light/50", lema: "Alcanza con una de estas:",
+      nombre: "Crítico", color: "#E6332A", fondo: "bg-brand-primary-light/50", lema: "Una sola regla:",
       reglas: [
-        `Menos de ${fmt(r.umbral_uso_pct)}% de sus Pospago en uso, con ${m} o más`,
-        `${c.sin_uso_antiguas} o más sin uso con ${d}+ días`,
-        `${c.sali_sin_uso} o más Sali Hablando sin uso`,
-        `${c.suspendidas} o más ${plural(c.suspendidas, "suspendida", "suspendidas")} al cierre`,
-        `Más de ${fmt(r.umbral_sin_uso_critico)}% sin uso, con ${m} o más líneas`,
+        `Más de ${fmt(r.umbral_sin_uso_critico)}% de sus líneas Pospago sin uso con ${d}+ días de activadas`,
+        `Con ${m} o más líneas evaluables; las en espera de uso no cuentan`,
       ],
     },
     {
-      nombre: "Atención", color: "#F39200", fondo: "bg-brand-orange/10", lema: "Alcanza con una de estas:",
+      nombre: "Alerta media", color: "#F39200", fondo: "bg-brand-orange/10", lema: "Sin ser crítico, alcanza con una:",
       reglas: [
         `${a.sin_uso_antiguas} o más sin uso con ${d}+ días`,
         `${a.sali_sin_uso} o más Sali Hablando sin uso`,

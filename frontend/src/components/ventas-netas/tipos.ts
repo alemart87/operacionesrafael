@@ -138,6 +138,8 @@ export interface Kpis {
   pendientes_mas_de_7_dias: number;
   fuera_periodo: number;
   umbral_uso_pct: number;
+  /** Vendedor crítico: más de este % de sus líneas evaluables sin uso (informes v7+; antes, 100 − umbral_uso_pct). */
+  umbral_critico_sin_uso_pct?: number;
   min_lineas_alerta: number;
 }
 

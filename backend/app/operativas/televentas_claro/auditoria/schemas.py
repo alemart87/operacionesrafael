@@ -176,3 +176,5 @@ class AuditoriaDetalle(AuditoriaResumen):
     con_seguimiento: bool = False
     transiciones: List[str] = Field(default_factory=list)
     puede_eliminar: bool = False
+    reglas_desactualizadas: bool = False
+    """El snapshot se evaluó con reglas distintas de las vigentes: en Borrador / En revisión se puede actualizar."""

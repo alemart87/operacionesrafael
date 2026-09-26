@@ -15,25 +15,25 @@ from collections import Counter, defaultdict
 from datetime import date, datetime
 from typing import Any
 
-from ..ventas_netas.analyzer import DIAS_ESPERA_USO
+from ..ventas_netas.analyzer import DIAS_ESPERA_USO, UMBRAL_CRITICO_SIN_USO_PCT
 from ..ventas_netas.jobs import ANALYSIS_VERSION
 
 # ------------------------------------------------------------------ reglas
 # Única fuente de verdad: el motor las aplica, cada snapshot las guarda y la
 # Guía del auditor las muestra (GET /parametros). Cambiarlas acá cambia todo.
-UMBRAL_USO_PCT = 50.0          # alerta de vendedor: menos de esto en uso…
+UMBRAL_USO_PCT = 100 - UMBRAL_CRITICO_SIN_USO_PCT  # crítico visto como % en uso (menos de esto)…
 MIN_LINEAS_ALERTA = 5          # …con al menos estas líneas Pospago
 # Una Pospago sin consumo activada hace menos de estos días al corte está "en espera de uso":
 # todavía no tuvo tiempo de usarse, no es alerta y no cuenta para nada. Desde acá, sin uso = alerta PFI.
 DIAS_SIN_USO_ANTIGUA = DIAS_ESPERA_USO
 UMBRAL_SIN_USO_ATENCION = 15.0
-UMBRAL_SIN_USO_CRITICO = 30.0
+UMBRAL_SIN_USO_CRITICO = UMBRAL_CRITICO_SIN_USO_PCT  # …o como % sin uso (más de esto): la misma regla que Ventas Netas
 MAX_HALLAZGOS_VENDEDOR = 30
-MAX_EVIDENCIA = 60
+MAX_EVIDENCIA = 1000         # líneas de evidencia por hallazgo: el informe extenso las muestra todas
 
-# Nivel del vendedor: alcanza con una condición. Además es crítico con la alerta de uso o con más de
-# UMBRAL_SIN_USO_CRITICO % sin uso, y de atención con más de UMBRAL_SIN_USO_ATENCION % (con MIN_LINEAS_ALERTA líneas).
-NIVEL_CRITICO = {"sin_uso_antiguas": 5, "sali_sin_uso": 5, "suspendidas": 3}
+# Nivel del vendedor. Crítico: SOLO con más de UMBRAL_SIN_USO_CRITICO % de sus líneas evaluables sin uso
+# (con MIN_LINEAS_ALERTA o más). Atención (alerta media): alcanza con una de NIVEL_ATENCION o con más de
+# UMBRAL_SIN_USO_ATENCION % sin uso. Las líneas en espera de uso no cuentan para nada.
 NIVEL_ATENCION = {"sin_uso_antiguas": 3, "sali_sin_uso": 3, "suspendidas": 1, "sin_uso_riesgo_A": 2}
 # Puntaje de riesgo (ordena a los vendedores riesgosos): puntos por línea y por la alerta de uso.
 PESOS = {"sin_uso_antigua": 3, "sali_sin_uso": 3, "suspendida": 2, "sin_uso_riesgo_A": 2, "alerta_uso": 8}
@@ -58,7 +58,7 @@ LLAMATIVOS = {
     "dia_sin_uso_min": 10,           # "día con más líneas sin uso": se informa desde esta cantidad
 }
 
-NIVEL_LABEL = {"critico": "Crítico", "atencion": "Atención", "normal": "Normal"}
+NIVEL_LABEL = {"critico": "Crítico", "atencion": "Alerta media", "normal": "Normal"}
 
 
 def _pct(parte: float, total: float) -> float:
@@ -104,7 +104,7 @@ def parametros() -> dict[str, Any]:
         "umbral_uso_pct": UMBRAL_USO_PCT, "min_lineas_alerta": MIN_LINEAS_ALERTA, "dias_sin_uso_antigua": DIAS_SIN_USO_ANTIGUA,
         "dias_espera_uso": DIAS_ESPERA_USO, "umbral_sin_uso_atencion": UMBRAL_SIN_USO_ATENCION, "umbral_sin_uso_critico": UMBRAL_SIN_USO_CRITICO,
         "analysis_version": ANALYSIS_VERSION,
-        "nivel_critico": dict(NIVEL_CRITICO), "nivel_atencion": dict(NIVEL_ATENCION), "pesos": dict(PESOS),
+        "nivel_atencion": dict(NIVEL_ATENCION), "pesos": dict(PESOS),
         "senal_alta_desde": dict(SENAL_ALTA_DESDE), "patrones": {k: dict(v) for k, v in PATRONES.items()},
         "llamativos": dict(LLAMATIVOS), "max_hallazgos_vendedor": MAX_HALLAZGOS_VENDEDOR, "max_evidencia": MAX_EVIDENCIA,
     }
@@ -132,7 +132,7 @@ def _senales_vendedor(v: dict[str, Any], lineas: list[dict], sin_uso: list[dict]
     antiguas = v["sin_uso_antiguas"]
 
     if v["alerta"]:
-        s.append({"gravedad": "alta", "texto": f"{v['pct_uso']}% en uso: bajo el umbral de {_g(UMBRAL_USO_PCT)}%"})
+        s.append({"gravedad": "alta", "texto": f"{_g(v['pct_sin_uso'])}% sin uso: supera el {_g(UMBRAL_SIN_USO_CRITICO)}% (crítico)"})
     if antiguas:
         s.append({"gravedad": "alta" if antiguas >= SENAL_ALTA_DESDE["sin_uso_antiguas"] else "media", "texto": f"{antiguas} sin uso con {DIAS_SIN_USO_ANTIGUA}+ días desde la activación"})
     if v["en_espera"]:
@@ -173,10 +173,7 @@ def _senales_vendedor(v: dict[str, Any], lineas: list[dict], sin_uso: list[dict]
 
 def _nivel_y_puntaje(v: dict[str, Any]) -> tuple[str, int]:
     base = v["con_uso"] + v["sin_uso"]
-    critico = (
-        v["alerta"] or any(v[k] >= n for k, n in NIVEL_CRITICO.items())
-        or (base >= MIN_LINEAS_ALERTA and v["pct_sin_uso"] > UMBRAL_SIN_USO_CRITICO)
-    )
+    critico = base >= MIN_LINEAS_ALERTA and v["pct_sin_uso"] > UMBRAL_SIN_USO_CRITICO
     atencion = (
         any(v[k] >= n for k, n in NIVEL_ATENCION.items())
         or (base >= MIN_LINEAS_ALERTA and v["pct_sin_uso"] > UMBRAL_SIN_USO_ATENCION)
@@ -376,7 +373,7 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
         evaluables = v["pospago"] - v["en_espera"]
         v["pct_uso"] = _pct(v["con_uso"], evaluables)
         v["pct_sin_uso"] = _pct(v["sin_uso"], v["con_uso"] + v["sin_uso"])
-        v["alerta"] = evaluables >= MIN_LINEAS_ALERTA and v["pct_uso"] < UMBRAL_USO_PCT
+        v["alerta"] = v["con_uso"] + v["sin_uso"] >= MIN_LINEAS_ALERTA and v["pct_sin_uso"] > UMBRAL_SIN_USO_CRITICO
         v["pct_finalizacion"] = _pct(v["finalizadas"], v["cargas"])
         v["nivel"], v["puntaje"] = _nivel_y_puntaje(v)
         v["senales"] = _senales_vendedor(v, lineas_por_vendedor.get(nombre, []), sin_uso_por_vendedor.get(nombre, []), sali_por_vendedor.get(nombre, []))
@@ -522,7 +519,7 @@ def _datos_llamativos(k: dict, ranking: list[dict], series: dict, lineas_sin_uso
             f"{_g(z['Interior']['pct_sin_uso'])}% · {_g(z['Capital y Central']['pct_sin_uso'])}%")
     if k["vendedores_criticos"] or k["vendedores_atencion"]:
         add("alta" if k["vendedores_criticos"] else "media", "vendedor", "Vendedores con riesgo",
-            f"{k['vendedores_criticos']} vendedores en nivel crítico y {k['vendedores_atencion']} en atención, de {k['vendedores']} con actividad.",
+            f"{k['vendedores_criticos']} vendedores en nivel crítico y {k['vendedores_atencion']} en alerta media, de {k['vendedores']} con actividad.",
             f"{k['vendedores_criticos']} · {k['vendedores_atencion']}")
     orden = {"alta": 0, "media": 1, "baja": 2, "info": 3}
     out.sort(key=lambda x: orden.get(x["gravedad"], 9))
@@ -646,8 +643,8 @@ def resumen_automatico(snapshot: dict[str, Any]) -> str:
     ]
     if k["pospago"]:
         partes.append(f"El {_g(k['pct_sin_uso'])}% de las líneas Pospago netas con {DIAS_ESPERA_USO} días o más de activadas ({k['pospago_sin_uso']}) no registra consumo."
-                      + (f" Otras {k['en_espera']}, activadas hace menos de {DIAS_ESPERA_USO} días al corte, quedan en espera de uso y no se cuentan." if k["en_espera"] else ""))
+                      + (f" Otras {k['en_espera']}, activadas hace menos de {DIAS_ESPERA_USO} días al corte, quedan en espera de uso y no se cuentan." if k.get("en_espera") else ""))
     if k["sali_total"]:
         partes.append(f"Se identificaron {k['sali_total']} portaciones Sali Hablando, {k['sali_sin_uso']} sin uso ({_g(k['sali_pct_sin_uso'])}%).")
-    partes.append(f"{k['vendedores_criticos']} vendedores quedan en nivel crítico y {k['vendedores_atencion']} en atención, sobre {k['vendedores']} con actividad.")
+    partes.append(f"{k['vendedores_criticos']} vendedores quedan en nivel crítico y {k['vendedores_atencion']} en alerta media, sobre {k['vendedores']} con actividad.")
     return " ".join(partes)

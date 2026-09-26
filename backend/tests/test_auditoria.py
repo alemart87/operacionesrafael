@@ -81,7 +81,8 @@ async def test_circuito_de_auditoria(tmp_path, monkeypatch):
         assert (await ac.get(f"{BASE}/parametros", headers=supervisor)).status_code == 403
         reglas = (await ac.get(f"{BASE}/parametros", headers=analista)).json()
         assert reglas == s["parametros"]
-        assert reglas["umbral_uso_pct"] == 50 and reglas["pesos"]["sali_sin_uso"] == 3 and reglas["nivel_critico"]["sin_uso_antiguas"] == 5
+        assert reglas["umbral_sin_uso_critico"] == 35 and reglas["umbral_uso_pct"] == 65 and reglas["pesos"]["sali_sin_uso"] == 3
+        assert "nivel_critico" not in reglas and reglas["nivel_atencion"]["sin_uso_antiguas"] == 3
         assert reglas["patrones"]["pospago_mismo_dia"] == {"min": 6, "pct": 40} and reglas["llamativos"]["pendientes_dias"] == 7
         f1 = (await ac.get(f"{BASE}/fuentes", headers=analista)).json()[0]
         assert f1["actualizada"] and f1["netas"] == 6
@@ -152,9 +153,30 @@ async def test_circuito_de_auditoria(tmp_path, monkeypatch):
 
         # Estados: borrador → en revisión → cerrado (contenido fijo, seguimiento sigue) → archivado (solo lectura)
         assert (await ac.post(f"{BASE}/informes/{aid}/estado", headers=analista, json={"status": "cerrado"})).status_code == 400
+        # Informe hecho con reglas anteriores: se puede actualizar sin perder el trabajo del auditor.
+        assert det["reglas_desactualizadas"] is False
+        async with session_scope() as db:
+            from app.operativas.televentas_claro.auditoria.models import Auditoria
+            au = await db.get(Auditoria, aid)
+            au.snapshot = {**au.snapshot, "parametros": {**au.snapshot["parametros"], "umbral_sin_uso_critico": 30}}
+            await db.commit()
+        det = (await ac.get(f"{BASE}/informes/{aid}", headers=analista)).json()
+        assert det["reglas_desactualizadas"] is True
+        antes = {h["id"] for h in det["hallazgos"]}
+        r = await ac.post(f"{BASE}/informes/{aid}/actualizar", headers=analista)
+        assert r.status_code == 200, r.text
+        det = r.json()
+        despues = {h["id"]: h for h in det["hallazgos"]}
+        assert det["reglas_desactualizadas"] is False
+        assert h_juan["id"] in despues and h_manual in despues  # trabajados por el auditor: se conservan
+        assert despues[h_juan["id"]]["estado"] == "en_seguimiento"
+        assert sum(1 for h in det["hallazgos"] if h["vendedor"] == "JUAN LOPEZ") == 1  # no se duplica
+        assert antes - {h_juan["id"], h_manual} and not (antes - {h_juan["id"], h_manual}) & set(despues)  # los intactos se regeneran
+        assert det["historial"][-1]["accion"] == "actualizar datos"
         assert (await ac.post(f"{BASE}/informes/{aid}/estado", headers=analista, json={"status": "en_revision"})).json()["status"] == "en_revision"
         r = await ac.post(f"{BASE}/informes/{aid}/estado", headers=analista, json={"status": "cerrado", "nota": "Emitido a Gerencia."})
         assert r.status_code == 200 and r.json()["status"] == "cerrado" and r.json()["closed_by"] and not r.json()["editable"] and not r.json()["puede_eliminar"]
+        assert (await ac.post(f"{BASE}/informes/{aid}/actualizar", headers=analista)).status_code == 409  # cerrado: datos fijos
         assert (await ac.patch(f"{BASE}/informes/{aid}", headers=analista, json={"resumen": "cambio"})).status_code == 409
         assert (await ac.patch(f"{BASE}/informes/{aid}/hallazgos/{h_manual}", headers=analista, json={"titulo": "otro título"})).status_code == 409
         assert (await ac.patch(f"{BASE}/informes/{aid}/hallazgos/{h_manual}", headers=analista, json={"estado": "resuelto"})).status_code == 200
@@ -165,7 +187,7 @@ async def test_circuito_de_auditoria(tmp_path, monkeypatch):
         assert (await ac.post(f"{BASE}/informes/{aid}/seguimientos", headers=analista, json={"texto": "x"})).status_code == 409
         assert (await ac.patch(f"{BASE}/informes/{aid}/hallazgos/{h_manual}", headers=analista, json={"estado": "abierto"})).status_code == 409
         det = (await ac.get(f"{BASE}/informes/{aid}", headers=analista)).json()
-        assert [h["accion"] for h in det["historial"]] == ["crear", "estado", "estado", "estado"]
+        assert [h["accion"] for h in det["historial"]] == ["crear", "actualizar datos", "estado", "estado", "estado"]
 
         # CRÍTICO: al borrar el informe de origen, la auditoría conserva los datos congelados.
         assert (await ac.delete(f"{VN}/reports/{r1}", headers=analista)).status_code == 200

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ESTADO_SDS_LABEL, fechaCorta, n, pct, type DetalleCarga, type DetalleNeta, type InformeData } from "./tipos";
 import { BarraUso, PctUso, Senales, Tabla, UsoBadge } from "./ui";
-import { estadoUso, patronVendedor } from "./patrones";
+import { estadoUso, patronVendedor, umbralCritico } from "./patrones";
 
 const RIESGO_LABEL: Record<string, string> = { A: "Alto", M: "Medio", B: "Bajo" };
 
@@ -72,7 +72,7 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
         `${pct(vendedor.pct_uso)} de sus líneas Pospago están en uso (${n(vendedor.con_uso)} de ${n(vendedor.pospago)}), ${difEquipo! >= 0 ? `${pct(Math.abs(difEquipo!))} por encima` : `${pct(Math.abs(difEquipo!))} por debajo`} del promedio del equipo (${pct(k.pct_uso)}).` +
         (posUso >= 0 ? ` Puesto ${posUso + 1} de ${conPospago.length} en calidad de uso.` : ""),
       );
-      if (vendedor.alerta) resumen.push(`En alerta PFI: menos de ${k.umbral_uso_pct}% en uso con ${n(vendedor.pospago)} líneas. Revisar las ${n(vendedor.sin_uso)} sin uso.`);
+      if (vendedor.alerta) resumen.push(`Crítico: ${pct(vendedor.pct_sin_uso)} de sus líneas con 3+ días están sin uso (más del ${umbralCritico(d)}%). Revisar las ${n(vendedor.sin_uso)} sin uso.`);
       if (enEspera) resumen.push(`${n(enEspera)} línea${enEspera > 1 ? "s" : ""} en espera de uso: activada${enEspera > 1 ? "s" : ""} hace menos de 3 días al corte, no ${enEspera > 1 ? "son" : "es"} alerta todavía.`);
     }
     if (vendedor.portadas) resumen.push(`${pct(Math.round((vendedor.portadas / vendedor.total) * 1000) / 10)} de sus ventas son portaciones${porOrigen[0] ? ` (la mayoría ${porOrigen[0].label === "Nativa" ? "nativas" : "desde " + porOrigen[0].label.replace("Portación ", "")})` : ""}.`);

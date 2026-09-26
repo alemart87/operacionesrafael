@@ -14,8 +14,8 @@ Reglas acordadas con el negocio:
 * En espera de uso: una Pospago sin consumo activada hace menos de
   DIAS_ESPERA_USO días al corte todavía no tuvo tiempo de usarse. No es alerta:
   no cuenta como sin uso en ningún indicador y se informa aparte ("en_espera").
-* Alerta de vendedor: al menos MIN_LINEAS_ALERTA Pospago evaluables (sin las en
-  espera) y menos de UMBRAL_USO_PCT en uso.
+* Vendedor crítico (alerta): al menos MIN_LINEAS_ALERTA Pospago evaluables (sin
+  las en espera) y más de UMBRAL_CRITICO_SIN_USO_PCT sin uso con 3+ días.
 * Productividad (hoja CARGAS): evolutivo diario por fecha de alta de la venta,
   estados, Pospago vs Internet (IF) e IPTV, y zonas: Capital y Central por un
   lado, Interior por el otro (`DEPARTAMENTO_FACT`). Las cargas pendientes no
@@ -29,7 +29,8 @@ from collections import Counter, defaultdict
 from datetime import date
 from typing import Any
 
-UMBRAL_USO_PCT = 50.0
+UMBRAL_CRITICO_SIN_USO_PCT = 35.0  # vendedor crítico: más de esto de sus líneas evaluables sin uso
+UMBRAL_USO_PCT = 100 - UMBRAL_CRITICO_SIN_USO_PCT  # lo mismo visto como % en uso (menos de esto = crítico)
 MIN_LINEAS_ALERTA = 5
 DIAS_ESPERA_USO = 3  # activadas hace menos de esto al corte: "en espera de uso", no son alerta
 ESTADO_FINALIZADA = "Vta_Finalizada"
@@ -181,10 +182,10 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         evaluables = v["pospago"] - v["en_espera"]
         v["pct_uso"] = _pct(v["con_uso"], evaluables)
         v["pct_sin_uso"] = _pct(v["sin_uso"], evaluables)
-        v["alerta"] = evaluables >= MIN_LINEAS_ALERTA and v["pct_uso"] < UMBRAL_USO_PCT
+        v["alerta"] = evaluables >= MIN_LINEAS_ALERTA and v["pct_sin_uso"] > UMBRAL_CRITICO_SIN_USO_PCT
         vendedores.append(v)
     vendedores.sort(key=lambda v: (-v["total"], v["vendedor"]))
-    alertas = sorted((v for v in vendedores if v["alerta"]), key=lambda v: (v["pct_uso"], -v["pospago"]))
+    alertas = sorted((v for v in vendedores if v["alerta"]), key=lambda v: (-v["pct_sin_uso"], -v["pospago"]))
 
     # ---- Portaciones que no llegaron a DDI (PORTABILIDAD) ----
     sds_ddi = {r["sds_number"] for r in ddi_all}
@@ -291,6 +292,7 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "pendientes_mas_de_7_dias": pendientes["mas_de_7_dias"],
         "fuera_periodo": fuera_periodo_ddi + (len(cargas_all) - len(cargas)),
         "umbral_uso_pct": UMBRAL_USO_PCT,
+        "umbral_critico_sin_uso_pct": UMBRAL_CRITICO_SIN_USO_PCT,
         "min_lineas_alerta": MIN_LINEAS_ALERTA,
     }
 

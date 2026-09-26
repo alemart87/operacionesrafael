@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ESTADO_SDS_LABEL, fechaCorta, n, type DetalleNeta, type InformeData, type Pendiente, type Vendedor } from "./tipos";
 import { PctUso, Seccion, Senales, Tabla, UsoBadge } from "./ui";
 import { VendedorDetalle } from "./VendedorDetalle";
-import { DIAS_SIN_USO_ANTIGUA, estadoUso, vendedoresCriticos } from "./patrones";
+import { DIAS_SIN_USO_ANTIGUA, estadoUso, umbralCritico, vendedoresCriticos } from "./patrones";
 
 type Hoja = "vendedores" | "criticos" | "netas" | "pendientes" | "fuera";
 
@@ -71,7 +71,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
         )}
         {hoja === "vendedores" && (
           <label className="text-xs text-brand-graphite flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" checked={soloAlerta} onChange={(e) => setSoloAlerta(e.target.checked)} /> Solo en alerta
+            <input type="checkbox" checked={soloAlerta} onChange={(e) => setSoloAlerta(e.target.checked)} /> Solo críticos
           </label>
         )}
         <button onClick={onDescargar} disabled={descargando} className="btn-secondary ml-auto">
@@ -80,7 +80,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
       </div>
 
       {hoja === "vendedores" && (
-        <Seccion titulo="Ventas netas por vendedor" sub={`${n(vendedores.length)} vendedores · clic en un vendedor para ver su ficha · filas en rojo: menos de ${k.umbral_uso_pct}% en uso`}>
+        <Seccion titulo="Ventas netas por vendedor" sub={`${n(vendedores.length)} vendedores · clic en un vendedor para ver su ficha · filas en rojo: críticos, más de ${umbralCritico(d)}% sin uso`}>
           <Tabla<Vendedor>
             cols={[
               { key: "vendedor", label: "Vendedor", render: (r) => <><b>{r.vendedor}</b> <span className="text-brand-mist text-xs">{r.subcanal}</span></> },
@@ -114,7 +114,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
       {hoja === "criticos" && (
         <Seccion
           titulo="Operadores críticos"
-          sub={`${n(criticosFiltrados.length)} vendedores en alerta por uso (< ${k.umbral_uso_pct}%), con 3 o más líneas sin uso de ${DIAS_SIN_USO_ANTIGUA}+ días, o con 2 o más suspendidas · ordenados de más a menos crítico · clic para abrir la ficha`}
+          sub={`${n(criticosFiltrados.length)} vendedores críticos: más de ${umbralCritico(d)}% de sus líneas sin uso con ${DIAS_SIN_USO_ANTIGUA}+ días (con ${k.min_lineas_alerta} o más evaluables; las en espera no cuentan) · el resto de los riesgos son alertas medias · clic para abrir la ficha`}
         >
           <Tabla<(typeof criticos)[number]>
             cols={[

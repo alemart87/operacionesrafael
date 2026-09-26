@@ -26,7 +26,7 @@ const SERIES_SALUD = [
 ];
 const RIESGO_LABEL: Record<string, string> = { A: "A · alto", M: "M · medio", B: "B · bajo" };
 /** % de líneas Pospago finalizadas sin uso a partir del cual el vendedor queda en rojo. */
-const UMBRAL_SIN_USO = 30;
+const UMBRAL_SIN_USO = 35; // mismo umbral de "crítico" que Ventas Netas y Auditoría
 
 const tooltipStyle = { fontSize: 12, borderRadius: 6, border: "1px solid #e5e7eb", boxShadow: "0 4px 12px rgba(0,0,0,.08)" };
 const dd = (iso: string) => iso.slice(8, 10);

@@ -60,7 +60,7 @@ export function patronVendedor(d: InformeData, v: Vendedor, lineas: DetalleNeta[
   const enEspera = pospago.filter((r) => estadoUso(r, corte) === "ESPERA").length;
   const senales: Senal[] = [];
 
-  if (v.alerta) senales.push({ gravedad: "alta", texto: `${v.pct_uso.toLocaleString("es-PY", { maximumFractionDigits: 1 })}% en uso: bajo el umbral de ${k.umbral_uso_pct}%` });
+  if (v.alerta) senales.push({ gravedad: "alta", texto: `${v.pct_sin_uso.toLocaleString("es-PY", { maximumFractionDigits: 1 })}% sin uso: supera el ${umbralCritico(d)}% (crítico)` });
   if (sinUsoAntiguas) {
     senales.push({
       gravedad: sinUsoAntiguas >= 3 ? "alta" : "media",
@@ -115,12 +115,18 @@ export function patronVendedor(d: InformeData, v: Vendedor, lineas: DetalleNeta[
   return { senales, sinUsoAntiguas, enEspera, puntaje };
 }
 
-/** Vendedores críticos: en alerta (umbral), con 3+ sin uso antiguas o con 2+ suspendidas. Ordenados por puntaje. */
+/** % sin uso desde el cual un vendedor es crítico (lo define el backend; 35% hoy). */
+export const umbralCritico = (d: InformeData) => d.kpis.umbral_critico_sin_uso_pct ?? 100 - d.kpis.umbral_uso_pct;
+
+/**
+ * Vendedores críticos: SOLO los que tienen más del umbral (35%) de sus líneas evaluables sin uso,
+ * contando las de 3+ días (las en espera no cuentan). Los demás riesgos son alertas medias.
+ */
 export function vendedoresCriticos(d: InformeData) {
   const porVendedor = new Map<string, DetalleNeta[]>();
   for (const r of d.detalle_netas) porVendedor.set(r.vendedor, [...(porVendedor.get(r.vendedor) ?? []), r]);
   return d.vendedores
     .map((v) => ({ v, patron: patronVendedor(d, v, porVendedor.get(v.vendedor) ?? []) }))
-    .filter(({ v, patron }) => v.alerta || patron.sinUsoAntiguas >= 3 || v.suspendidas >= 2)
+    .filter(({ v }) => v.alerta)
     .sort((a, b) => b.patron.puntaje - a.patron.puntaje);
 }

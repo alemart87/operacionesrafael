@@ -138,6 +138,7 @@ async def _detalle(db: AsyncSession, a: Auditoria, user: CurrentUser) -> Auditor
         con_seguimiento=a.status in ESTADOS_CON_SEGUIMIENTO,
         transiciones=sorted(TRANSICIONES[a.status]),
         puede_eliminar=a.status == "borrador" and (a.created_by == user.id or user.is_superadmin),
+        reglas_desactualizadas=(a.snapshot or {}).get("parametros") != parametros(),
     )
 
 
@@ -220,6 +221,66 @@ async def crear(payload: AuditoriaCreate, request: Request, user: CurrentUser = 
     await db.refresh(a)
     await record_action(db, user_id=user.id, action="create_auditoria", resource_type="auditoria", resource_id=a.id,
                         ip=client_ip(request), extra={"codigo": a.codigo, "fuentes": payload.report_ids})
+    return await _detalle(db, a, user)
+
+
+@router.post("/informes/{auditoria_id}/actualizar", response_model=AuditoriaDetalle)
+async def actualizar_datos(auditoria_id: str, request: Request, user: CurrentUser = Depends(require_auditoria), db: AsyncSession = Depends(get_db)) -> AuditoriaDetalle:
+    """Vuelve a congelar los datos del informe con las reglas vigentes (solo Borrador / En revisión).
+
+    Toma las mismas fuentes (recalculadas si hace falta). Los hallazgos automáticos que nadie tocó
+    se regeneran; los manuales y los automáticos editados, con estado o notas, se conservan tal cual.
+    El resumen se reemplaza solo si seguía siendo el automático.
+    """
+    a = await _get(db, auditoria_id)
+    _exigir_editable(a)
+    ids = [f["report_id"] for f in (a.fuentes or [])]
+    existentes = set((await db.execute(select(VentasNetasReport.id).where(VentasNetasReport.id.in_(ids)))).scalars().all())
+    if len(existentes) != len(ids):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Alguna fuente de este informe ya no existe en Ventas Netas: el informe conserva sus datos congelados y no se puede actualizar. Creá uno nuevo desde Riesgos.")
+    reports = await _cargar_fuentes(db, ids, user, request)
+    anterior = a.snapshot or {}
+    snapshot = construir_snapshot(reports)
+
+    hallazgos = (await db.execute(select(AuditoriaHallazgo).where(AuditoriaHallazgo.auditoria_id == a.id))).scalars().all()
+    con_notas = set((await db.execute(select(AuditoriaSeguimiento.hallazgo_id).where(
+        AuditoriaSeguimiento.auditoria_id == a.id, AuditoriaSeguimiento.hallazgo_id.is_not(None))
+    )).scalars().all())
+    conservados, borrados = [], 0
+    for h in hallazgos:
+        intacto = h.origen == "auto" and h.updated_by is None and h.estado == "abierto" and h.id not in con_notas
+        if intacto:
+            await db.delete(h)
+            borrados += 1
+        else:
+            conservados.append(h)
+    ya = {(h.categoria, h.vendedor) for h in conservados if h.origen == "auto"}
+    orden = max((h.orden for h in conservados), default=0)
+    nuevos = 0
+    for h in hallazgos_automaticos(snapshot):
+        if (h["categoria"], h.get("vendedor")) in ya:
+            continue  # ya hay uno de ese tema trabajado por el auditor
+        orden += 1
+        nuevos += 1
+        db.add(AuditoriaHallazgo(auditoria_id=a.id, orden=orden, codigo=f"H-{orden:02d}", origen="auto", created_by=user.id, **h))
+
+    # El resumen se reemplaza si seguía siendo el automático (nadie editó el informe, o coincide con el borrador anterior).
+    try:
+        resumen_anterior = resumen_automatico(anterior).strip() if anterior.get("kpis") else ""
+    except (KeyError, TypeError):
+        resumen_anterior = ""
+    if not (a.resumen or "").strip() or a.updated_by is None or a.resumen.strip() == resumen_anterior:
+        a.resumen = resumen_automatico(snapshot)
+    a.snapshot, a.fuentes = snapshot, snapshot["fuentes"]
+    a.periodo_desde, a.periodo_hasta = snapshot["periodos"][0], snapshot["periodos"][-1]
+    a.updated_by, a.updated_at = user.id, datetime.utcnow()
+    detalle = f"datos recalculados con las reglas vigentes: {borrados} hallazgos automáticos regenerados como {nuevos}, {len(conservados)} conservados"
+    _historial(a, user, "actualizar datos", detalle)
+    db.add(AuditoriaSeguimiento(auditoria_id=a.id, tipo="estado", texto=f"Datos actualizados: {detalle}.", created_by=user.id))
+    await db.commit()
+    await db.refresh(a)
+    await record_action(db, user_id=user.id, action="refresh_auditoria", resource_type="auditoria", resource_id=a.id,
+                        ip=client_ip(request), extra={"codigo": a.codigo, "regenerados": nuevos, "conservados": len(conservados)})
     return await _detalle(db, a, user)
 
 

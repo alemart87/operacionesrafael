@@ -50,7 +50,7 @@ export const CATEGORIA_LABEL: Record<string, string> = {
 };
 
 export type Nivel = "critico" | "atencion" | "normal";
-export const NIVEL_LABEL: Record<Nivel, string> = { critico: "Crítico", atencion: "Atención", normal: "Normal" };
+export const NIVEL_LABEL: Record<Nivel, string> = { critico: "Crítico", atencion: "Alerta media", normal: "Normal" };
 
 export interface Fuente {
   id: string;
@@ -220,6 +220,8 @@ export interface AuditoriaDetalle extends AuditoriaResumen {
   transiciones: EstadoAuditoria[];
   /** Solo en Borrador y solo para quien lo creó (o el superadmin). */
   puede_eliminar: boolean;
+  /** Se evaluó con reglas anteriores a las vigentes (en Borrador / En revisión se puede actualizar). */
+  reglas_desactualizadas?: boolean;
 }
 
 /** Catálogo de gráficos que el auditor puede incluir en el informe. */

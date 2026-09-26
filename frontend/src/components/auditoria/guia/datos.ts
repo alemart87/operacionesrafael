@@ -17,7 +17,6 @@ export interface ReglasAuditoria {
   umbral_sin_uso_atencion: number;
   umbral_sin_uso_critico: number;
   analysis_version: number;
-  nivel_critico: { sin_uso_antiguas: number; sali_sin_uso: number; suspendidas: number };
   nivel_atencion: { sin_uso_antiguas: number; sali_sin_uso: number; suspendidas: number; sin_uso_riesgo_A: number };
   pesos: { sin_uso_antigua: number; sali_sin_uso: number; suspendida: number; sin_uso_riesgo_A: number; alerta_uso: number };
   senal_alta_desde: { sin_uso_antiguas: number; sali_sin_uso: number; suspendidas: number };
@@ -34,8 +33,7 @@ export interface ReglasAuditoria {
 }
 
 export const REGLAS_REFERENCIA: ReglasAuditoria = {
-  umbral_uso_pct: 50, min_lineas_alerta: 5, dias_sin_uso_antigua: 3, dias_espera_uso: 3, umbral_sin_uso_atencion: 15, umbral_sin_uso_critico: 30, analysis_version: 5,
-  nivel_critico: { sin_uso_antiguas: 5, sali_sin_uso: 5, suspendidas: 3 },
+  umbral_uso_pct: 65, min_lineas_alerta: 5, dias_sin_uso_antigua: 3, dias_espera_uso: 3, umbral_sin_uso_atencion: 15, umbral_sin_uso_critico: 35, analysis_version: 5,
   nivel_atencion: { sin_uso_antiguas: 3, sali_sin_uso: 3, suspendidas: 1, sin_uso_riesgo_A: 2 },
   pesos: { sin_uso_antigua: 3, sali_sin_uso: 3, suspendida: 2, sin_uso_riesgo_A: 2, alerta_uso: 8 },
   senal_alta_desde: { sin_uso_antiguas: 3, sali_sin_uso: 3, suspendidas: 2 },
@@ -44,7 +42,7 @@ export const REGLAS_REFERENCIA: ReglasAuditoria = {
     sin_uso_mismo_origen: { min: 3, pct: 70 }, nativas_sin_uso: { min: 3, pct: 60 }, sin_uso_misma_ciudad: { min: 4, pct: 75 },
   },
   llamativos: { sali_pct_sin_uso_alta: 50, pendientes_dias: 7, pendientes_viejas_media: 20, concentracion_top: 5, concentracion_pct_media: 40, dia_sin_uso_min: 10 },
-  max_hallazgos_vendedor: 30, max_evidencia: 60,
+  max_hallazgos_vendedor: 30, max_evidencia: 1000,
 };
 
 /** Combina lo que devolvió la API con la referencia (clave por clave, también en los grupos anidados). */
@@ -73,7 +71,7 @@ export const CASO_TESTIGO = {
   /** Sin consumo pero activadas del 21 al 23/09: en espera de uso, no son alerta (49 del día del corte). */
   en_espera: 100, en_espera_dia_corte: 49,
   cargas: 1433, finalizadas_sin_activar: 201, pendientes: 155, pendientes_viejas: 66, suspendidas: 19,
-  vendedores: { total: 101, criticos: 13, atencion: 22 },
+  vendedores: { total: 101, criticos: 6, atencion: 29 },
   /** Señales más frecuentes en la ficha de los vendedores (cantidad de vendedores). */
   senales: { en_espera: 47, mismo_dia: 9, origen: 8, plan: 7, ciudad: 6, rafaga: 5 },
   sali: {

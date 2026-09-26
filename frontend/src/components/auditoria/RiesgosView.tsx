@@ -142,7 +142,7 @@ export function RiesgosView({ s, titulo }: { s: Snapshot; titulo?: string }) {
         <KpiCard label="Ventas netas" value={n(k.netas)} hint={`${s.periodos.map(nombrePeriodo).join(" · ")} · ${n(k.pospago)} Pospago · ${n(k.gpon)} GPON · ${n(k.iptv)} IPTV`} accent="secondary" />
         <KpiCard label="Pospago sin uso" value={pct(k.pct_sin_uso)} hint={`${n(k.pospago_sin_uso)} líneas con 3+ días${k.en_espera ? ` · ${n(k.en_espera)} en espera de uso, no son alerta` : ""}`} accent="danger" />
         <KpiCard label="Sali Hablando sin uso" value={`${n(k.sali_sin_uso)} · ${pct(k.sali_pct_sin_uso)}`} hint={`${n(k.sali_total)} portaciones Sali Hablando`} accent="danger" />
-        <KpiCard label="Vendedores con riesgo" value={`${n(k.vendedores_criticos)} · ${n(k.vendedores_atencion)}`} hint={`críticos · atención, de ${n(k.vendedores)} con actividad`} accent="orange" />
+        <KpiCard label="Vendedores con riesgo" value={`${n(k.vendedores_criticos)} · ${n(k.vendedores_atencion)}`} hint={`críticos (+35% sin uso) · alerta media, de ${n(k.vendedores)} con actividad`} accent="orange" />
       </div>
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard label="Total líneas sin uso" value={n(k.total_sin_uso)} hint="Pospago netas + Sali Hablando" accent="danger" />
@@ -166,7 +166,7 @@ export function RiesgosView({ s, titulo }: { s: Snapshot; titulo?: string }) {
         </ul>
       </Seccion>
 
-      <Seccion titulo="Vendedores riesgosos" sub={`${n(s.riesgosos.length)} vendedores en nivel crítico o atención, ordenados por puntaje de riesgo · clic para ver la evidencia`}>
+      <Seccion titulo="Vendedores riesgosos" sub={`${n(s.riesgosos.length)} vendedores críticos o en alerta media, ordenados por puntaje de riesgo · clic para ver la evidencia`}>
         <Tabla<VendedorRanking>
           cols={[
             { key: "nivel", label: "Nivel", render: (v) => <NivelBadge nivel={v.nivel} /> },
@@ -202,7 +202,7 @@ export function RiesgosView({ s, titulo }: { s: Snapshot; titulo?: string }) {
             <select className="input max-w-[150px]" value={filtroNivel} onChange={(e) => setFiltroNivel(e.target.value as any)}>
               <option value="todos">Todos los niveles</option>
               <option value="critico">Críticos</option>
-              <option value="atencion">Atención</option>
+              <option value="atencion">Alerta media</option>
               <option value="normal">Normales</option>
             </select>
           </div>
