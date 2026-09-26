@@ -15,6 +15,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime
 from typing import Any
 
+from ..ventas_netas.analyzer import DIAS_ESPERA_USO
 from ..ventas_netas.jobs import ANALYSIS_VERSION
 
 # ------------------------------------------------------------------ reglas
@@ -22,7 +23,9 @@ from ..ventas_netas.jobs import ANALYSIS_VERSION
 # Guía del auditor las muestra (GET /parametros). Cambiarlas acá cambia todo.
 UMBRAL_USO_PCT = 50.0          # alerta de vendedor: menos de esto en uso…
 MIN_LINEAS_ALERTA = 5          # …con al menos estas líneas Pospago
-DIAS_SIN_USO_ANTIGUA = 3       # una línea sin uso con estos días o más ya no es "reciente"
+# Una Pospago sin consumo activada hace menos de estos días al corte está "en espera de uso":
+# todavía no tuvo tiempo de usarse, no es alerta y no cuenta para nada. Desde acá, sin uso = alerta PFI.
+DIAS_SIN_USO_ANTIGUA = DIAS_ESPERA_USO
 UMBRAL_SIN_USO_ATENCION = 15.0
 UMBRAL_SIN_USO_CRITICO = 30.0
 MAX_HALLAZGOS_VENDEDOR = 30
@@ -33,7 +36,7 @@ MAX_EVIDENCIA = 60
 NIVEL_CRITICO = {"sin_uso_antiguas": 5, "sali_sin_uso": 5, "suspendidas": 3}
 NIVEL_ATENCION = {"sin_uso_antiguas": 3, "sali_sin_uso": 3, "suspendidas": 1, "sin_uso_riesgo_A": 2}
 # Puntaje de riesgo (ordena a los vendedores riesgosos): puntos por línea y por la alerta de uso.
-PESOS = {"sin_uso_antigua": 3, "sin_uso_reciente": 1, "sali_sin_uso": 3, "suspendida": 2, "sin_uso_riesgo_A": 2, "alerta_uso": 8}
+PESOS = {"sin_uso_antigua": 3, "sali_sin_uso": 3, "suspendida": 2, "sin_uso_riesgo_A": 2, "alerta_uso": 8}
 # Señales del patrón: desde cuántas líneas la señal pasa de gravedad media a alta.
 SENAL_ALTA_DESDE = {"sin_uso_antiguas": 3, "sali_sin_uso": 3, "suspendidas": 2}
 # Patrones de concentración: la señal aparece con al menos `min` líneas y `pct` % o más en el mismo valor.
@@ -99,7 +102,7 @@ def parametros() -> dict[str, Any]:
     """Reglas vigentes del análisis (las guarda cada snapshot y las muestra la Guía del auditor)."""
     return {
         "umbral_uso_pct": UMBRAL_USO_PCT, "min_lineas_alerta": MIN_LINEAS_ALERTA, "dias_sin_uso_antigua": DIAS_SIN_USO_ANTIGUA,
-        "umbral_sin_uso_atencion": UMBRAL_SIN_USO_ATENCION, "umbral_sin_uso_critico": UMBRAL_SIN_USO_CRITICO,
+        "dias_espera_uso": DIAS_ESPERA_USO, "umbral_sin_uso_atencion": UMBRAL_SIN_USO_ATENCION, "umbral_sin_uso_critico": UMBRAL_SIN_USO_CRITICO,
         "analysis_version": ANALYSIS_VERSION,
         "nivel_critico": dict(NIVEL_CRITICO), "nivel_atencion": dict(NIVEL_ATENCION), "pesos": dict(PESOS),
         "senal_alta_desde": dict(SENAL_ALTA_DESDE), "patrones": {k: dict(v) for k, v in PATRONES.items()},
@@ -127,14 +130,14 @@ def _senales_vendedor(v: dict[str, Any], lineas: list[dict], sin_uso: list[dict]
     s: list[dict] = []
     pospago = [r for r in lineas if r.get("producto") == "Pospago"]
     antiguas = v["sin_uso_antiguas"]
-    recientes = len(sin_uso) - antiguas
 
     if v["alerta"]:
         s.append({"gravedad": "alta", "texto": f"{v['pct_uso']}% en uso: bajo el umbral de {_g(UMBRAL_USO_PCT)}%"})
     if antiguas:
         s.append({"gravedad": "alta" if antiguas >= SENAL_ALTA_DESDE["sin_uso_antiguas"] else "media", "texto": f"{antiguas} sin uso con {DIAS_SIN_USO_ANTIGUA}+ días desde la activación"})
-    if recientes and recientes == len(sin_uso) and sin_uso:
-        s.append({"gravedad": "info", "texto": f"Todas las sin uso ({recientes}) son de los últimos {DIAS_SIN_USO_ANTIGUA - 1} días"})
+    if v["en_espera"]:
+        n = v["en_espera"]
+        s.append({"gravedad": "info", "texto": f"{n} en espera de uso: activada{'s' if n > 1 else ''} hace menos de {DIAS_ESPERA_USO} días, no es alerta"})
     if v["sali_sin_uso"]:
         s.append({"gravedad": "alta" if v["sali_sin_uso"] >= SENAL_ALTA_DESDE["sali_sin_uso"] else "media", "texto": f"{v['sali_sin_uso']} Sali Hablando sin uso"})
 
@@ -150,7 +153,7 @@ def _senales_vendedor(v: dict[str, Any], lineas: list[dict], sin_uso: list[dict]
     origen = _top(sin_uso, lambda r: (f"portación {r.get('origen_portacion') or ''}".strip() if r.get("portacion") == "SI" else "nativa"))
     if _concentrado(origen, len(sin_uso), PATRONES["sin_uso_mismo_origen"]):
         s.append({"gravedad": "info", "texto": f"Sin uso casi todas de {origen[0]} ({origen[1]} de {len(sin_uso)})"})
-    nativas = [r for r in pospago if r.get("portacion") != "SI"]
+    nativas = [r for r in pospago if r.get("portacion") != "SI" and not r.get("en_espera")]
     nativas_su = [r for r in nativas if r.get("consumo") == "NO"]
     if _concentrado(("nativas", len(nativas_su)), len(nativas), PATRONES["nativas_sin_uso"]):
         s.append({"gravedad": "media", "texto": f"Nativas sin uso: {len(nativas_su)} de {len(nativas)}"})
@@ -180,7 +183,7 @@ def _nivel_y_puntaje(v: dict[str, Any]) -> tuple[str, int]:
     )
     p = PESOS
     puntaje = (
-        v["sin_uso_antiguas"] * p["sin_uso_antigua"] + (v["sin_uso"] - v["sin_uso_antiguas"]) * p["sin_uso_reciente"]
+        v["sin_uso_antiguas"] * p["sin_uso_antigua"]
         + v["sali_sin_uso"] * p["sali_sin_uso"] + v["suspendidas"] * p["suspendida"] + v["sin_uso_riesgo_A"] * p["sin_uso_riesgo_A"]
         + (p["alerta_uso"] if v["alerta"] else 0)
     )
@@ -221,7 +224,7 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
             "netas": 0, "pospago": 0, "con_uso": 0, "sin_uso": 0, "gpon": 0, "iptv": 0, "portadas": 0, "suspendidas": 0,
             "sali": 0, "sali_sin_uso": 0, "fuera_ddi": 0,
             "cargas": 0, "finalizadas": 0, "a_confirmar": 0, "rechazadas": 0, "riesgo_A": 0, "sin_uso_riesgo_A": 0,
-            "sin_uso_antiguas": 0, "periodos": {},
+            "sin_uso_antiguas": 0, "en_espera": 0, "_espera_informada": False, "periodos": {},
         }
 
     vend: dict[str, dict] = {}
@@ -229,6 +232,7 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
     sin_uso_por_vendedor: dict[str, list] = defaultdict(list)
     sali_por_vendedor: dict[str, list] = defaultdict(list)
     lineas_sin_uso: list[dict] = []
+    lineas_en_espera: list[dict] = []
     sali_lineas: list[dict] = []
     finalizadas_sin_activar: list[dict] = []
     pendientes_viejas: list[dict] = []
@@ -269,6 +273,8 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
         # Netas por vendedor
         for v in d.get("vendedores", []):
             f = vend.setdefault(v["vendedor"], nuevo_vendedor(v["vendedor"], v.get("subcanal")))
+            if "en_espera" in v:
+                f["_espera_informada"] = True
             for a, b in (("netas", "total"), ("pospago", "pospago"), ("con_uso", "con_uso"), ("sin_uso", "sin_uso"), ("gpon", "gpon"),
                          ("iptv", "iptv"), ("portadas", "portadas"), ("suspendidas", "suspendidas")):
                 f[a] += v.get(b, 0) or 0
@@ -277,14 +283,24 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
             p["sin_uso"] += v.get("sin_uso", 0) or 0
 
         # Líneas netas (evidencia y patrones)
+        espera_informe = 0
         for x in d.get("detalle_netas", []):
-            fila = {**x, "periodo": periodo, "fecha_dato": fecha_dato, "dias": _dias(x.get("fecha_activacion"), fecha_dato)}
+            dias = _dias(x.get("fecha_activacion"), fecha_dato)
+            espera = x["en_espera"] if "en_espera" in x else (x.get("consumo") == "NO" and dias is not None and dias < DIAS_ESPERA_USO)
+            fila = {**x, "periodo": periodo, "fecha_dato": fecha_dato, "dias": dias, "en_espera": bool(espera)}
             lineas_por_vendedor[x["vendedor"]].append(fila)
-            if x.get("consumo") == "NO":
+            if fila["en_espera"]:
+                # Activada hace menos de DIAS_ESPERA_USO días: todavía no puede tener uso. No es alerta.
+                lineas_en_espera.append(fila)
+                espera_informe += 1
+                vend.setdefault(x["vendedor"], nuevo_vendedor(x["vendedor"], x.get("subcanal")))["en_espera"] += 1
+            elif x.get("consumo") == "NO":
                 sin_uso_por_vendedor[x["vendedor"]].append(fila)
                 lineas_sin_uso.append(fila)
-                if (fila["dias"] or 0) >= DIAS_SIN_USO_ANTIGUA:
-                    vend.setdefault(x["vendedor"], nuevo_vendedor(x["vendedor"], x.get("subcanal")))["sin_uso_antiguas"] += 1
+                vend.setdefault(x["vendedor"], nuevo_vendedor(x["vendedor"], x.get("subcanal")))["sin_uso_antiguas"] += 1
+        k_tot["en_espera"] += espera_informe
+        if "pospago_en_espera" not in k:
+            k_tot["pospago_sin_uso"] -= espera_informe  # informe anterior a la separación: se descuentan acá
 
         # Fuera de netas y Sali Hablando
         for x in (d.get("fuera_de_netas", {}) or {}).get("detalle", []):
@@ -332,10 +348,11 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
             for key in ("total", "sin_uso", "con_uso"):
                 f[key] += x.get(key, 0) or 0
         for x in d.get("por_dia", []):
-            f = netas_por_dia.setdefault(x["dia"], {"dia": x["dia"], "total": 0, "con_uso": 0, "sin_uso": 0, "otros": 0})
+            f = netas_por_dia.setdefault(x["dia"], {"dia": x["dia"], "total": 0, "con_uso": 0, "sin_uso": 0, "en_espera": 0, "otros": 0})
             f["total"] += x.get("total", 0) or 0
             f["con_uso"] += x.get("con_uso", 0) or 0
             f["sin_uso"] += x.get("sin_uso", 0) or 0
+            f["en_espera"] += x.get("en_espera", 0) or 0
             f["otros"] += (x.get("total", 0) or 0) - (x.get("pospago", 0) or 0)
         pend = d.get("pendientes", {}) or {}
         for x in pend.get("por_antiguedad", []):
@@ -354,9 +371,12 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
     # Ranking
     ranking: list[dict] = []
     for nombre, v in vend.items():
-        v["pct_uso"] = _pct(v["con_uso"], v["pospago"])
+        if not v.pop("_espera_informada"):
+            v["sin_uso"] = max(v["sin_uso"] - v["en_espera"], 0)  # informe anterior a la separación
+        evaluables = v["pospago"] - v["en_espera"]
+        v["pct_uso"] = _pct(v["con_uso"], evaluables)
         v["pct_sin_uso"] = _pct(v["sin_uso"], v["con_uso"] + v["sin_uso"])
-        v["alerta"] = v["pospago"] >= MIN_LINEAS_ALERTA and v["pct_uso"] < UMBRAL_USO_PCT
+        v["alerta"] = evaluables >= MIN_LINEAS_ALERTA and v["pct_uso"] < UMBRAL_USO_PCT
         v["pct_finalizacion"] = _pct(v["finalizadas"], v["cargas"])
         v["nivel"], v["puntaje"] = _nivel_y_puntaje(v)
         v["senales"] = _senales_vendedor(v, lineas_por_vendedor.get(nombre, []), sin_uso_por_vendedor.get(nombre, []), sali_por_vendedor.get(nombre, []))
@@ -373,8 +393,9 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
         "netas": k_tot["netas"], "pospago": pospago_total, "gpon": k_tot["gpon"], "iptv": k_tot["iptv"],
         "portadas": k_tot["portadas"], "nativas": k_tot["nativas"],
         "pospago_sin_uso": k_tot["pospago_sin_uso"], "pospago_con_uso": k_tot["pospago_con_uso"],
-        "pct_sin_uso": _pct(k_tot["pospago_sin_uso"], pospago_total),
-        "sin_uso_antiguas": sum(1 for x in lineas_sin_uso if (x["dias"] or 0) >= DIAS_SIN_USO_ANTIGUA),
+        "en_espera": k_tot["en_espera"],
+        "pct_sin_uso": _pct(k_tot["pospago_sin_uso"], pospago_total - k_tot["en_espera"]),
+        "sin_uso_antiguas": len(lineas_sin_uso),
         "sali_total": k_tot["sali_total"], "sali_sin_uso": k_tot["sali_sin_uso"], "sali_pct_sin_uso": _pct(k_tot["sali_sin_uso"], k_tot["sali_total"]),
         "suspendidas": k_tot["suspendidas"], "fuera_de_netas": k_tot["fuera_de_netas"],
         "finalizadas_sin_activar": k_tot["finalizadas_sin_activar"],
@@ -437,6 +458,7 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
         "riesgosos": riesgosos,
         "series": series,
         "lineas_sin_uso": lineas_sin_uso,
+        "lineas_en_espera": sorted(lineas_en_espera, key=lambda x: (x.get("fecha_activacion") or "", x["vendedor"])),
         "sali_lineas": sali_lineas,
         "finalizadas_sin_activar": finalizadas_sin_activar,
         "pendientes_viejas": pendientes_viejas,
@@ -460,7 +482,8 @@ def _datos_llamativos(k: dict, ranking: list[dict], series: dict, lineas_sin_uso
     if k["pospago"]:
         g = "alta" if k["pct_sin_uso"] > UMBRAL_SIN_USO_CRITICO else "media" if k["pct_sin_uso"] > UMBRAL_SIN_USO_ATENCION else "info"
         add(g, "sin_uso", "Líneas Pospago netas sin uso",
-            f"{k['pospago_sin_uso']} de {k['pospago']} líneas Pospago netas no registran consumo; {k['sin_uso_antiguas']} de ellas llevan {DIAS_SIN_USO_ANTIGUA}+ días activadas.",
+            f"{k['pospago_sin_uso']} de {k['pospago'] - k['en_espera']} líneas Pospago netas con {DIAS_ESPERA_USO}+ días de activadas no registran consumo."
+            + (f" Otras {k['en_espera']} se activaron hace menos de {DIAS_ESPERA_USO} días al corte: quedan en espera de uso y no se cuentan." if k["en_espera"] else ""),
             f"{_g(k['pct_sin_uso'])}%")
     ru = {x["riesgo"]: x for x in series.get("riesgo_uso", [])}
     if "A" in ru and "M" in ru and (ru["A"]["con_uso"] + ru["A"]["sin_uso"]):
@@ -590,7 +613,8 @@ def hallazgos_automaticos(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     for v in snapshot["riesgosos"][:MAX_HALLAZGOS_VENDEDOR]:
         partes = []
         if v["pospago"]:
-            partes.append(f"{v['sin_uso']} de {v['pospago']} líneas Pospago netas sin uso ({_g(v['pct_sin_uso'])}%), {v['sin_uso_antiguas']} con {DIAS_SIN_USO_ANTIGUA}+ días")
+            partes.append(f"{v['sin_uso']} de {v['pospago'] - v['en_espera']} líneas Pospago netas con {DIAS_ESPERA_USO}+ días sin uso ({_g(v['pct_sin_uso'])}%)"
+                          + (f"; {v['en_espera']} más en espera de uso, que no son alerta" if v["en_espera"] else ""))
         if v["sali_sin_uso"]:
             partes.append(f"{v['sali_sin_uso']} Sali Hablando sin uso")
         if v["suspendidas"]:
@@ -606,7 +630,7 @@ def hallazgos_automaticos(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             "evidencia": {
                 "lineas": [_linea_evidencia(x) for x in sin_uso_por_v.get(v["vendedor"], [])[:MAX_EVIDENCIA]],
                 "sali": [_linea_evidencia(x) for x in sali_por_v.get(v["vendedor"], [])[:MAX_EVIDENCIA]],
-                "senales": v["senales"], "resumen": {key: v[key] for key in ("netas", "pospago", "con_uso", "sin_uso", "pct_uso", "sin_uso_antiguas", "sali", "sali_sin_uso", "suspendidas", "riesgo_A", "sin_uso_riesgo_A", "nivel", "puntaje", "posicion")},
+                "senales": v["senales"], "resumen": {key: v[key] for key in ("netas", "pospago", "con_uso", "sin_uso", "en_espera", "pct_uso", "sin_uso_antiguas", "sali", "sali_sin_uso", "suspendidas", "riesgo_A", "sin_uso_riesgo_A", "nivel", "puntaje", "posicion")},
             },
         })
     return out
@@ -621,7 +645,8 @@ def resumen_automatico(snapshot: dict[str, Any]) -> str:
         f"{k['netas']} ventas netas ({k['pospago']} Pospago, {k['gpon']} GPON, {k['iptv']} IPTV) y {k['cargas']} cargas con {_g(k['pct_finalizacion'])}% de finalización.",
     ]
     if k["pospago"]:
-        partes.append(f"El {_g(k['pct_sin_uso'])}% de las líneas Pospago netas ({k['pospago_sin_uso']}) no registra consumo; {k['sin_uso_antiguas']} llevan {DIAS_SIN_USO_ANTIGUA} días o más activadas.")
+        partes.append(f"El {_g(k['pct_sin_uso'])}% de las líneas Pospago netas con {DIAS_ESPERA_USO} días o más de activadas ({k['pospago_sin_uso']}) no registra consumo."
+                      + (f" Otras {k['en_espera']}, activadas hace menos de {DIAS_ESPERA_USO} días al corte, quedan en espera de uso y no se cuentan." if k["en_espera"] else ""))
     if k["sali_total"]:
         partes.append(f"Se identificaron {k['sali_total']} portaciones Sali Hablando, {k['sali_sin_uso']} sin uso ({_g(k['sali_pct_sin_uso'])}%).")
     partes.append(f"{k['vendedores_criticos']} vendedores quedan en nivel crítico y {k['vendedores_atencion']} en atención, sobre {k['vendedores']} con actividad.")

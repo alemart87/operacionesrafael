@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { ESTADO_SDS_LABEL, fechaCorta, n, type DetalleNeta, type InformeData, type Pendiente, type Vendedor } from "./tipos";
-import { PctUso, Seccion, Senales, Tabla } from "./ui";
+import { PctUso, Seccion, Senales, Tabla, UsoBadge } from "./ui";
 import { VendedorDetalle } from "./VendedorDetalle";
-import { DIAS_SIN_USO_ANTIGUA, vendedoresCriticos } from "./patrones";
+import { DIAS_SIN_USO_ANTIGUA, estadoUso, vendedoresCriticos } from "./patrones";
 
 type Hoja = "vendedores" | "criticos" | "netas" | "pendientes" | "fuera";
 
@@ -27,7 +27,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
     [d.vendedores, q, soloAlerta],
   );
   const netas = useMemo(
-    () => d.detalle_netas.filter((r) => filtro([r.vendedor, r.sds_number, r.linea, r.plan, r.ciudad]) && (!soloSinUso || r.consumo === "NO")),
+    () => d.detalle_netas.filter((r) => filtro([r.vendedor, r.sds_number, r.linea, r.plan, r.ciudad]) && (!soloSinUso || estadoUso(r, d.kpis.fecha_dato) === "NO")),
     [d.detalle_netas, q, soloSinUso],
   );
   const pendientes = useMemo(
@@ -44,8 +44,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
     { value: "fuera", label: "Fuera de netas", total: d.fuera_de_netas.total },
   ];
 
-  const consumo = (c: DetalleNeta["consumo"]) =>
-    c === null ? <span className="text-brand-mist">—</span> : c === "SI" ? <span className="text-emerald-700 font-semibold">Con uso</span> : <span className="text-brand-primary font-semibold">Sin uso</span>;
+  const consumo = (r: DetalleNeta) => <UsoBadge estado={estadoUso(r, d.kpis.fecha_dato)} />;
 
   return (
     <div className="space-y-4">
@@ -146,7 +145,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
               { key: "producto", label: "Producto" },
               { key: "plan", label: "Plan" },
               { key: "portacion", label: "Port.", align: "center", render: (r) => (r.portacion === "SI" ? r.origen_portacion ?? "SI" : "Nativa") },
-              { key: "consumo", label: "Consumo", render: (r) => consumo(r.consumo) },
+              { key: "consumo", label: "Consumo", render: (r) => consumo(r) },
               { key: "estado_linea", label: "Estado", align: "center", render: (r) => (r.estado_linea === "S" ? <span className="badge-primary">Susp.</span> : "Activa") },
               { key: "vendedor", label: "Vendedor", render: (r) => (
                 <button className="text-left hover:text-brand-primary" onClick={() => setVendedorAbierto(r.vendedor)}>
@@ -156,7 +155,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
               { key: "ciudad", label: "Ciudad" },
             ]}
             rows={netas}
-            alerta={(r) => r.consumo === "NO"}
+            alerta={(r) => estadoUso(r, d.kpis.fecha_dato) === "NO"}
             maxAlto="max-h-[70vh]"
           />
         </Seccion>
@@ -213,7 +212,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
               { key: "plan", label: "Plan" },
               { key: "tipo_port", label: "Tipo portación" },
               { key: "origen_portacion", label: "Origen" },
-              { key: "consumo", label: "Consumo", render: (r) => consumo(r.consumo) },
+              { key: "consumo", label: "Consumo", render: (r) => consumo(r) },
               { key: "razon_cierre", label: "Razón" },
               { key: "vendedor", label: "Vendedor" },
               { key: "ciudad", label: "Ciudad" },

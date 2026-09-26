@@ -149,6 +149,13 @@ Reglas del análisis (`analyzer.py`):
 - **Vendedor** de una neta = `POS_NOMBRE` sin el prefijo del subcanal; las
   cargas pendientes no traen POS y se atribuyen por `VENDEDOR_LEGAJO`.
 - Suspendidas y portadas que no llegaron a DDI se cuentan y se marcan, no se descartan.
+- **En espera de uso**: una Pospago sin consumo activada hace menos de 3 días al
+  corte (`DIAS_ESPERA_USO`) todavía no tuvo tiempo de usarse. No es alerta: no
+  cuenta como sin uso en ningún porcentaje, alerta de vendedor, críticos, riesgo ×
+  uso ni "día con más sin uso"; se marca "◷ En espera" en todas las tablas y se
+  evalúa en el corte siguiente. Auditoría usa el mismo criterio (lo importa del
+  analizador). Al arrancar, la plataforma recalcula sola, desde los datos
+  guardados, los informes generados por una versión anterior del análisis.
 - **Sali Hablando** (`PORTACION_TIPO = SI-SaliHbl`): la línea salió hablando de
   la otra operadora. Suelen activarse el mes anterior y completar la portación
   en el período, por lo que no figuran en DDI ni en CARGAS del mes; el

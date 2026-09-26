@@ -273,7 +273,7 @@ export function VisionProductividad({ d }: { d: InformeData }) {
       >
         <div className="grid sm:grid-cols-4 gap-3 mb-4">
           <Mini label="Pospago con uso" value={n(k.con_uso)} color={C_SALUD.con_uso} />
-          <Mini label="Pospago SIN USO" value={`${n(k.sin_uso)} · ${pct(k.pct_sin_uso)}`} color={C_SALUD.sin_uso} hint={`${n(k.sin_uso_riesgo_alto)} en riesgo alto`} />
+          <Mini label="Pospago SIN USO" value={`${n(k.sin_uso)} · ${pct(k.pct_sin_uso)}`} color={C_SALUD.sin_uso} hint={`${n(k.sin_uso_riesgo_alto)} en riesgo alto${k.en_espera ? ` · ${n(k.en_espera)} en espera` : ""}`} />
           <Mini label="Sin dato de uso" value={n(k.sin_dato_uso)} color="#9ca3af" hint="Finalizadas que no están en DDI" />
           <Mini label="Riesgo alto (A)" value={n(k.riesgo_alto)} color="#0F1116" hint={`${pct(Math.round((k.riesgo_alto / Math.max(k.cargas, 1)) * 1000) / 10)} de las cargas`} />
         </div>

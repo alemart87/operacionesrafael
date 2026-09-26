@@ -179,6 +179,40 @@ def test_alerta_por_vendedor(tmp_path):
     assert a["kpis"]["vendedores_alerta"] == 1
 
 
+def test_lineas_en_espera_de_uso_no_son_alerta(tmp_path):
+    """Pospago sin consumo activadas en los últimos días del corte (22/09): en espera de uso, no alerta."""
+    from types import SimpleNamespace
+    from app.operativas.televentas_claro.auditoria.snapshot import construir_snapshot
+
+    extra = [
+        # 5 activadas del 20 al 22/09 (0 a 2 días al corte) sin consumo: en espera
+        *[_ddi(6000 + i, D(2026, 9, 20 + i % 3), "Pospago", "Control 15GB", "NO", "NO", "TKM - NUEVA VENDEDORA") for i in range(5)],
+        _ddi(6010, D(2026, 9, 19), "Pospago", "Control 15GB", "NO", "NO", "TKM - NUEVA VENDEDORA"),  # 3 días: sin uso de verdad
+        _ddi(6011, D(2026, 9, 10), "Pospago", "Control 15GB", "NO", "SI", "TKM - NUEVA VENDEDORA"),
+    ]
+    a = analyze_ventas_netas(parse_ventas_netas(build_xlsx(tmp_path / "e.xlsx", ddi_extra=extra)))
+    k = a["kpis"]
+    assert k["pospago_en_espera"] == 5 and k["pospago_sin_uso"] == 3 and k["dias_espera_uso"] == 3
+    assert k["pct_sin_uso"] == round(3 / (k["pospago"] - 5) * 100, 1)
+    v = next(x for x in a["vendedores"] if x["vendedor"] == "NUEVA VENDEDORA")
+    # 7 Pospago pero solo 2 evaluables: no llega al mínimo para la alerta de uso
+    assert (v["pospago"], v["en_espera"], v["sin_uso"], v["con_uso"], v["pct_uso"], v["alerta"]) == (7, 5, 1, 1, 50.0, False)
+    det = {x["sds_number"]: x for x in a["detalle_netas"]}
+    assert det["6000"]["en_espera"] is True and det["6000"]["dias"] == 2 and det["6010"]["en_espera"] is False and det["6010"]["dias"] == 3
+    dia22 = next(x for x in a["por_dia"] if x["dia"] == "2026-09-22")
+    assert dia22["sin_uso"] == 0 and dia22["en_espera"] == 1
+
+    rep = SimpleNamespace(id="r", periodo="2026-09", fecha_dato=date(2026, 9, 22), status="draft", netas=k["netas"], pospago=k["pospago"],
+                          pct_sin_uso=k["pct_sin_uso"], pendientes=k["pendientes"], generated_at=None, data={**a, "version": jobs.ANALYSIS_VERSION})
+    s = construir_snapshot([rep])
+    vr = next(x for x in s["ranking"] if x["vendedor"] == "NUEVA VENDEDORA")
+    assert vr["en_espera"] == 5 and vr["sin_uso"] == 1 and vr["nivel"] == "normal" and vr["puntaje"] == s["parametros"]["pesos"]["sin_uso_antigua"]
+    assert any("en espera de uso" in x["texto"] and x["gravedad"] == "info" for x in vr["senales"])
+    assert s["kpis"]["en_espera"] == 5 and len(s["lineas_en_espera"]) == 5
+    assert all(not x["en_espera"] for x in s["lineas_sin_uso"])
+    assert "sin_uso_reciente" not in s["parametros"]["pesos"]
+
+
 def test_parser_valida_el_archivo(tmp_path):
     a = analyze_ventas_netas(parse_ventas_netas(build_xlsx(tmp_path / "sin-por.xlsx", sin_portabilidad=True)))
     assert a["kpis"]["fuera_de_netas"] == 0  # PORTABILIDAD es opcional
@@ -311,7 +345,7 @@ async def test_flujo_publicacion(xlsx, monkeypatch, tmp_path):
         r = await ac.post(f"{BASE}/reports/{r2}/reprocess", headers=analista)
         assert r.status_code == 200 and r.json()["netas"] == 6 and r.json()["status"] == "published"
         det = (await ac.get(f"{BASE}/reports/{r2}", headers=analista)).json()
-        assert det["data"]["version"] == 5 and det["data"]["productividad"]["kpis"]["cargas"] == 11
+        assert det["data"]["version"] == jobs.ANALYSIS_VERSION and det["data"]["productividad"]["kpis"]["cargas"] == 11
 
         # No se elimina un publicado; despublicar lo vuelve borrador y ahí sí.
         assert (await ac.delete(f"{BASE}/reports/{r2}", headers=analista)).status_code == 400

@@ -76,7 +76,7 @@ export function InformeImpreso({ a, conEvidencia = false }: { a: AuditoriaDetall
       <div className="grid md:grid-cols-4 gap-3">
         {[
           ["Ventas netas", n(k.netas), `${n(k.pospago)} Pospago · ${n(k.gpon)} GPON · ${n(k.iptv)} IPTV`],
-          ["Pospago sin uso", pct(k.pct_sin_uso), `${n(k.pospago_sin_uso)} líneas · ${n(k.sin_uso_antiguas)} con 3+ días`],
+          ["Pospago sin uso", pct(k.pct_sin_uso), `${n(k.pospago_sin_uso)} líneas con 3+ días${k.en_espera ? ` · ${n(k.en_espera)} en espera de uso` : ""}`],
           ["Sali Hablando sin uso", `${n(k.sali_sin_uso)} · ${pct(k.sali_pct_sin_uso)}`, `${n(k.sali_total)} portaciones`],
           ["Vendedores con riesgo", `${n(k.vendedores_criticos)} · ${n(k.vendedores_atencion)}`, `críticos · atención, de ${n(k.vendedores)}`],
           ["Cargas", n(k.cargas), `${pct(k.pct_finalizacion)} finalizadas · ${n(k.pendientes)} pendientes`],

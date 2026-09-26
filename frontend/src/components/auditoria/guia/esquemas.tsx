@@ -87,7 +87,7 @@ export function RecorridoVenta({ r }: { r: ReglasAuditoria }) {
     },
     {
       titulo: "Uso", fuente: "Campo CONSUMO_DATOS",
-      texto: `¿La línea consume datos? Una línea sin uso con ${d} días o más es la señal más directa de una primera factura impaga.`,
+      texto: `¿La línea consume datos? Con menos de ${d} días queda en espera de uso y no es alerta; sin uso con ${d} días o más es la señal más directa de una PFI.`,
       riesgos: [{ texto: `Sin uso ${d}+ días`, s: "alta", ancla: "sin-uso" }, { texto: "Lote sin uso", s: "media", ancla: "patrones" }],
     },
     {
@@ -132,7 +132,7 @@ export function MatrizRiesgos({ r }: { r: ReglasAuditoria }) {
   const celdas: [string, string][][][] = [
     [[], [["Vendedor en nivel crítico", "semaforo"]], [["Sali Hablando sin uso", "sali-hablando"], [`Sin uso con ${d}+ días`, "sin-uso"]]],
     [[["Finalizadas sin activar", "alertas"]], [["Sin uso concentradas en pocos vendedores", "alertas"], ["Entrega en ráfaga", "patrones"]], [["Sin uso con riesgo A en la carga", "riesgo-carga"]]],
-    [[[`Sin uso recientes (menos de ${d} días)`, "sin-uso"]], [[`Pendientes de más de ${pd} días`, "alertas"], ["Interior con más sin uso", "sin-uso"]], [["Suspendidas al cierre", "alertas"]]],
+    [[], [[`Pendientes de más de ${pd} días`, "alertas"], ["Interior con más sin uso", "sin-uso"]], [["Suspendidas al cierre", "alertas"]]],
   ];
   return (
     <div className="card p-5 overflow-x-auto">
@@ -234,7 +234,7 @@ export function LineaTiempoSH() {
   );
 }
 
-// ============================================================== Días sin uso: recientes vs antiguas
+// ============================================================== Días desde la activación: en espera vs sin uso
 export function RelojUso({ r }: { r: ReglasAuditoria }) {
   const d = r.dias_sin_uso_antigua;
   const cajas = Array.from({ length: d + 5 }, (_, i) => i);
@@ -253,11 +253,11 @@ export function RelojUso({ r }: { r: ReglasAuditoria }) {
       </div>
       <div className="grid sm:grid-cols-2 gap-3 mt-3 text-sm">
         <div className="rounded-md bg-brand-bg p-3">
-          <div className="font-bold text-brand-ink">Recientes · 0 a {d - 1} días</div>
-          <p className="text-brand-slate text-[13px] leading-snug mt-0.5">Todavía pueden empezar a usarse. Suman {r.pesos.sin_uso_reciente} punto{r.pesos.sin_uso_reciente === 1 ? "" : "s"} por línea. Si todas las sin uso de un vendedor son recientes, el sistema lo muestra como señal informativa, no como alerta.</p>
+          <div className="font-bold text-brand-ink">◷ En espera de uso · 0 a {d - 1} días</div>
+          <p className="text-brand-slate text-[13px] leading-snug mt-0.5">Todavía no tuvieron tiempo de usarse. <b>No son alerta</b>: no cuentan como sin uso, no suman puntos ni cambian el nivel del vendedor. Se marcan “En espera” y se evalúan en el corte siguiente.</p>
         </div>
         <div className="rounded-md p-3" style={{ background: "rgba(214,51,108,0.08)" }}>
-          <div className="font-bold" style={{ color: "#B0204F" }}>Antiguas · {d} días o más</div>
+          <div className="font-bold" style={{ color: "#B0204F" }}>Sin uso · {d} días o más</div>
           <p className="text-brand-graphite text-[13px] leading-snug mt-0.5">Alerta PFI. Suman {r.pesos.sin_uso_antigua} puntos por línea. Con {r.nivel_atencion.sin_uso_antiguas} el vendedor pasa a atención; con {r.nivel_critico.sin_uso_antiguas}, a crítico.</p>
         </div>
       </div>
@@ -352,7 +352,6 @@ export function Puntaje({ r }: { r: ReglasAuditoria }) {
   const p = r.pesos, d = r.dias_sin_uso_antigua;
   const terminos: [string, string][] = [
     [`Sin uso con ${d}+ días`, `× ${p.sin_uso_antigua}`],
-    ["Sin uso reciente", `× ${p.sin_uso_reciente}`],
     ["Sali Hablando sin uso", `× ${p.sali_sin_uso}`],
     ["Suspendida al cierre", `× ${p.suspendida}`],
     ["Sin uso con riesgo A", `× ${p.sin_uso_riesgo_A}`],

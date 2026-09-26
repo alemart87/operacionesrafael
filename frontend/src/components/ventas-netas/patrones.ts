@@ -11,13 +11,24 @@ export interface Senal {
   texto: string;
 }
 
-/** Días desde la activación hasta el corte a partir de los cuales una línea sin uso ya no es "reciente". */
+/**
+ * Días desde la activación hasta el corte a partir de los cuales una línea sin consumo es alerta.
+ * Antes está "en espera de uso": todavía no tuvo tiempo de usarse y no cuenta como sin uso.
+ */
 export const DIAS_SIN_USO_ANTIGUA = 3;
 
 const dias = (desde: string | null, hasta: string | null) => {
   if (!desde || !hasta) return 0;
   return Math.round((Date.parse(hasta) - Date.parse(desde)) / 86400000);
 };
+
+/** Estado de uso de una línea: el backend lo marca (v6+); para informes viejos se deduce de las fechas. */
+export function estadoUso(r: DetalleNeta, corte: string | null): "SI" | "NO" | "ESPERA" | null {
+  if (r.consumo === null || r.consumo === undefined) return null;
+  if (r.consumo === "SI") return "SI";
+  const espera = r.en_espera ?? (!!r.fecha_activacion && !!corte && dias(r.fecha_activacion, corte) < DIAS_SIN_USO_ANTIGUA);
+  return espera ? "ESPERA" : "NO";
+}
 
 const pctDe = (parte: number, total: number) => (total ? Math.round((parte / total) * 100) : 0);
 
@@ -34,8 +45,8 @@ export interface PatronVendedor {
   senales: Senal[];
   /** Pospago sin uso activadas hace DIAS_SIN_USO_ANTIGUA días o más: alerta PFI firme. */
   sinUsoAntiguas: number;
-  /** Pospago sin uso recientes: todavía pueden empezar a consumir. */
-  sinUsoRecientes: number;
+  /** Pospago en espera de uso (activadas hace menos de DIAS_SIN_USO_ANTIGUA días): no son alerta. */
+  enEspera: number;
   /** Puntaje para ordenar la lista de críticos (más alto = más crítico). */
   puntaje: number;
 }
@@ -44,9 +55,9 @@ export function patronVendedor(d: InformeData, v: Vendedor, lineas: DetalleNeta[
   const k = d.kpis;
   const corte = k.fecha_dato;
   const pospago = lineas.filter((r) => r.producto === "Pospago");
-  const sinUso = pospago.filter((r) => r.consumo === "NO");
-  const sinUsoAntiguas = sinUso.filter((r) => dias(r.fecha_activacion, corte) >= DIAS_SIN_USO_ANTIGUA).length;
-  const sinUsoRecientes = sinUso.length - sinUsoAntiguas;
+  const sinUso = pospago.filter((r) => estadoUso(r, corte) === "NO");
+  const sinUsoAntiguas = sinUso.length;
+  const enEspera = pospago.filter((r) => estadoUso(r, corte) === "ESPERA").length;
   const senales: Senal[] = [];
 
   if (v.alerta) senales.push({ gravedad: "alta", texto: `${v.pct_uso.toLocaleString("es-PY", { maximumFractionDigits: 1 })}% en uso: bajo el umbral de ${k.umbral_uso_pct}%` });
@@ -56,8 +67,8 @@ export function patronVendedor(d: InformeData, v: Vendedor, lineas: DetalleNeta[
       texto: `${sinUsoAntiguas} sin uso con ${DIAS_SIN_USO_ANTIGUA}+ días desde la activación`,
     });
   }
-  if (sinUsoRecientes && sinUsoRecientes === sinUso.length) {
-    senales.push({ gravedad: "info", texto: `Todas las sin uso (${sinUsoRecientes}) son de los últimos ${DIAS_SIN_USO_ANTIGUA - 1} días` });
+  if (enEspera) {
+    senales.push({ gravedad: "info", texto: `${enEspera} en espera de uso: activada${enEspera > 1 ? "s" : ""} hace menos de ${DIAS_SIN_USO_ANTIGUA} días, no es alerta` });
   }
 
   // Concentración en un día: muchas ventas el mismo día y con mal uso.
@@ -80,7 +91,7 @@ export function patronVendedor(d: InformeData, v: Vendedor, lineas: DetalleNeta[
     senales.push({ gravedad: "info", texto: `Sin uso casi todas de ${origen[0]} (${origen[1]} de ${sinUso.length})` });
   }
   const nativasSinUso = sinUso.filter((r) => r.portacion !== "SI").length;
-  const nativas = pospago.filter((r) => r.portacion !== "SI").length;
+  const nativas = pospago.filter((r) => r.portacion !== "SI" && estadoUso(r, corte) !== "ESPERA").length;
   if (nativas >= 3 && nativasSinUso / nativas >= 0.6) {
     senales.push({ gravedad: "media", texto: `Nativas sin uso: ${nativasSinUso} de ${nativas}` });
   }
@@ -97,12 +108,11 @@ export function patronVendedor(d: InformeData, v: Vendedor, lineas: DetalleNeta[
 
   const puntaje =
     sinUsoAntiguas * 3 +
-    sinUsoRecientes +
     v.suspendidas * 2 +
     (v.alerta ? 5 : 0) +
     senales.filter((s) => s.gravedad === "alta").length * 2;
 
-  return { senales, sinUsoAntiguas, sinUsoRecientes, puntaje };
+  return { senales, sinUsoAntiguas, enEspera, puntaje };
 }
 
 /** Vendedores críticos: en alerta (umbral), con 3+ sin uso antiguas o con 2+ suspendidas. Ordenados por puntaje. */
