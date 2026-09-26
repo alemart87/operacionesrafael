@@ -4,6 +4,8 @@ A cada usuario se le asigna un perfil y las operativas en las que trabaja.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
@@ -15,6 +17,8 @@ from ...core.config import settings
 from ...core.database import get_db
 from ...core.operativas import filter_operativas
 from ...core.security import hash_password
+from ...services import seguridad as seg
+from ...services import sesiones
 from ...models.user import User
 from ...schemas.user import PasswordReset, UserCreate, UserRead, UserUpdate
 from ...services.audit_service import record_action
@@ -57,6 +61,11 @@ async def create_user(
         raise HTTPException(status.HTTP_409_CONFLICT, "Email ya registrado")
 
     operativas = filter_operativas(payload.operativas)
+    cfg = await seg.config(db)
+    try:
+        seg.validar_contrasena(cfg, payload.password)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
     new_user = User(
         email=email,
@@ -65,6 +74,9 @@ async def create_user(
         role=payload.role,
         operativas=operativas,
         created_by=None if user.is_superadmin else user.id,
+        # La contraseña la eligió el administrador: el usuario la cambia en su primer ingreso.
+        must_change_password=cfg["contrasenas"]["cambio_primer_ingreso"],
+        password_changed_at=datetime.now(timezone.utc),
     )
     db.add(new_user)
     await db.commit()
@@ -93,6 +105,8 @@ async def update_user(
     if payload.is_active is not None:
         target.is_active = payload.is_active
         changes["is_active"] = payload.is_active
+        if not payload.is_active:
+            changes["sesiones_cerradas"] = await sesiones.cerrar_de_usuario(db, target.id, "usuario_inactivo", user.id)
     if payload.role is not None and payload.role != target.role:
         target.role = payload.role
         changes["role"] = payload.role
@@ -116,7 +130,17 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     target = await _get_or_404(db, user_id)
+    cfg = await seg.config(db)
+    try:
+        seg.validar_contrasena(cfg, payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    target.password_history = seg.nuevo_historial(cfg, target.password_history, target.hashed_password)
     target.hashed_password = hash_password(payload.new_password)
+    target.password_changed_at = datetime.now(timezone.utc)
+    target.must_change_password = cfg["contrasenas"]["cambio_primer_ingreso"]
+    target.failed_attempts, target.locked_until = 0, None
+    await sesiones.cerrar_de_usuario(db, target.id, "cerrada", user.id)
     await db.commit()
     await db.refresh(target)
     await record_action(db, user_id=user.id, action="reset_password", resource_type="user",
@@ -163,6 +187,7 @@ async def deactivate_user(
     """Baja lógica: el usuario queda inactivo (se preserva su auditoría)."""
     target = await _get_or_404(db, user_id)
     target.is_active = False
+    await sesiones.cerrar_de_usuario(db, target.id, "usuario_inactivo", user.id)
     await db.commit()
     await record_action(db, user_id=user.id, action="deactivate_user", resource_type="user",
                         resource_id=user_id, ip=client_ip(request))

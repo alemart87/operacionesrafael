@@ -17,6 +17,9 @@ class TokenPair(BaseModel):
     user_name: str
     user_photo_url: Optional[str] = None
     user_operativas: List[str] = []
+    # Después del login: el front lleva a cambiar la contraseña o sugiere el segundo factor.
+    requiere_cambio_contrasena: bool = False
+    recomendar_2fa: bool = False
 
 
 class TokenRefresh(BaseModel):

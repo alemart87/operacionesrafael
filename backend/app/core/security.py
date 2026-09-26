@@ -24,7 +24,7 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(subject: str, role: str, expires_minutes: int | None = None) -> str:
+def create_access_token(subject: str, role: str, expires_minutes: int | None = None, sid: str | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=expires_minutes or settings.jwt_access_expire_minutes
     )
@@ -33,13 +33,14 @@ def create_access_token(subject: str, role: str, expires_minutes: int | None = N
         "role": role,
         "exp": expire,
         "type": "access",
+        "sid": sid,  # sesión del servidor: si se cierra, el token deja de valer
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(subject: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expire_days)
-    payload = {"sub": subject, "exp": expire, "type": "refresh"}
+def create_refresh_token(subject: str, sid: str | None = None, expires_at: datetime | None = None) -> str:
+    expire = expires_at or datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expire_days)
+    payload = {"sub": subject, "exp": expire, "type": "refresh", "sid": sid}
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 

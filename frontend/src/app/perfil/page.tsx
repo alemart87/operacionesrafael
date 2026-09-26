@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Avatar } from "@/components/Avatar";
 import { ROLE_LABELS, apiFetch, saveUser } from "@/lib/api";
+import { PoliticaContrasena } from "@/components/seguridad/PoliticaContrasena";
+import { SegundoFactor } from "@/components/seguridad/SegundoFactor";
 
 interface MeData {
   id: string;
@@ -99,10 +101,6 @@ export default function PerfilPage() {
   const changePwd = async () => {
     setPwdMsg(null);
     setPwdErr(null);
-    if (newPwd.length < 8) {
-      setPwdErr("La nueva contraseña debe tener al menos 8 caracteres.");
-      return;
-    }
     if (newPwd !== confirmPwd) {
       setPwdErr("La nueva contraseña y su confirmación no coinciden.");
       return;
@@ -202,7 +200,7 @@ export default function PerfilPage() {
               <div>
                 <label className="label">Nueva contraseña</label>
                 <input type="password" className="input" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} autoComplete="new-password" />
-                <p className="text-[11px] text-brand-mist mt-1">Mínimo 8 caracteres.</p>
+                <div className="mt-2"><PoliticaContrasena valor={newPwd} /></div>
               </div>
               <div>
                 <label className="label">Repetir nueva contraseña</label>
@@ -216,6 +214,7 @@ export default function PerfilPage() {
             </div>
           )}
         </section>
+        <div className="lg:col-span-2"><SegundoFactor /></div>
       </div>
     </AppShell>
   );

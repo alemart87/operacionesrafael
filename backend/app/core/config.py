@@ -80,6 +80,8 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     audit_retention_days: int = 365
+    # Política de seguridad inicial (JSON parcial) hasta que el superadmin la cambie desde Seguridad.
+    security_defaults: str = ""
 
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
 
