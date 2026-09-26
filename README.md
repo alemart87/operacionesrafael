@@ -265,14 +265,39 @@ Todo el código vive en `backend/app/operativas/televentas_claro/facturacion/`.
 - **API:** `/api/v1/televentas-claro/facturacion/*` y
   `/api/v1/televentas-claro/facturacion-agent/*`, todo con `require_perm("televentas_claro.facturacion")`.
 
-## Sistema de login
+## Sistema de login y seguridad de acceso
 
-- `POST /api/v1/auth/login` devuelve access token (60 min) y refresh token (7 días).
-- El frontend guarda la sesión en `localStorage` y, ante un 401, renueva el
-  access token una vez con `POST /api/v1/auth/refresh`. Si falla, vuelve a `/login`.
-- Tras varios intentos fallidos por IP y email, el login responde 429 durante
-  `LOGIN_WINDOW_MINUTES`. El contador es en memoria (vale para 1 instancia).
-- Todo queda auditado: logins, logins fallidos, altas, bajas, reseteos y cambios de perfil.
+Todo lo configura el superadmin en **Seguridad** (`/admin/seguridad`) y se hace
+cumplir en el servidor en **cada pedido** (`api/deps.py::get_current_user`), así
+que un cambio rige al instante, también para las sesiones abiertas.
+
+- **Sesiones en el servidor** (`user_sessions`): cada token lleva el id de su
+  sesión (`sid`). Se cierran solas por inactividad (60 min por defecto) y por
+  duración máxima (12 h). El superadmin ve las sesiones activas y puede cerrar una,
+  todas las de un usuario o todas menos la suya. Desactivar un usuario, resetearle
+  la contraseña o el 2FA cierra sus sesiones. El navegador avisa 2 minutos antes del
+  cierre por inactividad ("¿Seguís ahí?").
+- **Bloqueo por intentos fallidos** persistente en la base (`users.failed_attempts`,
+  `locked_until`): N intentos en una ventana bloquean la cuenta X minutos (0 =
+  hasta que el superadmin la desbloquee). Además queda un freno en memoria por IP.
+- **Política de contraseñas**: largo mínimo, mayúsculas/minúsculas, número,
+  símbolo, vencimiento, no repetir las últimas N y cambio obligatorio en el primer
+  ingreso y tras un reseteo (`/cambiar-contrasena`).
+- **Segundo factor (TOTP)** opcional y recomendado: se activa desde *Mi perfil*
+  con una app autenticadora, con 8 códigos de recuperación. El secreto se guarda
+  cifrado (Fernet derivado de `SECRET_KEY`); los códigos, hasheados. También lo
+  puede activar el superadmin de `.env`.
+- **Horarios por perfil**: franjas semanales por perfil, feriados y zona horaria.
+  Modos: *desactivado*, *solo registrar* (deja entrar y audita
+  `acceso_fuera_de_horario`) o *bloquear* (no deja ingresar y cierra la sesión al
+  terminar la franja, con aviso previo). El superadmin puede dar **excepciones**
+  por usuario con vencimiento (máx. 31 días) y motivo.
+- El **superadmin** de `.env` nunca queda afuera: está exento de horario y de
+  bloqueo de cuenta.
+- La configuración vive en la fila `security_settings` (id 1). `SECURITY_DEFAULTS`
+  (JSON parcial) permite cambiar los valores por defecto (lo usan los tests).
+- Todo queda auditado: logins, fallidos, bloqueos, 2FA, cierres de sesión,
+  excepciones, cambios de configuración, altas, bajas y reseteos.
 - Los usuarios se desactivan (baja lógica); nunca se borran, para conservar la auditoría.
 
 ### Endpoints
@@ -280,7 +305,10 @@ Todo el código vive en `backend/app/operativas/televentas_claro/facturacion/`.
 | Método | Ruta | Acceso |
 |---|---|---|
 | POST | `/api/v1/auth/login` | Público |
-| POST | `/api/v1/auth/refresh` | Público (refresh token) |
+| POST | `/api/v1/auth/login/2fa` | Público (desafío del login + código) |
+| POST | `/api/v1/auth/refresh` · `/logout` | Sesión vigente |
+| GET | `/api/v1/auth/politica` | Logueado (política de contraseñas) |
+| GET · POST | `/api/v1/auth/2fa` · `/2fa/iniciar` · `/2fa/activar` · `/2fa/desactivar` | Logueado |
 | GET · PATCH | `/api/v1/auth/me` | Logueado |
 | POST | `/api/v1/auth/change-password` | Logueado (no superadmin) |
 | POST | `/api/v1/auth/me/photo` | Logueado (no superadmin) |
@@ -288,6 +316,11 @@ Todo el código vive en `backend/app/operativas/televentas_claro/facturacion/`.
 | PATCH · DELETE | `/api/v1/users/{id}` | Superadmin |
 | POST | `/api/v1/users/{id}/reset-password` · `/photo` | Superadmin |
 | GET | `/api/v1/audit` · `/api/v1/audit/users-map` | Superadmin |
+| GET · PUT | `/api/v1/seguridad/config` | Superadmin |
+| GET | `/api/v1/seguridad/sesiones` · `/usuarios` | Superadmin |
+| POST | `/api/v1/seguridad/sesiones/{sid}/cerrar` · `/sesiones/cerrar-todas` | Superadmin |
+| POST | `/api/v1/seguridad/usuarios/{id}/cerrar-sesiones` · `/desbloquear` · `/reset-2fa` · `/forzar-cambio` | Superadmin |
+| PUT · DELETE | `/api/v1/seguridad/usuarios/{id}/excepcion` | Superadmin |
 | GET · PUT | `/api/v1/perfiles` · `/api/v1/perfiles/{perfil}` | Superadmin |
 | GET | `/api/v1/perfiles/catalogo` | Superadmin |
 | GET | `/api/v1/operativas` | Logueado (solo las que puede abrir) |

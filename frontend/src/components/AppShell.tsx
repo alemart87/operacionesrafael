@@ -5,13 +5,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
 import { Brand } from "./Brand";
-import { CurrentUserInfo, ROLE_LABELS, apiFetch, can, clearSession, getToken, getUser, saveUser } from "@/lib/api";
+import { CurrentUserInfo, ROLE_LABELS, apiFetch, can, getToken, getUser, logout, saveUser } from "@/lib/api";
+import { ControlSesion, type EstadoSeguridad } from "./seguridad/ControlSesion";
 import { OperativaNavItem, isNavActive, operativaFromPath, requiredUtilidades, submoduloFromPath } from "@/lib/operativas";
 
 const ADMIN_NAV = [
   { href: "/admin/users", label: "Usuarios" },
   { href: "/admin/perfiles", label: "Perfiles" },
   { href: "/admin/audit", label: "Auditoría" },
+  { href: "/admin/seguridad", label: "Seguridad" },
 ];
 
 interface Session {
@@ -44,6 +46,7 @@ export function AppShell({ children, workspace = false }: {
   const pathname = usePathname();
   const [user, setUser] = useState<CurrentUserInfo | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [seguridad, setSeguridad] = useState<EstadoSeguridad | null>(null);
 
   useEffect(() => {
     if (!getToken()) {
@@ -51,8 +54,16 @@ export function AppShell({ children, workspace = false }: {
       return;
     }
     // Los permisos siempre se piden al backend: el superadmin puede cambiarlos en cualquier momento.
-    apiFetch<CurrentUserInfo>("/api/v1/auth/me")
+    apiFetch<CurrentUserInfo & { seguridad?: EstadoSeguridad }>("/api/v1/auth/me")
       .then((me) => {
+        if (me.seguridad) {
+          setSeguridad(me.seguridad);
+          // Contraseña pendiente de cambio o vencida: solo puede cambiarla.
+          if (me.seguridad.cambio_contrasena && window.location.pathname !== "/cambiar-contrasena") {
+            router.replace("/cambiar-contrasena");
+            return;
+          }
+        }
         const next: CurrentUserInfo = {
           email: me.email,
           role: me.role,
@@ -83,8 +94,8 @@ export function AppShell({ children, workspace = false }: {
     if (blocked || adminOnly) router.replace("/inicio");
   }, [blocked, adminOnly, router]);
 
-  const onLogout = () => {
-    clearSession();
+  const onLogout = async () => {
+    await logout();
     router.push("/login");
   };
 
@@ -249,6 +260,7 @@ export function AppShell({ children, workspace = false }: {
             </div>
           )}
         </header>
+        {seguridad && <ControlSesion s={seguridad} />}
 
         <main
           className={workspace ? "flex-1 flex min-h-0 w-full" : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 py-8"}

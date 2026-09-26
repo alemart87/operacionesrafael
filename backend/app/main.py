@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 from . import models  # noqa: F401  (registra los modelos en Base.metadata)
 from . import operativas as modulos_operativas  # routers, workers y modelos de cada operativa
-from .api.v1 import audit, auth, operativas, perfiles, users
+from .api.v1 import audit, auth, operativas, perfiles, seguridad, users
 from .core.config import APP_NAME, settings
 from .core.database import AsyncSessionLocal, Base, engine
 from .core.logging import configure_logging, logger
@@ -34,11 +34,23 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "UPDATE users SET role = 'cliente' WHERE role = 'viewer'",
     # v0.4 · ventas netas: datos leídos del corte guardados en la base (recalcular sin el archivo)
     "ALTER TABLE ventas_netas_uploads ADD COLUMN IF NOT EXISTS parsed_gz BYTEA",
+    # v0.5 · seguridad de acceso: bloqueo, contraseñas, segundo factor y excepciones de horario
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts INTEGER DEFAULT 0",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_failed_at TIMESTAMPTZ",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_history JSON",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret_enc TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_recovery JSON",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_exception_until TIMESTAMPTZ",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_exception_note VARCHAR(300)",
 ]
 
 
 _ADD_COLUMN = re.compile(r"ALTER TABLE (\w+) ADD COLUMN IF NOT EXISTS (\w+) (.+)", re.IGNORECASE)
-_SQLITE_TYPES = {"BYTEA": "BLOB"}
+_SQLITE_TYPES = {"BYTEA": "BLOB", "TIMESTAMPTZ": "DATETIME"}
 
 
 async def _run_migrations() -> dict[str, list[str]]:
@@ -214,6 +226,7 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(perfiles.router, prefix="/api/v1")
 app.include_router(operativas.router, prefix="/api/v1")
+app.include_router(seguridad.router, prefix="/api/v1")
 
 # --- Operativas (módulos independientes, ver app/operativas/) ---
 for r in modulos_operativas.ROUTERS:

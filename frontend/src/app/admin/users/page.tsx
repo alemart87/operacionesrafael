@@ -191,10 +191,6 @@ export default function AdminUsersPage() {
 
   const onResetPwd = async () => {
     if (!resetUser) return;
-    if (resetPwd.length < 8) {
-      setError("La contraseña debe tener al menos 8 caracteres.");
-      return;
-    }
     const done = await run(
       () => apiFetch(`/api/v1/users/${resetUser.id}/reset-password`, { method: "POST", body: JSON.stringify({ new_password: resetPwd }) }),
       `Contraseña de ${resetUser.email} reseteada.`,
@@ -259,7 +255,7 @@ export default function AdminUsersPage() {
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               className="input"
-              placeholder="Mínimo 8 caracteres"
+              placeholder="Según la política de contraseñas (Seguridad)"
               autoComplete="off"
             />
           </div>
@@ -360,13 +356,13 @@ export default function AdminUsersPage() {
         title="Resetear contraseña"
         message={
           <div className="space-y-2">
-            <p>Nueva contraseña para {resetUser?.email}:</p>
+            <p>Nueva contraseña para {resetUser?.email}. Al ingresar tendrá que cambiarla y se cierran sus sesiones abiertas.</p>
             <input
               className="input"
               type="text"
               value={resetPwd}
               onChange={(e) => setResetPwd(e.target.value)}
-              placeholder="Mínimo 8 caracteres"
+              placeholder="Según la política de contraseñas (Seguridad)"
               autoComplete="off"
             />
           </div>

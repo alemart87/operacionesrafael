@@ -20,3 +20,5 @@ openai-agents==0.17.4
 # openai 2.45.0 volvió `cache_write_tokens` un campo requerido que openai-agents
 # 0.17.4 no envía (ValidationError en cada respuesta): se fija la última compatible.
 openai==2.44.0
+segno==1.6.1
+tzdata==2026.4

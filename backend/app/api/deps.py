@@ -24,6 +24,9 @@ from ..core.operativas import ALL_PERMISSIONS, ASSIGNABLE_PERMISSIONS, OPERATIVA
 from ..core.security import decode_token
 from ..models.profile import Profile
 from ..models.user import User
+from ..services import seguridad as seg
+from ..services import sesiones
+from ..services.audit_service import record_action
 
 
 bearer = HTTPBearer(auto_error=False)
@@ -47,6 +50,9 @@ class CurrentUser:
     photo_url: Optional[str] = None
     operativas: list[str] = field(default_factory=list)
     permissions: set[str] = field(default_factory=set)
+    session_id: Optional[str] = None
+    # Fin del horario habilitado (UTC) si el perfil tiene franjas; el front avisa antes del cierre.
+    acceso_hasta: Optional[object] = None
 
     @property
     def is_superadmin(self) -> bool:
@@ -68,10 +74,20 @@ async def load_role_permissions(db: AsyncSession, role: str) -> list[str]:
     return list(row.permissions or []) if row else []
 
 
+# Rutas que se pueden usar con la contraseña vencida o pendiente de cambio.
+RUTAS_CAMBIO_CONTRASENA = {"/api/v1/auth/me", "/api/v1/auth/change-password", "/api/v1/auth/logout", "/api/v1/auth/politica"}
+
+
 async def get_current_user(
+    request: Request,
     creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
     db: AsyncSession = Depends(get_db),
 ) -> CurrentUser:
+    """Valida token, sesión, usuario, horario y contraseña en CADA pedido.
+
+    Así el superadmin puede cerrar sesiones a distancia, la inactividad y el
+    vencimiento cortan solos y el horario corta también a quien ya estaba adentro.
+    """
     if not creds:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Falta token de autenticación")
 
@@ -83,11 +99,20 @@ async def get_current_user(
     if payload.get("type") != "access":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token no es de tipo access")
 
+    cfg = await seg.config(db)
+    try:
+        sesion = await sesiones.validar(db, cfg, payload.get("sid"))
+    except sesiones.SesionInvalida as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, exc.detail()) from exc
+
     subject = payload.get("sub")
     role = payload.get("role")
+    if sesion.email != subject:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, sesiones.SesionInvalida("invalida").detail())
 
-    # Superadmin sintético (no está en DB): todas las operativas y permisos.
+    # Superadmin sintético (no está en DB): todas las operativas y permisos, sin horario.
     if subject == settings.superadmin_email and role == "superadmin":
+        await sesiones.marcar_actividad(db, sesion)
         return CurrentUser(
             id="superadmin",
             email=settings.superadmin_email,
@@ -95,12 +120,47 @@ async def get_current_user(
             full_name=settings.superadmin_name,
             operativas=sorted(OPERATIVA_SLUGS),
             permissions=set(ALL_PERMISSIONS),
+            session_id=sesion.id,
         )
 
     result = await db.execute(select(User).where(User.email == subject))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuario inválido o inactivo")
+        sesiones.cerrar(sesion, "usuario_inactivo")
+        await db.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, sesiones.SesionInvalida("usuario_inactivo").detail())
+
+    # Horario de acceso del perfil (con excepción vigente del superadmin).
+    from datetime import datetime, timezone
+    ahora = datetime.now(timezone.utc)
+    exc_hasta = user.access_exception_until
+    if exc_hasta and exc_hasta.tzinfo is None:
+        exc_hasta = exc_hasta.replace(tzinfo=timezone.utc)
+    h = seg.evaluar_horario(cfg, user.role, ahora, exc_hasta)
+    if not h["permitido"]:
+        if cfg["horarios"]["modo"] == "bloquear":
+            sesiones.cerrar(sesion, "horario")
+            await db.commit()
+            await record_action(db, user_id=user.id, action="acceso_fuera_de_horario", resource_type="auth",
+                                ip=client_ip(request), extra={"bloqueado": True, "motivo": h["motivo"], "ruta": request.url.path})
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, sesiones.SesionInvalida(
+                "horario", f"Horario de tu perfil: {seg.texto_horario(cfg, user.role)}.").detail())
+        if not sesion.fuera_horario_registrado:  # modo "registrar": se deja pasar y queda anotado una vez por sesión
+            sesion.fuera_horario_registrado = True
+            await db.commit()
+            await record_action(db, user_id=user.id, action="acceso_fuera_de_horario", resource_type="auth",
+                                ip=client_ip(request), extra={"bloqueado": False, "motivo": h["motivo"], "ruta": request.url.path})
+
+    # Contraseña pendiente de cambio o vencida: solo puede cambiarla.
+    if (user.must_change_password or seg.contrasena_vencida(cfg, user.password_changed_at, ahora)) \
+            and request.url.path not in RUTAS_CAMBIO_CONTRASENA:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {
+            "code": "cambio_contrasena",
+            "message": "Tenés que cambiar tu contraseña antes de seguir." if user.must_change_password
+            else "Tu contraseña venció: elegí una nueva para seguir.",
+        })
+
+    await sesiones.marcar_actividad(db, sesion)
 
     # El perfil se lee de la DB en cada request: si el superadmin cambia el
     # perfil o los permisos, se aplica sin que el usuario vuelva a loguearse.
@@ -113,6 +173,8 @@ async def get_current_user(
         photo_url=user.photo_url,
         operativas=list(user.operativas or []),
         permissions=effective_permissions(role_perms, user.operativas),
+        session_id=sesion.id,
+        acceso_hasta=h["hasta"],
     )
 
 

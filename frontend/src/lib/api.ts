@@ -87,19 +87,66 @@ export function saveUser(partial: Partial<CurrentUserInfo>): void {
   localStorage.setItem(USER_KEY, JSON.stringify({ ...cur, ...partial }));
 }
 
-export async function login(email: string, password: string): Promise<CurrentUserInfo> {
+/** Resultado del login: sesión abierta, o falta el código del segundo factor. */
+export type LoginResult =
+  | { tipo: "ok"; user: CurrentUserInfo; requiereCambio: boolean; recomendar2fa: boolean }
+  | { tipo: "2fa"; desafio: string };
+
+const MOTIVO_KEY = "rm_motivo_salida";
+
+/** Mensaje para mostrar en el login (por qué se cerró la sesión). */
+export function motivoSalida(consumir = true): string | null {
+  if (typeof window === "undefined") return null;
+  const m = sessionStorage.getItem(MOTIVO_KEY);
+  if (consumir) sessionStorage.removeItem(MOTIVO_KEY);
+  return m;
+}
+function guardarMotivo(m: string | null) {
+  if (typeof window !== "undefined" && m) sessionStorage.setItem(MOTIVO_KEY, m);
+}
+
+function mensajeDe(body: any, porDefecto: string): string {
+  const d = body?.detail;
+  if (typeof d === "string") return d;
+  if (d && typeof d.message === "string") return d.message;
+  return porDefecto;
+}
+
+async function resultadoLogin(r: Response): Promise<LoginResult> {
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(mensajeDe(body, "Error de autenticación"));
+  if (body.requiere_2fa) return { tipo: "2fa", desafio: body.desafio };
+  setSession(body as TokenPair);
+  return { tipo: "ok", user: userFromTokens(body), requiereCambio: !!body.requiere_cambio_contrasena, recomendar2fa: !!body.recomendar_2fa };
+}
+
+export async function login(email: string, password: string): Promise<LoginResult> {
   const r = await fetch("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
-  if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    throw new Error(typeof body.detail === "string" ? body.detail : "Error de autenticación");
+  return resultadoLogin(r);
+}
+
+/** Segundo paso: código de la app autenticadora o un código de recuperación. */
+export async function login2fa(desafio: string, codigo: string): Promise<LoginResult> {
+  const r = await fetch("/api/v1/auth/login/2fa", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ desafio, codigo }),
+  });
+  return resultadoLogin(r);
+}
+
+/** Cierra la sesión en el servidor (queda inválida en todos lados) y limpia el navegador. */
+export async function logout(motivo?: string): Promise<void> {
+  const token = getToken();
+  if (token) {
+    await fetch("/api/v1/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => undefined);
   }
-  const data: TokenPair = await r.json();
-  setSession(data);
-  return userFromTokens(data);
+  clearSession();
+  guardarMotivo(motivo ?? null);
 }
 
 // Un único refresh en vuelo aunque fallen varias requests a la vez.
@@ -127,8 +174,9 @@ async function tryRefresh(): Promise<boolean> {
   return refreshing;
 }
 
-function redirectToLogin() {
+function redirectToLogin(motivo?: string | null) {
   clearSession();
+  guardarMotivo(motivo ?? null);
   if (typeof window !== "undefined" && window.location.pathname !== "/login") {
     window.location.href = "/login";
   }
@@ -177,10 +225,24 @@ export async function apiFetch<T = any>(path: string, opts: RequestInit = {}, re
 
   const res = await fetch(path, { ...opts, headers });
   if (res.status === 401) {
+    const body = await res.clone().json().catch(() => ({}));
+    const code: string | undefined = body?.detail?.code;
+    // Sesión cerrada por el servidor (administrador, inactividad, vencimiento u horario): no se renueva.
+    if (code && code.startsWith("sesion_")) {
+      redirectToLogin(mensajeDe(body, "Tu sesión se cerró."));
+      throw new Error(mensajeDe(body, "Sesión cerrada"));
+    }
     // Access token vencido → intentar renovar con el refresh token una sola vez.
     if (!retried && (await tryRefresh())) return apiFetch<T>(path, opts, true);
-    redirectToLogin();
+    redirectToLogin("Tu sesión expiró. Ingresá de nuevo.");
     throw new Error("Sesión expirada");
+  }
+  if (res.status === 403 && typeof window !== "undefined") {
+    const body = await res.clone().json().catch(() => ({}));
+    if (body?.detail?.code === "cambio_contrasena" && window.location.pathname !== "/cambiar-contrasena") {
+      window.location.href = "/cambiar-contrasena";
+      throw new Error(mensajeDe(body, "Tenés que cambiar tu contraseña"));
+    }
   }
   if (!res.ok) {
     let detail = `Error ${res.status}`;
