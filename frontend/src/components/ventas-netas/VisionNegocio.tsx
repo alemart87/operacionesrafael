@@ -15,7 +15,7 @@ const C_MAG = "#0F1116";
 const tooltipStyle = { fontSize: 12, borderRadius: 6, border: "1px solid #e5e7eb", boxShadow: "0 4px 12px rgba(0,0,0,.08)" };
 
 /** Visión Negocio (gerencial): qué se vendió, cuánto está en uso, alertas y pendientes. */
-export function VisionNegocio({ d }: { d: InformeData }) {
+export function VisionNegocio({ d, hrefSinUso }: { d: InformeData; hrefSinUso?: string }) {
   const k = d.kpis;
   const [vendedorAbierto, setVendedorAbierto] = useState<string | null>(null);
   const porDia = d.por_dia.map((x) => ({ dia: x.dia?.slice(8, 10) ?? "", conUso: x.con_uso, sinUso: x.sin_uso, otros: x.total - x.pospago }));
@@ -27,7 +27,8 @@ export function VisionNegocio({ d }: { d: InformeData }) {
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard label="Ventas netas" value={n(k.netas)} hint={`${n(k.pospago)} Pospago · ${n(k.gpon)} GPON · ${n(k.iptv)} IPTV`} accent="secondary" />
         <KpiCard label="Portación" value={pct(k.pct_portacion)} hint={`${n(k.portadas)} portadas · ${n(k.nativas)} nativas`} accent="purple" />
-        <KpiCard label="Pospago sin uso · alerta PFI" value={pct(k.pct_sin_uso)} hint={`${n(k.pospago_sin_uso)} de ${n(k.pospago - (k.pospago_en_espera ?? 0))} líneas Pospago${k.pospago_en_espera ? ` · ${n(k.pospago_en_espera)} en espera de uso (no son alerta)` : ""}`} accent="danger" />
+        <KpiCard label="Pospago sin uso · alerta PFI" value={pct(k.pct_sin_uso)} hint={`${n(k.pospago_sin_uso)} de ${n(k.pospago - (k.pospago_en_espera ?? 0))} líneas Pospago${k.pospago_en_espera ? ` · ${n(k.pospago_en_espera)} en espera de uso (no son alerta)` : ""}`} accent="danger"
+          href={hrefSinUso} cta="Ver líneas sin uso y ranking de vendedores" />
         <KpiCard label="Pendientes de carga" value={n(k.pendientes)} hint={`${n(k.pendientes_portacion)} de portación · ${n(k.pendientes_mas_de_7_dias)} con más de 7 días`} accent="orange" />
       </div>
 

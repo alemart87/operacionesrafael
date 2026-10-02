@@ -65,7 +65,7 @@ def build_xlsx(report) -> bytes:
     ], d.get("vendedores", []), alerta_key="alerta")
 
     _sheet(wb, "Detalle netas", [
-        ("SDS", "sds_number"), ("Línea", "linea"), ("Fecha activación", "fecha_activacion"),
+        ("SDS", "sds_number"), ("Línea", "linea"), ("Fecha venta", "fecha_venta"), ("Fecha activación", "fecha_activacion"),
         ("Producto", "producto"), ("Plan", "plan"), ("Campaña", "campania"), ("Portación", "portacion"),
         ("Tipo portación", "tipo_port"), ("Origen", "origen_portacion"), ("Consumo", "consumo"),
         ("Estado línea", "estado_linea"), ("Razón cierre", "razon_cierre"), ("Vendedor", "vendedor"),

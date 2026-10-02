@@ -99,6 +99,11 @@ export interface DetalleNeta {
   en_espera?: boolean;
   /** Días desde la activación hasta el corte. */
   dias?: number | null;
+  /** Datos de la venta (hoja CARGAS, cruce por SDS; informes v8+). */
+  fecha_venta?: string | null;
+  fecha_carga?: string | null;
+  legajo?: string | null;
+  riesgo?: string | null;
   estado_linea: string | null;
   razon_cierre: string | null;
   vendedor: string;

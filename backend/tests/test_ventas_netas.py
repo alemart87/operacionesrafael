@@ -120,6 +120,9 @@ def test_parser_y_analisis(xlsx):
     assert (k["pospago_sin_uso"], k["pospago_con_uso"], k["pct_sin_uso"]) == (2, 2, 50.0)
     assert k["suspendidas"] == 1 and a["suspendidas"]["por_razon"] == [{"razon": "PNT", "total": 1}]
     assert k["fuera_de_netas"] == 1 and a["fuera_de_netas"]["sin_uso"] == 1
+    # Cada línea neta trae la fecha de venta y el legajo de su carga (cruce por SDS).
+    det = {r["sds_number"]: r for r in a["detalle_netas"]}
+    assert (det["1002"]["fecha_venta"], det["1002"]["legajo"], det["1002"]["riesgo"]) == ("2026-09-05", "EXP1", "M")
     # Sali Hablando: la portación SI-SaliHbl (3001), sin uso, atribuida a su vendedor.
     sh = a["sali_hablando"]
     assert sh["kpis"] == {**sh["kpis"], "total": 1, "sin_uso": 1, "con_uso": 0, "pct_sin_uso": 100.0, "en_ddi": 0, "fuera_ddi": 1, "vendedores": 1}

@@ -142,7 +142,7 @@ function Informe() {
         ]}
       />
 
-      {vista === "negocio" && <VisionNegocio d={r.data} />}
+      {vista === "negocio" && <VisionNegocio d={r.data} hrefSinUso={`${VN_HREF}/reports/${id}/sin-uso`} />}
       {vista === "productividad" && (r.data?.productividad
         ? <VisionProductividad d={r.data} />
         : <div className="card p-10 text-center text-brand-slate">La sección Productividad no está en este informe. Actualizalo con el botón de arriba.</div>)}
