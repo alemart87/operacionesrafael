@@ -90,6 +90,8 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
 
     ddi_all = parsed.get("ddi", [])
     cargas_all = parsed.get("cargas", [])
+    # Venta cargada de cada línea (hoja CARGAS): fecha de venta, legajo y riesgo para el detalle de netas.
+    carga_por_sds = {c["sds_number"]: c for c in cargas_all if c.get("sds_number")}
     por_all = parsed.get("portabilidad", [])
 
     fechas_dato = [d for r in cargas_all if (d := _to_date(r.get("fecha_dato")))]
@@ -315,7 +317,8 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "sali_hablando": _sali_hablando(por_all, ddi_all, {r["sds_number"]: r for r in cargas_all}, fecha_dato),
         "pendientes": pendientes,
         "finalizadas_sin_activar": [_detalle_carga(r) for r in finalizadas_sin_activar],
-        "detalle_netas": [{**_detalle_neta(r, "DDI"), "dias": dias_al_corte(r), "en_espera": en_espera(r)} for r in ddi],
+        "detalle_netas": [{**_detalle_neta(r, "DDI"), **_venta_de(carga_por_sds.get(r["sds_number"])),
+                           "dias": dias_al_corte(r), "en_espera": en_espera(r)} for r in ddi],
         "productividad": productividad,
         "hojas": parsed.get("hojas", []),
     }
@@ -418,6 +421,13 @@ def _detalle_neta(r: dict[str, Any], origen_hoja: str) -> dict[str, Any]:
         "total_neto": r.get("total_neto"),
         "hoja": origen_hoja,
     }
+
+
+def _venta_de(c: dict[str, Any] | None) -> dict[str, Any]:
+    """Datos de la venta (CARGAS) que acompañan a una línea neta; vacíos si la venta no está en el corte."""
+    c = c or {}
+    return {"fecha_venta": c.get("sds_fecha_venta"), "fecha_carga": c.get("sds_fecha_alta_venta"),
+            "legajo": c.get("vendedor_legajo"), "riesgo": c.get("riesgo_ori")}
 
 
 def _detalle_carga(r: dict[str, Any]) -> dict[str, Any]:
