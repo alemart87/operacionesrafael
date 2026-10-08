@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, MessageSquare, PhoneOutgoing, RefreshCw, Trash2, Upload, Users } from "lucide-react";
+import { CheckCircle2, Clock, MessageSquare, PhoneOutgoing, RefreshCw, Trash2, Upload, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -15,7 +15,7 @@ import {
   MetaConversacion, RankingEfectividad,
 } from "@/components/productividad/ui";
 import {
-  PROD_API, PROD_HREF, medida, fechaHora, fechaLarga, horas, n, pct, segundos, type Banda, type Corte, type InformeDetalle,
+  PROD_API, PROD_HREF, medida, fechaCorta, fechaHora, fechaLarga, horas, n, pct, segundos, type Banda, type Corte, type InformeDetalle,
 } from "@/components/productividad/tipos";
 import { EstadoBadge, Tabs } from "@/components/ventas-netas/ui";
 import { apiFetch } from "@/lib/api";
@@ -43,6 +43,16 @@ function Informe() {
   const [orden, setOrden] = useState<{ k: "pct_contacto"; dir: "desc" } | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [aBorrar, setABorrar] = useState<Corte | null>(null);
+  // Llegada desde «Subir cortes»: cuántos se procesaron y qué otros días se actualizaron.
+  const [carga, setCarga] = useState<{ procesados: number; otros: string[] } | null>(null);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const procesados = Number(q.get("procesados") || 0);
+    if (!procesados) return;
+    setCarga({ procesados, otros: (q.get("otros") || "").split(",").filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(f)) });
+    window.history.replaceState(null, "", window.location.pathname); // al recargar no vuelve a aparecer
+  }, []);
 
   const load = useCallback(async () => {
     try { setR(await apiFetch<InformeDetalle>(`${PROD_API}/informes/${id}`)); } catch (e: any) { setError(e.message); }
@@ -117,6 +127,22 @@ function Informe() {
       </div>
 
       <div className="space-y-3 mb-5 print:hidden">
+        {carga && (
+          <div role="status" className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-brand-graphite flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 min-w-0">
+              <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+              <span>
+                Se procesaron <b>{n(carga.procesados)} corte{carga.procesados === 1 ? "" : "s"}</b>.
+                {r.status === "draft" && " Es el borrador del día: revisalo y publicalo para que entre en el acumulado."}
+                {carga.otros.length > 0 && (
+                  <> También se actualizaron los borradores del {carga.otros.map(fechaCorta).join(", ")}.{" "}
+                    <Link href={PROD_HREF} className="font-semibold text-brand-primary hover:underline">Ver informes diarios</Link></>
+                )}
+              </span>
+            </div>
+            <button type="button" aria-label="Cerrar aviso" onClick={() => setCarga(null)} className="text-brand-slate hover:text-brand-ink shrink-0"><X size={16} /></button>
+          </div>
+        )}
         {(errorPublicar) && <div className="card p-4 text-brand-primary">{errorPublicar}</div>}
         {gestion && r.parametros_distintos && (
           <div className="rounded-md border border-brand-cyan/40 bg-brand-cyan/5 p-3 text-sm text-brand-graphite flex items-center justify-between gap-3 flex-wrap">

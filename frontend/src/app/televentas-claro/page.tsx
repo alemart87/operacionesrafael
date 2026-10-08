@@ -98,7 +98,7 @@ function Tarjeta({ m, u, gestion }: { m: Submodulo; u: OperativaInfo["utilidades
       <div className="mt-auto pt-1 flex items-center justify-between text-xs">
         {habilitada ? (
           <>
-            <span className="text-brand-slate">{gestion ? "Podés subir cortes, publicar y eliminar." : m.gestion ? "Solo consulta de informes publicados." : ""}</span>
+            <span className="text-brand-slate">{gestion ? m.gestionTexto ?? "Podés subir cortes, publicar y eliminar." : m.gestion ? "Solo consulta de informes publicados." : ""}</span>
             <span className="font-semibold text-brand-primary">Abrir →</span>
           </>
         ) : (

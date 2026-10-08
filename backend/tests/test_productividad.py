@@ -1,5 +1,5 @@
 """Productividad de llamadas (Televentas CLARO): lectura del reporte de tiempos, análisis del día
-(meta de conversación, contacto desde 20 s, modos, turnos y tramos intradía), acumulado de
+(meta de conversación, contacto desde 30 s, modos, turnos y tramos intradía), acumulado de
 períodos y circuito de publicación por día (borrador → publicado → reemplazado)."""
 from __future__ import annotations
 
