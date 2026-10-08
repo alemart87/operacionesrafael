@@ -15,23 +15,29 @@ Definiciones:
   escritura (QUIÑONEZ / QUINONES) o el apellido aparece al final de un nombre largo (puede ser
   el segundo apellido). Uno a uno: un vendedor no va a dos agentes; con empate queda ambiguo y
   no se asigna. Los vínculos manuales mandan sobre el cruce automático.
-- SPH del asesor = netas del día ÷ horas conectadas. Entra al ranking desde `min_horas_ranking`.
-- SPH de la operación = netas del día ÷ horas conectadas del equipo, sin las sesiones
-  abiertas: ni sus horas ni las netas de esos agentes, para comparar lo mismo con lo mismo.
+- SPH del asesor = netas ÷ horas conectadas. Entra al ranking desde `min_horas_ranking`
+  (2 h en un día; 6 h, una jornada, en una semana, un mes o un rango).
+- SPH de la operación = netas ÷ horas conectadas del equipo, sin las sesiones abiertas:
+  ni sus horas ni las netas de esos agentes ese día, para comparar lo mismo con lo mismo.
+- Período (semana, mes o rango): suma día por día. Un día CUENTA si tiene informe de
+  Productividad (horas) y el corte de ventas de su mes ya lo alcanza; los demás se informan.
+  Cada neta se atribuye al asesor solo los días en que estuvo conectado.
 
-Todo es lógica pura (sin DB): recibe los datos de los dos informes y devuelve el del SPH.
+Todo es lógica pura (sin DB): recibe los datos de los informes y devuelve el del SPH.
 """
 from __future__ import annotations
 
 import re
 import unicodedata
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, timedelta
 from difflib import SequenceMatcher
 from typing import Any, Iterable
 
-VERSION_SPH = 1
-MIN_HORAS_RANKING = 2.0      # horas conectadas mínimas para entrar al ranking de SPH
+VERSION_SPH = 2              # v2: períodos (semana, mes, rango), fuentes en listas, horas válidas por agente
+MIN_HORAS_RANKING = 2.0      # horas conectadas mínimas para entrar al ranking de SPH de un día
+MIN_HORAS_RANKING_PERIODO = 6.0  # de una semana, un mes o un rango: al menos una jornada
+DIAS_MAX_PERIODO = 62
 DIAS_MADURACION = 7          # corte de ventas a menos días que esto: las netas del día siguen activándose
 ESTADO_RECHAZADA = "Vta_Rechazada"
 SIN_VENDEDOR = "SIN VENDEDOR"
@@ -183,155 +189,327 @@ class DatosIncompletos(ValueError):
     """Los informes de origen no traen lo necesario para calcular el SPH."""
 
 
-def calcular(fecha: date, prod: dict[str, Any], ventas: dict[str, Any], fuentes: dict[str, Any],
-             manuales: dict[str, str | None] | None = None,
-             min_horas_ranking: float = MIN_HORAS_RANKING) -> dict[str, Any]:
-    """SPH del día.
+def fin_de_mes(d: date) -> date:
+    return (d.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
 
-    `prod`: data del informe de Productividad del día. `ventas`: data del informe de Ventas Netas
-    del mes. `fuentes`: qué informes se usaron (id, estado, corte), se guarda tal cual.
+
+def tipo_periodo(desde: date, hasta: date) -> str:
+    """dia · semana (lunes a domingo) · mes (del 1 al último día) · rango."""
+    if desde == hasta:
+        return "dia"
+    if desde.weekday() == 0 and (hasta - desde).days == 6:
+        return "semana"
+    if desde.day == 1 and hasta == fin_de_mes(desde):
+        return "mes"
+    return "rango"
+
+
+def _mes(d: date) -> str:
+    return d.strftime("%Y-%m")
+
+
+_MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
+          "noviembre", "diciembre"]
+
+
+def nombre_mes(periodo: str) -> str:
+    """'2026-10' → 'octubre 2026'."""
+    try:
+        return f"{_MESES[int(periodo[5:7]) - 1]} {periodo[:4]}"
+    except (ValueError, IndexError):
+        return periodo
+
+
+def _corto(d: date) -> str:
+    return d.strftime("%d/%m")
+
+
+def _lista_fechas(dias: list[date], tope: int = 8) -> str:
+    txt = ", ".join(_corto(d) for d in dias[:tope])
+    return txt + (f" y {len(dias) - tope} más" if len(dias) > tope else "")
+
+
+def _lista(x: Any) -> list[dict[str, Any]]:
+    """Las fuentes de la v1 venían como un solo dict; desde la v2, en listas."""
+    return x if isinstance(x, list) else [x] if x else []
+
+
+def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, Any]], ventas: dict[str, dict[str, Any]],
+                     fuentes: dict[str, Any], manuales: dict[str, str | None] | None = None,
+                     min_horas_ranking: float | None = None, hasta_datos: date | None = None) -> dict[str, Any]:
+    """SPH de un período: un día, una semana, un mes o un rango.
+
+    `produccion`: fecha → data del informe de Productividad de ese día (los días que lo tienen).
+    `ventas`: 'YYYY-MM' → data del informe de Ventas Netas de ese mes.
+    `fuentes`: {"productividad": [...], "ventas": [{"periodo", "fecha_dato", ...}]}: qué informes se
+    usaron; se guarda tal cual y de ahí sale el corte de ventas de cada mes.
+    `hasta_datos`: los días posteriores (p. ej. el resto del mes en curso) no se informan como faltantes.
     """
-    dia = fecha.isoformat()
-    netas_mes = ventas.get("detalle_netas") or []
-    if netas_mes and not any(k in netas_mes[0] for k in ("fecha_venta", "fecha_carga")):
-        raise DatosIncompletos("El informe de ventas no trae la fecha de venta de cada neta: recalculalo en Ventas Netas.")
-    cargas_mes = (ventas.get("productividad") or {}).get("detalle_cargas") or []
-    agentes_prod = prod.get("agentes") or []
-    if not agentes_prod:
-        raise DatosIncompletos("El informe de Productividad del día no tiene agentes conectados.")
+    if min_horas_ranking is None:
+        min_horas_ranking = MIN_HORAS_RANKING if desde == hasta else MIN_HORAS_RANKING_PERIODO
+    for data in ventas.values():
+        netas = data.get("detalle_netas") or []
+        if netas and not any(k in netas[0] for k in ("fecha_venta", "fecha_carga")):
+            raise DatosIncompletos("El informe de ventas no trae la fecha de venta de cada neta: recalculalo en Ventas Netas.")
+    cortes = {f.get("periodo"): f.get("fecha_dato") for f in _lista(fuentes.get("ventas"))}
+    limite = min(hasta, hasta_datos) if hasta_datos else hasta
 
-    netas = [x for x in netas_mes if fecha_de_venta(x) == dia]
-    cargas = [c for c in cargas_mes if c.get("fecha_alta") == dia and c.get("estado") != ESTADO_RECHAZADA]
-    sin_fecha = sum(1 for x in netas_mes if not fecha_de_venta(x))
+    # Qué días cuentan: con horas y con ventas al corte.
+    cobertura: list[dict[str, Any]] = []
+    cubiertos: list[date] = []
+    d = desde
+    while d <= hasta:
+        if d <= limite:
+            corte = cortes.get(_mes(d))
+            horas_ok = bool((produccion.get(d) or {}).get("agentes"))
+            ventas_ok = _mes(d) in ventas and (not corte or corte >= d.isoformat())
+            cobertura.append({"fecha": d.isoformat(), "horas": horas_ok, "ventas": ventas_ok})
+            if horas_ok and ventas_ok:
+                cubiertos.append(d)
+        d += timedelta(days=1)
+    if not cubiertos:
+        raise DatosIncompletos("Ningún día del período tiene horas de Productividad y ventas al corte.")
 
-    # Vendedores del período: los de las netas y los de las cargas con vendedor atribuido.
+    # Vendedores de los meses que cuentan (para el cruce) y su subcanal.
     subcanal: dict[str, str | None] = {}
     netas_mes_v: Counter = Counter()
-    for x in netas_mes:
-        v = x.get("vendedor") or SIN_VENDEDOR
-        netas_mes_v[v] += 1
-        subcanal.setdefault(v, x.get("subcanal"))
-    roster = set(netas_mes_v) | {c["vendedor"] for c in cargas_mes if c.get("vendedor") and c.get("atribucion") in ("pos", "legajo")}
+    roster: set[str] = set()
+    sin_fecha = 0
+    for mes in sorted({_mes(d) for d in cubiertos}):
+        data = ventas[mes]
+        for x in data.get("detalle_netas") or []:
+            v = x.get("vendedor") or SIN_VENDEDOR
+            netas_mes_v[v] += 1
+            subcanal.setdefault(v, x.get("subcanal"))
+            sin_fecha += 0 if fecha_de_venta(x) else 1
+        roster |= {c["vendedor"] for c in (data.get("productividad") or {}).get("detalle_cargas") or []
+                   if c.get("vendedor") and c.get("atribucion") in ("pos", "legajo")}
+    roster |= set(netas_mes_v)
     roster.discard(SIN_VENDEDOR)
 
-    productos_v: dict[str, Counter] = defaultdict(Counter)
-    for x in netas:
-        productos_v[x.get("vendedor") or SIN_VENDEDOR][x.get("producto") or "Otros"] += 1
-    cargadas_v = Counter(c.get("vendedor") or SIN_VENDEDOR for c in cargas)
+    # Agentes del período: nombre del último día en que se conectaron. Un solo cruce para todo el período.
+    agentes: dict[str, dict[str, Any]] = {}
+    for d in cubiertos:
+        for a in produccion[d]["agentes"]:
+            agentes[a["clave"]] = a
+    vinculos = cruzar(agentes.values(), roster, manuales)
+    vendedor_de = {k: v["vendedor"] for k, v in vinculos.items() if v["vendedor"]}
+    agente_de = {v: k for k, v in vendedor_de.items()}
 
-    vinculos = cruzar(agentes_prod, roster, manuales)
+    acc = {k: {"login": 0, "login_abierta": 0, "dias": 0, "dias_sesion_abierta": 0, "netas": 0, "netas_sesion_abierta": 0,
+               "productos": Counter(), "cargadas": 0, "llamadas": 0, "conversacion": 0, "modos": Counter(), "turnos": Counter()}
+           for k in agentes}
+    sin_agente_p: dict[str, Counter] = defaultdict(Counter)
+    sin_agente_c: Counter = Counter()
+    productos: Counter = Counter()
+    subcanales: Counter = Counter()
+    serie: list[dict[str, Any]] = []
+    total = {"netas": 0, "cargadas": 0, "netas_abiertas": 0, "cargadas_abiertas": 0}
+    for d in cubiertos:
+        dia = d.isoformat()
+        mes = ventas[_mes(d)]
+        netas = [x for x in mes.get("detalle_netas") or [] if fecha_de_venta(x) == dia]
+        cargas = [c for c in (mes.get("productividad") or {}).get("detalle_cargas") or []
+                  if c.get("fecha_alta") == dia and c.get("estado") != ESTADO_RECHAZADA]
+        netas_v: dict[str, Counter] = defaultdict(Counter)
+        for x in netas:
+            prod = x.get("producto") or "Otros"
+            netas_v[x.get("vendedor") or SIN_VENDEDOR][prod] += 1
+            productos[prod] += 1
+            subcanales[x.get("subcanal")] += 1
+        cargadas_v = Counter(c.get("vendedor") or SIN_VENDEDOR for c in cargas)
+        conectados = {a["clave"]: a for a in produccion[d]["agentes"]}
+        horas_dia = abiertas_dia = cargadas_abiertas_dia = 0
+        for k, a in conectados.items():
+            r = acc[k]
+            login = int(a.get("login") or 0)
+            vend = vendedor_de.get(k)
+            n_v = sum(netas_v[vend].values()) if vend in netas_v else 0
+            r["dias"] += 1
+            r["llamadas"] += int(a.get("llamadas") or 0)
+            r["conversacion"] += int(a.get("conversacion") or 0)
+            r["modos"][a.get("modo")] += 1
+            r["turnos"][a.get("turno")] += 1
+            if a.get("dias_sesion_abierta"):  # horas que no son reales: fuera del SPH, con sus netas
+                r["dias_sesion_abierta"] += 1
+                r["login_abierta"] += login
+                r["netas_sesion_abierta"] += n_v
+                abiertas_dia += n_v
+                cargadas_abiertas_dia += cargadas_v.get(vend, 0) if vend else 0
+                continue
+            r["login"] += login
+            horas_dia += login
+            if vend:
+                r["netas"] += n_v
+                r["productos"].update(netas_v.get(vend, {}))
+                r["cargadas"] += cargadas_v.get(vend, 0)
+        # Netas de vendedores sin un agente conectado ese día: cuentan para la operación, no para un asesor.
+        for v, prods in netas_v.items():
+            if agente_de.get(v) not in conectados:
+                sin_agente_p[v].update(prods)
+        for v, c in cargadas_v.items():
+            if agente_de.get(v) not in conectados:
+                sin_agente_c[v] += c
+        total["netas"] += len(netas)
+        total["cargadas"] += len(cargas)
+        total["netas_abiertas"] += abiertas_dia
+        total["cargadas_abiertas"] += cargadas_abiertas_dia
+        serie.append({"fecha": dia, "netas": len(netas), "netas_operacion": len(netas) - abiertas_dia, "horas": horas_dia,
+                      "sph": _sph(len(netas) - abiertas_dia, horas_dia), "cargadas": len(cargas),
+                      "agentes": len(conectados)})
+
     filas: list[dict[str, Any]] = []
-    for a in agentes_prod:
-        vin = vinculos[a["clave"]]
+    for k, a in agentes.items():
+        vin, r = vinculos[k], acc[k]
         vend = vin["vendedor"]
-        login = int(a.get("login") or 0)
-        abierta = bool(a.get("dias_sesion_abierta"))
-        valido = not abierta and login > 0
-        prods = productos_v.get(vend, Counter()) if vend else Counter()
-        netas_a = sum(prods.values()) if vend else None
-        cargadas_a = cargadas_v.get(vend, 0) if vend else None
         filas.append({
-            "clave": a["clave"], "nombre": a.get("nombre") or a["clave"],
+            "clave": k, "nombre": a.get("nombre") or k,
             "vendedor": vend, "subcanal": subcanal.get(vend) if vend else None,
             "nivel": vin["nivel"], "candidatos": vin["candidatos"],
-            "login": login, "sesion_abierta": abierta,
-            "llamadas": int(a.get("llamadas") or 0), "conversacion": int(a.get("conversacion") or 0),
-            "modo": a.get("modo"), "turno": a.get("turno"),
-            "netas": netas_a, "productos": dict(prods), "cargadas": cargadas_a,
-            "sph": _sph(netas_a, login) if vend and valido else None,
-            "sph_cargadas": _sph(cargadas_a, login) if vend and valido else None,
-            "en_ranking": bool(vend) and valido and login >= min_horas_ranking * 3600,
+            "login": r["login"], "login_abierta": r["login_abierta"],
+            "dias": r["dias"], "dias_sesion_abierta": r["dias_sesion_abierta"],
+            "sesion_abierta": r["dias_sesion_abierta"] > 0,
+            "llamadas": r["llamadas"], "conversacion": r["conversacion"],
+            "modo": r["modos"].most_common(1)[0][0], "turno": r["turnos"].most_common(1)[0][0],
+            "netas": r["netas"] if vend else None, "netas_sesion_abierta": r["netas_sesion_abierta"] if vend else 0,
+            "productos": dict(r["productos"]), "cargadas": r["cargadas"] if vend else None,
+            "sph": _sph(r["netas"], r["login"]) if vend and r["login"] else None,
+            "sph_cargadas": _sph(r["cargadas"], r["login"]) if vend and r["login"] else None,
+            "en_ranking": bool(vend) and r["login"] >= min_horas_ranking * 3600,
         })
     filas.sort(key=lambda f: (f["sph"] is None, -(f["sph"] or 0), -(f["netas"] or 0), f["nombre"]))
 
-    vinculados = {f["vendedor"] for f in filas if f["vendedor"]}
-    validos = [f for f in filas if not f["sesion_abierta"] and f["login"] > 0]
+    validos = [f for f in filas if f["login"] > 0]
     vinc_validos = [f for f in validos if f["vendedor"]]
     horas = sum(f["login"] for f in validos)
-    netas_abiertas = sum(f["netas"] or 0 for f in filas if f["sesion_abierta"] and f["vendedor"])
-    netas_op = len(netas) - netas_abiertas
+    netas_op = total["netas"] - total["netas_abiertas"]
     netas_vinc = sum(f["netas"] or 0 for f in vinc_validos)
     horas_vinc = sum(f["login"] for f in vinc_validos)
 
     sin_agente = []
-    for v in sorted(set(productos_v) | set(cargadas_v)):
+    for v in sorted(set(sin_agente_p) | set(sin_agente_c)):
         # Las cargas sin POS quedan "CARGADO POR <legajo>": no son un vendedor para vincular.
-        if v in vinculados or (not productos_v.get(v) and v.startswith("CARGADO POR")):
+        if not sin_agente_p.get(v) and v.startswith("CARGADO POR"):
             continue
-        sin_agente.append({"vendedor": v, "subcanal": subcanal.get(v), "netas": sum(productos_v[v].values()),
-                           "cargadas": cargadas_v.get(v, 0)})
+        sin_agente.append({"vendedor": v, "subcanal": subcanal.get(v), "netas": sum(sin_agente_p[v].values()),
+                           "cargadas": sin_agente_c.get(v, 0)})
     sin_agente.sort(key=lambda x: (-x["netas"], -x["cargadas"], x["vendedor"]))
 
-    por_subcanal = [{"subcanal": s or "—", "netas": n}
-                    for s, n in Counter(x.get("subcanal") for x in netas).most_common()]
     niveles = Counter(f["nivel"] for f in filas)
     kpis = {
         "sph": _sph(netas_op, horas),
-        "netas": len(netas),
+        "netas": total["netas"],
         "netas_operacion": netas_op,
-        "netas_sesion_abierta": netas_abiertas,
+        "netas_sesion_abierta": total["netas_abiertas"],
         "netas_vinculadas": netas_vinc,
         "netas_sin_agente": sum(x["netas"] for x in sin_agente),
         "horas": horas,
         "horas_vinculadas": horas_vinc,
         "sph_vinculados": _sph(netas_vinc, horas_vinc),
-        "cargadas": len(cargas),
-        "sph_cargadas": _sph(len(cargas) - sum(f["cargadas"] or 0 for f in filas if f["sesion_abierta"] and f["vendedor"]), horas),
-        "pct_activadas": _pct(len(netas), len(cargas)),
+        "cargadas": total["cargadas"],
+        "sph_cargadas": _sph(total["cargadas"] - total["cargadas_abiertas"], horas),
+        "pct_activadas": _pct(total["netas"], total["cargadas"]),
         "agentes": len(filas),
         "agentes_validos": len(validos),
-        "sesiones_abiertas": sum(1 for f in filas if f["sesion_abierta"]),
+        "agentes_por_dia": round(sum(x["agentes"] for x in serie) / len(serie), 1),
+        "sesiones_abiertas": sum(f["dias_sesion_abierta"] for f in filas),
         "vinculados": sum(niveles[n] for n in VINCULADOS),
         "niveles": dict(niveles),
         "en_ranking": sum(1 for f in filas if f["en_ranking"]),
         "pct_cobertura": _pct(netas_vinc, netas_op),
         "pct_cobertura_horas": _pct(horas_vinc, horas),
-        "productos": dict(Counter(x.get("producto") or "Otros" for x in netas).most_common()),
+        "productos": dict(productos.most_common()),
         "netas_sin_fecha_mes": sin_fecha,
+        "dias": (hasta - desde).days + 1,
+        "dias_cubiertos": len(cubiertos),
     }
 
+    un_dia = desde == hasta
+    ultimo = cubiertos[-1]
+    corte = cortes.get(_mes(ultimo))
+    dias_despues = (date.fromisoformat(corte) - ultimo).days if corte else None
     avisos: list[str] = []
-    corte = (fuentes.get("ventas") or {}).get("fecha_dato")
-    dias_despues = (date.fromisoformat(corte) - fecha).days if corte else None
     if dias_despues is not None and dias_despues < DIAS_MADURACION and kpis["cargadas"]:
-        avisos.append(
-            f"El corte de ventas es de {dias_despues} día(s) después: de {kpis['cargadas']} ventas cargadas ese día ya "
-            f"son netas {kpis['netas']} ({kpis['pct_activadas'] or 0:.0f}%). Las netas de un día se siguen activando hasta "
-            "dos semanas después: recalculá el SPH con un corte de ventas posterior para completarlo."
-        )
-    for nombre, f in (("Productividad", fuentes.get("productividad")), ("Ventas Netas", fuentes.get("ventas"))):
-        if f and f.get("status") != "published":
-            avisos.append(f"Se calculó con el borrador de {nombre} (no está publicado).")
+        if un_dia:
+            cuando = "es del mismo día" if dias_despues == 0 else f"es de {dias_despues} día(s) después"
+            avisos.append(
+                f"El corte de ventas {cuando}: de {kpis['cargadas']} ventas cargadas ese día ya "
+                f"son netas {kpis['netas']} ({kpis['pct_activadas'] or 0:.0f}%). Las netas de un día se siguen activando hasta "
+                "dos semanas después: recalculá el SPH con un corte de ventas posterior para completarlo."
+            )
+        else:
+            cuando = "el mismo último día que cuenta" if dias_despues == 0 else f"{dias_despues} día(s) después del último día que cuenta"
+            avisos.append(
+                f"El corte de ventas es del {_corto(date.fromisoformat(corte))}, {cuando}: "
+                f"de {kpis['cargadas']} ventas cargadas en el período ya son netas {kpis['netas']} "
+                f"({kpis['pct_activadas'] or 0:.0f}%). Los últimos días todavía suman netas: recalculalo con un corte posterior."
+            )
+    sin_horas = [date.fromisoformat(c["fecha"]) for c in cobertura if not c["horas"]]
+    sin_ventas = [date.fromisoformat(c["fecha"]) for c in cobertura if c["horas"] and not c["ventas"]]
+    if not un_dia and sin_horas:
+        avisos.append(f"Sin informe de Productividad (no suman horas ni netas): {_lista_fechas(sin_horas)}.")
+    if not un_dia and sin_ventas:
+        avisos.append(f"Con horas pero sin ventas al corte (quedan fuera hasta un corte de ventas posterior): {_lista_fechas(sin_ventas)}.")
+    prod_borrador = [date.fromisoformat(f["fecha"]) for f in _lista(fuentes.get("productividad"))
+                     if f.get("status") != "published" and f.get("fecha")]
+    ventas_borrador = [nombre_mes(f.get("periodo") or "") for f in _lista(fuentes.get("ventas")) if f.get("status") != "published"]
+    if un_dia:
+        avisos += [f"Se calculó con el borrador de {nombre} (no está publicado)."
+                   for nombre, hay in (("Productividad", prod_borrador), ("Ventas Netas", ventas_borrador)) if hay]
+    elif prod_borrador or ventas_borrador:
+        partes = ([f"Productividad de {'los días' if len(prod_borrador) > 1 else 'el'} {_lista_fechas(sorted(prod_borrador))}"] if prod_borrador else [])
+        partes += [f"Ventas Netas de {' y '.join(ventas_borrador)}"] if ventas_borrador else []
+        avisos.append(f"Se calculó con borradores (no publicados): {'; '.join(partes)}.")
     if kpis["sesiones_abiertas"]:
+        quienes = "agente(s)" if un_dia else "jornada(s) de agentes"
         avisos.append(
-            f"{kpis['sesiones_abiertas']} agente(s) con sesión abierta: sus horas no son reales y quedan fuera del SPH"
-            + (f", junto con sus {netas_abiertas} neta(s)." if netas_abiertas else ".")
+            f"{kpis['sesiones_abiertas']} {quienes} con sesión abierta: sus horas no son reales y quedan fuera del SPH"
+            + (f", junto con sus {kpis['netas_sesion_abierta']} neta(s)." if kpis["netas_sesion_abierta"] else ".")
         )
     if kpis["netas_sin_agente"]:
         avisos.append(
-            f"{kpis['netas_sin_agente']} neta(s) del día son de vendedores que no se vincularon con un agente conectado: "
-            "cuentan en el SPH de la operación, no en el de los asesores. Si es un nombre distinto, vinculalo a mano."
+            f"{kpis['netas_sin_agente']} neta(s) {'del día' if un_dia else 'del período'} son de vendedores que no se vincularon "
+            "con un agente conectado: cuentan en el SPH de la operación, no en el de los asesores. Si es un nombre distinto, "
+            "vinculalo a mano."
         )
     if sin_fecha:
         avisos.append(f"{sin_fecha} neta(s) del mes no traen fecha de venta ni de carga: no se pueden ubicar en un día.")
 
     return {
         "version": VERSION_SPH,
-        "fecha": dia,
+        "desde": desde.isoformat(),
+        "hasta": hasta.isoformat(),
+        "fecha": desde.isoformat(),
+        "tipo": tipo_periodo(desde, hasta),
         "fuentes": {**fuentes, "dias_despues": dias_despues},
         "parametros": {"min_horas_ranking": min_horas_ranking, "dias_maduracion": DIAS_MADURACION},
         "kpis": kpis,
+        "serie": serie,
+        "cobertura": cobertura,
         "agentes": filas,
         "ventas_sin_agente": sin_agente,
-        "por_subcanal": por_subcanal,
+        "por_subcanal": [{"subcanal": sc or "—", "netas": n} for sc, n in subcanales.most_common()],
         "vendedores": sorted(({"vendedor": v, "subcanal": subcanal.get(v), "netas_mes": netas_mes_v.get(v, 0)}
                               for v in roster), key=lambda x: x["vendedor"]),
         "avisos": avisos,
     }
 
 
+def calcular(fecha: date, prod: dict[str, Any], ventas: dict[str, Any], fuentes: dict[str, Any],
+             manuales: dict[str, str | None] | None = None,
+             min_horas_ranking: float = MIN_HORAS_RANKING) -> dict[str, Any]:
+    """SPH de un día: el informe de Productividad del día y el de Ventas Netas de su mes."""
+    if not prod.get("agentes"):
+        raise DatosIncompletos("El informe de Productividad del día no tiene agentes conectados.")
+    venta = {**(fuentes.get("ventas") or {})}
+    venta.setdefault("periodo", _mes(fecha))
+    f = {"productividad": _lista(fuentes.get("productividad")), "ventas": [venta]}
+    return calcular_periodo(fecha, fecha, {fecha: prod}, {venta["periodo"]: ventas}, f, manuales, min_horas_ranking)
+
+
 def resumen_lista(data: dict[str, Any]) -> dict[str, Any]:
     """Columnas desnormalizadas del informe (para listar sin abrir el JSON)."""
     k = data["kpis"]
     return {"sph": k["sph"], "netas": k["netas"], "horas": round(k["horas"] / 3600, 2), "agentes": k["agentes"],
-            "vinculados": k["vinculados"], "pct_cobertura": k["pct_cobertura"], "pct_activadas": k["pct_activadas"]}
+            "vinculados": k["vinculados"], "pct_cobertura": k["pct_cobertura"], "pct_activadas": k["pct_activadas"],
+            "dias": k.get("dias_cubiertos", 1)}

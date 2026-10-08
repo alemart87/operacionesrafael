@@ -77,8 +77,10 @@ function Tarjeta({ m, u, gestion }: { m: Submodulo; u: OperativaInfo["utilidades
         <h3 className={`font-display text-3xl uppercase leading-none ${habilitada ? "text-brand-ink group-hover:text-brand-primary transition-colors" : "text-brand-mist"}`}>
           {m.label}
         </h3>
-        {u.solo_superadmin ? (
+        {u.solo_perfiles && !u.solo_perfiles.length ? (
           <span className="badge-primary whitespace-nowrap">Solo superadmin</span>
+        ) : u.solo_perfiles && habilitada ? (
+          <span className="badge-purple whitespace-nowrap">Acceso restringido</span>
         ) : habilitada ? (
           <span className="badge-success whitespace-nowrap">{gestion ? "Ver y gestionar" : m.acceso ?? "Ver informes"}</span>
         ) : (

@@ -89,6 +89,9 @@ h3,
   .badge-neutral {
     @apply badge bg-brand-bg text-brand-slate;
   }
+  .badge-purple {
+    @apply badge bg-brand-purple/10 text-brand-purple;
+  }
 
   .nav-link {
     @apply px-3 py-2 rounded-md text-sm font-semibold tracking-wide transition-colors;

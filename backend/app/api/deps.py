@@ -2,8 +2,8 @@
 
 Modelo de acceso:
 - El superadmin vive en `.env` (nunca en DB) y tiene TODOS los permisos.
-- Cada usuario tiene un PERFIL (coordinador, supervisor, analista, cliente) y
-  una lista de OPERATIVAS asignadas.
+- Cada usuario tiene un PERFIL (sub gerente, controller, coordinador, supervisor,
+  analista, cliente) y una lista de OPERATIVAS asignadas.
 - Los permisos del perfil los define el superadmin (tabla `profiles`).
 - Permiso efectivo = el perfil lo tiene Y la operativa está asignada al usuario
   Y el perfil tiene el acceso `<operativa>.ver`.
@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
 from ..core.database import get_db
-from ..core.operativas import ALL_PERMISSIONS, ASSIGNABLE_PERMISSIONS, OPERATIVA_SLUGS, OPERATIVAS, UTILIDAD_VER
+from ..core.operativas import ALL_PERMISSIONS, OPERATIVA_SLUGS, OPERATIVAS, UTILIDAD_VER, asignables
 from ..core.security import decode_token
 from ..models.profile import Profile
 from ..models.user import User
@@ -32,11 +32,12 @@ from ..services.audit_service import record_action
 bearer = HTTPBearer(auto_error=False)
 
 
-def effective_permissions(role_perms: list[str] | None, operativas: list[str] | None) -> set[str]:
+def effective_permissions(role_perms: list[str] | None, operativas: list[str] | None, role: str | None = None) -> set[str]:
     """Permisos del perfil acotados a las operativas asignadas y con acceso `ver`.
-    Los permisos exclusivos del superadmin se descartan aunque figuren en la DB."""
+    Los restringidos que el perfil no puede tener se descartan aunque figuren en la DB."""
     assigned = set(operativas or [])
-    perms = {p for p in (role_perms or []) if p in ASSIGNABLE_PERMISSIONS and p.split(".", 1)[0] in assigned}
+    validos = asignables(role)
+    perms = {p for p in (role_perms or []) if p in validos and p.split(".", 1)[0] in assigned}
     with_access = {p.split(".", 1)[0] for p in perms if p.endswith(f".{UTILIDAD_VER}")}
     return {p for p in perms if p.split(".", 1)[0] in with_access}
 
@@ -172,7 +173,7 @@ async def get_current_user(
         full_name=user.full_name,
         photo_url=user.photo_url,
         operativas=list(user.operativas or []),
-        permissions=effective_permissions(role_perms, user.operativas),
+        permissions=effective_permissions(role_perms, user.operativas, user.role),
         session_id=sesion.id,
         acceso_hasta=h["hasta"],
     )

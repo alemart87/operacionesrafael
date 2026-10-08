@@ -24,11 +24,12 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
+from ..core.perfiles import PERFILES
 from ..core.security import verify_password
 from ..models.seguridad import SecuritySettings
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-PERFILES_CON_HORARIO = ["coordinador", "supervisor", "analista", "cliente"]
+PERFILES_CON_HORARIO = [p["slug"] for p in PERFILES]
 MODOS_HORARIO = ["desactivado", "registrar", "bloquear"]
 
 

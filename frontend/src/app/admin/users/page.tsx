@@ -36,6 +36,8 @@ interface OperativaDef {
 const EMPTY_FORM = { email: "", password: "", full_name: "", role: "analista", operativas: [] as string[] };
 
 const ROLE_BADGE: Record<string, string> = {
+  sub_gerente: "badge-purple",
+  controller: "badge-orange",
   coordinador: "badge-primary",
   supervisor: "badge-cyan",
   analista: "badge-success",

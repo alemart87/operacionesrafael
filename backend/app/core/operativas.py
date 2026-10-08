@@ -4,9 +4,10 @@ Cada operativa declara sus utilidades. Cada utilidad es un permiso con la forma
 `<slug_operativa>.<utilidad>`, por ejemplo `televentas_claro.ventas_netas`.
 
 - La utilidad `ver` es el acceso a la operativa: sin ella, las demás no aplican.
-- Una utilidad con `solo_superadmin: True` es exclusiva del superadmin: no se
-  puede asignar a ningún perfil (ni desde la matriz ni por API). Para delegarla
-  más adelante alcanza con quitar esa marca.
+- Una utilidad con `solo_perfiles: [...]` es RESTRINGIDA: además del superadmin,
+  solo la pueden tener los perfiles listados (ni la matriz ni la API dejan
+  asignarla a otro, y aunque figure en la base no se hace efectiva). Con la lista
+  vacía es exclusiva del superadmin.
 - El superadmin asigna utilidades a cada perfil en /admin/perfiles.
 - A cada usuario se le asignan las operativas en las que trabaja.
 
@@ -53,12 +54,12 @@ OPERATIVAS: list[dict] = [
             {
                 "key": "sph",
                 "name": "SPH · Ver informes",
-                "description": "Ver los informes publicados de SPH estimado (ventas netas por hora conectada): el de la operación y el de cada asesor, con qué tan seguro es el cruce de nombres.",
+                "description": "Ver los informes publicados de SPH estimado (ventas netas por hora conectada) por día, semana, mes o rango: el de la operación y el de cada asesor, con qué tan seguro es el cruce de nombres.",
             },
             {
                 "key": "sph_gestion",
                 "name": "SPH · Gestión",
-                "description": "Calcular el SPH de un día cruzando Productividad con Ventas Netas, vincular agentes con vendedores a mano, publicar (uno por día), reemplazar, recalcular y eliminar.",
+                "description": "Calcular el SPH de un día, una semana, un mes o un rango cruzando Productividad con Ventas Netas, vincular agentes con vendedores a mano, publicar (uno por período), reemplazar, recalcular y eliminar.",
             },
             {
                 "key": "auditoria",
@@ -69,7 +70,7 @@ OPERATIVAS: list[dict] = [
                 "key": "facturacion",
                 "name": "Facturación",
                 "description": "Liquidaciones de comisiones de Claro: reportes, comparativos, simuladores (móvil y GPON), criterios y agente IA.",
-                "solo_superadmin": True,
+                "solo_perfiles": ["sub_gerente"],
             },
         ],
     },
@@ -83,13 +84,28 @@ ALL_PERMISSIONS: set[str] = {
 }
 
 
-# Permisos exclusivos del superadmin (no asignables a perfiles).
-SUPERADMIN_ONLY_PERMISSIONS: set[str] = {
-    f"{o['slug']}.{u['key']}" for o in OPERATIVAS for u in o["utilidades"] if u.get("solo_superadmin")
+# Utilidades restringidas: permiso → perfiles que la pueden tener (vacío = solo el superadmin).
+RESTRINGIDAS: dict[str, frozenset[str]] = {
+    f"{o['slug']}.{u['key']}": frozenset(u["solo_perfiles"])
+    for o in OPERATIVAS for u in o["utilidades"] if "solo_perfiles" in u
 }
 
-# Permisos que el superadmin puede asignar a los perfiles.
-ASSIGNABLE_PERMISSIONS: set[str] = ALL_PERMISSIONS - SUPERADMIN_ONLY_PERMISSIONS
+# Permisos exclusivos del superadmin (restringidos sin ningún perfil habilitado).
+SUPERADMIN_ONLY_PERMISSIONS: set[str] = {p for p, perfiles in RESTRINGIDAS.items() if not perfiles}
+
+# Permisos sin restricción: los puede tener cualquier perfil.
+ASSIGNABLE_PERMISSIONS: set[str] = ALL_PERMISSIONS - set(RESTRINGIDAS)
+
+
+def asignables(perfil: str | None) -> set[str]:
+    """Permisos que se le pueden dar a ese perfil: los sin restricción y los restringidos que lo incluyen."""
+    return ASSIGNABLE_PERMISSIONS | {p for p, perfiles in RESTRINGIDAS.items() if perfil in perfiles}
+
+
+def utilidad_visible(slug_operativa: str, utilidad: dict, role: str) -> bool:
+    """Una utilidad restringida solo se le muestra al superadmin y a los perfiles habilitados."""
+    perm = f"{slug_operativa}.{utilidad['key']}"
+    return role == "superadmin" or perm not in RESTRINGIDAS or role in RESTRINGIDAS[perm]
 
 
 def get_operativa(slug: str) -> dict | None:
@@ -102,6 +118,6 @@ def filter_operativas(slugs: list[str] | None) -> list[str]:
     return [o["slug"] for o in OPERATIVAS if o["slug"] in wanted]
 
 
-def filter_permissions(perms: list[str] | None) -> list[str]:
-    """Solo permisos asignables a perfiles (existen y no son exclusivos del superadmin)."""
-    return sorted(set(perms or []) & ASSIGNABLE_PERMISSIONS)
+def filter_permissions(perms: list[str] | None, perfil: str | None = None) -> list[str]:
+    """Solo los permisos que existen y se le pueden dar a ese perfil (sin perfil: los sin restricción)."""
+    return sorted(set(perms or []) & asignables(perfil))

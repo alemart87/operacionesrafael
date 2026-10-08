@@ -111,8 +111,8 @@ export function VincularDialog({ objetivo, agentes, vendedores, manual, onCerrar
             </div>
           ) : (
             <p className="mt-2 text-sm text-brand-graphite">
-              <b>{objetivo.tipo === "vendedor" && objetivo.venta.vendedor}</b> tiene {objetivo.tipo === "vendedor" && n(objetivo.venta.netas)} neta(s) ese día.
-              ¿Qué agente conectado es?
+              <b>{objetivo.tipo === "vendedor" && objetivo.venta.vendedor}</b> tiene {objetivo.tipo === "vendedor" && n(objetivo.venta.netas)} neta(s)
+              sin asesor. ¿Qué agente de la plataforma es?
             </p>
           )}
 
@@ -158,7 +158,7 @@ export function VincularDialog({ objetivo, agentes, vendedores, manual, onCerrar
           {accion === "descartar" && <p className="mt-4 text-xs text-brand-slate">El agente queda sin vendedor aunque algún nombre se parezca: no entra en el SPH por asesor.</p>}
           {accion === "automatico" && <p className="mt-4 text-xs text-brand-slate">Se borra el vínculo manual y el sistema vuelve a buscarlo por nombre.</p>}
 
-          <p className="mt-4 text-[11px] text-brand-mist">Se guarda para los próximos cálculos y el SPH de este día se recalcula. Queda en auditoría.</p>
+          <p className="mt-4 text-[11px] text-brand-mist">Se guarda para los próximos cálculos y este SPH se recalcula. Queda en auditoría.</p>
           {error && <div className="mt-3 rounded-md bg-brand-primary-light border border-brand-primary/30 text-brand-primary-dark text-sm p-3">{error}</div>}
           <div className="flex justify-end gap-2 mt-5">
             <button type="button" onClick={onCerrar} disabled={guardando} className="btn-secondary">Cancelar</button>

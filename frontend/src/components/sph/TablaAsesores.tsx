@@ -9,7 +9,7 @@ import { NIVEL, fmtHoras, fmtProductos, vinculado, type AgenteSph } from "./tipo
 
 export type FiltroAsesor = "todos" | "vinculados" | "probable" | "sin_vinculo" | "sesion_abierta";
 type Dir = "asc" | "desc";
-type Clave = "nombre" | "vendedor" | "login" | "netas" | "sph";
+type Clave = "nombre" | "vendedor" | "dias" | "login" | "netas" | "sph";
 
 const FILTROS: { f: FiltroAsesor; label: string; ok: (a: AgenteSph) => boolean }[] = [
   { f: "todos", label: "Todos", ok: () => true },
@@ -27,9 +27,11 @@ function comparar(a: number | string | null, b: number | string | null, dir: Dir
 }
 
 /** Asesores del día: vínculo con su vendedor, horas, netas y SPH; filtros, orden, CSV y corrección del vínculo. */
-export function TablaAsesores({ agentes, filtro, onFiltro, archivo, minHoras, onVincular }: {
+export function TablaAsesores({ agentes, filtro, onFiltro, archivo, minHoras, onVincular, periodo }: {
   agentes: AgenteSph[]; filtro: FiltroAsesor; onFiltro: (f: FiltroAsesor) => void; archivo: string; minHoras: number;
   onVincular?: (a: AgenteSph) => void;
+  /** Semana, mes o rango: muestra los días conectados. */
+  periodo?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [orden, setOrden] = useState<{ k: Clave; dir: Dir }>({ k: "sph", dir: "desc" });
@@ -58,12 +60,13 @@ export function TablaAsesores({ agentes, filtro, onFiltro, archivo, minHoras, on
   };
 
   const exportar = () => descargarCsv(archivo, [
-    "Asesor", "Modo", "Turno", "Sesión abierta", "Vendedor vinculado", "Subcanal", "Vínculo", "Horas conectadas", "Netas",
-    "Productos", "Cargadas", "SPH", "En ranking",
+    "Asesor", "Modo", "Turno", "Días conectado", "Días con sesión abierta", "Vendedor vinculado", "Subcanal", "Vínculo",
+    "Horas que cuentan", "Horas con sesión abierta", "Netas", "Netas con sesión abierta", "Productos", "Cargadas", "SPH", "En ranking",
   ], filas.map((a) => [
-    a.nombre, a.modo ? MODO_LABEL[a.modo] : "", a.turno ? TURNO_LABEL[a.turno] : "", a.sesion_abierta ? "Sí" : "",
-    a.vendedor ?? "", a.subcanal ?? "", NIVEL[a.nivel].label, Math.round((a.login / 3600) * 100) / 100, a.netas,
-    fmtProductos(a.productos), a.cargadas, a.sph, a.en_ranking ? "Sí" : "",
+    a.nombre, a.modo ? MODO_LABEL[a.modo] : "", a.turno ? TURNO_LABEL[a.turno] : "", a.dias, a.dias_sesion_abierta,
+    a.vendedor ?? "", a.subcanal ?? "", NIVEL[a.nivel].label, Math.round((a.login / 3600) * 100) / 100,
+    Math.round((a.login_abierta / 3600) * 100) / 100, a.netas, a.netas_sesion_abierta, fmtProductos(a.productos), a.cargadas,
+    a.sph, a.en_ranking ? "Sí" : "",
   ]));
 
   return (
@@ -98,7 +101,8 @@ export function TablaAsesores({ agentes, filtro, onFiltro, archivo, minHoras, on
               <tr className="text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
                 {th("nombre", "Asesor", { dirInicial: "asc" })}
                 {th("vendedor", "Vendedor vinculado", { dirInicial: "asc", title: "Vendedor del POS en Ventas Netas" })}
-                {th("login", "Horas", { right: true, title: "Tiempo conectado en la plataforma" })}
+                {periodo && th("dias", "Días", { right: true, title: "Días que se conectó en el período" })}
+                {th("login", "Horas", { right: true, title: "Tiempo conectado que cuenta (sin sesiones abiertas)" })}
                 {th("netas", "Netas", { right: true, title: "Netas del día del vendedor vinculado" })}
                 {th("sph", "SPH", { right: true, title: "Netas ÷ horas conectadas" })}
                 {onVincular && <th className="px-3 py-2" />}
@@ -112,8 +116,12 @@ export function TablaAsesores({ agentes, filtro, onFiltro, archivo, minHoras, on
                     <div className="flex flex-wrap gap-1 mt-0.5 text-[10px] text-brand-slate">
                       {a.modo && a.modo !== "sin_llamadas" && <span>{MODO_LABEL[a.modo]}</span>}
                       {a.turno && <span>· {TURNO_LABEL[a.turno].replace("Turno ", "")}</span>}
-                      {a.sesion_abierta && <span className="font-semibold text-brand-primary-dark">· Sesión abierta: fuera del SPH</span>}
-                      {!a.sesion_abierta && vinculado(a.nivel) && !a.en_ranking && <span>· menos de {minHoras} h: fuera del ranking</span>}
+                      {a.sesion_abierta && (
+                        <span className="font-semibold text-brand-primary-dark">
+                          · {periodo ? `Sesión abierta ${a.dias_sesion_abierta} día(s)` : "Sesión abierta"} ({fmtHoras(a.login_abierta)}{a.netas_sesion_abierta ? `, ${a.netas_sesion_abierta} neta(s)` : ""}): no cuenta
+                        </span>
+                      )}
+                      {a.login > 0 && vinculado(a.nivel) && !a.en_ranking && <span>· menos de {minHoras} h: fuera del ranking</span>}
                     </div>
                   </td>
                   <td className="px-3 py-2">
@@ -126,7 +134,8 @@ export function TablaAsesores({ agentes, filtro, onFiltro, archivo, minHoras, on
                       <div className="text-[10px] text-brand-slate mt-0.5">Parecidos: {a.candidatos.slice(0, 2).join(" · ")}</div>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmtHoras(a.login)}</td>
+                  {periodo && <td className="px-3 py-2 text-right tabular-nums">{n(a.dias)}</td>}
+                  <td className="px-3 py-2 text-right tabular-nums">{a.login ? fmtHoras(a.login) : <span className="text-brand-mist">—</span>}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-semibold" title={a.netas ? fmtProductos(a.productos) : undefined}>
                     {a.netas === null ? <span className="text-brand-mist font-normal">—</span> : n(a.netas)}
                   </td>
@@ -146,7 +155,7 @@ export function TablaAsesores({ agentes, filtro, onFiltro, archivo, minHoras, on
         </div>
       )}
       <p className="text-[11px] text-brand-mist mt-3">
-        {n(filas.length)} asesor(es). «—» = sin vendedor vinculado: no se sabe cuántas netas tuvo. Las sesiones abiertas no tienen SPH porque sus horas no son reales.
+        {n(filas.length)} asesor(es). Netas «—» = sin vendedor vinculado: no se sabe cuántas tuvo. Los días con sesión abierta no cuentan (ni horas ni netas) porque sus horas no son reales.
       </p>
     </div>
   );

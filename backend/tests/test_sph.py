@@ -14,7 +14,7 @@ from app.main import app
 from app.operativas.televentas_claro.productividad.analyzer import PARAMETROS_DEFECTO, analizar_dia
 from app.operativas.televentas_claro.productividad.models import ProdInforme
 from app.operativas.televentas_claro.sph.analyzer import (
-    DatosIncompletos, calcular, cruzar, evaluar, partes_agente, tokens,
+    DatosIncompletos, calcular, calcular_periodo, cruzar, evaluar, partes_agente, tipo_periodo, tokens,
 )
 from app.operativas.televentas_claro.ventas_netas.models import VentasNetasReport
 from tests.test_productividad import corte, fila, reporte
@@ -135,7 +135,8 @@ def test_sph_de_la_operacion_y_por_asesor():
     assert a["PEREZ, ANA"]["sph"] == 0.5 and a["PEREZ, ANA"]["productos"] == {"Pospago": 2, "GPON": 1}
     assert a["LOPEZ GIMENEZ, NANCY"]["nivel"] == "probable" and a["LOPEZ GIMENEZ, NANCY"]["sph"] == 0.2
     assert a["RIVEROS, CARLOS"]["netas"] == 0 and a["RIVEROS, CARLOS"]["sph"] == 0.0
-    assert a["SOSA, PEDRO"]["sesion_abierta"] and a["SOSA, PEDRO"]["sph"] is None and a["SOSA, PEDRO"]["netas"] == 1
+    assert a["SOSA, PEDRO"]["sesion_abierta"] and a["SOSA, PEDRO"]["sph"] is None and a["SOSA, PEDRO"]["netas"] == 0
+    assert a["SOSA, PEDRO"]["netas_sesion_abierta"] == 1 and a["SOSA, PEDRO"]["login"] == 0 and a["SOSA, PEDRO"]["login_abierta"] == 18 * H
     assert a["VERA, CARLA"]["sph"] == 1.0 and a["VERA, CARLA"]["en_ranking"] is False
     assert a["BENITEZ, ROSA"]["nivel"] == "sin_cruce" and a["BENITEZ, ROSA"]["netas"] is None
     assert [f["clave"] for f in r["agentes"] if f["en_ranking"]] == [
@@ -146,6 +147,37 @@ def test_sph_de_la_operacion_y_por_asesor():
     assert "SIN VENDEDOR" not in {v["vendedor"] for v in r["vendedores"]}
     # Con un corte de ventas de 3 días después se avisa que las netas siguen activándose.
     assert r["fuentes"]["dias_despues"] == 3 and any("se siguen activando" in x for x in r["avisos"])
+
+
+def test_periodo_suma_dia_por_dia_y_avisa_los_dias_que_no_cuentan():
+    lunes = date(2026, 9, 14)
+    otro = analizar_dia(lunes, [corte(lunes, 18, reporte([fila("PEREZ, ANA", 6 * H, 8000, 200, 120, acw=900)]))],
+                        dict(PARAMETROS_DEFECTO))
+    produccion = {lunes: otro, DIA: productividad(), date(2026, 9, 16): productividad()}
+    fuentes = {"productividad": [], "ventas": [{"id": "v1", "status": "published", "periodo": "2026-09", "fecha_dato": D}]}
+    r = calcular_periodo(lunes, date(2026, 9, 17), produccion, {"2026-09": VENTAS}, fuentes, hasta_datos=date(2026, 9, 17))
+    k = r["kpis"]
+    assert r["tipo"] == "rango" and k["dias"] == 4 and k["dias_cubiertos"] == 2
+    assert [c["fecha"] for c in r["cobertura"] if c["horas"] and c["ventas"]] == ["2026-09-14", D]
+    assert [x["fecha"] for x in r["serie"]] == ["2026-09-14", D] and r["serie"][0]["netas"] == 1
+    # El lunes suma 6 h y 1 neta de Pérez: 11 netas (10 sin la sesión abierta) en 36 h.
+    assert k["netas"] == 11 and k["netas_operacion"] == 10 and k["horas"] == 36 * H and k["sph"] == 0.28
+    a = {f["clave"]: f for f in r["agentes"]}
+    assert a["PEREZ, ANA"]["dias"] == 2 and a["PEREZ, ANA"]["login"] == 12 * H and a["PEREZ, ANA"]["netas"] == 4
+    assert a["PEREZ, ANA"]["sph"] == 0.33 and a["PEREZ, ANA"]["en_ranking"]
+    assert not a["LOPEZ GIMENEZ, NANCY"]["en_ranking"]  # en un período el ranking pide una jornada (6 h)
+    assert any("Sin informe de Productividad" in x and "17/09" in x for x in r["avisos"])
+    assert any("sin ventas al corte" in x and "16/09" in x for x in r["avisos"])
+    with pytest.raises(DatosIncompletos):  # ningún día con horas y ventas
+        calcular_periodo(date(2026, 9, 16), date(2026, 9, 17), produccion, {"2026-09": VENTAS}, fuentes)
+
+
+def test_tipos_de_periodo():
+    assert tipo_periodo(DIA, DIA) == "dia"
+    assert tipo_periodo(date(2026, 9, 14), date(2026, 9, 20)) == "semana"   # lunes a domingo
+    assert tipo_periodo(date(2026, 9, 1), date(2026, 9, 30)) == "mes"
+    assert tipo_periodo(date(2026, 2, 1), date(2026, 2, 28)) == "mes"
+    assert tipo_periodo(date(2026, 9, 15), date(2026, 9, 21)) == "rango"
 
 
 def test_sph_sin_fechas_de_venta_no_se_calcula():
@@ -218,7 +250,8 @@ async def test_flujo_calcular_vincular_y_publicar():
         await _corte_ventas(vid, date(2026, 9, 18))
 
         f = (await ac.get(f"{BASE}/fuentes", headers=analista, params=cuerpo)).json()
-        assert f["puede_calcular"] and f["ventas"]["fecha_dato"] == "2026-09-18" and f["sph"] == {}
+        assert f["puede_calcular"] and f["ventas"][0]["fecha_dato"] == "2026-09-18" and f["sph"] == {}
+        assert f["tipo"] == "dia" and f["dias_cubiertos"] == 1 and f["cobertura"] == [{"fecha": D, "productividad": "published", "horas": True, "ventas": True}]
         assert (await ac.get(f"{BASE}/fuentes", headers=supervisor, params=cuerpo)).status_code == 403
         dias = (await ac.get(f"{BASE}/dias", headers=analista)).json()
         assert dias["dias"][0]["fecha"] == D and dias["dias"][0]["cubre"] and dias["sugerida"] == D
@@ -245,6 +278,8 @@ async def test_flujo_calcular_vincular_y_publicar():
         assert r.status_code == 409 and "Benitez" in r.json()["detail"]
         assert (await ac.put(f"{BASE}/vinculos", headers=analista, json={
             "clave": "PEREZ, ANA", "nombre": "Perez, Ana", "accion": "vincular"})).status_code == 400
+        assert (await ac.put(f"{BASE}/vinculos", headers=analista, json={
+            "clave": "PEREZ, ANA", "nombre": "Perez, Ana", "accion": "vincular", "vendedor": "SIN VENDEDOR"})).status_code == 400
         assert (await ac.put(f"{BASE}/vinculos", headers=analista, json={
             "clave": "LOPEZ GIMENEZ, NANCY", "nombre": "Lopez Gimenez, Nancy", "accion": "descartar"})).status_code == 200
 
@@ -288,10 +323,27 @@ async def test_flujo_calcular_vincular_y_publicar():
         assert [(x["clave"], x["vendedor"], x["updated_by"]) for x in v] == [("LOPEZ GIMENEZ, NANCY", None, "Usuario analista")]
         assert (await ac.get(f"{BASE}/vinculos", headers=supervisor)).status_code == 403
 
+        # Semana: es otro período (se publica aparte del día) y suma solo los días que cuentan.
+        semana = {"desde": "2026-09-14", "hasta": "2026-09-20"}
+        assert (await ac.post(f"{BASE}/calcular", headers=analista, json={"desde": "2026-09-20", "hasta": "2026-09-14"})).status_code == 400
+        assert (await ac.post(f"{BASE}/calcular", headers=analista, json={"desde": "2026-07-01", "hasta": "2026-09-30"})).status_code == 400
+        f = (await ac.get(f"{BASE}/fuentes", headers=analista, params=semana)).json()
+        assert f["tipo"] == "semana" and f["dias"] == 7 and f["dias_cubiertos"] == 1 and f["puede_calcular"]
+        r = await ac.post(f"{BASE}/calcular", headers=analista, json=semana)
+        assert r.status_code == 201, r.text
+        sem = r.json()["informe"]
+        assert sem["tipo"] == "semana" and sem["desde"] == "2026-09-14" and sem["hasta"] == "2026-09-20" and sem["dias"] == 1
+        assert (await ac.post(f"{BASE}/informes/{sem['id']}/publicar", headers=analista, json={})).status_code == 200
+        publicados = [x for x in (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"]]
+        assert {(x["tipo"], x["desde"]) for x in publicados} == {("semana", "2026-09-14"), ("dia", D)}
+        det = (await ac.get(f"{BASE}/informes/{sem['id']}", headers=supervisor)).json()
+        assert det["data"]["kpis"]["dias_cubiertos"] == 1 and len(det["data"]["serie"]) == 1
+        assert (await ac.get(f"{BASE}/dias", headers=analista)).json()["dias"][0]["sph"] == {"published": i2, "draft": i3}  # la semana no cuenta como SPH del día
+
         # No se elimina un publicado; despublicar lo vuelve borrador.
         assert (await ac.delete(f"{BASE}/informes/{i2}", headers=analista)).status_code == 400
         assert (await ac.post(f"{BASE}/informes/{i2}/despublicar", headers=analista)).json()["status"] == "draft"
-        assert (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"] == []
+        assert [x["tipo"] for x in (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"]] == ["semana"]
         assert (await ac.delete(f"{BASE}/informes/{i2}", headers=supervisor)).status_code == 403
         assert (await ac.delete(f"{BASE}/informes/{i2}", headers=analista)).status_code == 200
         assert (await ac.get(f"{BASE}/informes/{i2}", headers=analista)).status_code == 404

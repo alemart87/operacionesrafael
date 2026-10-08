@@ -19,6 +19,8 @@ export interface CurrentUserInfo {
 
 export const ROLE_LABELS: Record<string, string> = {
   superadmin: "Superadmin",
+  sub_gerente: "Sub gerente",
+  controller: "Controller",
   coordinador: "Coordinador",
   supervisor: "Supervisor",
   analista: "Analista",

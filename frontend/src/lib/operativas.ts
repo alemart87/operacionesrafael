@@ -15,8 +15,8 @@ export interface Utilidad {
   name: string;
   description: string;
   habilitada: boolean;
-  /** Exclusiva del superadmin: no se asigna a perfiles. */
-  solo_superadmin?: boolean;
+  /** Restringida: además del superadmin, solo la pueden tener estos perfiles (vacío = solo superadmin). */
+  solo_perfiles?: string[];
 }
 
 export interface OperativaInfo {
@@ -121,7 +121,7 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         label: "SPH estimado",
         href: "/televentas-claro/sph",
         descripcion: "Ventas netas por hora conectada: cruza las horas de Productividad con las netas de Ventas Netas, para la operación y por asesor.",
-        contenido: ["SPH de la operación", "Ranking de SPH por asesor", "Cruce de nombres agente ↔ vendedor", "Netas sin asesor", "Vínculos corregidos a mano", "Una publicación por día"],
+        contenido: ["SPH de la operación", "Día, semana, mes o rango", "Ranking de SPH por asesor", "Cruce de nombres agente ↔ vendedor", "Netas sin asesor", "Vínculos corregidos a mano"],
         gestion: "sph_gestion",
         gestionTexto: "Podés calcular, vincular nombres y publicar.",
         nav: [

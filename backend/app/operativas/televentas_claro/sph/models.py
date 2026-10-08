@@ -25,11 +25,15 @@ ESTADO_REEMPLAZADO = "replaced"
 
 
 class SphInforme(Base):
-    """SPH de un día: las horas de Productividad cruzadas con las netas de Ventas Netas."""
+    """SPH de un período (día, semana, mes o rango): las horas de Productividad cruzadas con las netas de Ventas Netas."""
     __tablename__ = "sph_informes"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)  # inicio del período
+    # Fin del período y tipo (dia, semana, mes, rango). Los informes anteriores a los períodos no los tienen: un día.
+    hasta: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    tipo: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, default="dia")
+    dias: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=1)  # días que cuentan
     status: Mapped[str] = mapped_column(String(12), default=ESTADO_BORRADOR, nullable=False, index=True)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     generated_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)

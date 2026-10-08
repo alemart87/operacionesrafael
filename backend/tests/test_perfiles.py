@@ -57,7 +57,7 @@ def _set_perms(client, admin, role, perms):
 def test_perfiles_sembrados_con_defaults(client, admin):
     body = client.get("/api/v1/perfiles", headers=admin).json()
     slugs = [p["slug"] for p in body["perfiles"]]
-    assert slugs == ["coordinador", "supervisor", "analista", "cliente"]
+    assert slugs == ["sub_gerente", "controller", "coordinador", "supervisor", "analista", "cliente"]
     assert body["operativas"][0]["slug"] == TC
     cliente = next(p for p in body["perfiles"] if p["slug"] == "cliente")
     assert cliente["permissions"] == sorted(DEFAULT_PERMISSIONS["cliente"])
@@ -73,7 +73,7 @@ def test_superadmin_ve_todo(client, admin):
 
 
 def test_crear_usuarios_de_cada_perfil(client, admin):
-    for role in ("coordinador", "supervisor", "analista", "cliente"):
+    for role in ("sub_gerente", "controller", "coordinador", "supervisor", "analista", "cliente"):
         _new_user(client, admin, role, [TC])
     r = client.post("/api/v1/users", headers=admin, json={
         "email": "x@voicenter.com.py", "password": "Clave1234!", "full_name": "X", "role": "gerente",

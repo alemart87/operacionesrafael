@@ -1,5 +1,5 @@
 /** Contratos de la API del SPH estimado (Televentas CLARO) y formatos. */
-import type { EstadoInforme, Modo, Turno } from "@/components/productividad/tipos";
+import { fechaCorta, fechaLarga, nombreMes, type EstadoInforme, type Modo, type Turno } from "@/components/productividad/tipos";
 
 export const SPH_API = "/api/v1/televentas-claro/sph";
 export const SPH_HREF = "/televentas-claro/sph";
@@ -8,6 +8,9 @@ export const SPH_HREF = "/televentas-claro/sph";
 export type Nivel = "manual" | "exacto" | "probable" | "ambiguo" | "sin_cruce" | "incompleto" | "descartado";
 export const VINCULADOS: Nivel[] = ["exacto", "manual", "probable"];
 
+/** Período del SPH: un día, una semana (lunes a domingo), un mes o un rango libre. */
+export type TipoPeriodo = "dia" | "semana" | "mes" | "rango";
+
 export interface AgenteSph {
   clave: string;
   nombre: string;
@@ -15,7 +18,12 @@ export interface AgenteSph {
   subcanal: string | null;
   nivel: Nivel;
   candidatos: string[];
+  /** Horas que cuentan (sin sesiones abiertas), en segundos: la base del SPH. */
   login: number;
+  /** Tiempo de los días con sesión abierta (no cuenta). */
+  login_abierta: number;
+  dias: number;
+  dias_sesion_abierta: number;
   sesion_abierta: boolean;
   llamadas: number;
   conversacion: number;
@@ -23,6 +31,8 @@ export interface AgenteSph {
   turno: Turno | null;
   /** null = sin vínculo (no se sabe cuántas vendió). */
   netas: number | null;
+  /** Netas de los días con sesión abierta (no cuentan). */
+  netas_sesion_abierta: number;
   productos: Record<string, number>;
   cargadas: number | null;
   sph: number | null;
@@ -63,14 +73,25 @@ export interface KpisSph {
   pct_cobertura_horas: number | null;
   productos: Record<string, number>;
   netas_sin_fecha_mes: number;
+  dias: number;
+  dias_cubiertos: number;
+  agentes_por_dia: number;
 }
+
+export interface SerieDia { fecha: string; netas: number; netas_operacion: number; horas: number; sph: number | null; cargadas: number; agentes: number }
+export interface CoberturaDia { fecha: string; horas: boolean; ventas: boolean; productividad?: EstadoInforme | null }
 
 export interface DatosSph {
   version: number;
   fecha: string;
-  fuentes: { productividad: FuenteProd; ventas: FuenteVentas; dias_despues: number | null };
+  desde: string;
+  hasta: string;
+  tipo: TipoPeriodo;
+  fuentes: { productividad: FuenteProd[]; ventas: FuenteVentas[]; dias_despues: number | null };
   parametros: { min_horas_ranking: number; dias_maduracion: number };
   kpis: KpisSph;
+  serie: SerieDia[];
+  cobertura: CoberturaDia[];
   agentes: AgenteSph[];
   ventas_sin_agente: VentaSinAgente[];
   por_subcanal: { subcanal: string; netas: number }[];
@@ -81,6 +102,11 @@ export interface DatosSph {
 export interface InformeSphResumen {
   id: string;
   fecha: string;
+  desde: string;
+  hasta: string;
+  tipo: TipoPeriodo;
+  /** Días que cuentan (con horas y ventas al corte). */
+  dias: number;
   status: EstadoInforme;
   generated_at: string | null;
   generated_by: string | null;
@@ -119,9 +145,14 @@ export interface DiaDisponible {
 export interface RespuestaDias { dias: DiaDisponible[]; sugerida: string | null }
 
 export interface RespuestaFuentes {
-  fecha: string;
-  productividad: FuenteProd | null;
-  ventas: FuenteVentas | null;
+  desde: string;
+  hasta: string;
+  tipo: TipoPeriodo;
+  productividad: FuenteProd[];
+  ventas: FuenteVentas[];
+  cobertura: (CoberturaDia & { productividad: EstadoInforme | null })[];
+  dias: number;
+  dias_cubiertos: number;
   puede_calcular: boolean;
   motivo: string | null;
   sph: Partial<Record<EstadoInforme, string>>;
@@ -163,6 +194,45 @@ export const NIVEL: Record<Nivel, { label: string; chip: string; color: string; 
 };
 
 export const vinculado = (nivel: Nivel) => VINCULADOS.includes(nivel);
+
+// ------------------------------------------------------------------ períodos
+export const TIPO_LABEL: Record<TipoPeriodo, string> = { dia: "Día", semana: "Semana", mes: "Mes", rango: "Rango" };
+
+/** "Martes 15/09/2026" · "Semana del 14/09 al 20/09/2026" · "Septiembre 2026" · "Del 15/09 al 21/09/2026". */
+export function etiquetaPeriodo(desde: string, hasta: string, tipo: TipoPeriodo): string {
+  const largo = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+  const corto = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  if (tipo === "dia" || desde === hasta) return fechaLarga(desde).replace(/^./, (c) => c.toUpperCase());
+  if (tipo === "mes") return nombreMes(desde.slice(0, 7));
+  if (tipo === "semana") return `Semana del ${corto(desde)} al ${largo(hasta)}`;
+  return `Del ${corto(desde)} al ${largo(hasta)}`;
+}
+
+/** Período abreviado para chips y tooltips: "mar 15/09", "14/09–20/09", "sep 2026". */
+export function periodoCorto(desde: string, hasta: string, tipo: TipoPeriodo): string {
+  if (tipo === "dia" || desde === hasta) return fechaCorta(desde);
+  if (tipo === "mes") return nombreMes(desde.slice(0, 7));
+  return `${desde.slice(8, 10)}/${desde.slice(5, 7)}–${hasta.slice(8, 10)}/${hasta.slice(5, 7)}`;
+}
+
+/**
+ * Los SPH calculados antes de los períodos (v1) traían las fuentes sueltas y el tiempo de las sesiones
+ * abiertas dentro de `login`: se llevan a la forma actual para mostrarlos igual.
+ */
+export function normalizar(d: DatosSph): DatosSph {
+  if ((d.version ?? 1) >= 2) return d;
+  const lista = <T,>(x: T | T[] | null | undefined): T[] => (Array.isArray(x) ? x : x ? [x] : []);
+  const f = d.fuentes as any;
+  return {
+    ...d,
+    desde: d.fecha, hasta: d.fecha, tipo: "dia", serie: [], cobertura: [],
+    fuentes: { ...f, productividad: lista(f.productividad), ventas: lista(f.ventas) },
+    kpis: { ...d.kpis, dias: 1, dias_cubiertos: 1, agentes_por_dia: d.kpis.agentes },
+    agentes: d.agentes.map((a) => a.sesion_abierta
+      ? { ...a, login_abierta: a.login, login: 0, dias: 1, dias_sesion_abierta: 1, netas_sesion_abierta: a.netas ?? 0, netas: a.vendedor ? 0 : null }
+      : { ...a, login_abierta: 0, dias: 1, dias_sesion_abierta: 0, netas_sesion_abierta: 0 }),
+  };
+}
 
 // ------------------------------------------------------------------ formatos
 /** SPH con dos decimales: "0,31". */

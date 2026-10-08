@@ -76,7 +76,7 @@ export default function TeleventasClaroHub() {
       <AppShell>
         <div className="card p-12 text-center max-w-xl mx-auto">
           <h1 className="font-display text-2xl text-brand-ink uppercase mb-2">Acceso restringido</h1>
-          <p className="text-brand-slate">Facturación de Televentas CLARO es exclusiva del superadmin.</p>
+          <p className="text-brand-slate">Facturación de Televentas CLARO es de acceso restringido: superadmin y Sub gerente.</p>
         </div>
       </AppShell>
     );
@@ -85,7 +85,7 @@ export default function TeleventasClaroHub() {
     <AppShell>
       <div className="mb-8 flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate mb-2">Televentas CLARO · Solo superadmin</div>
+          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate mb-2">Televentas CLARO · Acceso restringido</div>
           <h1 className="font-display text-4xl text-brand-ink uppercase leading-tight">Facturación</h1>
           <p className="text-sm text-brand-slate mt-2 max-w-2xl">
             Liquidación de comisiones: detalle por concepto, drivers operativos y comparativos mensuales.
