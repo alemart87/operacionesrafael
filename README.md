@@ -108,6 +108,8 @@ Utilidades iniciales de Televentas CLARO y permisos sembrados la primera vez
 |---|:-:|:-:|:-:|:-:|
 | Acceso a la operativa | ✓ | ✓ | ✓ | ✓ |
 | Ventas Netas | ✓ | ✓ | ✓ | |
+| Productividad · Ver informes | ✓ | ✓ | ✓ | |
+| Productividad · Gestión | | | ✓ | |
 | Facturación | Solo superadmin | | | |
 
 Las utilidades marcadas `solo_superadmin` en el catálogo (hoy: **Facturación**)
@@ -180,6 +182,48 @@ Publicación (`api.py`):
 Utilidades: `ventas_netas` (ver informes publicados y descargar) y
 `ventas_netas_gestion` (subir, publicar, reemplazar, eliminar); por defecto la
 segunda solo la tiene el Analista.
+
+## Televentas CLARO · Productividad de llamadas
+
+Informe diario de productividad del call center a partir del reporte **Tiempos
+Acumulados** de la plataforma de discado (CSV, una fila por agente con los
+totales acumulados desde las 00:00 hasta la hora del export). Código en
+`backend/app/operativas/televentas_claro/productividad/`.
+
+| Pantalla | Ruta | Qué hace |
+|---|---|---|
+| Informes diarios | `/televentas-claro/productividad` | Un informe por fecha de gestión, metas vigentes, publicar/despublicar |
+| Subir cortes | `…/productividad/subir` | Varios CSV a la vez; fecha y hora de cada corte detectadas del nombre |
+| Informe del día | `…/productividad/informes/{id}` | Resumen gerencial, agentes, por horario, cortes del día |
+| Acumulado | `…/productividad/acumulado` | Semana, mes o rango con los días publicados |
+
+- **Fecha de gestión automática:** sale de la marca de tiempo del nombre
+  (`Tiempos_Acumulados_1791406800981.csv` = 07/10/2026 18:00, hora de Asunción).
+  Si el nombre no la trae, se pide al subir.
+- **Cortes e intradía:** cada archivo es un corte acumulado. Con un corte por día
+  hay informe diario, semanal y mensual; con varios (ideal: uno por hora) la
+  diferencia entre cortes da la curva por horario y separa los turnos (corte cerca
+  del cambio de turno, 13:00 por defecto). Subir otra vez la misma hora reemplaza
+  ese corte. Un acumulado que baja respecto del corte anterior se avisa.
+- **Meta de conversación:** conversación ÷ tiempo conectado, meta 37–47%, rojo
+  debajo de 25% (clic en el semáforo → lista de agentes de esa banda).
+- **Contacto:** llamada con 30 s o más de conversación (parámetro). Se mide con
+  la columna «Short Talk < Ns» del umbral de la regla (el reporte puede traer
+  varias). Si el archivo no la trae (hoy solo «< 10s»), el contacto no se muestra
+  y la pantalla indica qué hace falta.
+- **Discador automático vs. manual:** se detecta por agente (con tiempo de
+  tipificación = automático).
+- **Sesiones abiertas:** 12 h o más conectado = alerta; no entran en la meta ni en
+  la jornada media (sus llamadas sí).
+- **Totales:** siempre sumando tiempos y llamadas; nunca promediando porcentajes.
+- **Publicación:** igual que Ventas Netas, por día: cada corte actualiza el
+  borrador del día; uno publicado por día; reemplazar pide confirmación; un
+  publicado no cambia (recalcular genera un borrador nuevo). Los acumulados usan
+  solo días publicados.
+- **Parámetros** (meta, rojo, contacto, sesión abierta, cambio de turno, ranking):
+  los ve todo el módulo y los cambia solo el superadmin.
+- **Permisos:** `televentas_claro.productividad` (ver publicados y acumulados) y
+  `televentas_claro.productividad_gestion` (subir, borradores, publicar, recalcular, eliminar).
 
 ## Televentas CLARO · Auditoría de Ventas
 
