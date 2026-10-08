@@ -25,7 +25,7 @@ OPERATIVAS: list[dict] = [
     {
         "slug": "televentas_claro",
         "name": "Televentas CLARO",
-        "description": "Operativa de televentas para Claro: ventas netas, productividad de llamadas, auditoría, facturación e indicadores.",
+        "description": "Operativa de televentas para Claro: ventas netas, productividad de llamadas, SPH estimado, auditoría, facturación e indicadores.",
         "color": "#E6332A",
         "available": True,
         "utilidades": [
@@ -49,6 +49,16 @@ OPERATIVAS: list[dict] = [
                 "key": "productividad_gestion",
                 "name": "Productividad · Gestión",
                 "description": "Subir los cortes del reporte de tiempos de la plataforma, ver borradores, publicar (uno por día), reemplazar, recalcular y eliminar.",
+            },
+            {
+                "key": "sph",
+                "name": "SPH · Ver informes",
+                "description": "Ver los informes publicados de SPH estimado (ventas netas por hora conectada): el de la operación y el de cada asesor, con qué tan seguro es el cruce de nombres.",
+            },
+            {
+                "key": "sph_gestion",
+                "name": "SPH · Gestión",
+                "description": "Calcular el SPH de un día cruzando Productividad con Ventas Netas, vincular agentes con vendedores a mano, publicar (uno por día), reemplazar, recalcular y eliminar.",
             },
             {
                 "key": "auditoria",

@@ -2,9 +2,13 @@
 
 import { CheckCircle2, Clock, FileSpreadsheet, Loader2, RefreshCw, UploadCloud, X, XCircle } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { PROD_API, PROD_HREF, fechaLarga, n, type Corte, type InformeResumen } from "@/components/productividad/tipos";
+import { Procesando } from "@/components/Procesando";
+import {
+  PROD_API, PROD_HREF, fechaCorta, fechaLarga, n, type Corte, type InformeResumen, type RespuestaParametros,
+} from "@/components/productividad/tipos";
 import { ApiError, apiFetch } from "@/lib/api";
 
 const ZONA = "America/Asuncion";
@@ -43,11 +47,23 @@ export default function SubirCortesPage() {
   );
 }
 
+type Resultado = NonNullable<Item["resultado"]>;
+
 function Subir() {
+  const router = useRouter();
   const [items, setItems] = useState<Item[]>([]);
   const [arrastrando, setArrastrando] = useState(false);
   const [subiendo, setSubiendo] = useState(false);
+  const [proceso, setProceso] = useState<{ actual: number; total: number; fecha: string; hora: string } | null>(null);
+  const [abriendo, setAbriendo] = useState<string | null>(null); // fecha del informe que se está abriendo
+  const [regla, setRegla] = useState(30);
   const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    apiFetch<RespuestaParametros>(`${PROD_API}/parametros`)
+      .then((r) => setRegla(r.parametros.contacto_desde_seg))
+      .catch(() => undefined); // sin permiso de ver: queda la regla por defecto
+  }, []);
 
   const agregar = (files: FileList | File[]) => {
     const nuevos = Array.from(files)
@@ -73,19 +89,41 @@ function Subir() {
   const faltaFecha = pendientes.some((i) => !i.detectada && !i.manual);
 
   const subir = async () => {
+    const lote = pendientes;
+    const resultados: Resultado[] = [];
+    let errores = 0;
     setSubiendo(true);
-    for (const it of pendientes) { // en orden cronológico: cada corte rehace el borrador de su día
+    for (const [i, it] of lote.entries()) { // en orden cronológico: cada corte rehace el borrador de su día
+      setProceso({
+        actual: i + 1, total: lote.length,
+        fecha: it.detectada?.fecha ?? it.manual.slice(0, 10), hora: it.detectada?.hora ?? it.manual.slice(11, 16),
+      });
       actualizar(it.id, { estado: "subiendo", error: undefined });
       const form = new FormData();
       form.append("file", it.file);
       if (!it.detectada && it.manual) form.append("fecha_hora", it.manual);
       try {
-        const r = await apiFetch<Item["resultado"]>(`${PROD_API}/cortes`, { method: "POST", body: form });
+        const r = await apiFetch<Resultado>(`${PROD_API}/cortes`, { method: "POST", body: form });
         actualizar(it.id, { estado: "ok", resultado: r });
+        resultados.push(r);
       } catch (e: any) {
+        errores += 1;
         actualizar(it.id, { estado: "error", error: e instanceof ApiError ? e.message : "No se pudo subir el archivo" });
       }
     }
+    // Todo bien: abrir el informe del día más reciente. Con errores, quedarse para verlos y reintentar.
+    const porDia = new Map<string, Resultado>();
+    for (const r of resultados) if (r.informe) porDia.set(r.corte.fecha, r);
+    const dias = [...porDia.keys()].sort();
+    const ultimo = dias.length ? porDia.get(dias[dias.length - 1]) : undefined;
+    if (!errores && ultimo?.informe) {
+      setAbriendo(ultimo.corte.fecha);
+      const q = new URLSearchParams({ procesados: String(resultados.length) });
+      if (dias.length > 1) q.set("otros", dias.slice(0, -1).join(","));
+      router.push(`${PROD_HREF}/informes/${ultimo.informe.id}?${q}`);
+      return; // la pantalla de espera queda hasta que abre el informe
+    }
+    setProceso(null);
     setSubiendo(false);
   };
 
@@ -169,17 +207,12 @@ function Subir() {
                   {faltaFecha ? "Completá la fecha y hora de los archivos que no la traen en el nombre." : `${n(pendientes.length)} por subir.`}
                 </span>
                 <button type="button" onClick={subir} disabled={subiendo || !pendientes.length || faltaFecha} className="btn-primary">
-                  {subiendo ? <><Loader2 size={16} className="animate-spin" /> Subiendo…</> : pendientes.some((i) => i.estado === "error") ? <><RefreshCw size={16} /> Reintentar</> : <><UploadCloud size={16} /> Subir {n(pendientes.length)} archivo(s)</>}
+                  {subiendo ? <><Loader2 size={16} className="animate-spin" /> Procesando…</> : pendientes.some((i) => i.estado === "error") ? <><RefreshCw size={16} /> Reintentar</> : <><UploadCloud size={16} /> Procesar {n(pendientes.length)} archivo(s)</>}
                 </button>
               </div>
             </section>
           )}
 
-          {subiendo && (
-            <div className="rounded-md border border-brand-cyan/30 bg-brand-cyan/5 px-4 py-3 text-sm text-brand-graphite flex items-center gap-2">
-              <Loader2 size={16} className="animate-spin text-brand-cyan" /> Subiendo los cortes en orden. No cierres ni recargues esta página hasta que termine.
-            </div>
-          )}
           {!subiendo && dias.size > 0 && (
             <section className="card p-5">
               <h2 className="font-display text-lg uppercase text-brand-ink">Borradores actualizados</h2>
@@ -214,11 +247,22 @@ function Subir() {
             <p className="text-xs text-brand-slate mt-0.5">Un corte cerca del cambio de turno (13:00) y otro al cierre: así se separa el turno mañana del tarde.</p>
           </div>
           <div className="rounded-md bg-brand-orange/10 border border-brand-orange/30 p-3 text-xs">
-            <b>Contacto desde 20 s.</b> Si la plataforma permite configurar la columna «Short Talk», pedila en <b>20 s</b> («Short Talk &lt; 20s»): el sistema la reconoce sola y el contacto queda exacto. Con 10 s se informa como provisorio.
+            <b>Contacto desde {regla} s.</b> Pedí a la plataforma la columna «Short Talk &lt; {regla}s» (y, si se puede, «Short Talk &lt; 20s»): el sistema
+            las reconoce solas. Si el archivo trae solo «Short Talk &lt; 10s», el contacto no se puede medir y el informe no lo muestra.
           </div>
           <p className="text-[11px] text-brand-mist">Subir otra vez un archivo de la misma hora reemplaza ese corte. Cada carga queda en auditoría.</p>
         </aside>
       </div>
+
+      <Procesando
+        abierto={!!proceso}
+        titulo="Procesando cortes"
+        listo={!!abriendo}
+        avance={proceso && !abriendo ? { hecho: proceso.actual - 1, total: proceso.total } : null}
+        detalle={abriendo
+          ? <>Abriendo el informe del <span className="capitalize">{fechaCorta(abriendo)}</span>…</>
+          : proceso && <>Corte {n(proceso.actual)} de {n(proceso.total)} · <span className="capitalize">{fechaCorta(proceso.fecha)}</span>{proceso.hora && <> · {proceso.hora}</>}</>}
+      />
     </>
   );
 }

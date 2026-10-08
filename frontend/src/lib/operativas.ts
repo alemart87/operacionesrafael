@@ -36,6 +36,9 @@ export const PERM_VENTAS_NETAS_GESTION = "televentas_claro.ventas_netas_gestion"
 /** Productividad de llamadas: ver informes publicados y acumulados / gestión (subir cortes, publicar). */
 export const PERM_PRODUCTIVIDAD = "televentas_claro.productividad";
 export const PERM_PRODUCTIVIDAD_GESTION = "televentas_claro.productividad_gestion";
+/** SPH estimado: ver informes publicados / gestión (calcular, vincular nombres, publicar). */
+export const PERM_SPH = "televentas_claro.sph";
+export const PERM_SPH_GESTION = "televentas_claro.sph_gestion";
 /** Auditoría de ventas: riesgos, informes de auditoría, hallazgos y seguimiento. */
 export const PERM_AUDITORIA = "televentas_claro.auditoria";
 
@@ -68,6 +71,8 @@ export interface Submodulo {
   contenido?: string[];
   /** Utilidad de gestión del módulo, si la tiene: la tarjeta indica si el usuario puede operar. */
   gestion?: string;
+  /** Qué puede hacer quien tiene la gestión (por defecto: subir cortes, publicar y eliminar). */
+  gestionTexto?: string;
   /** Etiqueta de acceso en la tarjeta cuando el módulo no separa ver/gestionar (por defecto "Ver informes"). */
   acceso?: string;
 }
@@ -103,12 +108,25 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         label: "Productividad",
         href: "/televentas-claro/productividad",
         descripcion: "Productividad de llamadas a partir del reporte de tiempos de la plataforma: meta de conversación, contacto por horario, discador y turnos.",
-        contenido: ["Meta de conversación y agentes en rojo", "Contacto por horario (desde 20 s)", "Asesores más efectivos", "Discador automático vs manual", "Turnos y jornada media", "Acumulado semanal y mensual"],
+        contenido: ["Meta de conversación y agentes en rojo", "Contacto por horario (desde 30 s)", "Asesores más efectivos", "Discador automático vs manual", "Turnos y jornada media", "Acumulado semanal y mensual"],
         gestion: "productividad_gestion",
         nav: [
           { href: "/televentas-claro/productividad", label: "Informes diarios", exact: true },
           { href: "/televentas-claro/productividad/acumulado", label: "Acumulado" },
           { href: "/televentas-claro/productividad/subir", label: "Subir cortes", utilidad: "productividad_gestion" },
+        ],
+      },
+      {
+        utilidad: "sph",
+        label: "SPH estimado",
+        href: "/televentas-claro/sph",
+        descripcion: "Ventas netas por hora conectada: cruza las horas de Productividad con las netas de Ventas Netas, para la operación y por asesor.",
+        contenido: ["SPH de la operación", "Ranking de SPH por asesor", "Cruce de nombres agente ↔ vendedor", "Netas sin asesor", "Vínculos corregidos a mano", "Una publicación por día"],
+        gestion: "sph_gestion",
+        gestionTexto: "Podés calcular, vincular nombres y publicar.",
+        nav: [
+          { href: "/televentas-claro/sph", label: "Informes SPH", exact: true },
+          { href: "/televentas-claro/sph/vinculos", label: "Vínculos", utilidad: "sph_gestion" },
         ],
       },
       {

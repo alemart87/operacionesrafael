@@ -102,7 +102,8 @@ permisos. Es el único que gestiona usuarios, perfiles y auditoría. Los
 cambios de permisos se aplican en la siguiente request, sin volver a loguearse.
 
 Utilidades iniciales de Televentas CLARO y permisos sembrados la primera vez
-(el superadmin los ajusta después):
+(el superadmin los ajusta después). Una utilidad nueva aparece desmarcada en los
+perfiles que ya existen: el superadmin la asigna en **Administración → Perfiles**.
 
 | Utilidad | Coordinador | Supervisor | Analista | Cliente |
 |---|:-:|:-:|:-:|:-:|
@@ -110,6 +111,8 @@ Utilidades iniciales de Televentas CLARO y permisos sembrados la primera vez
 | Ventas Netas | ✓ | ✓ | ✓ | |
 | Productividad · Ver informes | ✓ | ✓ | ✓ | |
 | Productividad · Gestión | | | ✓ | |
+| SPH · Ver informes | ✓ | ✓ | ✓ | |
+| SPH · Gestión | | | ✓ | |
 | Facturación | Solo superadmin | | | |
 
 Las utilidades marcadas `solo_superadmin` en el catálogo (hoy: **Facturación**)
@@ -193,7 +196,7 @@ totales acumulados desde las 00:00 hasta la hora del export). Código en
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
 | Informes diarios | `/televentas-claro/productividad` | Un informe por fecha de gestión, metas vigentes, publicar/despublicar |
-| Subir cortes | `…/productividad/subir` | Varios CSV a la vez; fecha y hora de cada corte detectadas del nombre |
+| Subir cortes | `…/productividad/subir` | Varios CSV a la vez; fecha y hora de cada corte detectadas del nombre. Pantalla «Procesando» y, al terminar, abre el informe del día |
 | Informe del día | `…/productividad/informes/{id}` | Resumen gerencial, agentes, por horario, cortes del día |
 | Acumulado | `…/productividad/acumulado` | Semana, mes o rango con los días publicados |
 
@@ -224,6 +227,41 @@ totales acumulados desde las 00:00 hasta la hora del export). Código en
   los ve todo el módulo y los cambia solo el superadmin.
 - **Permisos:** `televentas_claro.productividad` (ver publicados y acumulados) y
   `televentas_claro.productividad_gestion` (subir, borradores, publicar, recalcular, eliminar).
+
+## Televentas CLARO · SPH estimado
+
+SPH = ventas **netas** por hora conectada. Cruza dos módulos que ya existen, sin subir
+archivos nuevos: las horas del informe de **Productividad** del día y las netas del
+informe de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro/sph/`.
+
+| Pantalla | Ruta | Qué hace |
+|---|---|---|
+| Informes SPH | `/televentas-claro/sph` | Un SPH por día, **Calcular SPH** (elegir el día y ver qué informes se cruzan), publicar/despublicar |
+| Informe del día | `…/sph/informes/{id}` | SPH de la operación, ranking por asesor, cruce de nombres, netas sin asesor, tabla de asesores (CSV) |
+| Vínculos | `…/sph/vinculos` | Vínculos agente → vendedor corregidos a mano |
+
+- **Fuentes:** de cada módulo se usa el informe publicado; si no hay, el borrador más
+  reciente (queda avisado). El corte de ventas tiene que ser del día o posterior.
+- **Netas del día:** líneas DDI cuya **fecha de venta** (de la carga; si falta, la de
+  carga) es ese día. Las netas de un día se siguen activando hasta dos semanas
+  después: el informe muestra cuánto de lo cargado ya activó y avisa si el corte
+  de ventas es cercano.
+- **SPH de la operación:** netas ÷ horas conectadas del equipo, sin sesiones
+  abiertas (ni sus horas ni sus netas). No depende del cruce de nombres.
+- **Cruce de nombres (sin ID común):** el agente de la plataforma («APELLIDO,
+  NOMBRE») se vincula con el vendedor del POS de Claro por su primer nombre y un
+  apellido. **Exacto** (están todas sus palabras), **probable** (falta alguna,
+  cambia la escritura o el apellido puede ser el segundo), **ambiguo** (empate: no
+  se adivina) o **sin cruce**. Uno a uno: un vendedor no va a dos agentes.
+- **SPH por asesor (estimado):** netas del vendedor vinculado ÷ horas del agente;
+  entra al ranking con 2 h conectadas o más.
+- **Vínculos manuales:** gestión confirma, corrige o descarta cada vínculo; queda
+  guardado para los próximos cálculos y el día se recalcula.
+- **Publicación:** como Productividad, uno publicado por día, reemplazo con
+  confirmación y un publicado no cambia (recalcular genera un borrador). El
+  informe avisa si hay datos más nuevos que los usados.
+- **Permisos:** `televentas_claro.sph` (ver publicados) y `televentas_claro.sph_gestion`
+  (calcular, borradores, vínculos, publicar, recalcular, eliminar).
 
 ## Televentas CLARO · Auditoría de Ventas
 

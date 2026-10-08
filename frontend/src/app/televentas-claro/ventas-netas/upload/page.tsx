@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { Procesando } from "@/components/Procesando";
 import { VN_API, VN_HREF, type ListaInformes } from "@/components/ventas-netas/tipos";
 import { apiFetch, getToken } from "@/lib/api";
 
@@ -11,6 +12,7 @@ const ESTADO: Record<string, string> = {
   uploading: "Subiendo el archivo…",
   pending: "En cola de procesamiento…",
   processing: "Procesando el corte (DDI, CARGAS y PORTABILIDAD)…",
+  completed: "Abriendo el informe…",
 };
 
 export default function VentasNetasUploadPage() {
@@ -105,17 +107,15 @@ export default function VentasNetasUploadPage() {
         {error && (
           <div className="bg-brand-primary-light border border-brand-primary/30 text-brand-primary-dark text-sm rounded-md p-3">{error}</div>
         )}
-        {status && !error && (
-          <div className="bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan text-sm rounded-md p-3 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-brand-cyan animate-pulse" />
-            {ESTADO[status] ?? status}
-          </div>
-        )}
 
         <button type="submit" disabled={submitting || !!uploadId} className="btn-primary text-base">
           {submitting ? "Subiendo…" : "Procesar corte"}
         </button>
       </form>
+
+      <Procesando abierto={!!status && !error} titulo="Procesando corte" listo={status === "completed"} detalle={status ? ESTADO[status] ?? status : null}
+        aviso={status === "uploading" ? "No cierres la página mientras se sube el archivo."
+          : "Al terminar se abre el informe. Si cerrás la página, el proceso sigue y el borrador aparece en la lista."} />
     </AppShell>
   );
 }
