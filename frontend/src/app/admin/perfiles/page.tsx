@@ -1,5 +1,6 @@
 "use client";
 
+import { Lock } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
@@ -18,7 +19,8 @@ interface UtilidadDef {
   key: string;
   name: string;
   description: string;
-  solo_superadmin?: boolean;
+  /** Restringida: además del superadmin, solo estos perfiles la pueden tener (vacío = solo superadmin). */
+  solo_perfiles?: string[];
 }
 
 interface OperativaDef {
@@ -60,6 +62,8 @@ export default function PerfilesPage() {
   useEffect(() => {
     load();
   }, []);
+
+  const nombrePerfil = (slug: string) => perfiles.find((p) => p.slug === slug)?.name ?? slug;
 
   const dirty = useMemo(
     () => perfiles.filter((p) => draft[p.slug] && saved[p.slug] && !sameSet(draft[p.slug], saved[p.slug])).map((p) => p.slug),
@@ -165,8 +169,11 @@ export default function PerfilesPage() {
                     <td className="px-4 py-3">
                       <div className={`font-semibold ${u.key === "ver" ? "text-brand-primary-dark" : "text-brand-ink"}`}>{u.name}</div>
                       <div className="text-[11px] text-brand-slate">{u.description}</div>
+                      {!!u.solo_perfiles?.length && (
+                        <div className="mt-1"><span className="badge-purple">Restringida · solo superadmin y {u.solo_perfiles.map(nombrePerfil).join(", ")}</span></div>
+                      )}
                     </td>
-                    {u.solo_superadmin ? (
+                    {u.solo_perfiles && !u.solo_perfiles.length ? (
                       <td colSpan={perfiles.length} className="px-3 py-3 text-center">
                         <span className="badge-primary">Solo superadmin · no asignable</span>
                       </td>
@@ -174,6 +181,15 @@ export default function PerfilesPage() {
                       const set = draft[p.slug] ?? new Set<string>();
                       const checked = set.has(`${op.slug}.${u.key}`);
                       const sinAcceso = u.key !== "ver" && !set.has(`${op.slug}.ver`);
+                      if (u.solo_perfiles && !u.solo_perfiles.includes(p.slug)) {
+                        return (
+                          <td key={p.slug} className="px-3 py-3 text-center">
+                            <span className="inline-flex text-brand-mist" title={`${u.name}: solo superadmin y ${u.solo_perfiles.map(nombrePerfil).join(", ")}`}>
+                              <Lock size={14} aria-label="No asignable a este perfil" />
+                            </span>
+                          </td>
+                        );
+                      }
                       return (
                         <td key={p.slug} className="px-3 py-3 text-center">
                           <input

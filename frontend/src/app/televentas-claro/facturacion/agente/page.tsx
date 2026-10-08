@@ -11,7 +11,7 @@ export default function AgenteFacturacionPage() {
       emptyHeading="¿Qué querés analizar de la facturación?"
       emptyHint="Soy experto en la liquidación de comisiones de Televentas CLARO (criterios del Manual TLMK Fijo PGY). Seleccioná uno o más archivos para que enfoque el análisis."
       placeholder="Preguntá sobre la facturación, conceptos, drivers o comparativos…"
-      deniedMessage="El Agente de Facturación es exclusivo del superadmin."
+      deniedMessage="El Agente de Facturación es de acceso restringido: superadmin y Sub gerente."
       focusLabel="Enfocar en liquidaciones"
       loadFocusOptions={async () => {
         const data = await apiFetch<{

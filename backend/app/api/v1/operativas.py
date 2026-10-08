@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ...core.operativas import OPERATIVAS
+from ...core.operativas import OPERATIVAS, utilidad_visible
 from ..deps import CurrentUser, get_current_user
 
 
@@ -17,11 +17,11 @@ def operativa_for_user(op: dict, user: CurrentUser) -> dict:
         "description": op["description"],
         "color": op["color"],
         "available": op["available"],
-        # Las utilidades exclusivas del superadmin ni siquiera se muestran a los demás.
+        # Las utilidades restringidas ni siquiera se muestran a los perfiles que no las pueden tener.
         "utilidades": [
             {**u, "habilitada": user.has_perm(f"{op['slug']}.{u['key']}")}
             for u in op["utilidades"]
-            if user.is_superadmin or not u.get("solo_superadmin")
+            if utilidad_visible(op["slug"], u, user.role)
         ],
     }
 

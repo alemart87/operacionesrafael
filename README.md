@@ -86,7 +86,7 @@ sus propias **utilidades**. La primera operativa es **Televentas CLARO**.
 | Concepto | Dónde se define | Quién lo cambia |
 |---|---|---|
 | Operativas y sus utilidades | `backend/app/core/operativas.py` | Desarrollo |
-| Perfiles (Coordinador, Supervisor, Analista, Cliente) | `backend/app/core/perfiles.py` | Desarrollo |
+| Perfiles (Sub gerente, Controller, Coordinador, Supervisor, Analista, Cliente) | `backend/app/core/perfiles.py` | Desarrollo |
 | Utilidades de cada perfil | Tabla `profiles`, pantalla **Administración → Perfiles** | Superadmin |
 | Perfil y operativas de cada usuario | Pantalla **Administración → Usuarios** | Superadmin |
 
@@ -105,21 +105,26 @@ Utilidades iniciales de Televentas CLARO y permisos sembrados la primera vez
 (el superadmin los ajusta después). Una utilidad nueva aparece desmarcada en los
 perfiles que ya existen: el superadmin la asigna en **Administración → Perfiles**.
 
-| Utilidad | Coordinador | Supervisor | Analista | Cliente |
-|---|:-:|:-:|:-:|:-:|
-| Acceso a la operativa | ✓ | ✓ | ✓ | ✓ |
-| Ventas Netas | ✓ | ✓ | ✓ | |
-| Productividad · Ver informes | ✓ | ✓ | ✓ | |
-| Productividad · Gestión | | | ✓ | |
-| SPH · Ver informes | ✓ | ✓ | ✓ | |
-| SPH · Gestión | | | ✓ | |
-| Facturación | Solo superadmin | | | |
+| Utilidad | Sub gerente | Controller | Coordinador | Supervisor | Analista | Cliente |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Acceso a la operativa | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Ventas Netas · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | ✓ / | ✓ / ✓ | |
+| Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | ✓ / | ✓ / ✓ | |
+| SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | ✓ / | ✓ / ✓ | |
+| Auditoría de ventas | ✓ | ✓ | | | ✓ | |
+| Facturación (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
 
-Las utilidades marcadas `solo_superadmin` en el catálogo (hoy: **Facturación**)
-no se pueden asignar a ningún perfil: la matriz las muestra bloqueadas, la API
-rechaza el cambio y, aunque figuren en la base, no se hacen efectivas. A los
-demás usuarios ni siquiera se les listan. Para delegarlas más adelante alcanza
-con quitar la marca en `core/operativas.py`.
+- **Sub gerente:** todos los módulos, incluida Facturación.
+- **Controller:** todos los módulos menos Facturación; como cualquier usuario, puede
+  tener varias operativas asignadas.
+
+Las utilidades con `solo_perfiles` en el catálogo son **restringidas**: además del
+superadmin, solo las pueden tener los perfiles listados (hoy: **Facturación → Sub
+gerente**). La matriz las muestra bloqueadas para el resto, la API rechaza el cambio
+y, aunque figuren en la base, no se hacen efectivas; a los demás usuarios ni
+siquiera se les listan. Con la lista vacía son exclusivas del superadmin. La
+administración (usuarios, perfiles, auditoría y seguridad) sigue siendo solo del
+superadmin.
 
 En el backend cada endpoint se protege con el permiso de su utilidad:
 
@@ -231,17 +236,22 @@ totales acumulados desde las 00:00 hasta la hora del export). Código en
 ## Televentas CLARO · SPH estimado
 
 SPH = ventas **netas** por hora conectada. Cruza dos módulos que ya existen, sin subir
-archivos nuevos: las horas del informe de **Productividad** del día y las netas del
-informe de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro/sph/`.
+archivos nuevos: las horas de los informes de **Productividad** y las netas del informe
+de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro/sph/`.
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
-| Informes SPH | `/televentas-claro/sph` | Un SPH por día, **Calcular SPH** (elegir el día y ver qué informes se cruzan), publicar/despublicar |
-| Informe del día | `…/sph/informes/{id}` | SPH de la operación, ranking por asesor, cruce de nombres, netas sin asesor, tabla de asesores (CSV) |
+| Informes SPH | `/televentas-claro/sph` | **Calcular SPH** por día, semana, mes o rango (ver qué días cuentan y qué falta subir), filtros por tipo, publicar/despublicar |
+| Informe | `…/sph/informes/{id}` | SPH de la operación, SPH por día (períodos), ranking por asesor, cruce de nombres, netas sin asesor, tabla de asesores (CSV) |
 | Vínculos | `…/sph/vinculos` | Vínculos agente → vendedor corregidos a mano |
 
-- **Fuentes:** de cada módulo se usa el informe publicado; si no hay, el borrador más
-  reciente (queda avisado). El corte de ventas tiene que ser del día o posterior.
+- **Períodos:** un día, una semana (lunes a domingo), un mes o un rango de hasta 62
+  días. Se suma día por día: **cuenta** cada día con informe de Productividad y que el
+  corte de ventas de su mes ya alcanza; los demás se informan (y el mes en curso se
+  puede recalcular a medida que llegan datos). Cada neta se atribuye al asesor solo
+  los días en que estuvo conectado.
+- **Fuentes:** de cada día, el informe de Productividad publicado; de cada mes, el de
+  Ventas Netas publicado; si no hay, el borrador más reciente (queda avisado).
 - **Netas del día:** líneas DDI cuya **fecha de venta** (de la carga; si falta, la de
   carga) es ese día. Las netas de un día se siguen activando hasta dos semanas
   después: el informe muestra cuánto de lo cargado ya activó y avisa si el corte
@@ -254,12 +264,12 @@ informe de **Ventas Netas** del mes. Código en `backend/app/operativas/televent
   cambia la escritura o el apellido puede ser el segundo), **ambiguo** (empate: no
   se adivina) o **sin cruce**. Uno a uno: un vendedor no va a dos agentes.
 - **SPH por asesor (estimado):** netas del vendedor vinculado ÷ horas del agente;
-  entra al ranking con 2 h conectadas o más.
+  entra al ranking con 2 h conectadas o más en un día y 6 h (una jornada) en un período.
 - **Vínculos manuales:** gestión confirma, corrige o descarta cada vínculo; queda
   guardado para los próximos cálculos y el día se recalcula.
-- **Publicación:** como Productividad, uno publicado por día, reemplazo con
-  confirmación y un publicado no cambia (recalcular genera un borrador). El
-  informe avisa si hay datos más nuevos que los usados.
+- **Publicación:** como Productividad, uno publicado por período (el SPH del día y el
+  de su semana se publican por separado), reemplazo con confirmación y un publicado
+  no cambia (recalcular genera un borrador). El informe avisa si hay datos más nuevos.
 - **Permisos:** `televentas_claro.sph` (ver publicados) y `televentas_claro.sph_gestion`
   (calcular, borradores, vínculos, publicar, recalcular, eliminar).
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { Link2, UserX } from "lucide-react";
-import { n, pct } from "@/components/productividad/tipos";
-import { NIVEL, fmtSph, type KpisSph, type Nivel, type VentaSinAgente } from "./tipos";
+import { fechaCorta, n, pct, sumarDias } from "@/components/productividad/tipos";
+import { NIVEL, fmtSph, type CoberturaDia, type KpisSph, type Nivel, type VentaSinAgente } from "./tipos";
 
 export function NivelChip({ nivel, compacto }: { nivel: Nivel; compacto?: boolean }) {
   const x = NIVEL[nivel];
@@ -29,8 +29,9 @@ export function MetodoSph({ minHoras = 2 }: { minHoras?: number }) {
         <div>
           <div className="font-semibold text-brand-ink">SPH por asesor (estimado)</div>
           <p className="text-xs text-brand-slate mt-1 leading-relaxed">
-            Netas del vendedor vinculado ÷ horas conectadas del agente. Entra al ranking con {minHoras} h conectadas o más. Las netas de
-            un día se siguen activando hasta dos semanas después: con un corte de ventas posterior, recalculalo.
+            Netas del vendedor vinculado ÷ horas conectadas del agente. Entra al ranking con {minHoras} h conectadas o más. En una
+            semana, un mes o un rango se suma día por día los días que cuentan (con horas y ventas al corte). Las netas de un día se
+            siguen activando hasta dos semanas después: con un corte de ventas posterior, recalculalo.
           </p>
         </div>
         <div>
@@ -93,16 +94,47 @@ export function CruceNombres({ k, onVer }: { k: KpisSph; onVer?: (nivel: Nivel |
   );
 }
 
-/** Netas del día de vendedores que no se vincularon con ningún agente conectado. */
-export function VentasSinAsesor({ ventas, onVincular }: { ventas: VentaSinAgente[]; onVincular?: (v: VentaSinAgente) => void }) {
+/** Días del período: cuáles cuentan (horas y ventas al corte) y por qué no cuentan los demás. */
+export function FranjaDias({ desde, hasta, cobertura }: { desde: string; hasta: string; cobertura: CoberturaDia[] }) {
+  const porFecha = new Map(cobertura.map((c) => [c.fecha, c]));
+  const todos: string[] = [];
+  for (let d = desde; d <= hasta; d = sumarDias(d, 1)) todos.push(d);
+  const cuentan = cobertura.filter((c) => c.horas && c.ventas).length;
+  const estilo = (d: string) => {
+    const c = porFecha.get(d);
+    if (!c) return { cls: "bg-brand-bg border border-dashed border-brand-border", t: "todavía no pasó" };
+    if (c.horas && c.ventas) return { cls: "bg-emerald-500", t: "cuenta" };
+    if (c.horas) return { cls: "bg-brand-orange", t: "tiene horas, faltan las ventas al corte" };
+    return { cls: "bg-brand-border", t: "sin informe de Productividad" };
+  };
+  return (
+    <div>
+      <div className="flex flex-wrap gap-[3px]" role="img" aria-label={`${cuentan} de ${todos.length} días cuentan`}>
+        {todos.map((d) => {
+          const e = estilo(d);
+          return <span key={d} title={`${fechaCorta(d)}: ${e.t}`} className={`w-3.5 h-3.5 rounded-sm ${e.cls}`} />;
+        })}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-brand-slate">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />Cuenta</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-orange" />Faltan ventas al corte</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-border" />Sin Productividad</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-brand-bg border border-dashed border-brand-border" />Todavía no pasó</span>
+      </div>
+    </div>
+  );
+}
+
+/** Netas de vendedores que no se vincularon con un agente conectado (ese día o en el período). */
+export function VentasSinAsesor({ ventas, onVincular, periodo }: { ventas: VentaSinAgente[]; onVincular?: (v: VentaSinAgente) => void; periodo?: boolean }) {
   return (
     <section className="card p-5 min-w-0">
       <h3 className="font-display text-base uppercase text-brand-ink leading-tight flex items-center gap-2"><UserX size={15} className="text-brand-slate" /> Netas sin asesor</h3>
       <p className="text-xs text-brand-slate mt-0.5">
-        Vendedores con netas ese día que no se vincularon con un agente conectado. Cuentan en el SPH de la operación; si es un nombre distinto, vinculalo.
+        Vendedores con netas {periodo ? "en el período" : "ese día"} que no se vincularon con un agente conectado. Cuentan en el SPH de la operación; si es un nombre distinto, vinculalo.
       </p>
       {!ventas.length ? (
-        <p className="text-sm text-emerald-700 mt-4">Todas las netas del día tienen asesor.</p>
+        <p className="text-sm text-emerald-700 mt-4">Todas las netas {periodo ? "del período" : "del día"} tienen asesor.</p>
       ) : (
         <ul className="mt-3 divide-y divide-brand-border border-t border-brand-border">
           {ventas.map((v) => (
@@ -110,8 +142,8 @@ export function VentasSinAsesor({ ventas, onVincular }: { ventas: VentaSinAgente
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-brand-ink">{v.vendedor}</div>
                 <div className="text-[11px] text-brand-slate">
-                  {[v.subcanal, `${n(v.cargadas)} cargada(s) ese día`].filter(Boolean).join(" · ")}
-                  {onVincular && <> · <button type="button" onClick={() => onVincular(v)} className="font-semibold text-brand-primary hover:underline">Vincular</button></>}
+                  {[v.subcanal, `${n(v.cargadas)} cargada(s) ${periodo ? "en el período" : "ese día"}`].filter(Boolean).join(" · ")}
+                  {onVincular && v.vendedor !== "SIN VENDEDOR" && <> · <button type="button" onClick={() => onVincular(v)} className="font-semibold text-brand-primary hover:underline">Vincular</button></>}
                 </div>
               </div>
               <div className="text-right shrink-0">

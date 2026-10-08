@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.operativas import ALL_PERMISSIONS, OPERATIVAS, SUPERADMIN_ONLY_PERMISSIONS, filter_permissions
+from ...core.operativas import ALL_PERMISSIONS, OPERATIVAS, RESTRINGIDAS, asignables, filter_permissions
 from ...core.perfiles import PERFIL_SLUGS, PERFILES
 from ...models.profile import Profile
 from ...models.user import User
@@ -30,7 +30,7 @@ async def _perfiles_payload(db: AsyncSession) -> list[dict]:
         row = rows.get(p["slug"])
         out.append({
             **p,
-            "permissions": filter_permissions(row.permissions if row else []),
+            "permissions": filter_permissions(row.permissions if row else [], p["slug"]),
             "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
             "usuarios_activos": counts.get(p["slug"], 0),
         })
@@ -62,17 +62,22 @@ async def update_perfil(
 ) -> dict:
     if slug not in PERFIL_SLUGS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Perfil inexistente")
-    reservados = sorted(set(payload.permissions) & SUPERADMIN_ONLY_PERMISSIONS)
-    if reservados:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"Estos permisos son exclusivos del superadmin: {', '.join(reservados)}")
     unknown = sorted(set(payload.permissions) - ALL_PERMISSIONS)
     if unknown:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Permisos desconocidos: {', '.join(unknown)}")
-    perms = filter_permissions(payload.permissions)
+    reservados = sorted(set(payload.permissions) - asignables(slug))
+    if reservados:
+        perfiles = {p["slug"]: p["name"] for p in PERFILES}
+        utilidades = {f"{o['slug']}.{u['key']}": u["name"] for o in OPERATIVAS for u in o["utilidades"]}
+        detalle = "; ".join(
+            f"{utilidades[perm]} (solo {', '.join(['Superadmin', *(perfiles[x] for x in sorted(RESTRINGIDAS[perm]))])})"
+            for perm in reservados
+        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"El perfil {perfiles[slug]} no puede tener: {detalle}.")
+    perms = filter_permissions(payload.permissions, slug)
 
     row = await db.get(Profile, slug)
-    before = filter_permissions(row.permissions) if row else []
+    before = filter_permissions(row.permissions, slug) if row else []
     if row is None:
         row = Profile(slug=slug, permissions=perms, updated_by=user.id)
         db.add(row)

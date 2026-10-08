@@ -7,8 +7,12 @@ perfil nuevo); nunca pisa lo que el superadmin ya configuró.
 """
 from __future__ import annotations
 
+from .operativas import OPERATIVAS
+
 
 PERFILES: list[dict] = [
+    {"slug": "sub_gerente", "name": "Sub gerente", "description": "Conduce la operación: todos los módulos, incluida Facturación."},
+    {"slug": "controller", "name": "Controller", "description": "Controla la operación: todos los módulos menos Facturación. Puede tener varias operativas."},
     {"slug": "coordinador", "name": "Coordinador", "description": "Coordina la operativa. Acceso amplio."},
     {"slug": "supervisor", "name": "Supervisor", "description": "Supervisa equipos y sigue indicadores."},
     {"slug": "analista", "name": "Analista", "description": "Carga datos y prepara reportes."},
@@ -19,8 +23,12 @@ PERFIL_SLUGS: set[str] = {p["slug"] for p in PERFILES}
 PERFIL_PATTERN = "^(" + "|".join(p["slug"] for p in PERFILES) + ")$"
 
 _TC = "televentas_claro"
+# Todas las utilidades de Televentas CLARO, en el orden del catálogo.
+_TODAS_TC = [u["key"] for o in OPERATIVAS if o["slug"] == _TC for u in o["utilidades"]]
 
 DEFAULT_PERMISSIONS: dict[str, list[str]] = {
+    "sub_gerente": [f"{_TC}.{u}" for u in _TODAS_TC],
+    "controller": [f"{_TC}.{u}" for u in _TODAS_TC if u != "facturacion"],
     "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad", "sph")],
     "supervisor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad", "sph")],
     "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion", "auditoria",

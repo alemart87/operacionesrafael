@@ -48,7 +48,7 @@ export function RankingSph({ agentes, promedio, minHoras }: { agentes: AgenteSph
     <section className="card p-5 min-w-0">
       <h3 className="font-display text-base uppercase text-brand-ink leading-tight">SPH por asesor</h3>
       <p className="text-xs text-brand-slate mt-0.5">
-        Netas del día ÷ horas conectadas, asesores con {minHoras} h o más. La línea es el promedio de los asesores vinculados.
+        Netas ÷ horas conectadas, asesores con {minHoras} h o más. La línea es el promedio de los asesores vinculados.
         {datos.some((d) => d.nivel === "probable") && <> <b>≈</b> vínculo probable: revisalo en la tabla.</>}
       </p>
       {!datos.length ? (

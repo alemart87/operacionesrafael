@@ -46,6 +46,11 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_recovery JSON",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_exception_until TIMESTAMPTZ",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_exception_note VARCHAR(300)",
+    # v0.6 · SPH por período (semana, mes, rango)
+    "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS hasta DATE",
+    "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS tipo VARCHAR(10) DEFAULT 'dia'",
+    "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS dias INTEGER DEFAULT 1",
+    "UPDATE sph_informes SET hasta = fecha WHERE hasta IS NULL",
 ]
 
 
@@ -93,7 +98,7 @@ async def _seed_profiles() -> int:
     async with AsyncSessionLocal() as db:
         for p in PERFILES:
             if await db.get(Profile, p["slug"]) is None:
-                db.add(Profile(slug=p["slug"], permissions=filter_permissions(DEFAULT_PERMISSIONS.get(p["slug"], []))))
+                db.add(Profile(slug=p["slug"], permissions=filter_permissions(DEFAULT_PERMISSIONS.get(p["slug"], []), p["slug"])))
                 created += 1
         await db.commit()
     return created
