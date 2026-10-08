@@ -25,7 +25,7 @@ OPERATIVAS: list[dict] = [
     {
         "slug": "televentas_claro",
         "name": "Televentas CLARO",
-        "description": "Operativa de televentas para Claro: ventas netas, facturación e indicadores.",
+        "description": "Operativa de televentas para Claro: ventas netas, productividad de llamadas, auditoría, facturación e indicadores.",
         "color": "#E6332A",
         "available": True,
         "utilidades": [
@@ -39,6 +39,16 @@ OPERATIVAS: list[dict] = [
                 "key": "ventas_netas_gestion",
                 "name": "Ventas Netas · Gestión",
                 "description": "Subir los cortes diarios de Claro, ver borradores, publicar (una publicación por mes), reemplazar y eliminar.",
+            },
+            {
+                "key": "productividad",
+                "name": "Productividad · Ver informes",
+                "description": "Ver los informes diarios publicados de productividad de llamadas (meta de conversación, contacto por horario, discador, turnos y jornada) y sus acumulados semanal y mensual.",
+            },
+            {
+                "key": "productividad_gestion",
+                "name": "Productividad · Gestión",
+                "description": "Subir los cortes del reporte de tiempos de la plataforma, ver borradores, publicar (uno por día), reemplazar, recalcular y eliminar.",
             },
             {
                 "key": "auditoria",

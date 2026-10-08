@@ -3,6 +3,7 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Download, ListFilter, Search, Trophy, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { descargarCsv } from "@/lib/csv";
 import { fechaCorta, n, pct, type DetalleNeta, type InformeData } from "./tipos";
 import { DIAS_SIN_USO_ANTIGUA, estadoUso, umbralCritico } from "./patrones";
 import { Seccion, Tabs, UsoBadge } from "./ui";
@@ -49,18 +50,6 @@ function Th<K extends string>({ k, label, orden, alternar, align = "left", dirIn
       </button>
     </th>
   );
-}
-
-function csv(nombre: string, cab: string[], filas: (string | number | null | undefined)[][]) {
-  const esc = (v: string | number | null | undefined) => {
-    const s = v === null || v === undefined ? "" : String(v);
-    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const texto = "﻿" + [cab, ...filas].map((f) => f.map(esc).join(";")).join("\r\n"); // BOM + ";" para Excel en español
-  const url = URL.createObjectURL(new Blob([texto], { type: "text/csv;charset=utf-8" }));
-  const a = Object.assign(document.createElement("a"), { href: url, download: nombre });
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 interface FilaRanking {
@@ -193,10 +182,10 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
   const peorDia = porFecha.reduce<(typeof porFecha)[number] | null>((m, f) => (!m || f.sin_uso > m.sin_uso ? f : m), null);
 
   // ------------------------------------------------------------ exportar
-  const exportarRanking = () => csv(`sin-uso-ranking_${periodo}.csv`,
+  const exportarRanking = () => descargarCsv(`sin-uso-ranking_${periodo}.csv`,
     ["Puesto", "Vendedor", "Subcanal", "Pospago evaluables", "Sin uso", "% sin uso", "Con uso", "En espera", "Primera venta sin uso", "Última venta sin uso", "Crítico"],
     rankingVisible.map((f, i) => [i + 1, f.vendedor, f.subcanal, f.evaluables, f.sin_uso, f.pct_sin_uso.toLocaleString("es-PY"), f.con_uso, f.en_espera, fechaCorta(f.primera), fechaCorta(f.ultima), f.critico ? "Sí" : "No"]));
-  const exportarLineas = () => csv(`sin-uso-lineas_${periodo}.csv`,
+  const exportarLineas = () => descargarCsv(`sin-uso-lineas_${periodo}.csv`,
     ["Fecha venta", "Fecha activación", "Días desde activación", "Estado", "Vendedor", "Subcanal", "Legajo", "SDS", "Línea", "Plan", "Portación", "Origen", "Ciudad", "Riesgo"],
     lineas.map((r) => [fechaCorta(r.fecha_venta), fechaCorta(r.fecha_activacion), r.dias ?? "", estadoUso(r, corte) === "ESPERA" ? "En espera" : "Sin uso",
       r.vendedor, r.subcanal, r.legajo, r.sds_number, r.linea, r.plan, r.portacion, r.origen_portacion, r.ciudad, r.riesgo]));

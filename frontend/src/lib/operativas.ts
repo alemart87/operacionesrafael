@@ -33,6 +33,9 @@ export const PERM_FACTURACION = "televentas_claro.facturacion";
 /** Ventas Netas: ver informes publicados / gestión (subir, publicar, reemplazar, eliminar). */
 export const PERM_VENTAS_NETAS = "televentas_claro.ventas_netas";
 export const PERM_VENTAS_NETAS_GESTION = "televentas_claro.ventas_netas_gestion";
+/** Productividad de llamadas: ver informes publicados y acumulados / gestión (subir cortes, publicar). */
+export const PERM_PRODUCTIVIDAD = "televentas_claro.productividad";
+export const PERM_PRODUCTIVIDAD_GESTION = "televentas_claro.productividad_gestion";
 /** Auditoría de ventas: riesgos, informes de auditoría, hallazgos y seguimiento. */
 export const PERM_AUDITORIA = "televentas_claro.auditoria";
 
@@ -93,6 +96,19 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         nav: [
           { href: "/televentas-claro/ventas-netas", label: "Informes", exact: true },
           { href: "/televentas-claro/ventas-netas/upload", label: "Subir corte", utilidad: "ventas_netas_gestion" },
+        ],
+      },
+      {
+        utilidad: "productividad",
+        label: "Productividad",
+        href: "/televentas-claro/productividad",
+        descripcion: "Productividad de llamadas a partir del reporte de tiempos de la plataforma: meta de conversación, contacto por horario, discador y turnos.",
+        contenido: ["Meta de conversación y agentes en rojo", "Contacto por horario (desde 20 s)", "Asesores más efectivos", "Discador automático vs manual", "Turnos y jornada media", "Acumulado semanal y mensual"],
+        gestion: "productividad_gestion",
+        nav: [
+          { href: "/televentas-claro/productividad", label: "Informes diarios", exact: true },
+          { href: "/televentas-claro/productividad/acumulado", label: "Acumulado" },
+          { href: "/televentas-claro/productividad/subir", label: "Subir cortes", utilidad: "productividad_gestion" },
         ],
       },
       {

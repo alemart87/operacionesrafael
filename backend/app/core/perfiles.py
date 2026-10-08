@@ -21,9 +21,10 @@ PERFIL_PATTERN = "^(" + "|".join(p["slug"] for p in PERFILES) + ")$"
 _TC = "televentas_claro"
 
 DEFAULT_PERMISSIONS: dict[str, list[str]] = {
-    "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas")],
-    "supervisor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas")],
-    "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion", "auditoria")],
+    "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad")],
+    "supervisor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad")],
+    "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion", "auditoria",
+                                         "productividad", "productividad_gestion")],
     "cliente": [f"{_TC}.{u}" for u in ("ver",)],
 }
 
