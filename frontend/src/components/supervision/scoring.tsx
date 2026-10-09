@@ -48,7 +48,7 @@ export function ScoreCelda({ total, parcial }: { total: number | null; parcial?:
 /** Qué se midió en cada componente, en una línea. */
 export function detalleComponente(c: Componente, pr?: { min_evaluables?: number; min_horas?: number }): string {
   if (c.pendiente) {
-    return c.clave === "tickets" ? "Se suma con los tickets de revisión" : "Se suma con el registro de coaching";
+    return c.detalle ?? (c.clave === "tickets" ? "Se suma con los tickets de revisión" : "Se suma con el registro de coaching");
   }
   if (c.detalle) return c.detalle;
   switch (c.clave) {
@@ -158,8 +158,9 @@ export function MetodoScoring({ p, umbral, minEvaluables }: { p: ParametrosScori
           <div className="font-semibold text-brand-ink text-sm">Supervisor y operación</div>
           <p className="mt-1">
             Supervisor: {p.supervisor.resultado} puntos por el resultado del equipo (los mismos componentes contra sus objetivos) y{" "}
-            {100 - p.supervisor.resultado} por su gestión: cobertura de coaching {p.supervisor.cobertura}, foco {p.supervisor.foco}, seguimientos{" "}
-            {p.supervisor.seguimiento} y tickets {p.supervisor.tickets}. Operación: los componentes sobre todo el equipo. Versión {p.version}.
+            {100 - p.supervisor.resultado} por su gestión: cobertura de coaching {p.supervisor.cobertura} (equipo con coaching en el mes),
+            foco {p.supervisor.foco} (alertas de uso con coaching en {p.dias_foco ?? 5} días hábiles), seguimientos {p.supervisor.seguimiento} (en
+            la fecha acordada) y tickets {p.supervisor.tickets}. Operación: los componentes sobre todo el equipo. Versión {p.version}.
           </p>
         </div>
       </div>

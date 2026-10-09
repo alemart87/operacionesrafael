@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { fechaHora } from "@/components/productividad/tipos";
 import { SUP_API, mesActual, periodoDeUrl, periodoEnUrl, type DetalleSupervisor } from "@/components/supervision/tipos";
-import { CriticoBadge, SelectorMes, VistaSupervisor } from "@/components/supervision/ui";
+import { CriticoBadge, ParaHoyCard, SelectorMes, VistaSupervisor } from "@/components/supervision/ui";
 import { apiFetch } from "@/lib/api";
 
 /** Portal del supervisor (modelo Líder Coach Comercial): lo único que ve el perfil Supervisor. */
@@ -40,7 +40,7 @@ function Portal() {
           </h1>
           <p className="text-sm text-brand-slate mt-2 max-w-2xl">
             Tu equipo de {d?.nombre_mes.toLowerCase() ?? "este mes"}: tus objetivos, lo que llevan vendido, cómo cerrarías el mes al
-            ritmo actual y qué asesores necesitan coaching por líneas sin uso.
+            ritmo actual y qué asesores necesitan coaching. El coaching y la bitácora se registran en «Coaching y bitácora».
           </p>
           {d?.objetivo.updated_at && (
             <p className="text-xs text-brand-slate mt-1">Objetivos cargados por {d.objetivo.updated_by ?? "—"} el {fechaHora(d.objetivo.updated_at)}.</p>
@@ -52,7 +52,10 @@ function Portal() {
       {!d ? (
         !error && <div className="card p-10 text-brand-slate">Cargando…</div>
       ) : (
-        <VistaSupervisor d={d} lineasUrl={(op) => `${SUP_API}/portal/lineas?periodo=${periodo}&operador_id=${op}`} />
+        <div className="space-y-6">
+          {d.coaching && periodo === mesActual() && <ParaHoyCard x={d.coaching} href="/televentas-claro/portal/coaching" />}
+          <VistaSupervisor d={d} lineasUrl={(op) => `${SUP_API}/portal/lineas?periodo=${periodo}&operador_id=${op}`} />
+        </div>
       )}
     </>
   );

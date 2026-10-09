@@ -8,7 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { PrintButton } from "@/components/PrintButton";
 import { fechaHora } from "@/components/productividad/tipos";
 import { SUP_API, SUP_HREF, periodoDeUrl, periodoEnUrl, type DetalleSupervisor } from "@/components/supervision/tipos";
-import { CriticoBadge, SelectorMes, VistaSupervisor } from "@/components/supervision/ui";
+import { CriticoBadge, SelectorMes, TabsSupervisor, VistaSupervisor } from "@/components/supervision/ui";
 import { apiFetch } from "@/lib/api";
 
 export default function SupervisorPage() {
@@ -36,7 +36,7 @@ function Detalle() {
       <Link href={`${SUP_HREF}?periodo=${periodo}`} className="inline-flex items-center gap-1 text-xs font-semibold text-brand-slate hover:text-brand-primary mb-4 print:hidden">
         <ArrowLeft size={14} /> Todos los supervisores
       </Link>
-      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
+      <div className="mb-4 flex items-end justify-between gap-4 flex-wrap">
         <div>
           <div className="text-[11px] uppercase tracking-wider2 text-brand-slate mb-2">Supervisor · {d?.nombre_mes ?? "…"}</div>
           <h1 className="font-display text-4xl text-brand-ink uppercase leading-tight flex items-center gap-3 flex-wrap">
@@ -54,6 +54,7 @@ function Detalle() {
           <PrintButton />
         </div>
       </div>
+      <TabsSupervisor id={id} periodo={periodo} activa="resultados" />
       {error && <div className="card p-4 text-sm text-brand-primary mb-4">{error}</div>}
       {!d ? (
         !error && <div className="card p-10 text-brand-slate">Cargando…</div>

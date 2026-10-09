@@ -1,5 +1,6 @@
 """Datos que Supervisión lee de otros módulos, preparados una sola vez (caché en el proceso).
 
+- Ventas Netas: las netas del informe vigente del mes (`calculo.lineas_netas`).
 - Productividad: por agente y por día, el login y la conversación válidos (sin sesiones abiertas),
   de los informes del mes (el publicado de cada día; si no hay, el borrador más reciente).
 - Parámetros del scoring (versionados) y las metas de conversación de Productividad.
@@ -13,12 +14,35 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..fuentes import informes_productividad
+from ..fuentes import informes_productividad, informes_ventas
 from ..productividad.api import parametros as parametros_productividad
 from ..productividad.models import ProdInforme
-from .calculo import limites
+from ..ventas_netas.models import VentasNetasReport
+from .calculo import limites, lineas_netas
 from .models import OPERATIVA, SupParametros
 from .scoring import SCORING_DEFECTO
+
+# Netas del mes ya preparadas, por informe y corte (se leen del JSON del informe una sola vez).
+_CACHE_VN: "OrderedDict[tuple[str, str, str], list[dict[str, Any]]]" = OrderedDict()
+_MAX_VN = 8
+
+
+async def ventas_del_mes(db: AsyncSession, periodo: str) -> tuple[VentasNetasReport | None, list[dict[str, Any]]]:
+    """El informe de Ventas Netas vigente del mes y sus netas (vacío si no hay informe)."""
+    r = (await informes_ventas(db, {periodo}, con_datos=False)).get(periodo)
+    if not r:
+        return None, []
+    clave = (r.id, _iso(r.generated_at), r.fecha_dato.isoformat() if r.fecha_dato else "")
+    if clave in _CACHE_VN:
+        _CACHE_VN.move_to_end(clave)
+        return r, _CACHE_VN[clave]
+    data = (await db.execute(select(VentasNetasReport.data).where(VentasNetasReport.id == r.id))).scalar_one() or {}
+    lineas = lineas_netas(data, periodo, r.fecha_dato)
+    _CACHE_VN[clave] = lineas
+    while len(_CACHE_VN) > _MAX_VN:
+        _CACHE_VN.popitem(last=False)
+    return r, lineas
+
 
 # (id del informe, generado) → [(clave, login válido s, conversación válida s)]
 _CACHE_PROD: "OrderedDict[tuple[str, str], list[tuple[str, int, int]]]" = OrderedDict()

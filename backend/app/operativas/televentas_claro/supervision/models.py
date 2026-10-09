@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, JSON, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ....core.database import Base
@@ -107,3 +107,85 @@ class OperadoresSync(Base):
     firma: Mapped[str] = mapped_column(String(64), nullable=False)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     resumen: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+
+# ------------------------------------------------------------------ coaching y bitácora (fase 3)
+class Coaching(Base):
+    """Un coaching del supervisor a un asesor: qué se trabajó, el compromiso y su seguimiento.
+
+    La hora de registro la pone el servidor; con más de 48 h de atraso queda «fuera de término».
+    Se edita (o se anula, si se cargó por error) durante 24 h; después solo se agregan el seguimiento y
+    aclaraciones. Todo queda en `sup_coaching_eventos`. `base` es la foto del asesor al registrarlo (sus
+    componentes y el uso de sus líneas por antigüedad); `impacto`, la medición al registrar el seguimiento."""
+    __tablename__ = "sup_coachings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    supervisor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    operador_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(10), nullable=False)        # diario | semanal | mensual
+    metrica: Mapped[str] = mapped_column(String(15), nullable=False)     # pospago | gpon | uso | conversacion | otra
+    diagnostico: Mapped[str] = mapped_column(Text, nullable=False)
+    compromiso: Mapped[str] = mapped_column(Text, nullable=False)
+    seguimiento_fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    estado: Mapped[str] = mapped_column(String(10), nullable=False, default="abierto")  # abierto | cerrado | anulado
+    anterior_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # el coaching sin mejora que continúa
+    seguimiento_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    seguimiento_comentario: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    resultado: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)  # mejoro | igual | empeoro | sin_datos
+    base: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    impacto: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    fuera_de_termino: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CoachingEvento(Base):
+    """Historial de un coaching (solo se agrega): creado, editado, anulado, seguimiento, aclaración."""
+    __tablename__ = "sup_coaching_eventos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    coaching_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(15), nullable=False)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    por: Mapped[str] = mapped_column(String(36), nullable=False)
+    datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class BitacoraNota(Base):
+    """Nota propia del supervisor: novedades, ausencias, incidencias, reconocimientos."""
+    __tablename__ = "sup_bitacora"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    supervisor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(15), nullable=False)  # novedad | ausencia | incidencia | reconocimiento | otro
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    operador_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    fuera_de_termino: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AlertaAsesor(Base):
+    """Un asesor en alerta por líneas sin uso dentro de un mes: desde cuándo y hasta cuándo.
+
+    Aparece el día que se generó el informe de Ventas Netas que la mostró (o el día que empezó a
+    medirse la gestión, si es posterior) y se cierra con el primer informe en que ya no está. Con la
+    fecha en que apareció se mide el foco: coaching sobre uso dentro de los 5 días hábiles."""
+    __tablename__ = "sup_alertas"
+    __table_args__ = (UniqueConstraint("operativa", "periodo", "operador_id", "tipo", "desde", name="uq_sup_alerta"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    periodo: Mapped[str] = mapped_column(String(7), nullable=False, index=True)
+    operador_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(15), nullable=False, default="uso")
+    desde: Mapped[date] = mapped_column(Date, nullable=False)
+    hasta: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    corte_desde: Mapped[Optional[date]] = mapped_column(Date, nullable=True)  # corte de Ventas Netas que la mostró
+    corte_hasta: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)    # uso del asesor al aparecer
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

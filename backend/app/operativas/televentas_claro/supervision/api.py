@@ -1,4 +1,4 @@
-"""API de Supervisión — Televentas Claro (modelo Líder Coach Comercial, fase 1).
+"""API de Supervisión — Televentas Claro (modelo Líder Coach Comercial).
 
 Permisos:
 * `televentas_claro.supervision`          → ver equipos, objetivos, avance y proyección, alertas y el detalle
@@ -12,7 +12,7 @@ hay, el borrador con el corte más nuevo, marcado como provisorio. Las cuentas e
 """
 from __future__ import annotations
 
-from collections import OrderedDict
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -28,15 +28,16 @@ from ....core.database import get_db
 from ....models.user import User
 from ....services import seguridad as seg
 from ....services.audit_service import record_action
-from ..fuentes import informes_ventas
 from ..sph.analyzer import nombre_mes
 from ..ventas_netas.models import ESTADO_PUBLICADO as VN_PUBLICADO
 from ..ventas_netas.models import VentasNetasReport
+from . import alertas as alertas_srv
+from . import coaching as coaching_srv
 from . import operadores as maestro
 from . import scoring
-from .datos import parametros_scoring, productividad_del_mes
+from .datos import parametros_scoring, productividad_del_mes, ventas_del_mes
 from .calculo import (
-    PARAMETROS_DEFECTO, atribuir, calendario, limites, lineas_netas, mes_anterior, proyeccion, supervisor_en,
+    PARAMETROS_DEFECTO, atribuir, calendario, limites, mes_anterior, proyeccion, supervisor_en,
     validar_periodo,
 )
 from .models import (
@@ -126,26 +127,6 @@ async def parametros(db: AsyncSession) -> dict[str, Any]:
     return p
 
 
-# Netas del mes ya preparadas, por informe y corte (se leen del JSON del informe una sola vez).
-_CACHE: "OrderedDict[tuple[str, str, str], list[dict[str, Any]]]" = OrderedDict()
-
-
-async def ventas_del_mes(db: AsyncSession, periodo: str) -> tuple[VentasNetasReport | None, list[dict[str, Any]]]:
-    r = (await informes_ventas(db, {periodo}, con_datos=False)).get(periodo)
-    if not r:
-        return None, []
-    clave = (r.id, _iso(r.generated_at) or "", r.fecha_dato.isoformat() if r.fecha_dato else "")
-    if clave in _CACHE:
-        _CACHE.move_to_end(clave)
-        return r, _CACHE[clave]
-    data = (await db.execute(select(VentasNetasReport.data).where(VentasNetasReport.id == r.id))).scalar_one() or {}
-    lineas = lineas_netas(data, periodo, r.fecha_dato)
-    _CACHE[clave] = lineas
-    while len(_CACHE) > 8:
-        _CACHE.popitem(last=False)
-    return r, lineas
-
-
 def _desc_ventas(r: VentasNetasReport | None) -> dict[str, Any] | None:
     if not r:
         return None
@@ -210,10 +191,19 @@ class Contexto:
         self.supervisores = await _supervisores(db, ids)
         return self
 
-    async def cargar_scoring(self, db: AsyncSession, gestion: dict[str, list[dict[str, Any]]] | None = None) -> "Contexto":
-        """Suma Productividad (conversación) y calcula el scoring del mes."""
+    async def cargar_scoring(self, db: AsyncSession) -> "Contexto":
+        """Suma Productividad (conversación) y la gestión registrada (coachings y alertas con fecha) y calcula
+        el scoring del mes. En el mes en curso, primero pone al día las alertas de uso con el informe vigente."""
         self.sc_params = await parametros_scoring(db)
         self.prod, self.fuente_prod = await productividad_del_mes(db, self.periodo)
+        dia = hoy()
+        self.inicio_gestion = await coaching_srv.inicio_gestion(db)
+        await alertas_srv.sincronizar(db, periodo=self.periodo, reporte=self.reporte, atrib=self.atrib, hoy=dia,
+                                      inicio=self.inicio_gestion)
+        self.alertas = await alertas_srv.del_mes(db, self.periodo)
+        self.coachings = await coaching_srv.para_scoring_del_mes(db, self.periodo)
+        gestion = {"inicio": self.inicio_gestion, "hoy": dia, "coachings": coaching_srv.para_scoring(self.coachings),
+                   "alertas": [alertas_srv.a_scoring(a, self.p) for a in self.alertas]}
         self.sc = scoring.calcular(
             primero=self.primero, ultimo=self.ultimo, corte=self.reporte.fecha_dato if self.reporte else None,
             cal=self.cal, p=self.p, sc=self.sc_params, pp=self.sc_params["conversacion"],
@@ -221,7 +211,7 @@ class Contexto:
             vendedores={o.id: o.vendedor for o in self.ops.values() if o.vendedor},
             tramos=self.tramos, ref=self.ref, atrib=self.atrib,
             objetivos={sid: (o.pospago, o.gpon) for sid, o in self.objetivos.items()},
-            prod=self.prod, supervisores=set(self.supervisores), gestion=gestion,
+            prod=self.prod, supervisores=set(self.supervisores), coaching=gestion,
         )
         return self
 
@@ -229,7 +219,9 @@ class Contexto:
         sc = self.sc_params
         return {"version": sc["version"], "asesor": sc["asesor"], "supervisor": sc["supervisor"], "uso_cero": sc["uso_cero"],
                 "min_horas_conversacion": sc["min_horas_conversacion"], "conversacion": sc["conversacion"],
-                "min_cobertura": scoring.MIN_COBERTURA, "productividad": self.fuente_prod}
+                "min_cobertura": scoring.MIN_COBERTURA, "productividad": self.fuente_prod,
+                "gestion_desde": self.inicio_gestion.isoformat() if self.inicio_gestion else None,
+                "dias_foco": scoring.DIAS_FOCO}
 
     def actual(self, op_id: str) -> str | None:
         return supervisor_en(self.tramos.get(op_id, []), self.ref)
@@ -439,7 +431,21 @@ async def portal(periodo: Optional[str] = Query(None), user: CurrentUser = Depen
     d = ctx.detalle(user.id, nombres)
     if d["scoring"]:
         d["scoring"]["anterior"] = _anterior(await contexto(db, mes_anterior(per)), "supervisores", user.id)
+    d["coaching"] = await _para_hoy(db, ctx, user.id)
     return d
+
+
+async def _para_hoy(db: AsyncSession, ctx: Contexto, sid: str) -> dict[str, Any]:
+    """Lo que el supervisor tiene que atender de su gestión: seguimientos y alertas de uso, y quién no tuvo coaching."""
+    dia = hoy()
+    seguimientos = Counter(coaching_srv.estado_seguimiento(c, dia) for c in await coaching_srv.abiertos(db, sid))
+    alertas = Counter(a["estado"] for a in alertas_srv.del_supervisor(
+        ctx.alertas, sid, p=ctx.p, tramos=ctx.tramos, ref=ctx.ref, primero=ctx.primero, coachings=ctx.coachings, hoy=dia,
+        nombres={}))
+    con = {c.operador_id for c in ctx.coachings if ctx.primero <= c.fecha <= min(ctx.ultimo, dia)}
+    return {"seguimientos_vencidos": seguimientos.get("vencido", 0), "seguimientos_hoy": seguimientos.get("hoy", 0),
+            "alertas_vencidas": alertas.get("vencida", 0), "alertas_en_plazo": alertas.get("en_plazo", 0),
+            "sin_coaching": sum(1 for op in ctx.equipo(sid) if op not in con)}
 
 
 @router.get("/portal/lineas")

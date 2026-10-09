@@ -258,7 +258,11 @@ async def test_flujo_equipos_objetivos_proyeccion_y_portal(monkeypatch):
         assert t["operacion"]["total"] is not None and t["anterior"]["periodo"] == "2026-09"
         assert {s["nombre"] for s in t["supervisores"]} == {"Silvia Uno", "Sergio Dos"}
         silvia_sc = next(s for s in t["supervisores"] if s["nombre"] == "Silvia Uno")
-        assert silvia_sc["total"] == silvia_sc["resultado"] and silvia_sc["anterior"] is None
+        # La gestión ya se mide: sin coachings, la cobertura es 0 (foco y seguimientos sin casos no se evalúan).
+        partes = {x["clave"]: x for x in silvia_sc["partes"]}
+        assert partes["cobertura"]["rel"] == 0 and partes["cobertura"]["detalle"] == "0 de 1 asesor con coaching en el mes"
+        assert partes["foco"]["rel"] is None and partes["seguimiento"]["rel"] is None and partes["tickets"]["pendiente"]
+        assert silvia_sc["total"] == round(silvia_sc["resultado"] * 0.8, 1) and silvia_sc["anterior"] is None
         assert {c["clave"] for c in silvia_sc["componentes"]} == {"pospago", "uso", "conversacion", "gpon"}
         ana_sc = next(a for a in t["asesores"] if a["nombre"] == "Perez, Ana")
         assert ana_sc["supervisor"] == "Silvia Uno" and ana_sc["total"] is not None
@@ -328,3 +332,7 @@ async def test_migraciones_de_una_vez():
         assert ops["GAMARRA, LUIS"].vendedor == "LUIS ALBERTO GAMARRA" and ops["GAMARRA, LUIS"].cruce == "manual"
         assert ops["ORTIZ, EVA"].cruce == "descartado"
         assert (await migraciones.vinculos_sph_al_maestro(db)) == {"importados": 0}  # no duplica
+        # La gestión del supervisor se mide desde el día en que se instala el registro de coaching (una sola vez).
+        r = await migraciones.inicio_gestion(db)
+        assert r["gestion_desde"] and "ya_estaba" not in r
+        assert (await migraciones.inicio_gestion(db)) == {"gestion_desde": r["gestion_desde"], "ya_estaba": True}

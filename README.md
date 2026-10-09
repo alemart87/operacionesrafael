@@ -66,7 +66,7 @@ operacionesrafaelmartinez/
 │   │           ├── fuentes.py   # qué informe de Productividad / Ventas Netas vale cada día y cada mes
 │   │           ├── ventas_netas/ # submódulo: api · models · schemas · parser · analyzer · exports · jobs
 │   │           ├── sph/         # submódulo SPH estimado: api · models · analyzer
-│   │           ├── supervision/ # submódulo Supervisión: api · models · calculo · operadores · migraciones
+│   │           ├── supervision/ # submódulo Supervisión: api · coaching_api · models · calculo · scoring · coaching · impacto · alertas · operadores · migraciones
 │   │           └── facturacion/ # submódulo: api · agent_api · models/ · schemas
 │   │                            #   parser · analyzers/ · agent/ · jobs/
 │   ├── tests/                   # pytest (SQLite)
@@ -295,19 +295,21 @@ de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro
 Gestión de los supervisores como líderes coach: equipos del mes, objetivos de Pospago y
 GPON por supervisor, avance y **proyección al cierre**, y asesores en alerta por líneas
 sin uso. Código en `backend/app/operativas/televentas_claro/supervision/`; la guía del
-modelo es el documento «Modelo Líder Coach Comercial». Fases 1 y 2 de 5: equipos, objetivos
-y proyección; tablero y scoring (siguen coaching y bitácora, tickets con SLA y centro de comandos).
+modelo es el documento «Modelo Líder Coach Comercial». Fases 1 a 3 de 5: equipos, objetivos
+y proyección; tablero y scoring; coaching y bitácora (siguen tickets con SLA y centro de comandos).
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
 | Objetivos y proyección | `/televentas-claro/supervision` | Por supervisor: vendido / objetivo, proyección al cierre, ritmo necesario por día hábil, semáforo y alertas; la operación completa; **Cargar objetivos** en la misma tabla |
 | Tablero | `…/supervision/tablero` | Scoring 0–100 de la operación, ranking de supervisores y de asesores, con la tendencia contra el mes anterior |
-| Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible) |
+| Coaching | `…/supervision/coaching` | Gestión de coaching de todos los supervisores: cobertura, foco, seguimientos, coachings, vencidos y última actividad (primero, quien tiene algo vencido) |
+| Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible); pestaña **Coaching y bitácora** en `…/{id}/coaching`, solo lectura |
 | Equipos del mes | `…/supervision/equipos` | Tablero por supervisor y «Sin supervisor»; selección múltiple, **fecha efectiva**, copiar los equipos del mes anterior |
 | Operadores | `…/supervision/operadores` | Maestro de operadores: por revisar, vincular, separar, confirmar sin vínculo, renombrar, dar de baja |
 | Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana y días no laborables (más los feriados de Seguridad) |
 | Parámetros | `…/supervision/parametros` | Pesos y umbrales del scoring, versionados (solo sub gerente y superadmin) |
-| Mi portal | `/televentas-claro/portal` | El portal del supervisor: su equipo, sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
+| Mi portal | `/televentas-claro/portal` | El portal del supervisor: «Para hoy» (seguimientos y alertas por atender), su equipo, sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
+| Coaching y bitácora | `/televentas-claro/portal/coaching` | El supervisor registra coachings (con compromiso y fecha de seguimiento), seguimientos con el impacto medido, aclaraciones y notas de bitácora; ve su gestión del mes |
 
 - **Maestro de operadores:** cada persona tiene un nombre en llamadas (agente de
   Productividad) y otro como vendedor (POS de Ventas Netas), sin ID común. En cada mes
@@ -342,13 +344,42 @@ y proyección; tablero y scoring (siguen coaching y bitácora, tickets con SLA y
     con 25%; más de 47% no resta y se marca).
   - Lo que no tiene datos suficientes no se evalúa y su peso se reparte. Si se evaluó
     menos del 60% del peso, el puntaje es **parcial** (se marca y va después en el ranking).
-  - Supervisor: 60 por el resultado del equipo y 40 por la gestión (coaching, foco,
-    seguimientos y tickets, a medida que existen los registros). Operación: los mismos
-    componentes sobre toda la operación. Tendencia: contra el mes anterior.
+  - Supervisor: 60 por el resultado del equipo y 40 por la gestión: cobertura 15 (% del
+    equipo actual con al menos un coaching en el mes), foco 10 (% de las alertas de uso con
+    coaching sobre uso dentro de los 5 días hábiles desde que aparecieron; las que siguen en
+    plazo o se resolvieron solas antes no cuentan), seguimientos 5 (% de los compromisos
+    seguidos en la fecha acordada o al día siguiente) y tickets 10 (pendiente: su peso se
+    reparte). La gestión se mide desde el día en que se instaló el registro de coaching
+    (`gestion_desde`, migración de datos): los meses anteriores no se reescriben. Operación:
+    los mismos componentes sobre toda la operación. Tendencia: contra el mes anterior.
   - Los pesos los cambia el sub gerente (utilidad restringida `supervision_parametros`);
     cada cambio es una versión nueva con historial y auditoría.
+- **Coaching y bitácora** (`supervision/coaching.py`, `coaching_api.py`; tablas
+  `sup_coachings`, `sup_coaching_eventos`, `sup_bitacora`, `sup_alertas`):
+  - Lo registra el supervisor desde su portal, solo para los asesores que tenía en su
+    equipo ese día (lo controla el servidor): asesor, fecha, tipo (diario en puesto,
+    semanal uno a uno, mensual de resultados), métrica (Pospago, GPON, uso de líneas,
+    conversación u otra), diagnóstico, compromiso y fecha de seguimiento (hasta 45 días).
+  - La hora la pone el servidor. La fecha puede ser de este mes (o de los últimos 2 días);
+    con más de 48 h de atraso cuenta igual, pero queda **fuera de término**. Se corrige o se
+    anula (si fue un error) durante 24 h; después solo se agregan el seguimiento y
+    aclaraciones. Nada se borra: cada versión queda en `sup_coaching_eventos` y en la
+    auditoría. La bitácora (novedades, ausencias, incidencias, reconocimientos) no se edita.
+  - **Impacto medido** (`supervision/impacto.py`, cuentas puras), antes contra después:
+    conversación de 5 días con conexión de cada lado (Productividad); Pospago y GPON en
+    netas por hora conectada, solo con netas maduras (se activan hasta 7 días después de la
+    venta); uso de líneas, % sin uso de las Pospago vendidas después contra las de antes
+    **con la misma antigüedad** (de 3 a 21 días de activadas: las de antes salen de la foto
+    que se guarda al registrar). Resultado: mejoró, igual o empeoró según una banda de
+    tolerancia, o sin datos. Al registrar el seguimiento se guarda la medición; si no
+    mejoró, el portal propone un coaching nuevo sobre la misma métrica (queda encadenado).
+  - **Alertas de uso con fecha** (`supervision/alertas.py`): al leer el mes en curso se
+    abren las alertas nuevas (el día en que se generó el informe de Ventas Netas que las
+    mostró) y se cierran las que ya no están; con esa fecha se mide el foco.
 - **Seguridad:** el portal filtra en el servidor por el usuario (solo sus asesores, en
-  las fechas en que los tuvo); ver las líneas sin uso de un asesor queda auditado.
+  las fechas en que los tuvo, y solo sus coachings y notas); ver las líneas sin uso de un
+  asesor y cada registro de coaching quedan auditados. Los jefes ven el coaching de cada
+  supervisor sin poder cambiarlo.
 - **Permisos:** `supervision` (ver), `supervision_gestion` (equipos, objetivos,
   calendario), `operadores` (vínculos), `supervision_parametros` (pesos del scoring, solo
   sub gerente) y `portal_supervisor` (solo el perfil Supervisor).

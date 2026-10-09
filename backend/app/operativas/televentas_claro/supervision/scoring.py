@@ -16,8 +16,15 @@ Si se pudo evaluar menos del `MIN_COBERTURA` % del peso, el puntaje es parcial (
 marcado y va después en los rankings): un solo componente no alcanza para comparar.
 
 Supervisor: 60 por el resultado del equipo (los mismos componentes sobre todo el equipo, contra
-los objetivos del supervisor) y 40 por su gestión (coaching, foco, seguimientos y tickets, a
-medida que existen los registros). Operación: los componentes sobre toda la operación.
+los objetivos del supervisor) y 40 por su gestión, desde el día en que empezó a registrarse:
+- Cobertura (15): % del equipo actual con al menos un coaching en el mes.
+- Foco (10): % de las alertas de uso de su equipo con coaching sobre uso dentro de los 5 días
+  hábiles desde que aparecieron. Una alerta todavía en plazo no cuenta; una que se resolvió sola
+  antes del plazo, tampoco.
+- Seguimientos (5): % de los compromisos con fecha de seguimiento en el mes que se siguieron en esa
+  fecha (o al día siguiente). Los que todavía no vencieron no cuentan.
+- Tickets (10): con los tickets de revisión (fase siguiente); mientras, su peso se reparte.
+Operación: los componentes sobre toda la operación.
 """
 from __future__ import annotations
 
@@ -36,6 +43,9 @@ SCORING_DEFECTO: dict[str, Any] = {
 }
 
 MIN_COBERTURA = 60  # % del peso evaluado para que el puntaje no sea parcial
+DIAS_FOCO = 5       # días hábiles para el coaching sobre uso desde que aparece la alerta
+GRACIA_SEGUIMIENTO = 1  # el seguimiento vale a tiempo en la fecha acordada o al día siguiente
+GESTION = ("cobertura", "foco", "seguimiento", "tickets")
 
 NOMBRES = {
     "pospago": "Pospago", "gpon": "GPON", "uso": "Uso de líneas", "conversacion": "Conversación",
@@ -98,17 +108,93 @@ def comp_conversacion(peso: float, login: float, conv: float, pp: dict[str, Any]
                  sobre_meta=pct > pp["meta_max"])
 
 
+# ------------------------------------------------------------------ gestión del supervisor
+def _plural(k: int, uno: str, varios: str) -> str:
+    return f"{k} {uno if k == 1 else varios}"
+
+
+def gestion_pendiente(ws: dict[str, Any], detalle: str | None = None) -> list[dict[str, Any]]:
+    return [_comp(k, ws[k], None, None, pendiente=True, **({"detalle": detalle} if detalle and k != "tickets" else {}))
+            for k in GESTION]
+
+
+def gestion_supervisor(sid: str, *, ws: dict[str, Any], equipo: list[str], coachings: list[dict[str, Any]],
+                       alertas: list[dict[str, Any]], hoy: date, primero: date, ultimo: date) -> list[dict[str, Any]]:
+    """Cobertura, foco y seguimientos de un supervisor en el mes (los tickets, pendientes).
+
+    `coachings`: los no anulados con fecha en el mes (o un poco después, para el foco de las alertas de
+    fin de mes) y los que tienen su seguimiento en el mes: operador_id, supervisor_id, metrica, fecha,
+    seguimiento_fecha y seguimiento_dia (día en que se registró el seguimiento, o None).
+    `alertas`: las de uso del mes ya atribuidas a un supervisor: operador_id, supervisor_id, vence, hasta."""
+    # ---- cobertura: asesores del equipo actual con algún coaching en el mes
+    hasta_mes = min(ultimo, hoy)
+    con = {c["operador_id"] for c in coachings if primero <= c["fecha"] <= hasta_mes}
+    n = len(equipo)
+    k = sum(1 for op in equipo if op in con)
+    cobertura = _comp("cobertura", ws["cobertura"], k / n if n else None, k / n * 100 if n else None, con=k, de=n,
+                      detalle=f"{k} de {_plural(n, 'asesor', 'asesores')} con coaching en el mes" if n else "Sin asesores en el equipo")
+
+    # ---- foco: alertas de uso con coaching sobre uso a tiempo
+    cubiertas = exigibles = en_plazo = 0
+    for a in alertas:
+        if a["supervisor_id"] != sid:
+            continue
+        cubierta = any(c["operador_id"] == a["operador_id"] and c["metrica"] == "uso" and primero <= c["fecha"] <= a["vence"]
+                       for c in coachings)
+        if cubierta:
+            cubiertas += 1
+            exigibles += 1
+        elif a["vence"] < hoy:
+            if a["hasta"] is None or a["hasta"] > a["vence"]:
+                exigibles += 1  # siguió en alerta después del plazo sin coaching
+        elif a["hasta"] is None:
+            en_plazo += 1
+    if exigibles:
+        detalle = f"{cubiertas} de {_plural(exigibles, 'alerta', 'alertas')} de uso con coaching en {DIAS_FOCO} días hábiles"
+    else:
+        detalle = "Sin alertas de uso vencidas"
+    if en_plazo:
+        detalle += f" · {en_plazo} en plazo"
+    foco = _comp("foco", ws["foco"], cubiertas / exigibles if exigibles else None,
+                 cubiertas / exigibles * 100 if exigibles else None, con=cubiertas, de=exigibles, en_plazo=en_plazo,
+                 detalle=detalle)
+
+    # ---- seguimientos: en la fecha acordada (o al día siguiente)
+    a_tiempo = vencidos = proximos = 0
+    for c in coachings:
+        if c["supervisor_id"] != sid or not primero <= c["seguimiento_fecha"] <= ultimo:
+            continue
+        limite = c["seguimiento_fecha"] + timedelta(days=GRACIA_SEGUIMIENTO)
+        if c["seguimiento_dia"] is not None:
+            vencidos += 1
+            a_tiempo += c["seguimiento_dia"] <= limite
+        elif limite < hoy:
+            vencidos += 1
+        else:
+            proximos += 1
+    detalle = (f"{a_tiempo} de {_plural(vencidos, 'seguimiento', 'seguimientos')} a tiempo" if vencidos
+               else "Sin seguimientos vencidos en el mes")
+    if proximos:
+        detalle += f" · {proximos} por venir"
+    seguimiento = _comp("seguimiento", ws["seguimiento"], a_tiempo / vencidos if vencidos else None,
+                        a_tiempo / vencidos * 100 if vencidos else None, con=a_tiempo, de=vencidos, proximos=proximos,
+                        detalle=detalle)
+    tickets = _comp("tickets", ws["tickets"], None, None, pendiente=True)
+    return [cobertura, foco, seguimiento, tickets]
+
+
 # ------------------------------------------------------------------ cálculo del mes
 def calcular(*, primero: date, ultimo: date, corte: date | None, cal: dict[str, Any], p: dict[str, Any],
              sc: dict[str, Any], pp: dict[str, Any], agentes: dict[str, str], vendedores: dict[str, str],
              tramos: dict[str, list[tuple[date, str | None]]], ref: date, atrib: dict[str, Any],
              objetivos: dict[str, tuple[int | None, int | None]], prod: dict[str, list[tuple[date, int, int]]],
-             supervisores: Iterable[str], gestion: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
+             supervisores: Iterable[str], coaching: dict[str, Any] | None = None) -> dict[str, Any]:
     """Scoring del mes: operación, cada supervisor (con su equipo actual) y cada asesor.
 
     `agentes`: operador → clave de Productividad; `vendedores`: operador → vendedor (los que tienen).
     `prod`: clave → [(día, login válido s, conversación válida s)]. `objetivos`: supervisor → (pospago, gpon).
-    `gestion`: supervisor → componentes de gestión ya calculados (coaching, tickets).
+    `coaching`: registros de la gestión: {"inicio": día desde el que se mide (o None), "hoy", "coachings",
+    "alertas"} (ver `gestion_supervisor`). Sin registros, la gestión queda pendiente.
     """
     pesos_dia, feriados = p["pesos_dia"], set(p["feriados"])
 
@@ -185,6 +271,12 @@ def calcular(*, primero: date, ultimo: date, corte: date | None, cal: dict[str, 
         r.update({"supervisor_id": sid, "dias": round(dias.get((op, sid), 0.0), 1) if sid else None})
         asesores[op] = r
 
+    # ---- gestión: cada alerta es del supervisor que tenía al asesor al vencer su plazo (o hoy, si no venció)
+    inicio = (coaching or {}).get("inicio")
+    medir_gestion = coaching is not None and not (inicio and ultimo < inicio)
+    alertas = [{**a, "supervisor_id": sup_de(a["operador_id"], min(a["vence"], ref))}
+               for a in (coaching or {}).get("alertas", [])] if medir_gestion else []
+
     # ---- supervisores: resultado del equipo + gestión
     supervisores_out: dict[str, dict[str, Any]] = {}
     for sid in sups:
@@ -203,8 +295,11 @@ def calcular(*, primero: date, ultimo: date, corte: date | None, cal: dict[str, 
         resultado = puntaje(_orden(comps))
         partes = [_comp("resultado", ws["resultado"], resultado["total"] / 100 if resultado["total"] is not None else None,
                         resultado["total"])]
-        g = (gestion or {}).get(sid)
-        partes += g if g is not None else [_comp(k, ws[k], None, None, pendiente=True) for k in ("cobertura", "foco", "seguimiento", "tickets")]
+        if medir_gestion:
+            partes += gestion_supervisor(sid, ws=ws, equipo=equipo, coachings=coaching["coachings"], alertas=alertas,
+                                         hoy=coaching["hoy"], primero=primero, ultimo=ultimo)
+        else:
+            partes += gestion_pendiente(ws, f"Se mide desde el {inicio:%d/%m/%Y}" if inicio and coaching is not None else None)
         total = puntaje(partes)
         supervisores_out[sid] = {"total": total["total"], "partes": total["componentes"],
                                  "resultado": resultado["total"], "componentes": resultado["componentes"],

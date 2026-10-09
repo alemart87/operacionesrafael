@@ -1,7 +1,9 @@
 """Migraciones de datos de Supervisión (una sola vez, ver models/migracion.py)."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +12,7 @@ from ....core.operativas import filter_permissions
 from ....core.perfiles import DEFAULT_PERMISSIONS
 from ....models.profile import Profile
 from . import operadores as maestro
-from .models import OPERATIVA
+from .models import OPERATIVA, SupParametros
 
 UTILIDADES_NUEVAS = {f"{OPERATIVA}.{u}" for u in ("supervision", "supervision_gestion", "operadores", "portal_supervisor")}
 
@@ -45,8 +47,25 @@ async def vinculos_sph_al_maestro(db: AsyncSession) -> dict[str, Any]:
     return await maestro.importar_vinculos_sph(db)
 
 
+async def inicio_gestion(db: AsyncSession) -> dict[str, Any]:
+    """La gestión del supervisor (cobertura, foco, seguimientos) se mide desde el día en que se instala el
+    registro de coaching: los meses anteriores no tenían cómo registrarla y no se reescriben."""
+    hoy = datetime.now(ZoneInfo("America/Asuncion")).date().isoformat()
+    row = await db.get(SupParametros, OPERATIVA)
+    if row and (row.data or {}).get("gestion_desde"):
+        return {"gestion_desde": row.data["gestion_desde"], "ya_estaba": True}
+    if not row:
+        row = SupParametros(operativa=OPERATIVA, data={})
+        db.add(row)
+    row.data = {**(row.data or {}), "gestion_desde": hoy}
+    row.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"gestion_desde": hoy}
+
+
 MIGRACIONES = [
     ("2026-10-supervision-permisos", permisos_supervision),
     ("2026-10-operadores-desde-sph", vinculos_sph_al_maestro),
     ("2026-10-supervision-parametros", permisos_parametros),
+    ("2026-10-gestion-desde", inicio_gestion),
 ]

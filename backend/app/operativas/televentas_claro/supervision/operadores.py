@@ -20,7 +20,7 @@ from collections import Counter
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..fuentes import informes_productividad, informes_ventas
@@ -30,7 +30,8 @@ from ..sph.analyzer import SIN_VENDEDOR, cruzar, evaluar, partes_agente, tokens
 from ..ventas_netas.models import VentasNetasReport
 from .calculo import limites
 from .models import (
-    AGENTE_PENDIENTE, OPERATIVA, VENDEDOR_PENDIENTE, VINCULADO, EquipoAsignacion, Operador, OperadoresSync,
+    AGENTE_PENDIENTE, OPERATIVA, VENDEDOR_PENDIENTE, VINCULADO, AlertaAsesor, BitacoraNota, Coaching, EquipoAsignacion,
+    Operador, OperadoresSync,
 )
 
 _lock = asyncio.Lock()  # un solo proceso atiende la API: una detección a la vez
@@ -129,7 +130,8 @@ async def identidades(db: AsyncSession, periodo: str, prods: dict[date, ProdInfo
 
 # ------------------------------------------------------------------ unir y separar
 async def fusionar(db: AsyncSession, queda: Operador, sale: Operador) -> list[str]:
-    """`sale` se integra en `queda`: sus nombres, sus fechas y sus equipos (si `queda` no tiene en ese mes).
+    """`sale` se integra en `queda`: sus nombres, sus fechas, sus equipos (si `queda` no tiene en ese mes) y su
+    gestión (coachings, notas de bitácora y alertas: son de la misma persona).
     Devuelve los meses en que `sale` tenía equipo y se descartó por chocar con el de `queda`."""
     if (sale.agente_clave and queda.agente_clave) or (sale.vendedor and queda.vendedor):
         raise VinculoInvalido("Los dos operadores tienen el mismo tipo de nombre: separá uno antes de unirlos")
@@ -158,6 +160,16 @@ async def fusionar(db: AsyncSession, queda: Operador, sale: Operador) -> list[st
             await db.delete(a)
         else:
             a.operador_id = queda.id
+    for modelo in (Coaching, BitacoraNota):
+        await db.execute(update(modelo).where(modelo.operador_id == sale.id).values(operador_id=queda.id))
+    alertas = (await db.execute(select(AlertaAsesor).where(AlertaAsesor.operador_id.in_([queda.id, sale.id])))).scalars().all()
+    ya = {(a.periodo, a.tipo, a.desde) for a in alertas if a.operador_id == queda.id}
+    for a in alertas:
+        if a.operador_id == sale.id:
+            if (a.periodo, a.tipo, a.desde) in ya:
+                await db.delete(a)
+            else:
+                a.operador_id = queda.id
     await db.delete(sale)
     await db.flush()
     return sorted(set(descartados))

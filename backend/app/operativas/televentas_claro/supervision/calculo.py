@@ -90,6 +90,25 @@ def calendario(periodo: str, corte: date | None, pesos: list[float], feriados: I
     }
 
 
+def peso_dia(d: date, pesos: list[float], feriados: set[str] | frozenset[str]) -> float:
+    return 0.0 if d.isoformat() in feriados else float(pesos[d.weekday()])
+
+
+def sumar_habiles(desde: date, dias: float, pesos: list[float], feriados: Iterable[str]) -> date:
+    """El día en que se cumplen `dias` días hábiles contados desde el siguiente a `desde`.
+
+    De lunes a viernes suman 1, el sábado 0,5 (por defecto): 5 días hábiles desde un lunes vencen el lunes
+    siguiente. Si la semana no tiene días hábiles, se corta a los 60 días."""
+    no_cuentan = set(feriados)
+    if not any(pesos):
+        return desde + timedelta(days=60)
+    acum, d = 0.0, desde
+    while acum < dias - 1e-9 and d < desde + timedelta(days=60):
+        d += timedelta(days=1)
+        acum += peso_dia(d, pesos, no_cuentan)
+    return d
+
+
 def proyeccion(vendido: int | None, objetivo: int | None, cal: dict[str, Any], p: dict[str, Any]) -> dict[str, Any]:
     """Avance contra el objetivo y cierre proyectado al mismo ritmo por día hábil."""
     hay_datos = vendido is not None and cal["corte"] is not None
@@ -137,7 +156,9 @@ def lineas_netas(data: dict[str, Any], periodo: str, corte: date | None) -> list
     """Netas del informe de Ventas Netas del mes con lo que usa Supervisión.
 
     `fecha` es el día que decide el supervisor: el de la venta (si no viene, la carga o la
-    activación), llevado al día 1 si es de antes del mes y al corte si es posterior."""
+    activación), llevado al día 1 si es de antes del mes y al corte si es posterior. `venta` es el
+    día de la venta tal cual (o de la carga; None si no viene ninguno): con ese se mide el impacto
+    de un coaching. `dias`: días desde la activación al corte del informe."""
     primero, _ = limites(periodo)
     out: list[dict[str, Any]] = []
     for x in data.get("detalle_netas") or []:
@@ -152,6 +173,7 @@ def lineas_netas(data: dict[str, Any], periodo: str, corte: date | None) -> list
             "vendedor": x.get("vendedor") or SIN_VENDEDOR,
             "producto": prod,
             "fecha": f,
+            "venta": _fecha(x.get("fecha_venta")) or _fecha(x.get("fecha_carga")),  # el día real (sin llevar al mes)
             "evaluable": pospago and not espera,
             "sin_uso": pospago and not espera and x.get("consumo") != "SI",
             "en_espera": espera,

@@ -80,6 +80,16 @@ export interface DetalleSupervisor extends Comun {
   a_recuperar: number;
   asesores: AsesorEquipo[];
   scoring: ScoringSupervisor | null;
+  coaching?: ParaHoy;
+}
+
+/** Lo que el supervisor tiene que atender de su gestión (portal). */
+export interface ParaHoy {
+  seguimientos_vencidos: number;
+  seguimientos_hoy: number;
+  alertas_vencidas: number;
+  alertas_en_plazo: number;
+  sin_coaching: number;
 }
 
 export interface FilaSupervisor extends SupervisorRef {
@@ -269,6 +279,10 @@ export interface Componente {
   sobre_meta?: boolean;
   pendiente?: boolean;
   detalle?: string;
+  con?: number;
+  de?: number;
+  en_plazo?: number;
+  proximos?: number;
 }
 
 export interface ParametrosScoring {
@@ -280,6 +294,8 @@ export interface ParametrosScoring {
   conversacion: { rojo: number; meta_min: number; meta_max: number };
   min_cobertura?: number;
   productividad?: { dias: number; ultimo_dia: string | null; borradores: number };
+  gestion_desde?: string | null;
+  dias_foco?: number;
 }
 
 export interface ScoringSupervisor {
@@ -330,4 +346,240 @@ export interface ParametrosScoringCompletos extends ParametrosScoring {
   min_evaluables: number;
   historial: { version: number; fecha: string; por: string | null; antes: Partial<ParametrosScoring> }[];
   puede_editar: boolean;
+}
+
+// ------------------------------------------------------------------ coaching y bitácora
+export type TipoCoaching = "diario" | "semanal" | "mensual";
+export type MetricaCoaching = "pospago" | "gpon" | "uso" | "conversacion" | "otra";
+export type ResultadoImpacto = "mejoro" | "igual" | "empeoro" | "sin_datos";
+export type EstadoSeguimiento = "a_tiempo" | "tarde" | "vencido" | "hoy" | "proximo";
+export type EstadoAlerta = "vencida" | "en_plazo" | "cubierta" | "resuelta";
+export type TipoNota = "novedad" | "ausencia" | "incidencia" | "reconocimiento" | "otro";
+
+export interface LadoImpacto {
+  valor: number | null;
+  desde?: string | null;
+  hasta?: string | null;
+  dias?: number;
+  horas?: number;
+  netas?: number;
+  lineas?: number;
+  sin_uso?: number;
+  corte?: string | null;
+}
+
+export interface Impacto {
+  metrica: MetricaCoaching;
+  unidad?: string;
+  antes?: LadoImpacto;
+  despues?: LadoImpacto;
+  delta: number | null;
+  resultado: ResultadoImpacto;
+  banda?: number;
+  completo: boolean;
+  detalle: string;
+  edades?: [number, number] | null;
+  maduras_hasta?: string | null;
+}
+
+export interface Coaching {
+  id: string;
+  supervisor_id: string;
+  supervisor: string;
+  operador_id: string;
+  operador: string;
+  agente: string | null;
+  vendedor: string | null;
+  fecha: string;
+  tipo: TipoCoaching;
+  metrica: MetricaCoaching;
+  diagnostico: string;
+  compromiso: string;
+  seguimiento_fecha: string;
+  estado: "abierto" | "cerrado" | "anulado";
+  seguimiento: EstadoSeguimiento | null;
+  seguimiento_at: string | null;
+  seguimiento_comentario: string | null;
+  resultado: ResultadoImpacto | null;
+  impacto: Impacto | null;
+  impacto_guardado: boolean;
+  base: { score?: number | null; registrado?: string; componentes?: Partial<Componente>[] };
+  fuera_de_termino: boolean;
+  anterior_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  editable: boolean;
+}
+
+export interface EventoCoaching {
+  id: string;
+  tipo: "creado" | "editado" | "anulado" | "seguimiento" | "aclaracion";
+  at: string | null;
+  por: string;
+  datos: Record<string, any>;
+}
+
+export interface CoachingDetalle extends Coaching {
+  eventos: EventoCoaching[];
+  siguientes: { id: string; fecha: string }[];
+}
+
+export interface MiembroCoaching extends OperadorCorto {
+  actual: boolean;
+  tramos: { desde: string; hasta: string }[];
+  coachings: number;
+  ultimo_coaching: string | null;
+  uso: Uso | null;
+  conversacion: { valor: number | null; roja: boolean; sobre_meta: boolean } | null;
+  score: number | null;
+  parcial: boolean;
+}
+
+export interface AlertaFoco {
+  id: string;
+  operador_id: string;
+  operador: string;
+  desde: string;
+  hasta: string | null;
+  vence: string;
+  estado: EstadoAlerta;
+  datos: { pct_sin_uso?: number | null; evaluables?: number; sin_uso?: number; a_recuperar?: number };
+  coaching_id: string | null;
+  coaching_fecha: string | null;
+}
+
+export interface NotaBitacora {
+  id: string;
+  fecha: string;
+  tipo: TipoNota;
+  texto: string;
+  operador_id: string | null;
+  operador: string | null;
+  fuera_de_termino: boolean;
+  created_at: string | null;
+}
+
+export interface ReglasCoaching {
+  horas_edicion: number;
+  dias_termino: number;
+  dias_seguimiento_max: number;
+  seguimiento_sugerido: Record<TipoCoaching, number>;
+  min_texto: number;
+  max_texto: number;
+  dias_foco: number;
+}
+
+export interface VistaCoachingData extends Comun {
+  hoy: string;
+  supervisor: SupervisorRef;
+  gestion_desde: string | null;
+  scoring: ScoringSupervisor | null;
+  equipo: MiembroCoaching[];
+  alertas: AlertaFoco[];
+  items: Coaching[];
+  pendientes: Coaching[];
+  notas: NotaBitacora[];
+  reglas: ReglasCoaching;
+  puede_registrar: boolean;
+}
+
+export interface FilaGestion extends SupervisorRef {
+  asesores: number;
+  total: number | null;
+  partes: Componente[];
+  coachings: number;
+  por_metrica: Partial<Record<MetricaCoaching, number>>;
+  fuera_de_termino: number;
+  sin_mejora: number;
+  seguimientos_abiertos: number;
+  seguimientos_vencidos: number;
+  alertas: Record<EstadoAlerta, number>;
+  notas: number;
+  ultima_actividad: string | null;
+  dias_sin_actividad: number | null;
+}
+
+export interface GestionCoaching extends Comun {
+  hoy: string;
+  gestion_desde: string | null;
+  operacion: {
+    asesores: number;
+    con_coaching: number;
+    coachings: number;
+    seguimientos_vencidos: number;
+    alertas_vencidas: number;
+    alertas_en_plazo: number;
+  };
+  supervisores: FilaGestion[];
+  reglas: ReglasCoaching;
+}
+
+const VERDE = "bg-emerald-50 text-emerald-800 border-emerald-200";
+const NARANJA = "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40";
+const ROJO = "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30";
+const GRIS = "bg-brand-bg text-brand-slate border-brand-border";
+const AZUL = "bg-[#2A78D6]/10 text-[#1D5BA6] border-[#2A78D6]/30";
+
+export const METRICA: Record<MetricaCoaching, { label: string; ayuda: string }> = {
+  pospago: { label: "Pospago", ayuda: "Netas Pospago por hora conectada, 5 días antes y 5 después" },
+  gpon: { label: "GPON", ayuda: "Netas GPON por hora conectada, 5 días antes y 5 después" },
+  uso: { label: "Uso de líneas", ayuda: "% sin uso de las vendidas después contra las de antes, con la misma antigüedad" },
+  conversacion: { label: "Conversación", ayuda: "% de conversación de 5 días con conexión antes y 5 después" },
+  otra: { label: "Otra", ayuda: "Sin medición automática: vale el comentario del seguimiento" },
+};
+
+export const TIPO_COACHING: Record<TipoCoaching, { label: string; ayuda: string }> = {
+  diario: { label: "Diario en puesto", ayuda: "Corregir en el momento una práctica observada en una llamada · 5 a 10 min" },
+  semanal: { label: "Semanal uno a uno", ayuda: "Revisar los datos de la semana y acordar un compromiso · 20 a 30 min" },
+  mensual: { label: "Mensual de resultados", ayuda: "Cerrar el mes contra el objetivo y planear el siguiente · 30 a 45 min" },
+};
+
+export const RESULTADO: Record<ResultadoImpacto, { label: string; chip: string }> = {
+  mejoro: { label: "Mejoró", chip: VERDE },
+  igual: { label: "Igual", chip: GRIS },
+  empeoro: { label: "Empeoró", chip: ROJO },
+  sin_datos: { label: "Sin datos", chip: GRIS },
+};
+
+export const SEGUIMIENTO: Record<EstadoSeguimiento, { label: string; corto: string; chip: string; ayuda: string }> = {
+  a_tiempo: { label: "Seguimiento a tiempo", corto: "A tiempo", chip: VERDE, ayuda: "Registrado en la fecha acordada o al día siguiente" },
+  tarde: { label: "Seguimiento tarde", corto: "Tarde", chip: NARANJA, ayuda: "Registrado después del día siguiente a la fecha acordada" },
+  vencido: { label: "Seguimiento vencido", corto: "Vencido", chip: ROJO, ayuda: "Pasó la fecha acordada (y el día siguiente) sin seguimiento" },
+  hoy: { label: "Seguimiento hoy", corto: "Hoy", chip: AZUL, ayuda: "La fecha acordada es hoy (o fue ayer): todavía está a tiempo" },
+  proximo: { label: "Seguimiento pendiente", corto: "Pendiente", chip: GRIS, ayuda: "Todavía no llegó la fecha acordada" },
+};
+
+export const ALERTA: Record<EstadoAlerta, { label: string; chip: string; ayuda: string }> = {
+  vencida: { label: "Sin coaching a tiempo", chip: ROJO, ayuda: "Pasaron los 5 días hábiles sin coaching sobre uso de líneas" },
+  en_plazo: { label: "En plazo", chip: NARANJA, ayuda: "Todavía hay tiempo para el coaching sobre uso de líneas" },
+  cubierta: { label: "Con coaching", chip: VERDE, ayuda: "Tuvo coaching sobre uso de líneas dentro del plazo" },
+  resuelta: { label: "Se resolvió", chip: GRIS, ayuda: "Dejó de estar en alerta antes del plazo: no cuenta para el foco" },
+};
+
+export const TIPO_NOTA: Record<TipoNota, { label: string; chip: string }> = {
+  novedad: { label: "Novedad", chip: AZUL },
+  ausencia: { label: "Ausencia", chip: NARANJA },
+  incidencia: { label: "Incidencia", chip: ROJO },
+  reconocimiento: { label: "Reconocimiento", chip: VERDE },
+  otro: { label: "Otro", chip: GRIS },
+};
+
+/** Fecha y hora de un registro en la hora de la operación (Asunción), como la usa el servidor para sus reglas. */
+export function fechaHoraPy(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("es-PY", {
+    timeZone: "America/Asuncion", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+/** Fecha 'AAAA-MM-DD' más n días (sin zona horaria). */
+export function sumarDias(iso: string, n: number): string {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Días entre dos fechas 'AAAA-MM-DD' (b − a). */
+export function diasEntre(a: string, b: string): number {
+  return Math.round((new Date(`${b}T12:00:00`).getTime() - new Date(`${a}T12:00:00`).getTime()) / 86400000);
 }
