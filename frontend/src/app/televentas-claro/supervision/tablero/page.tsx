@@ -196,7 +196,7 @@ function Vista() {
                   {asesores.map((a) => (
                     <tr key={a.id} className={`border-t border-brand-border ${a.alerta ? "shadow-[inset_3px_0_0_#E6332A]" : ""}`}>
                       <td className="px-5 py-2.5 min-w-[200px]">
-                        <div className="font-semibold text-brand-ink">{a.nombre}</div>
+                        <Link href={`${SUP_HREF}/asesores/${a.id}?periodo=${periodo}`} className="font-semibold text-brand-ink hover:text-brand-primary">{a.nombre}</Link>
                         <div className="text-[11px] text-brand-slate">{a.vendedor ?? "Sin nombre de vendedor"}</div>
                       </td>
                       <td className="px-3 py-2.5 text-brand-slate">{a.supervisor ?? <span className="text-brand-mist">Sin supervisor</span>}</td>

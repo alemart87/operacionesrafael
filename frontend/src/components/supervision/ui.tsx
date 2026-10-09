@@ -118,7 +118,7 @@ function escala(p: Proyeccion): number {
 }
 
 /** Barra: lo vendido (lleno), hasta dónde llega al cierre (claro) y la marca del objetivo. */
-function BarraAvance({ p, alto = "h-3", etiqueta }: { p: Proyeccion; alto?: string; etiqueta: string }) {
+export function BarraAvance({ p, alto = "h-3", etiqueta }: { p: Proyeccion; alto?: string; etiqueta: string }) {
   const max = escala(p);
   const w = (v: number | null) => `${Math.min(100, ((v ?? 0) / max) * 100)}%`;
   return (
@@ -297,7 +297,9 @@ function TablaLineas({ titulo, lineas }: { titulo: string; lineas: LineasAsesor[
 }
 
 // ------------------------------------------------------------------ equipo de un supervisor
-export function TablaEquipo({ d, lineasUrl }: { d: DetalleSupervisor; lineasUrl: (operadorId: string) => string }) {
+export function TablaEquipo({ d, lineasUrl, fichaHref }: {
+  d: DetalleSupervisor; lineasUrl: (operadorId: string) => string; fichaHref?: (operadorId: string) => string;
+}) {
   const [abierta, setAbierta] = useState<string | null>(null);
   const p = d.parametros;
   if (!d.asesores.length) {
@@ -338,7 +340,11 @@ export function TablaEquipo({ d, lineasUrl }: { d: DetalleSupervisor; lineasUrl:
             {d.asesores.map((a) => (
               <tr key={a.id} className={`border-t border-brand-border ${a.actual ? "" : "bg-brand-bg-soft text-brand-slate"} ${a.uso?.alerta && a.actual ? "shadow-[inset_3px_0_0_#E6332A]" : ""}`}>
                 <td className="px-5 py-2.5 min-w-[220px]">
-                  <div className={`font-semibold ${a.actual ? "text-brand-ink" : "text-brand-slate"}`}>{a.nombre}</div>
+                  {fichaHref ? (
+                    <Link href={fichaHref(a.id)} className={`font-semibold hover:text-brand-primary ${a.actual ? "text-brand-ink" : "text-brand-slate"}`}>{a.nombre}</Link>
+                  ) : (
+                    <div className={`font-semibold ${a.actual ? "text-brand-ink" : "text-brand-slate"}`}>{a.nombre}</div>
+                  )}
                   <div className="text-[11px] text-brand-slate">
                     {a.vendedor ?? "Sin nombre de vendedor: sus netas no se pueden atribuir"}
                     {a.desde && <span className="text-[#1D5BA6]"> · en el equipo desde el {dm(a.desde)}</span>}
@@ -384,7 +390,9 @@ function ConvCelda({ a }: { a: AsesorEquipo }) {
 }
 
 /** Lo que ve un supervisor de su mes (y los jefes en el detalle de cada supervisor). */
-export function VistaSupervisor({ d, lineasUrl, extra }: { d: DetalleSupervisor; lineasUrl: (id: string) => string; extra?: ReactNode }) {
+export function VistaSupervisor({ d, lineasUrl, extra, fichaHref }: {
+  d: DetalleSupervisor; lineasUrl: (id: string) => string; extra?: ReactNode; fichaHref?: (id: string) => string;
+}) {
   return (
     <div className="space-y-6">
       <FuenteDatos ventas={d.ventas} cal={d.calendario} />
@@ -410,7 +418,7 @@ export function VistaSupervisor({ d, lineasUrl, extra }: { d: DetalleSupervisor;
       </div>
       {d.scoring && <ScoringCard s={d.scoring} mesAnterior={nombreMes(sumarMeses(d.periodo, -1))} minEvaluables={d.parametros.min_evaluables} />}
       {extra}
-      <TablaEquipo d={d} lineasUrl={lineasUrl} />
+      <TablaEquipo d={d} lineasUrl={lineasUrl} fichaHref={fichaHref} />
       <MetodoSupervision p={d.parametros} />
       {d.scoring && <MetodoScoring p={d.scoring.parametros} umbral={d.parametros.umbral_sin_uso} minEvaluables={d.parametros.min_evaluables} />}
     </div>
@@ -454,12 +462,13 @@ export function MetodoSupervision({ p }: { p: ParametrosSup }) {
 }
 
 // ------------------------------------------------------------------ pestañas del detalle de un supervisor (jefes)
-export function TabsSupervisor({ id, periodo, activa }: { id: string; periodo: string; activa: "resultados" | "coaching" | "tickets" }) {
+export function TabsSupervisor({ id, periodo, activa }: { id: string; periodo: string; activa: "resultados" | "coaching" | "tickets" | "linea" }) {
   const q = periodo === mesActual() ? "" : `?periodo=${periodo}`;
   const tabs = [
     { k: "resultados", label: "Resultados", href: `${SUP_HREF}/supervisores/${id}${q}` },
     { k: "coaching", label: "Coaching y bitácora", href: `${SUP_HREF}/supervisores/${id}/coaching${q}` },
     { k: "tickets", label: "Tickets", href: `${SUP_HREF}/supervisores/${id}/tickets${q}` },
+    { k: "linea", label: "Línea de tiempo", href: `${SUP_HREF}/supervisores/${id}/linea${q}` },
   ];
   return (
     <nav aria-label="Secciones del supervisor" className="flex gap-1 border-b border-brand-border mb-6 overflow-x-auto print:hidden">

@@ -44,7 +44,7 @@ export function Modal({ titulo, sobre, onClose, children, pie, ancho = "max-w-xl
   );
 }
 
-function Campo({ label, ayuda, children, htmlFor }: { label: string; ayuda?: ReactNode; children: ReactNode; htmlFor?: string }) {
+export function Campo({ label, ayuda, children, htmlFor }: { label: string; ayuda?: ReactNode; children: ReactNode; htmlFor?: string }) {
   return (
     <div>
       <label className="label" htmlFor={htmlFor}>{label}</label>
@@ -54,7 +54,7 @@ function Campo({ label, ayuda, children, htmlFor }: { label: string; ayuda?: Rea
   );
 }
 
-function AreaTexto({ id, valor, onChange, min, max, placeholder, filas = 3 }: {
+export function AreaTexto({ id, valor, onChange, min, max, placeholder, filas = 3 }: {
   id: string; valor: string; onChange: (v: string) => void; min: number; max: number; placeholder?: string; filas?: number;
 }) {
   const largo = valor.trim().length;
@@ -69,7 +69,7 @@ function AreaTexto({ id, valor, onChange, min, max, placeholder, filas = 3 }: {
   );
 }
 
-function ErrorMsg({ msg }: { msg: string | null }) {
+export function ErrorMsg({ msg }: { msg: string | null }) {
   if (!msg) return null;
   return <p role="alert" className="text-sm text-brand-primary-dark bg-brand-primary-light/60 border border-brand-primary/20 rounded-md px-3 py-2 mt-3">{msg}</p>;
 }

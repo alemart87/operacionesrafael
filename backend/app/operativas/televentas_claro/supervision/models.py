@@ -245,3 +245,39 @@ class TicketEvento(Base):
     texto: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
+
+# ------------------------------------------------------------------ centro de comandos (fase 5)
+class AlertaComando(Base):
+    """Una alerta del día del centro de comandos: una condición que hoy pide atención de los jefes.
+
+    Se abre cuando la condición aparece (supervisor en crítico, asesor que cruza el umbral de sin uso,
+    proyección bajo el 90%, ticket o seguimiento vencido, asesores sin supervisor, nombres sin vincular,
+    supervisor sin registrar gestión) y se cierra sola cuando deja de cumplirse. Guarda quién la tomó, qué
+    hizo y, si se pidió una revisión, el ticket que se envió. `clave` identifica la condición (p. ej. el
+    supervisor o el ticket) dentro de su tipo."""
+    __tablename__ = "sup_alertas_comando"
+    __table_args__ = (UniqueConstraint("operativa", "tipo", "clave", "desde", name="uq_sup_alerta_comando"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    tipo: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    clave: Mapped[str] = mapped_column(String(120), nullable=False)
+    periodo: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
+    supervisor_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    operador_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    titulo: Mapped[str] = mapped_column(String(240), nullable=False)
+    detalle: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    desde: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    visto_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    hasta: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    tomada_por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    tomada_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    nota: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    nota_por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    nota_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    descartada_por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    descartada_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    descartada_motivo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+

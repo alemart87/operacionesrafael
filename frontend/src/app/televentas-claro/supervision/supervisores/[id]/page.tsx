@@ -59,7 +59,8 @@ function Detalle() {
       {!d ? (
         !error && <div className="card p-10 text-brand-slate">Cargando…</div>
       ) : (
-        <VistaSupervisor d={d} lineasUrl={(op) => `${SUP_API}/lineas?periodo=${periodo}&operador_id=${op}`} />
+        <VistaSupervisor d={d} lineasUrl={(op) => `${SUP_API}/lineas?periodo=${periodo}&operador_id=${op}`}
+          fichaHref={(op) => `${SUP_HREF}/asesores/${op}?periodo=${periodo}`} />
       )}
     </>
   );

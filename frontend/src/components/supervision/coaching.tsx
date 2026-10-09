@@ -474,6 +474,12 @@ function DetalleDialog({ id, portal, onClose, onAccion, onAbrir }: {
   );
 }
 
+/** El detalle de un coaching en solo lectura (jefes), para abrirlo desde el centro de comandos o la ficha del asesor. */
+export function VerCoachingDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const [actual, setActual] = useState(id);
+  return <DetalleDialog id={actual} portal={false} onClose={onClose} onAccion={() => undefined} onAbrir={setActual} />;
+}
+
 // ------------------------------------------------------------------ la vista completa
 /** Coaching y bitácora de un supervisor en el mes: el portal (registra) y los jefes (solo lectura). */
 export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; portal: boolean; onCambio: () => void }) {

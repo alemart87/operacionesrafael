@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .alertas import dia_local
@@ -138,13 +138,18 @@ async def notas(db: AsyncSession, supervisor_id: str, periodo: str) -> list[Bita
     return list((await db.execute(q)).scalars().all())
 
 
+ORDEN_EVENTO = {"creado": 0, "editado": 1, "anulado": 2, "seguimiento": 3, "aclaracion": 4}  # a igual hora
+
+
 async def eventos(db: AsyncSession, coaching_id: str) -> list[CoachingEvento]:
-    q = select(CoachingEvento).where(CoachingEvento.coaching_id == coaching_id).order_by(CoachingEvento.at)
+    q = select(CoachingEvento).where(CoachingEvento.coaching_id == coaching_id).order_by(
+        CoachingEvento.at, case(ORDEN_EVENTO, value=CoachingEvento.tipo, else_=9))
     return list((await db.execute(q)).scalars().all())
 
 
 def evento(db: AsyncSession, c: Coaching, tipo: str, por: str, /, **datos: Any) -> None:
-    db.add(CoachingEvento(coaching_id=c.id, tipo=tipo, por=por, datos=_json(datos)))
+    """Un paso del historial, con la hora del servidor de la aplicación (la misma que el registro)."""
+    db.add(CoachingEvento(coaching_id=c.id, tipo=tipo, at=ahora(), por=por, datos=_json(datos)))
 
 
 def _json(x: Any) -> Any:

@@ -760,3 +760,178 @@ export function plazoTexto(p: string): string {
   const n = Number(p.slice(0, -1));
   return p.endsWith("d") ? `${n} ${n === 1 ? "día hábil" : "días hábiles"}` : `${n} ${n === 1 ? "hora hábil" : "horas hábiles"}`;
 }
+
+// ------------------------------------------------------------------ centro de comandos
+export type EstadoSemaforo = "atencion" | "revisar" | "al_dia";
+export type TipoAlertaComando =
+  | "ticket_vencido" | "supervisor_critico" | "proyeccion_bajo" | "seguimiento_vencido" | "asesor_alerta" | "sin_actividad"
+  | "sin_supervisor" | "sin_vincular";
+export type EstadoAlertaComando = "abierta" | "tomada" | "derivada" | "descartada" | "cerrada";
+
+export interface FilaSemaforo extends SupervisorRef {
+  estado: EstadoSemaforo;
+  motivos: string[];
+  motivos_rojo: number;
+  score: number | null;
+  parcial: boolean;
+  anterior: number | null;
+  pospago: Proyeccion;
+  gpon: Proyeccion;
+  asesores: number;
+  asesores_en_alerta: number;
+  a_recuperar: number;
+  cobertura: Componente | null;
+  tickets: { abiertos: number; vencidos: number; por_vencer: number };
+  seguimientos_vencidos: number;
+  ultima_gestion: string | null;
+  dias_sin_gestion: number | null;
+}
+
+export interface AlertaComando {
+  id: string;
+  tipo: TipoAlertaComando;
+  tipo_nombre: string;
+  severidad: 0 | 1 | 2;
+  estado: EstadoAlertaComando;
+  titulo: string;
+  detalle: string;
+  datos: { ticket_id?: string; numero?: number; coaching_id?: string; producto?: string; cantidad?: number; [k: string]: any };
+  supervisor_id: string | null;
+  supervisor: string | null;
+  operador_id: string | null;
+  operador: string | null;
+  desde: string;
+  /** Empieza con el día (una alerta de uso, un seguimiento vencido), no a una hora. */
+  desde_dia: boolean;
+  nueva: boolean;
+  hasta: string | null;
+  tomada_por: string | null;
+  tomada_at: string | null;
+  nota: string | null;
+  nota_at: string | null;
+  nota_por: string | null;
+  ticket_id: string | null;
+  ticket_numero: number | null;
+  descartada_por: string | null;
+  descartada_motivo: string | null;
+  puede_revision: boolean;
+}
+
+export interface CabeceraComando {
+  score: number | null;
+  score_parcial: boolean;
+  score_anterior: number | null;
+  pospago: Proyeccion;
+  gpon: Proyeccion;
+  uso: { pct_sin_uso: number | null; evaluables: number; sin_uso: number; umbral: number };
+  supervisores_criticos: number;
+  supervisores: number;
+  asesores_en_alerta: number;
+  a_recuperar: number;
+  tickets: { abiertos: number; vencidos: number; por_vencer: number };
+  cobertura: { con: number; de: number };
+}
+
+export interface CentroComandos extends Comun {
+  hoy: string;
+  actualizado: string;
+  cabecera: CabeceraComando;
+  supervisores: FilaSemaforo[];
+  alertas: AlertaComando[];
+  resumen_alertas: { abiertas: number; tomadas: number; derivadas: number; descartadas: number; cerradas: number; nuevas: number };
+  reglas: { dias_sin_gestion: number; dias_foco: number; umbral_sin_uso: number; semaforo_en_riesgo: number; semaforo_en_camino: number };
+  gestion_desde: string | null;
+  pendientes_vincular: number;
+  puede_actuar: boolean;
+  puede_derivar: boolean;
+  tipos_ticket: Record<TipoTicket, string>;
+  tipo_revision: Record<TipoAlertaComando, TipoTicket | null>;
+  plazos: Record<PrioridadTicket, { respuesta: string; resolucion: string }>;
+}
+
+export type GrupoEvento = "coaching" | "seguimiento" | "nota" | "ticket" | "equipo" | "objetivo" | "alerta";
+
+export interface EventoLinea {
+  at: string | null;
+  grupo: GrupoEvento;
+  titulo: string;
+  detalle: string | null;
+  por: string | null;
+  coaching_id?: string;
+  ticket_id?: string;
+  operador_id?: string;
+  /** Empieza con el día, sin hora. */
+  dia?: boolean;
+}
+
+export interface LineaTiempo {
+  periodo: string;
+  nombre_mes: string;
+  hoy: string;
+  supervisor: SupervisorRef;
+  eventos: EventoLinea[];
+  grupos: Partial<Record<GrupoEvento, number>>;
+}
+
+export interface AlertaUsoAsesor {
+  id: string;
+  desde: string;
+  hasta: string | null;
+  vence: string;
+  estado: EstadoAlerta;
+  datos: AlertaFoco["datos"];
+  coaching_id: string | null;
+}
+
+export interface FichaAsesor extends Comun {
+  hoy: string;
+  asesor: OperadorCorto & { legajo: string | null; ultima_vez: string | null };
+  supervisor: { id: string; nombre: string } | null;
+  tramos: TramoEquipo[];
+  scoring: {
+    total: number | null; parcial: boolean; componentes: Componente[]; dias: number | null; cobertura: number;
+    anterior: number | null; parametros: ParametrosScoring;
+  } | null;
+  netas: { pospago: number; gpon: number } | null;
+  uso: Uso | null;
+  coachings: Coaching[];
+  tickets: Ticket[];
+  alertas_uso: AlertaUsoAsesor[];
+  notas: (NotaBitacora & { supervisor: string })[];
+  dia_completo: number;
+  puede_enviar: boolean;
+}
+
+export const SEMAFORO: Record<EstadoSemaforo, { label: string; color: string; chip: string; ayuda: string }> = {
+  atencion: {
+    label: "Atención", color: "#E6332A", chip: ROJO,
+    ayuda: "Algo vencido o fuera de objetivo, o sin registrar gestión hace 3 días hábiles o más",
+  },
+  revisar: { label: "Revisar", color: "#F39200", chip: NARANJA, ayuda: "En crítico, en riesgo o con plazos por vencer: todavía a tiempo" },
+  al_dia: { label: "Al día", color: "#059669", chip: VERDE, ayuda: "Sin vencidos, sin crítico y con gestión reciente" },
+};
+
+export const ESTADO_ALERTA_COMANDO: Record<EstadoAlertaComando, { label: string; chip: string; ayuda: string }> = {
+  abierta: { label: "Sin tomar", chip: "bg-white text-brand-ink border-brand-slate/50", ayuda: "Nadie la tomó todavía" },
+  tomada: { label: "Tomada", chip: AZUL, ayuda: "Alguien la está atendiendo" },
+  derivada: { label: "Revisión pedida", chip: "bg-brand-cyan/10 text-[#00727A] border-brand-cyan/30", ayuda: "Se pidió una revisión: se sigue en el ticket" },
+  descartada: { label: "Descartada", chip: GRIS, ayuda: "No requiere acción: quedó el motivo" },
+  cerrada: { label: "Resuelta", chip: VERDE, ayuda: "La condición dejó de cumplirse" },
+};
+
+export const GRUPO_EVENTO: Record<GrupoEvento, { label: string; color: string }> = {
+  coaching: { label: "Coaching", color: "#00B2BF" },
+  seguimiento: { label: "Seguimientos", color: "#059669" },
+  ticket: { label: "Tickets", color: "#2A78D6" },
+  nota: { label: "Notas", color: "#662483" },
+  equipo: { label: "Equipo", color: "#5B6275" },
+  objetivo: { label: "Objetivos", color: "#0F1116" },
+  alerta: { label: "Alertas", color: "#E6332A" },
+};
+
+/** «hace 3,5 días hábiles», «hoy» (desde la última gestión registrada). */
+export function haceDiasHabiles(d: number | null | undefined): string {
+  if (d === null || d === undefined) return "sin registros";
+  if (d === 0) return "hoy";
+  return `hace ${num(d)} ${d === 1 ? "día hábil" : "días hábiles"}`;
+}

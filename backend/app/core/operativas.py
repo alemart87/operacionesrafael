@@ -66,12 +66,12 @@ OPERATIVAS: list[dict] = [
             {
                 "key": "supervision",
                 "name": "Supervisión · Ver tablero",
-                "description": "Ver los equipos de cada mes, los objetivos de cada supervisor con su avance y su proyección al cierre, los asesores en alerta por líneas sin uso y el detalle de cada supervisor.",
+                "description": "Ver el centro de comandos (semáforo de supervisores y alertas del día), los equipos de cada mes, los objetivos de cada supervisor con su avance y su proyección al cierre, el scoring, los asesores en alerta por líneas sin uso, el detalle y la línea de tiempo de cada supervisor y la ficha de cada asesor.",
             },
             {
                 "key": "supervision_gestion",
                 "name": "Supervisión · Gestión",
-                "description": "Armar los equipos del mes (asesores por supervisor, con fecha efectiva), cargar los objetivos de Pospago y GPON de cada supervisor y los días no laborables del calendario.",
+                "description": "Armar los equipos del mes (asesores por supervisor, con fecha efectiva), cargar los objetivos de Pospago y GPON de cada supervisor y los días no laborables del calendario, y actuar sobre las alertas del centro de comandos (tomarlas o descartarlas; con Tickets de revisión, también pedir una revisión).",
             },
             {
                 "key": "tickets",

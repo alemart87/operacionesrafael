@@ -66,7 +66,7 @@ operacionesrafaelmartinez/
 │   │           ├── fuentes.py   # qué informe de Productividad / Ventas Netas vale cada día y cada mes
 │   │           ├── ventas_netas/ # submódulo: api · models · schemas · parser · analyzer · exports · jobs
 │   │           ├── sph/         # submódulo SPH estimado: api · models · analyzer
-│   │           ├── supervision/ # submódulo Supervisión: api · coaching_api · tickets_api · models · calculo · scoring · coaching · impacto · alertas · tickets · sla · operadores · migraciones
+│   │           ├── supervision/ # submódulo Supervisión: api · coaching_api · tickets_api · comando_api · models · calculo · scoring · coaching · impacto · alertas · tickets · sla · comando · operadores · migraciones
 │   │           └── facturacion/ # submódulo: api · agent_api · models/ · schemas
 │   │                            #   parser · analyzers/ · agent/ · jobs/
 │   ├── tests/                   # pytest (SQLite)
@@ -296,17 +296,19 @@ de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro
 Gestión de los supervisores como líderes coach: equipos del mes, objetivos de Pospago y
 GPON por supervisor, avance y **proyección al cierre**, y asesores en alerta por líneas
 sin uso. Código en `backend/app/operativas/televentas_claro/supervision/`; la guía del
-modelo es el documento «Modelo Líder Coach Comercial». Fases 1 a 4 de 5: equipos, objetivos
-y proyección; tablero y scoring; coaching y bitácora; tickets de revisión con SLA (sigue el
-centro de comandos).
+modelo es el documento «Modelo Líder Coach Comercial». Las 5 fases están habilitadas:
+equipos, objetivos y proyección; tablero y scoring; coaching y bitácora; tickets de revisión
+con SLA; y el centro de comandos de los jefes.
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
+| Centro de comandos | `…/supervision/comando` | El día de la operación: cabecera (score, avance y proyección, % sin uso contra el umbral, supervisores en crítico, líneas a recuperar, tickets y cobertura de coaching), **semáforo de supervisores** con sus motivos y **alertas del día** (tomar y anotar qué se hizo, **pedir revisión** con un clic, descartar con el motivo); rutina de seguimiento |
 | Objetivos y proyección | `/televentas-claro/supervision` | Por supervisor: vendido / objetivo, proyección al cierre, ritmo necesario por día hábil, semáforo y alertas; la operación completa; **Cargar objetivos** en la misma tabla |
 | Tablero | `…/supervision/tablero` | Scoring 0–100 de la operación, ranking de supervisores y de asesores, con la tendencia contra el mes anterior |
 | Coaching | `…/supervision/coaching` | Gestión de coaching de todos los supervisores: cobertura, foco, seguimientos, coachings, vencidos y última actividad (primero, quien tiene algo vencido) |
 | Tickets | `…/supervision/tickets` | Tickets de revisión: **Enviar ticket**, bandeja (abiertos o los del mes, primero lo vencido), detalle con historial (comentar, mandar los datos pedidos, reabrir, reasignar, cancelar) y métricas por supervisor |
-| Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible); pestañas **Coaching y bitácora** (`…/{id}/coaching`, solo lectura) y **Tickets** (`…/{id}/tickets`) |
+| Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible); pestañas **Coaching y bitácora** (`…/{id}/coaching`, solo lectura), **Tickets** (`…/{id}/tickets`) y **Línea de tiempo** (`…/{id}/linea`: coachings, seguimientos, notas, tickets, cambios de equipo, objetivos y alertas, lo más nuevo primero) |
+| Ficha del asesor | `…/supervision/asesores/{id}` | Del supervisor al asesor y del asesor a sus líneas y tickets: equipo del mes, puntaje y componentes, ventas y uso (líneas sin uso), alertas de uso, coachings, tickets y notas de bitácora |
 | Equipos del mes | `…/supervision/equipos` | Tablero por supervisor y «Sin supervisor»; selección múltiple, **fecha efectiva**, copiar los equipos del mes anterior |
 | Operadores | `…/supervision/operadores` | Maestro de operadores: por revisar, vincular, separar, confirmar sin vínculo, renombrar, dar de baja |
 | Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana, días no laborables (más los feriados de Seguridad) y el **horario de atención** (horas hábiles de los plazos de los tickets) |
@@ -399,6 +401,22 @@ centro de comandos).
     fuera de plazo, los cancelados y los cerrados sin datos no cuentan), velocidad en
     mediana y percentil 90, reaperturas y antigüedad de la bandeja. Los avisos de
     vencimiento se ven en la aplicación (bandeja de los jefes y «Para hoy» del portal).
+- **Centro de comandos** (`supervision/comando.py`, `comando_api.py`; tabla `sup_alertas_comando`):
+  - **Semáforo:** «atención» si tiene un ticket o un seguimiento vencido, una alerta de uso sin
+    coaching a tiempo, una proyección bajo el 90% del objetivo (no provisoria) o 3 días hábiles
+    o más sin registrar gestión (coachings, seguimientos, notas o respuestas a tickets, desde que
+    se mide la gestión o desde que recibió el equipo); «revisar» si está en crítico, en riesgo o
+    con plazos por vencer; «al día» si no. Ordenado: primero quien necesita atención.
+  - **Alertas del día:** supervisor en crítico, asesor que cruza el umbral de sin uso,
+    proyección bajo el 90%, ticket o seguimiento vencido, supervisor sin registrar gestión,
+    asesores sin supervisor y nombres sin vincular. Se ponen al día al abrir el centro: se
+    abren cuando aparece la condición (con la fecha en que empezó) y se cierran solas cuando
+    deja de cumplirse; si vuelve con el mismo inicio, se reabre la misma. Cada una guarda
+    quién la tomó y qué hizo, el ticket que se pidió desde ahí («pedir revisión»: llega al
+    supervisor de la alerta, con el asesor si es de uno) o el motivo del descarte. Actúan
+    quienes gestionan Supervisión (`supervision_gestion`: coordinador, sub gerente y
+    controller); pedir una revisión pide además la utilidad `tickets`. Auditor y analista lo
+    ven en lectura. Cada acción queda auditada y en la línea de tiempo del supervisor.
 - **Seguridad:** el portal filtra en el servidor por el usuario (solo sus asesores, en
   las fechas en que los tuvo, y solo sus coachings, notas y tickets); ver las líneas sin uso de un
   asesor y cada registro de coaching quedan auditados. Los jefes ven el coaching de cada
