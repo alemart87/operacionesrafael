@@ -223,7 +223,10 @@ export function CalcularSph({ abierto, onCerrar, tipo = "dia" }: { abierto: bool
                       <Fuente icono={<Receipt size={15} />} titulo="Ventas · Ventas Netas" ok={fuentes.cobertura.some((c) => c.horas && c.ventas)}>
                         {fuentes.ventas.length
                           ? fuentes.ventas.map((v) => (
-                            <span key={v.id} className="block">{nombreMes(v.periodo)}: corte del {v.fecha_dato ? fechaCorta(v.fecha_dato) : "—"} · {ESTADO_LABEL[v.status].toLowerCase()} · {n(v.netas)} netas en el mes</span>
+                            <span key={v.id} className="block">
+                              {nombreMes(v.periodo)}: corte del {v.fecha_dato ? fechaCorta(v.fecha_dato) : "—"} · {ESTADO_LABEL[v.status].toLowerCase()} · {n(v.netas)} netas en el mes
+                              {v.periodo > fuentes.hasta.slice(0, 7) && <span className="text-brand-mist"> · suma lo vendido a fin de mes que se activó en {nombreMes(v.periodo).toLowerCase()}</span>}
+                            </span>
                           ))
                           : "No hay informe de Ventas Netas del mes."}
                       </Fuente>

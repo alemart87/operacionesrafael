@@ -7,8 +7,9 @@ Permisos:
 * `televentas_claro.operadores`           → mantener el maestro de operadores (vínculos a mano).
 * `televentas_claro.portal_supervisor`    → el portal del supervisor: solo su equipo (lo filtra el servidor).
 
-Fuentes: las mismas que el SPH (`..fuentes`): por mes, el informe de Ventas Netas publicado; si no
-hay, el borrador con el corte más nuevo, marcado como provisorio. Las cuentas están en `calculo.py`.
+Fuentes: las mismas que el SPH (`..fuentes`): por mes, el informe de Ventas Netas de corte más nuevo
+(cada planilla trae todo el mes y reemplaza a la anterior); si no está publicado, se marca como
+provisorio. Las cuentas están en `calculo.py`.
 """
 from __future__ import annotations
 

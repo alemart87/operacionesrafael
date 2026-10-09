@@ -2,7 +2,7 @@
 
 - Ventas Netas: las netas del informe vigente del mes (`calculo.lineas_netas`).
 - Productividad: por agente y por día, el login y la conversación válidos (sin sesiones abiertas),
-  de los informes del mes (el publicado de cada día; si no hay, el borrador más reciente).
+  de los informes del mes (de cada día, el que llega más lejos en el día: ver `..fuentes`).
 - Parámetros del scoring (versionados) y las metas de conversación de Productividad.
 """
 from __future__ import annotations

@@ -4,9 +4,13 @@ Definiciones:
 
 - Horas: tiempo conectado (login) de cada agente en el informe de Productividad del día.
   Las sesiones abiertas (marcadas por Productividad) no cuentan: no son horas trabajadas.
-- Netas del día: líneas netas (hoja DDI) del informe de Ventas Netas del mes cuya fecha de
-  venta es el día. Fecha de venta = la de la carga; si no viene, la fecha de carga (en los
-  datos son iguales). Una neta sin ninguna de las dos no se puede ubicar en un día.
+- Netas del día: líneas netas (hoja DDI) cuya fecha de venta es el día, del informe de Ventas Netas
+  de su mes y, para las ventas de las últimas dos semanas del mes, del mes siguiente: Claro las
+  informa en el mes en que se activan, así que lo vendido a fin de mes y activado en los primeros
+  días del siguiente viene en la planilla de ese mes (una venta se activa hasta dos semanas después). Cada
+  planilla trae todo su mes hasta el corte: vale la de corte más nuevo (`fuentes.py`). Fecha de
+  venta = la de la carga; si no viene, la fecha de carga (en los datos son iguales). Una neta sin
+  ninguna de las dos no se puede ubicar en un día; una línea (SDS) cuenta una sola vez.
 - Cargadas del día: ventas cargadas ese día (hoja CARGAS) sin las rechazadas. Las netas de un
   día se siguen activando hasta dos semanas después: netas ÷ cargadas dice cuánto ya se activó.
 - Cruce: no hay un ID común. El agente («APELLIDOS, NOMBRES» en la plataforma) se vincula con
@@ -22,7 +26,9 @@ Definiciones:
   ni sus horas ni las netas de esos agentes ese día, para comparar lo mismo con lo mismo.
 - Período (semana, mes o rango): suma día por día. Un día CUENTA si tiene informe de
   Productividad (horas) y el corte de ventas de su mes ya lo alcanza; los demás se informan.
-  Cada neta se atribuye al asesor solo los días en que estuvo conectado.
+  Las ventas de un día se cruzan siempre con las horas de ESE día: las netas del 10/10 que trae la
+  planilla subida el 11/10 van contra las llamadas del 10/10. Cada neta se atribuye al asesor solo
+  los días en que estuvo conectado.
 
 Todo es lógica pura (sin DB): recibe los datos de los informes y devuelve el del SPH.
 """
@@ -35,11 +41,12 @@ from datetime import date, timedelta
 from difflib import SequenceMatcher
 from typing import Any, Iterable
 
-VERSION_SPH = 2              # v2: períodos (semana, mes, rango), fuentes en listas, horas válidas por agente
+VERSION_SPH = 3              # v3: netas de fin de mes que vienen en la planilla del mes siguiente (v2: períodos, fuentes en listas)
 MIN_HORAS_RANKING = 2.0      # horas conectadas mínimas para entrar al ranking de SPH de un día
 MIN_HORAS_RANKING_PERIODO = 6.0  # de una semana, un mes o un rango: al menos una jornada
 DIAS_MAX_PERIODO = 62
 DIAS_MADURACION = 7          # corte de ventas a menos días que esto: las netas del día siguen activándose
+DIAS_ACTIVACION = 14         # una venta se activa hasta dos semanas después: la de los últimos días del mes, en el siguiente
 ESTADO_RECHAZADA = "Vta_Rechazada"
 SIN_VENDEDOR = "SIN VENDEDOR"
 _PARTICULAS = {"DE", "DEL", "LA", "LAS", "LOS", "Y", "DA", "DI", "VDA", "VIUDA"}
@@ -219,6 +226,43 @@ def _mes(d: date) -> str:
     return d.strftime("%Y-%m")
 
 
+def mes_siguiente(periodo: str) -> str:
+    """'2026-12' → '2027-01'."""
+    y, m = int(periodo[:4]), int(periodo[5:7])
+    return f"{y + m // 12}-{m % 12 + 1:02d}"
+
+
+def usa_mes_siguiente(d: date) -> bool:
+    """Lo vendido ese día puede activarse el mes siguiente (está en las últimas dos semanas del mes)."""
+    return (fin_de_mes(d) - d).days < DIAS_ACTIVACION
+
+
+def netas_por_dia(ventas: dict[str, dict[str, Any]], dias: Iterable[str]) -> dict[str, list[dict[str, Any]]]:
+    """Las netas de cada día (ISO) por fecha de venta: las del informe de su mes y las del mes siguiente
+    (vendidas a fin de mes, activadas en el siguiente). Cada línea (SDS) una sola vez: primero su mes.
+
+    La hoja CARGAS de cada planilla trae solo las ventas de su mes: lo vendido a fin de mes y activado en el
+    siguiente llega a la planilla de ese mes sin fecha de venta. Se la da su carga (por SDS) en la planilla
+    del mes de la venta."""
+    dias = set(dias)
+    carga = {c["sds_number"]: c.get("fecha_alta") for data in ventas.values()
+             for c in (data.get("productividad") or {}).get("detalle_cargas") or [] if c.get("sds_number")}
+    out: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    vistos: set[str] = set()
+    for mes in sorted(ventas):
+        for x in ventas[mes].get("detalle_netas") or []:
+            f = fecha_de_venta(x) or carga.get(x.get("sds_number") or "")
+            if not f or f[:10] not in dias or mes not in (f[:7], mes_siguiente(f[:7])):
+                continue
+            sds = x.get("sds_number")
+            if sds:
+                if sds in vistos:
+                    continue
+                vistos.add(sds)
+            out[f[:10]].append(x)
+    return out
+
+
 _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
           "noviembre", "diciembre"]
 
@@ -252,7 +296,8 @@ def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, 
     """SPH de un período: un día, una semana, un mes o un rango.
 
     `produccion`: fecha → data del informe de Productividad de ese día (los días que lo tienen).
-    `ventas`: 'YYYY-MM' → data del informe de Ventas Netas de ese mes.
+    `ventas`: 'YYYY-MM' → data del informe de Ventas Netas de ese mes (los meses de los días y, si ya
+    existe, el siguiente de cada uno: trae lo vendido a fin de mes y activado después).
     `fuentes`: {"productividad": [...], "ventas": [{"periodo", "fecha_dato", ...}]}: qué informes se
     usaron; se guarda tal cual y de ahí sale el corte de ventas de cada mes.
     `hasta_datos`: los días posteriores (p. ej. el resto del mes en curso) no se informan como faltantes.
@@ -260,10 +305,6 @@ def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, 
     """
     if min_horas_ranking is None:
         min_horas_ranking = MIN_HORAS_RANKING if desde == hasta else MIN_HORAS_RANKING_PERIODO
-    for data in ventas.values():
-        netas = data.get("detalle_netas") or []
-        if netas and not any(k in netas[0] for k in ("fecha_venta", "fecha_carga")):
-            raise DatosIncompletos("El informe de ventas no trae la fecha de venta de cada neta: recalculalo en Ventas Netas.")
     cortes = {f.get("periodo"): f.get("fecha_dato") for f in _lista(fuentes.get("ventas"))}
     limite = min(hasta, hasta_datos) if hasta_datos else hasta
 
@@ -282,6 +323,10 @@ def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, 
         d += timedelta(days=1)
     if not cubiertos:
         raise DatosIncompletos("Ningún día del período tiene horas de Productividad y ventas al corte.")
+    for mes in {_mes(d) for d in cubiertos}:
+        netas = ventas[mes].get("detalle_netas") or []
+        if netas and not any(k in netas[0] for k in ("fecha_venta", "fecha_carga")):
+            raise DatosIncompletos("El informe de ventas no trae la fecha de venta de cada neta: recalculalo en Ventas Netas.")
 
     # Vendedores de los meses que cuentan (para el cruce) y su subcanal.
     subcanal: dict[str, str | None] = {}
@@ -298,6 +343,13 @@ def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, 
         roster |= {c["vendedor"] for c in (data.get("productividad") or {}).get("detalle_cargas") or []
                    if c.get("vendedor") and c.get("atribucion") in ("pos", "legajo")}
     roster |= set(netas_mes_v)
+    # Netas de cada día por fecha de venta (de su mes y del siguiente): las que se cruzan con las horas de ese día.
+    por_dia = netas_por_dia(ventas, (d.isoformat() for d in cubiertos))
+    for xs in por_dia.values():
+        for x in xs:
+            v = x.get("vendedor") or SIN_VENDEDOR
+            roster.add(v)
+            subcanal.setdefault(v, x.get("subcanal"))
     roster.discard(SIN_VENDEDOR)
 
     # Agentes del período: nombre del último día en que se conectaron. Un solo cruce para todo el período.
@@ -321,7 +373,7 @@ def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, 
     for d in cubiertos:
         dia = d.isoformat()
         mes = ventas[_mes(d)]
-        netas = [x for x in mes.get("detalle_netas") or [] if fecha_de_venta(x) == dia]
+        netas = por_dia.get(dia, [])
         cargas = [c for c in (mes.get("productividad") or {}).get("detalle_cargas") or []
                   if c.get("fecha_alta") == dia and c.get("estado") != ESTADO_RECHAZADA]
         netas_v: dict[str, Counter] = defaultdict(Counter)
@@ -433,29 +485,33 @@ def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, 
         "pct_cobertura_horas": _pct(horas_vinc, horas),
         "productos": dict(productos.most_common()),
         "netas_sin_fecha_mes": sin_fecha,
+        "netas_mes_siguiente": sum(1 for dia, xs in por_dia.items() for x in xs
+                                   if (x.get("fecha_activacion") or "")[:7] > dia[:7]),
         "dias": (hasta - desde).days + 1,
         "dias_cubiertos": len(cubiertos),
     }
 
     un_dia = desde == hasta
     ultimo = cubiertos[-1]
-    corte = cortes.get(_mes(ultimo))
+    # Hasta dónde se conocen las activaciones del último día: el corte de su mes o, si ya está, el del siguiente.
+    corte = max((c for c in (cortes.get(_mes(ultimo)), cortes.get(mes_siguiente(_mes(ultimo)))) if c), default=None)
     dias_despues = (date.fromisoformat(corte) - ultimo).days if corte else None
     avisos: list[str] = []
-    if dias_despues is not None and dias_despues < DIAS_MADURACION and kpis["cargadas"]:
+    if dias_despues is not None and dias_despues < DIAS_MADURACION:
+        # Cuánto ya se activó de lo cargado (si la planilla trae las cargas); si no, el aviso va igual.
+        avance = (f"de {kpis['cargadas']} ventas cargadas {'ese día' if un_dia else 'en el período'} ya son netas "
+                  f"{kpis['netas']} ({kpis['pct_activadas'] or 0:.0f}%). ") if kpis["cargadas"] else ""
         if un_dia:
             cuando = "es del mismo día" if dias_despues == 0 else f"es de {dias_despues} día(s) después"
             avisos.append(
-                f"El corte de ventas {cuando}: de {kpis['cargadas']} ventas cargadas ese día ya "
-                f"son netas {kpis['netas']} ({kpis['pct_activadas'] or 0:.0f}%). Las netas de un día se siguen activando hasta "
-                "dos semanas después: recalculá el SPH con un corte de ventas posterior para completarlo."
+                f"El corte de ventas {cuando}: {avance}Las netas de un día se siguen activando hasta dos semanas "
+                "después: recalculá el SPH con un corte de ventas posterior para completarlo."
             )
         else:
             cuando = "el mismo último día que cuenta" if dias_despues == 0 else f"{dias_despues} día(s) después del último día que cuenta"
             avisos.append(
-                f"El corte de ventas es del {_corto(date.fromisoformat(corte))}, {cuando}: "
-                f"de {kpis['cargadas']} ventas cargadas en el período ya son netas {kpis['netas']} "
-                f"({kpis['pct_activadas'] or 0:.0f}%). Los últimos días todavía suman netas: recalculalo con un corte posterior."
+                f"El corte de ventas es del {_corto(date.fromisoformat(corte))}, {cuando}: {avance}"
+                "Los últimos días todavía suman netas: recalculalo con un corte posterior."
             )
     sin_horas = [date.fromisoformat(c["fecha"]) for c in cobertura if not c["horas"]]
     sin_ventas = [date.fromisoformat(c["fecha"]) for c in cobertura if c["horas"] and not c["ventas"]]
@@ -485,8 +541,18 @@ def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, 
             "con un agente conectado: cuentan en el SPH de la operación, no en el de los asesores. Si es un nombre distinto, "
             "vinculalo a mano."
         )
+    if kpis["netas_mes_siguiente"]:
+        meses_sig = sorted({nombre_mes(mes_siguiente(_mes(d))) for d in cubiertos if mes_siguiente(_mes(d)) in ventas})
+        avisos.append(
+            f"{kpis['netas_mes_siguiente']} neta(s) vendidas {'ese día' if un_dia else 'en el período'} se activaron en "
+            f"{' y '.join(meses_sig)}: vienen en la planilla de ese mes y suman al día de la venta."
+        )
     if sin_fecha:
-        avisos.append(f"{sin_fecha} neta(s) del mes no traen fecha de venta ni de carga: no se pueden ubicar en un día.")
+        avisos.append(
+            f"{sin_fecha} neta(s) del mes no traen fecha de venta ni de carga, así que no se pueden ubicar en un día de este mes. "
+            "Suelen ser ventas de fin del mes anterior activadas en este: cuentan en el SPH de esos días, con la planilla de "
+            "su mes."
+        )
 
     return {
         "version": VERSION_SPH,

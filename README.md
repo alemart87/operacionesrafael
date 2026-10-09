@@ -266,12 +266,22 @@ de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro
   corte de ventas de su mes ya alcanza; los demás se informan (y el mes en curso se
   puede recalcular a medida que llegan datos). Cada neta se atribuye al asesor solo
   los días en que estuvo conectado.
-- **Fuentes:** de cada día, el informe de Productividad publicado; de cada mes, el de
-  Ventas Netas publicado; si no hay, el borrador más reciente (queda avisado).
+- **Fuentes** (`fuentes.py`, las mismas que usa Supervisión): cada planilla de Ventas Netas
+  trae las ventas de todo el mes hasta su corte, así que **la de corte más nuevo reemplaza
+  a las anteriores**, publicada o no (a igual corte, la publicada). De las llamadas, el
+  informe del día que llega más lejos (corte final más tardío; a igual corte, el
+  publicado): un día publicado a mitad de jornada no deja afuera las horas de la tarde.
+  Si se usó un borrador, queda avisado.
 - **Netas del día:** líneas DDI cuya **fecha de venta** (de la carga; si falta, la de
-  carga) es ese día. Las netas de un día se siguen activando hasta dos semanas
-  después: el informe muestra cuánto de lo cargado ya activó y avisa si el corte
-  de ventas es cercano.
+  carga) es ese día, cruzadas con las horas de **ese mismo día**: las llamadas del 10/10
+  van contra las ventas del 10/10 que trae la planilla subida el 11/10 (corte del 10),
+  aunque todavía no esté publicada. Se leen de la planilla del mes del día y, para las
+  ventas de las últimas dos semanas del mes, de la del **mes siguiente**: lo vendido a fin
+  de mes y activado en los primeros días del otro mes viene en esa planilla y suma al día
+  de la venta (cada línea, una sola vez). Las netas de
+  un día se siguen activando hasta dos semanas después: el informe muestra cuánto de lo
+  cargado ya activó, avisa si el corte de ventas es cercano y, cuando llega una planilla
+  más nueva, avisa que hay datos más nuevos para recalcular.
 - **SPH de la operación:** netas ÷ horas conectadas del equipo, sin sesiones
   abiertas (ni sus horas ni sus netas). No depende del cruce de nombres.
 - **Cruce de nombres (sin ID común):** el agente de la plataforma («APELLIDO,
@@ -331,8 +341,8 @@ con SLA; y el centro de comandos de los jefes.
 - **Objetivos:** Pospago y GPON por supervisor y mes (`sup_objetivos`), los cargan los
   jefes; el supervisor los ve y no los puede cambiar.
 - **Netas del mes:** las del informe de Ventas Netas del mes (mes de activación: la cifra
-  oficial). Fuente: el publicado; si no hay, el borrador con el corte más nuevo, marcado
-  como provisorio.
+  oficial). Fuente: la planilla de corte más nuevo (cada una trae todo el mes y reemplaza a
+  la anterior); si todavía no se publicó, se marca como provisoria.
 - **Proyección al cierre** = vendido al corte ÷ días hábiles transcurridos × días hábiles
   del mes; **ritmo necesario** = lo que falta ÷ días hábiles restantes. Días hábiles: de
   lunes a viernes 1, sábado 0,5, domingo 0 (en septiembre el sábado vendió el 44% de un

@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { PrintButton, PrintHeader } from "@/components/PrintButton";
 import { Procesando } from "@/components/Procesando";
-import { ESTADO_LABEL, fechaCorta, fechaHora, n, pct } from "@/components/productividad/tipos";
+import { ESTADO_LABEL, fechaCorta, fechaHora, n, nombreMes, pct } from "@/components/productividad/tipos";
 import { Indicador } from "@/components/productividad/ui";
 import { usePublicarSph } from "@/components/sph/PublicarSph";
 import { RankingSph } from "@/components/sph/RankingSph";
@@ -88,7 +88,10 @@ function Informe() {
   const f = d.fuentes;
   const periodo = r.tipo !== "dia";
   const prod = f.productividad[0];
-  const ventas = f.ventas[f.ventas.length - 1];
+  // La planilla del mes del último día; las del mes siguiente traen lo vendido a fin de mes que se activó después.
+  const mesHasta = r.hasta.slice(0, 7);
+  const ventas = [...f.ventas].reverse().find((v) => v.periodo <= mesHasta) ?? f.ventas[f.ventas.length - 1];
+  const siguientes = f.ventas.filter((v) => v.periodo > mesHasta);
   const nombre = (uid: string | null) => (uid && r.usuarios[uid]) || "—";
   const etiqueta = etiquetaPeriodo(r.desde, r.hasta, r.tipo);
   const titulo = `SPH estimado · ${etiqueta}`;
@@ -114,6 +117,9 @@ function Informe() {
               <>SPH estimado · horas de Productividad hasta las <b>{prod?.corte_final ?? "—"}</b> ({prod ? ESTADO_LABEL[prod.status].toLowerCase() : "—"})</>
             )}
             {ventas && <>{" "}· ventas al corte del <b className="capitalize">{fechaCorta(ventas.fecha_dato)}</b> ({ESTADO_LABEL[ventas.status].toLowerCase()})</>}
+            {siguientes.map((v) => (
+              <span key={v.id}>{" "}· más lo activado en {nombreMes(v.periodo).toLowerCase()} (corte del {fechaCorta(v.fecha_dato)})</span>
+            ))}
             {r.status === "published" && <> · publicado por {nombre(r.published_by)} el {fechaHora(r.published_at)}</>}
             {r.status === "draft" && <> · borrador: <span className="text-brand-cyan">solo lo ve gestión hasta que se publique</span></>}
             {r.status === "replaced" && <> · reemplazado el {fechaHora(r.replaced_at)}: <span className="text-brand-primary">ya no vale</span></>}

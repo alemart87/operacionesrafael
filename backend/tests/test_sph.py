@@ -14,7 +14,7 @@ from app.main import app
 from app.operativas.televentas_claro.productividad.analyzer import PARAMETROS_DEFECTO, analizar_dia
 from app.operativas.televentas_claro.productividad.models import ProdInforme
 from app.operativas.televentas_claro.sph.analyzer import (
-    DatosIncompletos, calcular, calcular_periodo, cruzar, evaluar, partes_agente, tipo_periodo, tokens,
+    DatosIncompletos, calcular, calcular_periodo, cruzar, evaluar, partes_agente, tipo_periodo, tokens, usa_mes_siguiente,
 )
 from app.operativas.televentas_claro.ventas_netas.models import VentasNetasReport
 from tests.test_productividad import corte, fila, reporte
@@ -347,3 +347,134 @@ async def test_flujo_calcular_vincular_y_publicar():
         assert (await ac.delete(f"{BASE}/informes/{i2}", headers=lector)).status_code == 403
         assert (await ac.delete(f"{BASE}/informes/{i2}", headers=analista)).status_code == 200
         assert (await ac.get(f"{BASE}/informes/{i2}", headers=analista)).status_code == 404
+
+
+# ============================ cada planilla de netas reemplaza a la anterior ============================
+def _neta_act(vendedor, venta, activacion, sds=None):
+    """Una neta con su día de venta y de activación (mes de la planilla = mes de activación)."""
+    return {"sds_number": sds or uuid.uuid4().hex[:10], "vendedor": vendedor, "subcanal": "TKM", "producto": "Pospago",
+            "fecha_venta": venta, "fecha_carga": venta, "fecha_activacion": activacion}
+
+
+def _prod_del(d: date, hh: int = 18, agentes=AGENTES) -> dict:
+    return analizar_dia(d, [corte(d, hh, reporte(agentes))], dict(PARAMETROS_DEFECTO))
+
+
+def test_las_ventas_de_fin_de_mes_que_se_activan_el_mes_siguiente_suman_al_dia_de_la_venta():
+    fin = date(2026, 9, 30)
+    repetida = "SDS-REPETIDA"
+    septiembre = {"detalle_netas": [
+        _neta_act("ANA MARIA PEREZ GOMEZ", "2026-09-30", "2026-09-30"),
+        _neta_act("ANA MARIA PEREZ GOMEZ", "2026-09-30", "2026-09-30", sds=repetida),
+        _neta_act("ANA MARIA PEREZ GOMEZ", "2026-09-29", "2026-09-30"),   # otro día: no cuenta
+    ], "productividad": {"detalle_cargas": [  # la hoja CARGAS de septiembre tiene la venta del 30 que se activa en octubre
+        {**carga("ROBERTO CARLOS RIVEROS MORA", "2026-09-30"), "sds_number": "SDS-RIVEROS"}]}}
+    octubre = {"detalle_netas": [
+        _neta_act("ANA MARIA PEREZ GOMEZ", "2026-09-30", "2026-10-02"),   # vendida el 30, activada en octubre
+        # Como en las planillas reales: la de octubre la trae sin fecha de venta (su hoja CARGAS es solo de octubre);
+        # la fecha sale de la carga de septiembre.
+        {**_neta_act("ROBERTO CARLOS RIVEROS MORA", None, "2026-10-03", sds="SDS-RIVEROS"), "fecha_carga": None},
+        _neta_act("ANA MARIA PEREZ GOMEZ", "2026-09-30", "2026-10-02", sds=repetida),  # la misma línea: una vez
+        _neta_act("ROBERTO CARLOS RIVEROS MORA", "2026-10-01", "2026-10-02"),  # del 1/10: es de otro día
+    ]}
+    fuentes = {"productividad": [], "ventas": [
+        {"id": "v9", "status": "published", "periodo": "2026-09", "fecha_dato": "2026-09-30"},
+        {"id": "v10", "status": "draft", "periodo": "2026-10", "fecha_dato": "2026-10-03"}]}
+    r = calcular_periodo(fin, fin, {fin: _prod_del(fin)}, {"2026-09": septiembre, "2026-10": octubre}, fuentes)
+    k = r["kpis"]
+    assert k["netas"] == 4 and k["netas_mes_siguiente"] == 2
+    a = {f["clave"]: f for f in r["agentes"]}
+    assert a["PEREZ, ANA"]["netas"] == 3 and a["RIVEROS, ROBERTO CARLOS"]["netas"] == 1
+    assert any("se activaron en octubre 2026" in x for x in r["avisos"])
+    # Las activaciones del 30/09 se conocen hasta el corte de octubre (3 días después), no hasta el de septiembre.
+    assert r["fuentes"]["dias_despues"] == 3
+    # Sin la planilla de octubre, ese día solo tiene lo activado en septiembre.
+    solo = {**fuentes, "ventas": fuentes["ventas"][:1]}
+    r = calcular_periodo(fin, fin, {fin: _prod_del(fin)}, {"2026-09": septiembre}, solo)
+    assert r["kpis"]["netas"] == 2 and r["kpis"]["netas_mes_siguiente"] == 0 and r["fuentes"]["dias_despues"] == 0
+    # La planilla del mes siguiente se lee para las ventas de las últimas dos semanas del mes.
+    assert usa_mes_siguiente(date(2026, 9, 17)) and not usa_mes_siguiente(date(2026, 9, 16))
+    assert usa_mes_siguiente(date(2026, 2, 15)) and not usa_mes_siguiente(date(2026, 2, 14))
+
+
+@pytest.mark.asyncio
+async def test_vale_el_corte_de_netas_mas_nuevo_y_el_corte_de_llamadas_mas_completo():
+    from datetime import datetime, timezone
+
+    from app.operativas.televentas_claro.fuentes import informes_productividad, informes_ventas
+
+    t = lambda h: datetime(2025, 3, 11, h, tzinfo=timezone.utc)  # noqa: E731
+    async with AsyncSessionLocal() as db:
+        db.add_all([
+            VentasNetasReport(upload_id="s1", periodo="2025-03", period_month=date(2025, 3, 1), fecha_dato=date(2025, 3, 9),
+                              status="published", generated_at=t(9), data={}),
+            VentasNetasReport(upload_id="s2", periodo="2025-03", period_month=date(2025, 3, 1), fecha_dato=date(2025, 3, 10),
+                              status="draft", generated_at=t(10), data={}),
+            ProdInforme(fecha=date(2025, 3, 10), status="published", corte_final="14:00", generated_at=t(9), data={}),
+            ProdInforme(fecha=date(2025, 3, 10), status="draft", corte_final="19:00", generated_at=t(10), data={}),
+            ProdInforme(fecha=date(2025, 3, 7), status="published", corte_final="19:00", generated_at=t(8), data={}),
+            ProdInforme(fecha=date(2025, 3, 7), status="draft", corte_final="19:00", generated_at=t(11), data={}),
+        ])
+        await db.commit()
+        # La planilla subida el 11 (corte del 10) reemplaza a la publicada del 9 aunque todavía no se publicó.
+        v = (await informes_ventas(db, {"2025-03"}))["2025-03"]
+        assert (v.upload_id, v.status) == ("s2", "draft")
+        # Llamadas: vale el día más completo (el corte de las 19:00); a igual corte, el publicado.
+        p = await informes_productividad(db, date(2025, 3, 7), date(2025, 3, 10))
+        assert (p[date(2025, 3, 10)].corte_final, p[date(2025, 3, 10)].status) == ("19:00", "draft")
+        assert p[date(2025, 3, 7)].status == "published"
+        # A igual corte de ventas, el publicado.
+        db.add(VentasNetasReport(upload_id="s3", periodo="2025-03", period_month=date(2025, 3, 1), fecha_dato=date(2025, 3, 10),
+                                 status="published", generated_at=t(8), data={}))
+        await db.commit()
+        assert (await informes_ventas(db, {"2025-03"}))["2025-03"].upload_id == "s3"
+
+
+@pytest.mark.asyncio
+async def test_llamadas_del_10_y_netas_subidas_el_11_sin_publicar():
+    """El caso de todos los días: el 10 se suben las llamadas; el 11, la planilla de netas (con corte del 10). El SPH del
+    10 toma de esa planilla las ventas del 10 y las divide por las horas del 10, aunque la planilla no esté publicada."""
+    dia = date(2025, 4, 10)
+    d = dia.isoformat()
+    abril = lambda corte, extra=(): {"detalle_netas": [  # noqa: E731
+        _neta_act("ANA MARIA PEREZ GOMEZ", "2025-04-08", "2025-04-09"),   # de días anteriores: no cuentan para el 10
+        _neta_act("ANA MARIA PEREZ GOMEZ", d, d), _neta_act("ANA MARIA PEREZ GOMEZ", d, d),
+        _neta_act("ROBERTO CARLOS RIVEROS MORA", d, d), *extra]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        analista = await _new_user(ac, admin, "analista")
+        prod = _prod_del(dia)
+        await _guardar(ProdInforme(fecha=dia, status="published", corte_final=prod["corte_final"], data=prod))
+        # Publicada: la planilla con corte del 9 (todavía no trae el 10).
+        await _guardar(VentasNetasReport(upload_id="a9", periodo="2025-04", period_month=date(2025, 4, 1),
+                                         fecha_dato=date(2025, 4, 9), status="published", data=abril("2025-04-09")))
+        r = await ac.post(f"{BASE}/calcular", headers=analista, json={"fecha": d})
+        assert r.status_code == 409 and "todavía no trae" in r.json()["detail"]["message"]
+        # El 11 se sube la planilla nueva (corte del 10): reemplaza a la anterior sin publicarla.
+        nueva = await _guardar(VentasNetasReport(upload_id="a10", periodo="2025-04", period_month=date(2025, 4, 1),
+                                                 fecha_dato=dia, status="draft", data=abril(d)))
+        r = await ac.post(f"{BASE}/calcular", headers=analista, json={"fecha": d})
+        assert r.status_code == 201, r.text
+        inf = r.json()["informe"]
+        assert inf["ventas_corte"] == d and inf["netas"] == 3
+        det = (await ac.get(f"{BASE}/informes/{inf['id']}", headers=analista)).json()
+        a = {x["clave"]: x for x in det["data"]["agentes"]}
+        assert a["PEREZ, ANA"]["netas"] == 2 and a["RIVEROS, ROBERTO CARLOS"]["netas"] == 1
+        assert a["PEREZ, ANA"]["login"] == 6 * H  # contra las horas del 10
+        assert [x["id"] for x in det["data"]["fuentes"]["ventas"]] == [nueva]
+        assert any("borrador de Ventas Netas" in x for x in det["data"]["avisos"])
+        assert any("mismo día" in x for x in det["data"]["avisos"])  # las netas del 10 se siguen activando
+        # El 12 llega otra planilla (corte del 11) con una venta del 10 activada el 11: el SPH avisa y, al recalcularlo, la suma.
+        await _guardar(VentasNetasReport(upload_id="a11", periodo="2025-04", period_month=date(2025, 4, 1),
+                                         fecha_dato=date(2025, 4, 11), status="draft",
+                                         data=abril("2025-04-11", [_neta_act("ROBERTO CARLOS RIVEROS MORA", d, "2025-04-11")])))
+        assert (await ac.get(f"{BASE}/informes/{inf['id']}", headers=analista)).json()["fuentes_nuevas"] == ["Ventas Netas"]
+        r = (await ac.post(f"{BASE}/informes/{inf['id']}/recalcular", headers=analista)).json()
+        assert r["informe"]["netas"] == 4 and r["informe"]["ventas_corte"] == "2025-04-11"
+        # La planilla de mayo trae lo vendido a fin de abril: entra para los días de las últimas dos semanas, no para el 10.
+        await _guardar(VentasNetasReport(upload_id="m1", periodo="2025-05", period_month=date(2025, 5, 1),
+                                         fecha_dato=date(2025, 5, 3), status="draft", data={"detalle_netas": []}))
+        periodos = lambda f: [v["periodo"] for v in f["ventas"]]  # noqa: E731
+        assert periodos((await ac.get(f"{BASE}/fuentes", headers=analista, params={"fecha": d})).json()) == ["2025-04"]
+        assert periodos((await ac.get(f"{BASE}/fuentes", headers=analista, params={"fecha": "2025-04-28"})).json()) == ["2025-04", "2025-05"]
+        assert (await ac.get(f"{BASE}/informes/{r['informe']['id']}", headers=analista)).json()["fuentes_nuevas"] == []

@@ -9,9 +9,11 @@ Períodos: un día, una semana (lunes a domingo), un mes o un rango de hasta 62 
 suma día por día: cuenta cada día que tiene informe de Productividad (horas) y que el corte de
 ventas de su mes ya alcanza; los demás se informan.
 
-Fuentes (no se sube nada nuevo): por día, el informe de Productividad publicado (si no hay, el
-borrador más reciente); por mes, el informe de Ventas Netas publicado (si no hay, el borrador con
-el corte más nuevo). Queda avisado si se usó un borrador. El SPH queda congelado con esos datos.
+Fuentes (no se sube nada nuevo, `..fuentes`): por día, el informe de Productividad que llega más lejos
+en el día; por mes, el informe de Ventas Netas de corte más nuevo (cada planilla trae todo el mes y
+reemplaza a la anterior), publicado o no; a igual corte, el publicado. Las netas de un día salen del
+informe de su mes y del siguiente (lo vendido a fin de mes que se activa después). Queda avisado si se
+usó un borrador. El SPH queda congelado con esos datos y avisa cuando llegan datos más nuevos.
 
 Circuito (el mismo de Productividad): "Calcular" crea o rehace el borrador del período; como
 máximo hay un SPH publicado por período. Publicar sobre un período que ya tiene uno exige
@@ -37,14 +39,13 @@ from ....core.database import get_db
 from ....models.user import User
 from ....services.audit_service import record_action
 from ..fuentes import informes_productividad, informes_ventas
-from ..productividad.models import ESTADO_BORRADOR as PROD_BORRADOR
-from ..productividad.models import ESTADO_PUBLICADO as PROD_PUBLICADO
 from ..productividad.models import ProdInforme
 from ..supervision import operadores as maestro
 from ..supervision.models import Operador
 from ..ventas_netas.models import VentasNetasReport
 from .analyzer import (
-    DIAS_MAX_PERIODO, SIN_VENDEDOR, VERSION_SPH, DatosIncompletos, calcular_periodo, nombre_mes, resumen_lista, tipo_periodo,
+    DIAS_MAX_PERIODO, SIN_VENDEDOR, VERSION_SPH, DatosIncompletos, calcular_periodo, mes_siguiente, nombre_mes, resumen_lista,
+    tipo_periodo, usa_mes_siguiente,
 )
 from .models import ESTADO_BORRADOR, ESTADO_PUBLICADO, ESTADO_REEMPLAZADO, SphInforme
 
@@ -125,8 +126,8 @@ def _etiqueta(desde: date, hasta: date) -> str:
 
 
 # ------------------------------------------------------------------ fuentes del período
-# Por día, el informe de Productividad publicado (si no, el borrador más reciente); por mes, el de
-# Ventas Netas publicado (si no, el borrador con el corte más nuevo). Lo mismo que lee Supervisión.
+# Por día, el informe de Productividad que llega más lejos en el día; por mes, el de Ventas Netas de corte
+# más nuevo (publicado o no; a igual corte, el publicado). Lo mismo que lee Supervisión (`..fuentes`).
 _informes_productividad = informes_productividad
 _informes_ventas = informes_ventas
 
@@ -177,16 +178,28 @@ class Fuentes:
         return (f"El corte de ventas de {nombre_mes(v.periodo)} es del {v.fecha_dato:%d/%m}: todavía no trae las ventas de los "
                 f"días con horas ({', '.join(f'{d:%d/%m}' for d in con_horas[:6])}). Subí un corte de ventas posterior.")
 
+    def _meses(self, dias: list[date]) -> list[str]:
+        """Los informes de Ventas Netas de esos días: el de su mes y, para los de las últimas dos semanas del mes,
+        el del siguiente si ya hay (lo vendido a fin de mes que se activó después viene en esa planilla)."""
+        meses = {_mes(d) for d in dias}
+        siguientes = {mes_siguiente(_mes(d)) for d in dias if usa_mes_siguiente(d)} & set(self.ventas)
+        return sorted(meses | siguientes)
+
+    def meses_ventas(self) -> list[str]:
+        """Los que entran en el cálculo (los de los días que cuentan)."""
+        return self._meses(self.cubiertos)
+
     def descripcion(self) -> dict[str, Any]:
         return {
             "productividad": [_desc_prod(self.prods[d]) for d in sorted(self.prods)],
-            "ventas": [_desc_ventas(self.ventas[m]) for m in sorted(self.ventas)],
+            "ventas": [_desc_ventas(self.ventas[m]) for m in self._meses(_dias(self.desde, self.hasta)) if m in self.ventas],
         }
 
 
 async def _fuentes(db: AsyncSession, desde: date, hasta: date) -> Fuentes:
     prods = await _informes_productividad(db, desde, hasta)
-    ventas = await _informes_ventas(db, {_mes(d) for d in _dias(desde, hasta)})
+    meses = {_mes(d) for d in _dias(desde, hasta)}
+    ventas = await _informes_ventas(db, meses | {mes_siguiente(m) for m in meses})
     return Fuentes(desde, hasta, prods, ventas)
 
 
@@ -213,12 +226,12 @@ async def _calcular_borrador(db: AsyncSession, desde: date, hasta: date, user_id
     motivo = f.motivo()
     if motivo:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "sin_fuente", "message": motivo})
-    meses = {_mes(d) for d in f.cubiertos}
+    meses = f.meses_ventas()
     usados = {"productividad": [_desc_prod(f.prods[d]) for d in f.cubiertos],
-              "ventas": [_desc_ventas(f.ventas[m]) for m in sorted(meses)]}
+              "ventas": [_desc_ventas(f.ventas[m]) for m in meses]}
     produccion = {d: f.prods[d].data or {} for d in f.cubiertos}
     ventas = {m: f.ventas[m].data or {} for m in meses}
-    for m in sorted(meses):  # el cruce de nombres es el del maestro de operadores (fuente única)
+    for m in sorted({_mes(d) for d in f.cubiertos}):  # el cruce de nombres es el del maestro de operadores (fuente única)
         await maestro.detectar(db, m)
     fijos = maestro.vinculos_sph(await maestro.todos(db))
     try:  # el cálculo recorre cientos de filas por día: fuera del loop del servidor
@@ -277,13 +290,8 @@ async def ver_fuentes(desde: Optional[date] = Query(None), hasta: Optional[date]
 async def dias_disponibles(user: CurrentUser = Depends(require_gestion), db: AsyncSession = Depends(get_db)) -> dict:
     """Días recientes con informe de Productividad: si las ventas los cubren y si ya tienen SPH del día."""
     desde = date.today() - timedelta(days=DIAS_DISPONIBLES)
-    prod = (await db.execute(select(ProdInforme.fecha, ProdInforme.status).where(
-        ProdInforme.fecha >= desde, ProdInforme.status.in_([PROD_PUBLICADO, PROD_BORRADOR]),
-    ))).all()
-    estado_prod: dict[date, str] = {}
-    for f, s in prod:
-        if estado_prod.get(f) != PROD_PUBLICADO:
-            estado_prod[f] = s
+    # El estado del informe de llamadas que usaría el SPH de cada día (el que llega más lejos en el día).
+    estado_prod = {f: r.status for f, r in (await _informes_productividad(db, desde, date.today(), con_datos=False)).items()}
     ventas = await _informes_ventas(db, {_mes(f) for f in estado_prod})
     sph = (await db.execute(select(SphInforme.fecha, SphInforme.status, SphInforme.id).where(
         SphInforme.fecha >= desde, func.coalesce(SphInforme.hasta, SphInforme.fecha) == SphInforme.fecha,
@@ -350,7 +358,7 @@ async def ver_informe(informe_id: str, request: Request, user: CurrentUser = Dep
         ventas_usadas = {(x.get("id"), x.get("fecha_dato")) for x in _lista(usadas.get("ventas"))}
         prods_hoy = {f.prods[d].id for d in f.cubiertos}
         ventas_hoy = {(f.ventas[m].id, f.ventas[m].fecha_dato and f.ventas[m].fecha_dato.isoformat())
-                      for m in {_mes(d) for d in f.cubiertos}}
+                      for m in f.meses_ventas()}
         out["fuentes_nuevas"] = [nombre for nombre, nuevas in (("Productividad", prods_hoy - prods_usados),
                                                                 ("Ventas Netas", ventas_hoy - ventas_usadas)) if nuevas]
         out["vinculos"] = await _manuales(db)
