@@ -23,13 +23,14 @@ from .router import router
 from .sph import api as sph_api
 from .supervision import api as supervision_api
 from .supervision import coaching_api as supervision_coaching_api
+from .supervision import tickets_api as supervision_tickets_api
 from .supervision.migraciones import MIGRACIONES as supervision_migraciones
 from .ventas_netas import api as ventas_netas_api
 from .ventas_netas.jobs import actualizar_desactualizados as ventas_netas_actualizar
 from .ventas_netas.jobs import queue as ventas_netas_queue
 
 ROUTERS = [router, ventas_netas_api.router, productividad_api.router, sph_api.router, supervision_api.router,
-           supervision_coaching_api.router,
+           supervision_coaching_api.router, supervision_tickets_api.router,
            auditoria_api.router, facturacion_api.router, facturacion_agent_api.router]
 
 # Workers de fondo: nombre -> coroutine factory. main.py los supervisa.

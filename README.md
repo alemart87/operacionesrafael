@@ -66,7 +66,7 @@ operacionesrafaelmartinez/
 │   │           ├── fuentes.py   # qué informe de Productividad / Ventas Netas vale cada día y cada mes
 │   │           ├── ventas_netas/ # submódulo: api · models · schemas · parser · analyzer · exports · jobs
 │   │           ├── sph/         # submódulo SPH estimado: api · models · analyzer
-│   │           ├── supervision/ # submódulo Supervisión: api · coaching_api · models · calculo · scoring · coaching · impacto · alertas · operadores · migraciones
+│   │           ├── supervision/ # submódulo Supervisión: api · coaching_api · tickets_api · models · calculo · scoring · coaching · impacto · alertas · tickets · sla · operadores · migraciones
 │   │           └── facturacion/ # submódulo: api · agent_api · models/ · schemas
 │   │                            #   parser · analyzers/ · agent/ · jobs/
 │   ├── tests/                   # pytest (SQLite)
@@ -118,6 +118,7 @@ existentes según el modelo definido, y no se repite aunque el superadmin las ca
 | Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
 | SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
 | Supervisión · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | 🔒 | ✓ / | ✓ / | |
+| Supervisión · Tickets de revisión | ✓ | ✓ | ✓ | 🔒 | | ✓ | |
 | Supervisión · Parámetros del modelo (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
 | Operadores · Vincular | ✓ | ✓ | ✓ | 🔒 | ✓ | | |
 | Portal del supervisor (restringida) | 🔒 | 🔒 | 🔒 | ✓ | 🔒 | 🔒 | 🔒 |
@@ -130,8 +131,8 @@ existentes según el modelo definido, y no se repite aunque el superadmin las ca
 - **Supervisor:** solo entra a **su portal** (`PERFILES_SOLO_PORTAL`): únicamente puede
   tener las utilidades marcadas `portal` (el acceso y el Portal del supervisor). Al
   iniciar sesión va directo al portal; cualquier otra ruta lo devuelve ahí.
-- **Auditor:** revisa ventas y casos (Auditoría y Ventas Netas) y ve el tablero de
-  Supervisión en lectura.
+- **Auditor:** revisa ventas y casos (Auditoría y Ventas Netas), envía tickets de revisión
+  a los supervisores y ve el tablero de Supervisión en lectura.
 
 Las utilidades con `solo_perfiles` en el catálogo son **restringidas**: además del
 superadmin, solo las pueden tener los perfiles listados (hoy: **Facturación → Sub
@@ -295,21 +296,24 @@ de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro
 Gestión de los supervisores como líderes coach: equipos del mes, objetivos de Pospago y
 GPON por supervisor, avance y **proyección al cierre**, y asesores en alerta por líneas
 sin uso. Código en `backend/app/operativas/televentas_claro/supervision/`; la guía del
-modelo es el documento «Modelo Líder Coach Comercial». Fases 1 a 3 de 5: equipos, objetivos
-y proyección; tablero y scoring; coaching y bitácora (siguen tickets con SLA y centro de comandos).
+modelo es el documento «Modelo Líder Coach Comercial». Fases 1 a 4 de 5: equipos, objetivos
+y proyección; tablero y scoring; coaching y bitácora; tickets de revisión con SLA (sigue el
+centro de comandos).
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
 | Objetivos y proyección | `/televentas-claro/supervision` | Por supervisor: vendido / objetivo, proyección al cierre, ritmo necesario por día hábil, semáforo y alertas; la operación completa; **Cargar objetivos** en la misma tabla |
 | Tablero | `…/supervision/tablero` | Scoring 0–100 de la operación, ranking de supervisores y de asesores, con la tendencia contra el mes anterior |
 | Coaching | `…/supervision/coaching` | Gestión de coaching de todos los supervisores: cobertura, foco, seguimientos, coachings, vencidos y última actividad (primero, quien tiene algo vencido) |
-| Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible); pestaña **Coaching y bitácora** en `…/{id}/coaching`, solo lectura |
+| Tickets | `…/supervision/tickets` | Tickets de revisión: **Enviar ticket**, bandeja (abiertos o los del mes, primero lo vencido), detalle con historial (comentar, mandar los datos pedidos, reabrir, reasignar, cancelar) y métricas por supervisor |
+| Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible); pestañas **Coaching y bitácora** (`…/{id}/coaching`, solo lectura) y **Tickets** (`…/{id}/tickets`) |
 | Equipos del mes | `…/supervision/equipos` | Tablero por supervisor y «Sin supervisor»; selección múltiple, **fecha efectiva**, copiar los equipos del mes anterior |
 | Operadores | `…/supervision/operadores` | Maestro de operadores: por revisar, vincular, separar, confirmar sin vínculo, renombrar, dar de baja |
-| Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana y días no laborables (más los feriados de Seguridad) |
+| Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana, días no laborables (más los feriados de Seguridad) y el **horario de atención** (horas hábiles de los plazos de los tickets) |
 | Parámetros | `…/supervision/parametros` | Pesos y umbrales del scoring, versionados (solo sub gerente y superadmin) |
 | Mi portal | `/televentas-claro/portal` | El portal del supervisor: «Para hoy» (seguimientos y alertas por atender), su equipo, sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
 | Coaching y bitácora | `/televentas-claro/portal/coaching` | El supervisor registra coachings (con compromiso y fecha de seguimiento), seguimientos con el impacto medido, aclaraciones y notas de bitácora; ve su gestión del mes |
+| Tickets (portal) | `/televentas-claro/portal/tickets` | La bandeja del supervisor: responde, pide datos y resuelve los tickets que le envían, con sus plazos |
 
 - **Maestro de operadores:** cada persona tiene un nombre en llamadas (agente de
   Productividad) y otro como vendedor (POS de Ventas Netas), sin ID común. En cada mes
@@ -348,8 +352,8 @@ y proyección; tablero y scoring; coaching y bitácora (siguen tickets con SLA y
     equipo actual con al menos un coaching en el mes), foco 10 (% de las alertas de uso con
     coaching sobre uso dentro de los 5 días hábiles desde que aparecieron; las que siguen en
     plazo o se resolvieron solas antes no cuentan), seguimientos 5 (% de los compromisos
-    seguidos en la fecha acordada o al día siguiente) y tickets 10 (pendiente: su peso se
-    reparte). La gestión se mide desde el día en que se instaló el registro de coaching
+    seguidos en la fecha acordada o al día siguiente) y tickets 10 (% de los tickets del mes
+    respondidos y resueltos en plazo). La gestión se mide desde el día en que se instaló el registro de coaching
     (`gestion_desde`, migración de datos): los meses anteriores no se reescriben. Operación:
     los mismos componentes sobre toda la operación. Tendencia: contra el mes anterior.
   - Los pesos los cambia el sub gerente (utilidad restringida `supervision_parametros`);
@@ -376,13 +380,33 @@ y proyección; tablero y scoring; coaching y bitácora (siguen tickets con SLA y
   - **Alertas de uso con fecha** (`supervision/alertas.py`): al leer el mes en curso se
     abren las alertas nuevas (el día en que se generó el informe de Ventas Netas que las
     mostró) y se cierran las que ya no están; con esa fecha se mide el foco.
+- **Tickets de revisión** (`supervision/tickets.py`, `sla.py`, `tickets_api.py`; tablas
+  `sup_tickets`, `sup_ticket_eventos`):
+  - Los envían quienes tienen la utilidad `tickets` (coordinador, sub gerente, controller,
+    auditor y el superadmin): tipo (venta observada, línea sin uso, calidad de atención,
+    reclamo, conducta u otro), prioridad, asesor, referencia y descripción. Si nombra a un
+    asesor, llega al supervisor que lo tenía el día del caso; si no, se elige el supervisor.
+  - Plazos en horas hábiles del horario de atención (por defecto de lunes a viernes de 7 a
+    19 y el sábado de 8 a 12; un día hábil = la jornada completa): alta 2 h para la primera
+    respuesta y 1 día para resolver; media 8 h y 2 días; baja 1 día y 5 días. Se guardan al
+    enviar el ticket.
+  - Primera respuesta: lo primero que hace el supervisor (responder, pedir datos o
+    resolver). La resolución corre mientras el ticket está nuevo o en gestión: se detiene
+    mientras espera datos de quien lo envió (sin respuesta en 2 días hábiles se cierra
+    solo) y sigue desde donde estaba si se reabre (hasta 5 días hábiles después de
+    resuelto; la reapertura queda contada). Al 75% del plazo pasa a «por vencer».
+  - Métricas: cumplimiento (respondidos y resueltos en plazo; los vencidos cuentan como
+    fuera de plazo, los cancelados y los cerrados sin datos no cuentan), velocidad en
+    mediana y percentil 90, reaperturas y antigüedad de la bandeja. Los avisos de
+    vencimiento se ven en la aplicación (bandeja de los jefes y «Para hoy» del portal).
 - **Seguridad:** el portal filtra en el servidor por el usuario (solo sus asesores, en
-  las fechas en que los tuvo, y solo sus coachings y notas); ver las líneas sin uso de un
+  las fechas en que los tuvo, y solo sus coachings, notas y tickets); ver las líneas sin uso de un
   asesor y cada registro de coaching quedan auditados. Los jefes ven el coaching de cada
   supervisor sin poder cambiarlo.
-- **Permisos:** `supervision` (ver), `supervision_gestion` (equipos, objetivos,
-  calendario), `operadores` (vínculos), `supervision_parametros` (pesos del scoring, solo
-  sub gerente) y `portal_supervisor` (solo el perfil Supervisor).
+- **Permisos:** `supervision` (ver, también los tickets), `supervision_gestion` (equipos,
+  objetivos, calendario), `tickets` (enviar y seguir tickets), `operadores` (vínculos),
+  `supervision_parametros` (pesos del scoring, solo sub gerente) y `portal_supervisor`
+  (solo el perfil Supervisor).
 
 ## Televentas CLARO · Auditoría de Ventas
 

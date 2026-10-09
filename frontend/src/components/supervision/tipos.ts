@@ -90,6 +90,9 @@ export interface ParaHoy {
   alertas_vencidas: number;
   alertas_en_plazo: number;
   sin_coaching: number;
+  tickets_nuevos?: number;
+  tickets_por_vencer?: number;
+  tickets_vencidos?: number;
 }
 
 export interface FilaSupervisor extends SupervisorRef {
@@ -179,7 +182,11 @@ export interface ListaOperadores {
   puede_gestionar: boolean;
 }
 
+/** Horario de atención: por día de la semana (0 = lunes) [inicio, fin] o null si no se atiende. */
+export type HorarioAtencion = Record<string, [string, string] | null>;
+
 export interface ParametrosCompletos extends ParametrosSup {
+  horario: HorarioAtencion;
   no_laborables: { fecha: string; motivo: string }[];
   feriados_seguridad: string[];
   feriados: string[];
@@ -572,6 +579,16 @@ export function fechaHoraPy(iso: string | null | undefined): string {
   });
 }
 
+/** Fecha y hora corta, 24 h, en la hora de la operación: «vie 09/10 19:00». */
+export function fechaHoraCorta(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const partes = new Intl.DateTimeFormat("es-PY", {
+    timeZone: "America/Asuncion", weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const v = (t: string) => partes.find((x) => x.type === t)?.value ?? "";
+  return `${v("weekday").replace(".", "")} ${v("day")}/${v("month")} ${v("hour")}:${v("minute")}`;
+}
+
 /** Fecha 'AAAA-MM-DD' más n días (sin zona horaria). */
 export function sumarDias(iso: string, n: number): string {
   const d = new Date(`${iso}T12:00:00`);
@@ -582,4 +599,164 @@ export function sumarDias(iso: string, n: number): string {
 /** Días entre dos fechas 'AAAA-MM-DD' (b − a). */
 export function diasEntre(a: string, b: string): number {
   return Math.round((new Date(`${b}T12:00:00`).getTime() - new Date(`${a}T12:00:00`).getTime()) / 86400000);
+}
+
+// ------------------------------------------------------------------ tickets de revisión
+export type EstadoTicket = "nuevo" | "en_gestion" | "esperando" | "resuelto" | "cerrado";
+export type SituacionSla = "en_plazo" | "por_vencer" | "vencido" | "pausado" | "cumplido" | "fuera_de_plazo" | "cerrado";
+export type PrioridadTicket = "alta" | "media" | "baja";
+export type TipoTicket = "venta_observada" | "linea_sin_uso" | "calidad" | "reclamo" | "conducta" | "otro";
+export type AccionTicket = "responder" | "pedir_datos" | "resolver" | "comentar" | "reabrir" | "cancelar" | "reasignar";
+
+export interface PlazoSla { min: number; plazo: number; pct: number; cumplio: boolean | null; vence: string | null; corre?: boolean }
+export interface SlaTicket { situacion: SituacionSla; cumple: boolean | null; respuesta: PlazoSla; resolucion: PlazoSla }
+
+export interface Ticket {
+  id: string;
+  numero: number;
+  tipo: TipoTicket;
+  tipo_nombre: string;
+  prioridad: PrioridadTicket;
+  estado: EstadoTicket;
+  supervisor_id: string;
+  supervisor: string;
+  operador_id: string | null;
+  operador: string | null;
+  fecha_caso: string | null;
+  referencia: string | null;
+  descripcion: string;
+  creado_por: string;
+  creado_por_nombre: string;
+  created_at: string | null;
+  respuesta_at: string | null;
+  resuelto_at: string | null;
+  cerrado_at: string | null;
+  motivo_cierre: "cancelado" | "sin_respuesta" | null;
+  reaperturas: number;
+  sla: SlaTicket;
+  edad_min: number | null;
+}
+
+export interface EventoTicket {
+  id: string;
+  tipo: "creado" | "respuesta" | "comentario" | "pedido_datos" | "datos" | "resuelto" | "reabierto" | "reasignado" | "cancelado" | "cerrado_auto";
+  at: string | null;
+  por: string;
+  texto: string | null;
+  datos: Record<string, any>;
+}
+
+export interface InfoTickets {
+  dia_completo: number;
+  plazos: Record<PrioridadTicket, { respuesta: number; resolucion: number }>;
+  plazos_texto: Record<PrioridadTicket, { respuesta: string; resolucion: string }>;
+  por_vencer: number;
+  dias_espera: number;
+  dias_reabrir: number;
+  tipos: Record<TipoTicket, string>;
+  horario: HorarioAtencion | null;
+}
+
+export interface TicketDetalle extends Ticket {
+  eventos: EventoTicket[];
+  acciones: AccionTicket[];
+  info: InfoTickets;
+}
+
+export interface MetricasTickets {
+  total: number;
+  abiertos: number;
+  nuevos: number;
+  esperando: number;
+  por_vencer: number;
+  vencidos: number;
+  resueltos: number;
+  cerrados: number;
+  en_plazo: number;
+  evaluados: number;
+  cumplimiento: number | null;
+  respuesta: { mediana: number | null; p90: number | null; n: number };
+  resolucion: { mediana: number | null; p90: number | null; n: number };
+  reaperturas: number;
+  reabiertos: number;
+  mas_antiguo_min: number | null;
+}
+
+export interface FilaTicketsSupervisor extends SupervisorRef {
+  mes: MetricasTickets;
+  bandeja: Pick<MetricasTickets, "abiertos" | "nuevos" | "esperando" | "por_vencer" | "vencidos" | "mas_antiguo_min">;
+}
+
+export interface BandejaTickets {
+  periodo: string;
+  nombre_mes: string;
+  hoy: string;
+  vista: "abiertos" | "mes";
+  items: Ticket[];
+  mes: MetricasTickets;
+  bandeja: MetricasTickets;
+  supervisores: FilaTicketsSupervisor[];
+  info: InfoTickets;
+  puede_enviar: boolean;
+}
+
+export interface PortalTickets {
+  periodo: string;
+  nombre_mes: string;
+  hoy: string;
+  items: Ticket[];
+  mes: MetricasTickets;
+  bandeja: MetricasTickets;
+  info: InfoTickets;
+}
+
+export interface OpcionesTicket {
+  asesores: { id: string; nombre: string; agente: string | null; vendedor: string | null; supervisor_id: string | null; supervisor: string | null }[];
+  supervisores: SupervisorRef[];
+  hoy: string;
+}
+
+export const ESTADO_TICKET: Record<EstadoTicket, { label: string; chip: string }> = {
+  nuevo: { label: "Nuevo", chip: AZUL },
+  en_gestion: { label: "En gestión", chip: "bg-brand-cyan/10 text-[#00727A] border-brand-cyan/30" },
+  esperando: { label: "Esperando datos", chip: GRIS },
+  resuelto: { label: "Resuelto", chip: VERDE },
+  cerrado: { label: "Cerrado", chip: GRIS },
+};
+
+export const SITUACION: Record<SituacionSla, { label: string; chip: string; ayuda: string }> = {
+  en_plazo: { label: "En plazo", chip: GRIS, ayuda: "Todavía dentro de sus plazos" },
+  por_vencer: { label: "Por vencer", chip: NARANJA, ayuda: "Ya usó el 75% o más de su plazo" },
+  vencido: { label: "Vencido", chip: ROJO, ayuda: "Se pasó del plazo de primera respuesta o de resolución" },
+  pausado: { label: "Pausado", chip: AZUL, ayuda: "Espera datos de quien lo envió: el reloj está detenido" },
+  cumplido: { label: "Resuelto en plazo", chip: VERDE, ayuda: "Respondido y resuelto dentro de sus plazos" },
+  fuera_de_plazo: { label: "Resuelto fuera de plazo", chip: NARANJA, ayuda: "Se resolvió, pero pasado algún plazo" },
+  cerrado: { label: "Sin medir", chip: GRIS, ayuda: "Cancelado o cerrado sin los datos pedidos: no cuenta para el plazo" },
+};
+
+export const PRIORIDAD: Record<PrioridadTicket, { label: string; chip: string }> = {
+  alta: { label: "Alta", chip: "bg-brand-ink text-white border-brand-ink" },
+  media: { label: "Media", chip: "bg-white text-brand-ink border-brand-slate/60" },
+  baja: { label: "Baja", chip: GRIS },
+};
+
+/** Minutos hábiles en palabras: «45 min», «2 h 30 min», «1 día hábil y 3 h» (un día = la jornada completa). */
+export function duracionHabil(min: number | null | undefined, diaCompleto: number): string {
+  if (min === null || min === undefined) return "—";
+  const m = Math.round(min);
+  if (m < 60) return `${m} min`;
+  if (m < diaCompleto) {
+    const h = Math.floor(m / 60);
+    const r = m % 60;
+    return r ? `${h} h ${r} min` : `${h} h`;
+  }
+  const d = Math.floor(m / diaCompleto);
+  const h = Math.round((m - d * diaCompleto) / 60);
+  return `${d} ${d === 1 ? "día hábil" : "días hábiles"}${h ? ` y ${h} h` : ""}`;
+}
+
+/** Plazo de la guía en palabras: '2h' → «2 h», '1d' → «1 día hábil». */
+export function plazoTexto(p: string): string {
+  const n = Number(p.slice(0, -1));
+  return p.endsWith("d") ? `${n} ${n === 1 ? "día hábil" : "días hábiles"}` : `${n} ${n === 1 ? "hora hábil" : "horas hábiles"}`;
 }

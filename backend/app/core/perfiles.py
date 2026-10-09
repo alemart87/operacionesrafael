@@ -16,7 +16,7 @@ PERFILES: list[dict] = [
     {"slug": "coordinador", "name": "Coordinador", "description": "Coordina la operativa. Acceso amplio."},
     {"slug": "supervisor", "name": "Supervisor", "description": "Líder coach de su equipo: entra solo a su portal (equipo, objetivos, proyección y alertas)."},
     {"slug": "analista", "name": "Analista", "description": "Carga datos y prepara reportes."},
-    {"slug": "auditor", "name": "Auditor", "description": "Revisa ventas y casos, y sigue el tablero de supervisión."},
+    {"slug": "auditor", "name": "Auditor", "description": "Revisa ventas y casos, envía tickets de revisión y sigue el tablero de supervisión."},
     {"slug": "cliente", "name": "Cliente", "description": "Consulta la información publicada."},
 ]
 
@@ -31,13 +31,13 @@ DEFAULT_PERMISSIONS: dict[str, list[str]] = {
     "sub_gerente": [f"{_TC}.{u}" for u in _TODAS_TC],
     "controller": [f"{_TC}.{u}" for u in _TODAS_TC if u != "facturacion"],
     "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad", "sph",
-                                            "supervision", "supervision_gestion", "operadores")],
+                                            "supervision", "supervision_gestion", "tickets", "operadores")],
     # El supervisor solo entra a su portal (ver core/operativas.PERFILES_SOLO_PORTAL).
     "supervisor": [f"{_TC}.{u}" for u in ("ver", "portal_supervisor")],
     "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion", "auditoria",
                                          "productividad", "productividad_gestion", "sph", "sph_gestion",
                                          "supervision", "operadores")],
-    "auditor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "auditoria", "supervision")],
+    "auditor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "auditoria", "supervision", "tickets")],
     "cliente": [f"{_TC}.{u}" for u in ("ver",)],
 }
 

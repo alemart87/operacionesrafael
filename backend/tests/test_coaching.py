@@ -113,7 +113,7 @@ def test_la_gestion_suma_al_puntaje_del_supervisor_desde_que_se_registra():
     assert antes["total"] == antes["resultado"]
     assert {p["clave"]: p.get("detalle") for p in antes["partes"][1:]} == {
         "cobertura": "Se mide desde el 01/11/2026", "foco": "Se mide desde el 01/11/2026",
-        "seguimiento": "Se mide desde el 01/11/2026", "tickets": None}
+        "seguimiento": "Se mide desde el 01/11/2026", "tickets": "Se mide desde el 01/11/2026"}
     # Con el registro: 1 de 2 asesores con coaching (7,5 de 15); foco y seguimientos sin casos no se evalúan.
     con = _calcular({"inicio": D(10, 1), "hoy": D(10, 20), "alertas": [],
                      "coachings": [_c("a", "S1", "conversacion", D(10, 6), D(10, 25))]})
@@ -256,7 +256,8 @@ async def test_flujo_coaching_seguimiento_bitacora_y_gestion(monkeypatch):
         assert v["puede_registrar"] and v["items"] == [] and v["reglas"]["horas_edicion"] == 24
         # El portal resume lo que hay que atender hoy.
         assert (await ac.get(f"{BASE}/portal", headers=sup1)).json()["coaching"] == {
-            "seguimientos_vencidos": 0, "seguimientos_hoy": 0, "alertas_vencidas": 0, "alertas_en_plazo": 1, "sin_coaching": 2}
+            "seguimientos_vencidos": 0, "seguimientos_hoy": 0, "alertas_vencidas": 0, "alertas_en_plazo": 1, "sin_coaching": 2,
+            "tickets_nuevos": 0, "tickets_por_vencer": 0, "tickets_vencidos": 0}
 
         nuevo = {"operador_id": rob, "fecha": "2026-10-12", "tipo": "semanal", "metrica": "uso",
                  "diagnostico": "Vende líneas a clientes que no las usan: no confirma el uso.",
@@ -340,7 +341,7 @@ async def test_flujo_coaching_seguimiento_bitacora_y_gestion(monkeypatch):
         v = (await ac.get(f"{BASE}/portal/coaching", headers=sup1)).json()
         partes = {p["clave"]: p for p in v["scoring"]["partes"]}
         assert partes["cobertura"]["rel"] == 1.0 and partes["foco"]["rel"] == 1.0 and partes["seguimiento"]["rel"] == 1.0
-        assert partes["tickets"]["pendiente"]
+        assert partes["tickets"]["rel"] is None and partes["tickets"]["detalle"] == "Sin tickets en el mes"
         assert [n["tipo"] for n in v["notas"]] == ["ausencia"] and [p["id"] for p in v["pendientes"]] == [c_uso["id"]]
 
         # Los jefes ven lo mismo, sin poder cambiarlo; el supervisor no entra a la vista de los jefes.

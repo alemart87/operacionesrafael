@@ -261,7 +261,7 @@ async def test_flujo_equipos_objetivos_proyeccion_y_portal(monkeypatch):
         # La gestión ya se mide: sin coachings, la cobertura es 0 (foco y seguimientos sin casos no se evalúan).
         partes = {x["clave"]: x for x in silvia_sc["partes"]}
         assert partes["cobertura"]["rel"] == 0 and partes["cobertura"]["detalle"] == "0 de 1 asesor con coaching en el mes"
-        assert partes["foco"]["rel"] is None and partes["seguimiento"]["rel"] is None and partes["tickets"]["pendiente"]
+        assert partes["foco"]["rel"] is None and partes["seguimiento"]["rel"] is None and partes["tickets"]["rel"] is None
         assert silvia_sc["total"] == round(silvia_sc["resultado"] * 0.8, 1) and silvia_sc["anterior"] is None
         assert {c["clave"] for c in silvia_sc["componentes"]} == {"pospago", "uso", "conversacion", "gpon"}
         ana_sc = next(a for a in t["asesores"] if a["nombre"] == "Perez, Ana")

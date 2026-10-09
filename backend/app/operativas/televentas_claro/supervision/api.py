@@ -26,7 +26,6 @@ from ....api.deps import CurrentUser, client_ip, get_current_user, require_perm
 from ....core.config import settings
 from ....core.database import get_db
 from ....models.user import User
-from ....services import seguridad as seg
 from ....services.audit_service import record_action
 from ..sph.analyzer import nombre_mes
 from ..ventas_netas.models import ESTADO_PUBLICADO as VN_PUBLICADO
@@ -35,9 +34,13 @@ from . import alertas as alertas_srv
 from . import coaching as coaching_srv
 from . import operadores as maestro
 from . import scoring
-from .datos import parametros_scoring, productividad_del_mes, ventas_del_mes
+from . import tickets as tickets_srv
+from .datos import horario as horario_de
+from .datos import parametros, parametros_scoring, productividad_del_mes, ventas_del_mes
+from .sla import estado as estado_sla
+from .sla import validar_horario
 from .calculo import (
-    PARAMETROS_DEFECTO, atribuir, calendario, limites, mes_anterior, proyeccion, supervisor_en,
+    atribuir, calendario, limites, mes_anterior, proyeccion, supervisor_en,
     validar_periodo,
 )
 from .models import (
@@ -116,17 +119,6 @@ async def _supervisores(db: AsyncSession, extra_ids: set[str] | None = None) -> 
     return out
 
 
-async def parametros(db: AsyncSession) -> dict[str, Any]:
-    """Parámetros vigentes + los feriados de Seguridad (los carga el superadmin) y los días no laborables."""
-    row = await db.get(SupParametros, OPERATIVA)
-    p = {**PARAMETROS_DEFECTO, **((row.data if row else None) or {})}
-    cfg = await seg.config(db)
-    p["feriados_seguridad"] = sorted(cfg["horarios"].get("feriados") or [])
-    p["feriados"] = sorted(set(p["feriados_seguridad"]) | {x["fecha"] for x in p.get("no_laborables") or []})
-    p["updated_at"], p["updated_by"] = (_iso(row.updated_at), row.updated_by) if row else (None, None)
-    return p
-
-
 def _desc_ventas(r: VentasNetasReport | None) -> dict[str, Any] | None:
     if not r:
         return None
@@ -202,8 +194,12 @@ class Contexto:
                                       inicio=self.inicio_gestion)
         self.alertas = await alertas_srv.del_mes(db, self.periodo)
         self.coachings = await coaching_srv.para_scoring_del_mes(db, self.periodo)
+        self.horario = horario_de(self.p)
+        await tickets_srv.cerrar_sin_respuesta(db, self.horario)
+        self.tickets = await tickets_srv.del_mes(db, self.periodo)
         gestion = {"inicio": self.inicio_gestion, "hoy": dia, "coachings": coaching_srv.para_scoring(self.coachings),
-                   "alertas": [alertas_srv.a_scoring(a, self.p) for a in self.alertas]}
+                   "alertas": [alertas_srv.a_scoring(a, self.p) for a in self.alertas],
+                   "tickets": tickets_srv.para_scoring(self.tickets, self.horario, tickets_srv.ahora())}
         self.sc = scoring.calcular(
             primero=self.primero, ultimo=self.ultimo, corte=self.reporte.fecha_dato if self.reporte else None,
             cal=self.cal, p=self.p, sc=self.sc_params, pp=self.sc_params["conversacion"],
@@ -443,9 +439,14 @@ async def _para_hoy(db: AsyncSession, ctx: Contexto, sid: str) -> dict[str, Any]
         ctx.alertas, sid, p=ctx.p, tramos=ctx.tramos, ref=ctx.ref, primero=ctx.primero, coachings=ctx.coachings, hoy=dia,
         nombres={}))
     con = {c.operador_id for c in ctx.coachings if ctx.primero <= c.fecha <= min(ctx.ultimo, dia)}
+    momento = tickets_srv.ahora()
+    abiertos = await tickets_srv.abiertos(db, sid)
+    situacion = Counter(estado_sla(t, ctx.horario, momento)["situacion"] for t in abiertos)
     return {"seguimientos_vencidos": seguimientos.get("vencido", 0), "seguimientos_hoy": seguimientos.get("hoy", 0),
             "alertas_vencidas": alertas.get("vencida", 0), "alertas_en_plazo": alertas.get("en_plazo", 0),
-            "sin_coaching": sum(1 for op in ctx.equipo(sid) if op not in con)}
+            "sin_coaching": sum(1 for op in ctx.equipo(sid) if op not in con),
+            "tickets_nuevos": sum(1 for t in abiertos if t.estado == "nuevo"),
+            "tickets_por_vencer": situacion.get("por_vencer", 0), "tickets_vencidos": situacion.get("vencido", 0)}
 
 
 @router.get("/portal/lineas")
@@ -654,12 +655,14 @@ class NoLaborable(BaseModel):
 class ParametrosPayload(BaseModel):
     pesos_dia: list[float] = Field(..., min_length=7, max_length=7)
     no_laborables: list[NoLaborable] = Field(default_factory=list, max_length=200)
+    horario: Optional[dict[str, Optional[list[str]]]] = None  # horario de atención (plazos de los tickets)
 
 
 @router.put("/parametros")
 async def guardar_parametros(payload: ParametrosPayload, request: Request, user: CurrentUser = Depends(require_gestion),
                              db: AsyncSession = Depends(get_db)) -> dict:
-    """Calendario de la operación: cuánto vale cada día de la semana (0, medio o 1) y los días no laborables."""
+    """Calendario de la operación: cuánto vale cada día de la semana (0, medio o 1), los días no laborables y el
+    horario de atención (las horas hábiles con que se miden los plazos de los tickets)."""
     if any(x not in (0, 0.5, 1) for x in payload.pesos_dia):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cada día vale 0, 0,5 o 1")
     if not any(payload.pesos_dia):
@@ -670,6 +673,11 @@ async def guardar_parametros(payload: ParametrosPayload, request: Request, user:
             "pesos_dia": [float(x) for x in payload.pesos_dia],
             "no_laborables": sorted(({"fecha": x.fecha.isoformat(), "motivo": x.motivo.strip()} for x in payload.no_laborables),
                                     key=lambda x: x["fecha"])}
+    if payload.horario is not None:
+        try:
+            data["horario"] = validar_horario(payload.horario)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     if not row:
         row = SupParametros(operativa=OPERATIVA, data=data)
         db.add(row)

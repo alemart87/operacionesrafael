@@ -1,10 +1,12 @@
 "use client";
 
-import { CalendarDays, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, Clock, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { fechaHora, fechaLarga, nombreMes } from "@/components/productividad/tipos";
-import { SUP_API, mesActual, num, sumarMeses, type ParametrosCompletos } from "@/components/supervision/tipos";
+import {
+  SUP_API, duracionHabil, mesActual, num, sumarMeses, type HorarioAtencion, type ParametrosCompletos,
+} from "@/components/supervision/tipos";
 import { apiFetch } from "@/lib/api";
 import { PERM_SUPERVISION_GESTION } from "@/lib/operativas";
 
@@ -18,6 +20,19 @@ export default function CalendarioPage() {
 
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const PESOS: { v: number; label: string }[] = [{ v: 0, label: "No" }, { v: 0.5, label: "Medio" }, { v: 1, label: "Completo" }];
+
+const FRANJA_DEFECTO: [string, string][] = [
+  ["07:00", "19:00"], ["07:00", "19:00"], ["07:00", "19:00"], ["07:00", "19:00"], ["07:00", "19:00"], ["08:00", "12:00"], ["08:00", "12:00"],
+];
+const minutos = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + (m || 0); };
+const franjaValida = (f: [string, string] | null) => !f || (!!f[0] && !!f[1] && minutos(f[0]) < minutos(f[1]));
+
+/** Minutos de un día hábil de plazo: la jornada más larga de lunes a viernes (como el servidor). */
+function diaCompleto(h: HorarioAtencion): number {
+  const largos = (dias: number[]) => dias.map((i) => h[String(i)]).filter(franjaValida).filter(Boolean).map((f) => minutos(f![1]) - minutos(f![0]));
+  const semana = largos([0, 1, 2, 3, 4]);
+  return Math.max(...(semana.length ? semana : largos([0, 1, 2, 3, 4, 5, 6])), 60);
+}
 
 /** Días hábiles de un mes con esos pesos y feriados (lo mismo que calcula el servidor). */
 function habiles(periodo: string, pesos: number[], feriados: Set<string>): number {
@@ -36,15 +51,19 @@ function Calendario() {
   const [p, setP] = useState<ParametrosCompletos | null>(null);
   const [pesos, setPesos] = useState<number[]>([]);
   const [dias, setDias] = useState<{ fecha: string; motivo: string }[]>([]);
+  const [horario, setHorario] = useState<HorarioAtencion>({});
   const [nuevo, setNuevo] = useState({ fecha: "", motivo: "" });
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
-  const aplicar = (d: ParametrosCompletos) => { setP(d); setPesos(d.pesos_dia); setDias(d.no_laborables ?? []); };
+  const aplicar = (d: ParametrosCompletos) => { setP(d); setPesos(d.pesos_dia); setDias(d.no_laborables ?? []); setHorario(d.horario ?? {}); };
   useEffect(() => { apiFetch<ParametrosCompletos>(`${SUP_API}/parametros`).then(aplicar).catch((e) => setError(e.message)); }, []);
 
-  const cambiado = !!p && (JSON.stringify(pesos) !== JSON.stringify(p.pesos_dia) || JSON.stringify(dias) !== JSON.stringify(p.no_laborables ?? []));
+  const cambiado = !!p && (JSON.stringify(pesos) !== JSON.stringify(p.pesos_dia) || JSON.stringify(dias) !== JSON.stringify(p.no_laborables ?? [])
+    || JSON.stringify(horario) !== JSON.stringify(p.horario ?? {}));
+  const horarioOk = Object.values(horario).every(franjaValida) && Object.values(horario).some(Boolean);
+  const franja = (i: number, f: [string, string] | null) => setHorario((h) => ({ ...h, [String(i)]: f }));
   const feriados = useMemo(() => new Set([...(p?.feriados_seguridad ?? []), ...dias.map((d) => d.fecha)]), [p, dias]);
   const meses = [mesActual(), sumarMeses(mesActual(), 1)];
 
@@ -58,8 +77,8 @@ function Calendario() {
     setError(null);
     setOk(null);
     try {
-      aplicar(await apiFetch<ParametrosCompletos>(`${SUP_API}/parametros`, { method: "PUT", body: JSON.stringify({ pesos_dia: pesos, no_laborables: dias }) }));
-      setOk("Calendario guardado: las proyecciones ya lo usan.");
+      aplicar(await apiFetch<ParametrosCompletos>(`${SUP_API}/parametros`, { method: "PUT", body: JSON.stringify({ pesos_dia: pesos, no_laborables: dias, horario }) }));
+      setOk("Calendario guardado: las proyecciones y los plazos de los tickets ya lo usan.");
     } catch (e: any) { setError(e.message); } finally { setGuardando(false); }
   };
 
@@ -70,13 +89,14 @@ function Calendario() {
           <div className="text-[11px] uppercase tracking-wider2 text-brand-slate mb-2">Supervisión</div>
           <h1 className="font-display text-4xl text-brand-ink uppercase leading-tight">Calendario</h1>
           <p className="text-sm text-brand-slate mt-2 max-w-3xl">
-            Días hábiles de la operación: con ellos se calcula la proyección al cierre y el ritmo necesario de cada supervisor.
+            Días hábiles de la operación: con ellos se calcula la proyección al cierre y el ritmo necesario de cada supervisor. El horario
+            de atención da las horas hábiles de los plazos de los tickets.
           </p>
         </div>
         {gestion && (
           <div className="flex gap-2">
             <button type="button" className="btn-secondary" disabled={!cambiado || guardando} onClick={() => p && aplicar(p)}>Descartar</button>
-            <button type="button" className="btn-primary" disabled={!cambiado || guardando} onClick={guardar}>{guardando ? "Guardando…" : cambiado ? "Guardar calendario" : "Sin cambios"}</button>
+            <button type="button" className="btn-primary" disabled={!cambiado || guardando || !horarioOk} onClick={guardar}>{guardando ? "Guardando…" : cambiado ? "Guardar calendario" : "Sin cambios"}</button>
           </div>
         )}
       </div>
@@ -151,6 +171,44 @@ function Calendario() {
               </div>
             )}
             {p.updated_at && <p className="text-[11px] text-brand-mist mt-4">Último cambio: {p.updated_by ?? "—"}, {fechaHora(p.updated_at)}.</p>}
+          </section>
+
+          <section className="card p-5 lg:col-span-2">
+            <h2 className="font-display text-xl uppercase text-brand-ink leading-tight flex items-center gap-2"><Clock size={18} className="text-brand-slate" /> Horario de atención</h2>
+            <p className="text-xs text-brand-slate mt-0.5 max-w-3xl">
+              Las horas hábiles con que se miden los plazos de los tickets de revisión (los feriados y los días no laborables no cuentan).
+              Un día hábil de plazo es la jornada más larga de lunes a viernes: hoy, <b className="text-brand-ink">{duracionHabil(diaCompleto(horario), diaCompleto(horario) + 1)}</b>.
+            </p>
+            <ul className="mt-4 grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {DIAS.map((dia, i) => {
+                const f = horario[String(i)] ?? null;
+                const mala = !franjaValida(f);
+                return (
+                  <li key={dia} className={`rounded-md border px-3 py-2.5 ${mala ? "border-brand-primary/50 bg-brand-primary-light/40" : "border-brand-border"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-brand-ink">{dia}</span>
+                      <label className="inline-flex items-center gap-1.5 text-xs text-brand-slate cursor-pointer">
+                        <input type="checkbox" className="accent-[#E6332A]" checked={!!f} disabled={!gestion}
+                          onChange={(e) => franja(i, e.target.checked ? FRANJA_DEFECTO[i] : null)} /> Atiende
+                      </label>
+                    </div>
+                    {f ? (
+                      <div className="flex items-center gap-2 mt-2">
+                        <input type="time" className="input !py-1.5 !px-2 text-sm tabular-nums" value={f[0]} disabled={!gestion} aria-label={`${dia}: desde`}
+                          onChange={(e) => franja(i, [e.target.value, f[1]])} />
+                        <span className="text-xs text-brand-slate">a</span>
+                        <input type="time" className="input !py-1.5 !px-2 text-sm tabular-nums" value={f[1]} disabled={!gestion} aria-label={`${dia}: hasta`}
+                          onChange={(e) => franja(i, [f[0], e.target.value])} />
+                      </div>
+                    ) : (
+                      <div className="text-xs text-brand-mist mt-2">No se atiende</div>
+                    )}
+                    {mala && <div className="text-[11px] text-brand-primary-dark mt-1">La hora de fin tiene que ser posterior a la de inicio.</div>}
+                  </li>
+                );
+              })}
+            </ul>
+            {!Object.values(horario).some(Boolean) && <p className="text-xs text-brand-primary-dark mt-3">Al menos un día tiene que tener horario de atención.</p>}
           </section>
         </div>
       )}

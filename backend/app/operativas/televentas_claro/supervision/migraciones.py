@@ -43,6 +43,19 @@ async def permisos_parametros(db: AsyncSession) -> dict[str, Any]:
     return {"sub_gerente": True}
 
 
+async def permisos_tickets(db: AsyncSession) -> dict[str, Any]:
+    """Los perfiles que ya existían reciben los tickets de revisión según lo definido (jefes y auditor)."""
+    perm = f"{OPERATIVA}.tickets"
+    cambios: list[str] = []
+    for row in (await db.execute(select(Profile))).scalars().all():
+        antes = set(row.permissions or [])
+        if perm in DEFAULT_PERMISSIONS.get(row.slug, []) and perm not in antes:
+            row.permissions = filter_permissions(sorted(antes | {perm}), row.slug)
+            cambios.append(row.slug)
+    await db.commit()
+    return {"perfiles": sorted(cambios)}
+
+
 async def vinculos_sph_al_maestro(db: AsyncSession) -> dict[str, Any]:
     return await maestro.importar_vinculos_sph(db)
 
@@ -68,4 +81,5 @@ MIGRACIONES = [
     ("2026-10-operadores-desde-sph", vinculos_sph_al_maestro),
     ("2026-10-supervision-parametros", permisos_parametros),
     ("2026-10-gestion-desde", inicio_gestion),
+    ("2026-10-tickets-permisos", permisos_tickets),
 ]

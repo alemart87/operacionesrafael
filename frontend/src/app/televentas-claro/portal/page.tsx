@@ -53,7 +53,9 @@ function Portal() {
         !error && <div className="card p-10 text-brand-slate">Cargando…</div>
       ) : (
         <div className="space-y-6">
-          {d.coaching && periodo === mesActual() && <ParaHoyCard x={d.coaching} href="/televentas-claro/portal/coaching" />}
+          {d.coaching && periodo === mesActual() && (
+            <ParaHoyCard x={d.coaching} href="/televentas-claro/portal/coaching" hrefTickets="/televentas-claro/portal/tickets" />
+          )}
           <VistaSupervisor d={d} lineasUrl={(op) => `${SUP_API}/portal/lineas?periodo=${periodo}&operador_id=${op}`} />
         </div>
       )}

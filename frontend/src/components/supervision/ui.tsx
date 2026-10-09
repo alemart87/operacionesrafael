@@ -454,11 +454,12 @@ export function MetodoSupervision({ p }: { p: ParametrosSup }) {
 }
 
 // ------------------------------------------------------------------ pestañas del detalle de un supervisor (jefes)
-export function TabsSupervisor({ id, periodo, activa }: { id: string; periodo: string; activa: "resultados" | "coaching" }) {
+export function TabsSupervisor({ id, periodo, activa }: { id: string; periodo: string; activa: "resultados" | "coaching" | "tickets" }) {
   const q = periodo === mesActual() ? "" : `?periodo=${periodo}`;
   const tabs = [
     { k: "resultados", label: "Resultados", href: `${SUP_HREF}/supervisores/${id}${q}` },
     { k: "coaching", label: "Coaching y bitácora", href: `${SUP_HREF}/supervisores/${id}/coaching${q}` },
+    { k: "tickets", label: "Tickets", href: `${SUP_HREF}/supervisores/${id}/tickets${q}` },
   ];
   return (
     <nav aria-label="Secciones del supervisor" className="flex gap-1 border-b border-brand-border mb-6 overflow-x-auto print:hidden">
@@ -476,28 +477,35 @@ export function TabsSupervisor({ id, periodo, activa }: { id: string; periodo: s
 const pl = (k: number, uno: string, varios: string) => `${k} ${k === 1 ? uno : varios}`;
 
 /** Lo que el supervisor tiene que atender de su gestión, al entrar a su portal. */
-export function ParaHoyCard({ x, href }: { x: ParaHoy; href: string }) {
+export function ParaHoyCard({ x, href, hrefTickets }: { x: ParaHoy; href: string; hrefTickets: string }) {
   const rojo = "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30";
   const naranja = "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40";
   const azul = "bg-[#2A78D6]/10 text-[#1D5BA6] border-[#2A78D6]/30";
+  const tk = { nuevos: x.tickets_nuevos ?? 0, por_vencer: x.tickets_por_vencer ?? 0, vencidos: x.tickets_vencidos ?? 0 };
   const items = [
-    { k: x.seguimientos_vencidos, t: pl(x.seguimientos_vencidos, "seguimiento vencido", "seguimientos vencidos"), c: rojo },
-    { k: x.alertas_vencidas, t: pl(x.alertas_vencidas, "alerta de uso sin coaching a tiempo", "alertas de uso sin coaching a tiempo"), c: rojo },
-    { k: x.seguimientos_hoy, t: pl(x.seguimientos_hoy, "seguimiento para hoy", "seguimientos para hoy"), c: azul },
-    { k: x.alertas_en_plazo, t: pl(x.alertas_en_plazo, "alerta de uso esperando coaching", "alertas de uso esperando coaching"), c: naranja },
-    { k: x.sin_coaching, t: pl(x.sin_coaching, "asesor sin coaching este mes", "asesores sin coaching este mes"), c: naranja },
+    { k: tk.vencidos, t: pl(tk.vencidos, "ticket vencido", "tickets vencidos"), c: rojo, h: hrefTickets },
+    { k: x.seguimientos_vencidos, t: pl(x.seguimientos_vencidos, "seguimiento vencido", "seguimientos vencidos"), c: rojo, h: href },
+    { k: x.alertas_vencidas, t: pl(x.alertas_vencidas, "alerta de uso sin coaching a tiempo", "alertas de uso sin coaching a tiempo"), c: rojo, h: href },
+    { k: tk.por_vencer, t: pl(tk.por_vencer, "ticket por vencer", "tickets por vencer"), c: naranja, h: hrefTickets },
+    { k: tk.nuevos, t: pl(tk.nuevos, "ticket sin responder", "tickets sin responder"), c: azul, h: hrefTickets },
+    { k: x.seguimientos_hoy, t: pl(x.seguimientos_hoy, "seguimiento para hoy", "seguimientos para hoy"), c: azul, h: href },
+    { k: x.alertas_en_plazo, t: pl(x.alertas_en_plazo, "alerta de uso esperando coaching", "alertas de uso esperando coaching"), c: naranja, h: href },
+    { k: x.sin_coaching, t: pl(x.sin_coaching, "asesor sin coaching este mes", "asesores sin coaching este mes"), c: naranja, h: href },
   ].filter((i) => i.k > 0);
   return (
     <section className="card p-4 flex items-center justify-between gap-x-4 gap-y-3 flex-wrap" aria-label="Para hoy">
       <div className="flex items-center gap-2 flex-wrap min-w-0">
         <span className="font-display text-lg uppercase text-brand-ink leading-none mr-1">Para hoy</span>
         {items.length ? items.map((i) => (
-          <span key={i.t} className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-semibold ${i.c}`}>{i.t}</span>
+          <Link key={i.t} href={i.h} className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-semibold hover:underline ${i.c}`}>{i.t}</Link>
         )) : (
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><CircleCheck size={14} aria-hidden /> Gestión al día: sin seguimientos ni alertas pendientes.</span>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><CircleCheck size={14} aria-hidden /> Gestión al día: sin tickets, seguimientos ni alertas pendientes.</span>
         )}
       </div>
-      <Link href={href} className="btn-secondary !py-2 shrink-0">Coaching y bitácora <ArrowRight size={15} /></Link>
+      <div className="flex gap-2 flex-wrap min-w-0">
+        <Link href={hrefTickets} className="btn-secondary !py-2 !px-4">Tickets <ArrowRight size={15} /></Link>
+        <Link href={href} className="btn-secondary !py-2 !px-4">Coaching y bitácora <ArrowRight size={15} /></Link>
+      </div>
     </section>
   );
 }

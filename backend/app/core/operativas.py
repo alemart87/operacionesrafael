@@ -74,6 +74,11 @@ OPERATIVAS: list[dict] = [
                 "description": "Armar los equipos del mes (asesores por supervisor, con fecha efectiva), cargar los objetivos de Pospago y GPON de cada supervisor y los días no laborables del calendario.",
             },
             {
+                "key": "tickets",
+                "name": "Supervisión · Tickets de revisión",
+                "description": "Enviar casos a revisión a los supervisores (venta observada, línea sin uso, calidad de atención, reclamo, conducta u otro) y seguirlos: comentar, reabrir, reasignar y cancelar. Los plazos se miden en horas hábiles.",
+            },
+            {
                 "key": "supervision_parametros",
                 "name": "Supervisión · Parámetros del modelo",
                 "description": "Pesos y umbrales del scoring de asesores, supervisores y operación (cada cambio es una versión nueva y queda en el historial).",

@@ -14,13 +14,15 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ....services import seguridad as seg
 from ..fuentes import informes_productividad, informes_ventas
 from ..productividad.api import parametros as parametros_productividad
 from ..productividad.models import ProdInforme
 from ..ventas_netas.models import VentasNetasReport
-from .calculo import limites, lineas_netas
+from .calculo import PARAMETROS_DEFECTO, limites, lineas_netas
 from .models import OPERATIVA, SupParametros
 from .scoring import SCORING_DEFECTO
+from .sla import HORARIO_DEFECTO, Horario
 
 # Netas del mes ya preparadas, por informe y corte (se leen del JSON del informe una sola vez).
 _CACHE_VN: "OrderedDict[tuple[str, str, str], list[dict[str, Any]]]" = OrderedDict()
@@ -92,3 +94,21 @@ async def parametros_scoring(db: AsyncSession) -> dict[str, Any]:
           "supervisor": {**SCORING_DEFECTO["supervisor"], **(guardado.get("supervisor") or {})}}
     pp = await parametros_productividad(db)
     return {**sc, "conversacion": {"rojo": pp["rojo"], "meta_min": pp["meta_min"], "meta_max": pp["meta_max"]}}
+
+
+async def parametros(db: AsyncSession) -> dict[str, Any]:
+    """Parámetros vigentes + los feriados de Seguridad (los carga el superadmin) y los días no laborables."""
+    row = await db.get(SupParametros, OPERATIVA)
+    p = {**PARAMETROS_DEFECTO, **((row.data if row else None) or {})}
+    p["horario"] = {**HORARIO_DEFECTO, **(p.get("horario") or {})}
+    cfg = await seg.config(db)
+    p["feriados_seguridad"] = sorted(cfg["horarios"].get("feriados") or [])
+    p["feriados"] = sorted(set(p["feriados_seguridad"]) | {x["fecha"] for x in p.get("no_laborables") or []})
+    p["updated_at"], p["updated_by"] = (_iso(row.updated_at) or None, row.updated_by) if row else (None, None)
+    return p
+
+
+def horario(p: dict[str, Any]) -> Horario:
+    """Horario de atención de la operación (horas hábiles de los plazos), sin feriados ni días no laborables."""
+    return Horario(p["horario"], p["feriados"])
+

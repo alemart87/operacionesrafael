@@ -23,7 +23,9 @@ los objetivos del supervisor) y 40 por su gestión, desde el día en que empezó
   antes del plazo, tampoco.
 - Seguimientos (5): % de los compromisos con fecha de seguimiento en el mes que se siguieron en esa
   fecha (o al día siguiente). Los que todavía no vencieron no cuentan.
-- Tickets (10): con los tickets de revisión (fase siguiente); mientras, su peso se reparte.
+- Tickets (10): % de los tickets del mes respondidos y resueltos dentro de sus plazos (horas hábiles).
+  Los abiertos todavía en plazo no cuentan; uno vencido sin resolver cuenta como fuera de plazo; los
+  cancelados o cerrados por falta de datos de quien los pidió, tampoco cuentan.
 Operación: los componentes sobre toda la operación.
 """
 from __future__ import annotations
@@ -114,12 +116,30 @@ def _plural(k: int, uno: str, varios: str) -> str:
 
 
 def gestion_pendiente(ws: dict[str, Any], detalle: str | None = None) -> list[dict[str, Any]]:
-    return [_comp(k, ws[k], None, None, pendiente=True, **({"detalle": detalle} if detalle and k != "tickets" else {}))
-            for k in GESTION]
+    return [_comp(k, ws[k], None, None, pendiente=True, **({"detalle": detalle} if detalle else {})) for k in GESTION]
+
+
+def comp_tickets(sid: str, peso: float, tickets: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """`tickets`: los del mes, cada uno con supervisor_id, cumple (True / False / None) y abierto."""
+    if tickets is None:
+        return _comp("tickets", peso, None, None, pendiente=True)
+    mios = [x for x in tickets if x["supervisor_id"] == sid]
+    en = sum(1 for x in mios if x["cumple"] is True)
+    de = sum(1 for x in mios if x["cumple"] is not None)
+    en_curso = sum(1 for x in mios if x["cumple"] is None and x["abierto"])
+    if de:
+        detalle = f"{en} de {_plural(de, 'ticket', 'tickets')} respondidos y resueltos en plazo"
+    else:
+        detalle = "Sin tickets vencidos ni resueltos" if mios else "Sin tickets en el mes"
+    if en_curso:
+        detalle += f" · {en_curso} en curso"
+    return _comp("tickets", peso, en / de if de else None, en / de * 100 if de else None, con=en, de=de, en_plazo=en_curso,
+                 detalle=detalle)
 
 
 def gestion_supervisor(sid: str, *, ws: dict[str, Any], equipo: list[str], coachings: list[dict[str, Any]],
-                       alertas: list[dict[str, Any]], hoy: date, primero: date, ultimo: date) -> list[dict[str, Any]]:
+                       alertas: list[dict[str, Any]], hoy: date, primero: date, ultimo: date,
+                       tickets: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Cobertura, foco y seguimientos de un supervisor en el mes (los tickets, pendientes).
 
     `coachings`: los no anulados con fecha en el mes (o un poco después, para el foco de las alertas de
@@ -179,8 +199,7 @@ def gestion_supervisor(sid: str, *, ws: dict[str, Any], equipo: list[str], coach
     seguimiento = _comp("seguimiento", ws["seguimiento"], a_tiempo / vencidos if vencidos else None,
                         a_tiempo / vencidos * 100 if vencidos else None, con=a_tiempo, de=vencidos, proximos=proximos,
                         detalle=detalle)
-    tickets = _comp("tickets", ws["tickets"], None, None, pendiente=True)
-    return [cobertura, foco, seguimiento, tickets]
+    return [cobertura, foco, seguimiento, comp_tickets(sid, ws["tickets"], tickets)]
 
 
 # ------------------------------------------------------------------ cálculo del mes
@@ -194,7 +213,7 @@ def calcular(*, primero: date, ultimo: date, corte: date | None, cal: dict[str, 
     `agentes`: operador → clave de Productividad; `vendedores`: operador → vendedor (los que tienen).
     `prod`: clave → [(día, login válido s, conversación válida s)]. `objetivos`: supervisor → (pospago, gpon).
     `coaching`: registros de la gestión: {"inicio": día desde el que se mide (o None), "hoy", "coachings",
-    "alertas"} (ver `gestion_supervisor`). Sin registros, la gestión queda pendiente.
+    "alertas", "tickets"} (ver `gestion_supervisor`). Sin registros, la gestión queda pendiente.
     """
     pesos_dia, feriados = p["pesos_dia"], set(p["feriados"])
 
@@ -297,7 +316,7 @@ def calcular(*, primero: date, ultimo: date, corte: date | None, cal: dict[str, 
                         resultado["total"])]
         if medir_gestion:
             partes += gestion_supervisor(sid, ws=ws, equipo=equipo, coachings=coaching["coachings"], alertas=alertas,
-                                         hoy=coaching["hoy"], primero=primero, ultimo=ultimo)
+                                         hoy=coaching["hoy"], primero=primero, ultimo=ultimo, tickets=coaching.get("tickets"))
         else:
             partes += gestion_pendiente(ws, f"Se mide desde el {inicio:%d/%m/%Y}" if inicio and coaching is not None else None)
         total = puntaje(partes)

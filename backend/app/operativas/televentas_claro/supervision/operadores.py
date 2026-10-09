@@ -129,6 +129,19 @@ async def identidades(db: AsyncSession, periodo: str, prods: dict[date, ProdInfo
 
 
 # ------------------------------------------------------------------ unir y separar
+async def supervisor_del_dia(db: AsyncSession, operador_id: str, fecha: date) -> str | None:
+    """El supervisor que tenía el asesor ese día (según los equipos de ese mes, con su fecha efectiva)."""
+    rows = (await db.execute(select(EquipoAsignacion).where(
+        EquipoAsignacion.operativa == OPERATIVA, EquipoAsignacion.periodo == fecha.strftime("%Y-%m"),
+        EquipoAsignacion.operador_id == operador_id).order_by(EquipoAsignacion.desde))).scalars().all()
+    sup = None
+    for a in rows:
+        if a.desde > fecha:
+            break
+        sup = a.supervisor_id
+    return sup
+
+
 async def fusionar(db: AsyncSession, queda: Operador, sale: Operador) -> list[str]:
     """`sale` se integra en `queda`: sus nombres, sus fechas, sus equipos (si `queda` no tiene en ese mes) y su
     gestión (coachings, notas de bitácora y alertas: son de la misma persona).

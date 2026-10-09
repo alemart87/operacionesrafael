@@ -1,11 +1,12 @@
 """Supervisión — Televentas Claro: maestro de operadores, equipos del mes, objetivos y parámetros."""
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ....core.database import Base
@@ -189,3 +190,58 @@ class AlertaAsesor(Base):
     corte_hasta: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)    # uso del asesor al aparecer
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ------------------------------------------------------------------ tickets de revisión (fase 4)
+class Ticket(Base):
+    """Un caso que los jefes o el auditor envían a revisión a un supervisor, con plazos en horas hábiles.
+
+    Estados: nuevo → en_gestion ↔ esperando (datos de quien lo pidió) → resuelto (se puede reabrir) | cerrado
+    (cancelado o sin respuesta de quien lo pidió). El reloj de resolución corre en nuevo y en gestión:
+    `consumido_min` acumula los minutos hábiles hasta `corriendo_desde` (vacío si está detenido). Los plazos
+    se guardan al crear el ticket (si cambian los parámetros, no cambian los de los tickets ya enviados)."""
+    __tablename__ = "sup_tickets"
+    __table_args__ = (UniqueConstraint("operativa", "numero", name="uq_sup_ticket_numero"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    numero: Mapped[int] = mapped_column(Integer, nullable=False)
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    prioridad: Mapped[str] = mapped_column(String(5), nullable=False)
+    supervisor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    operador_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    fecha_caso: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    referencia: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    descripcion: Mapped[str] = mapped_column(Text, nullable=False)
+    estado: Mapped[str] = mapped_column(String(12), nullable=False, default="nuevo", index=True)
+    estado_desde: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sla_respuesta_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    sla_resolucion_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    respuesta_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    respuesta_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    consumido_min: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    corriendo_desde: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    resuelto_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolucion_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    cerrado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    motivo_cierre: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # cancelado | sin_respuesta
+    reaperturas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    creado_por: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TicketEvento(Base):
+    """Historial de un ticket (solo se agrega): creado, respuesta, pedido de datos, datos, resuelto, reabierto,
+    reasignado, comentario, cancelado y cierre automático."""
+    __tablename__ = "sup_ticket_eventos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    ticket_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    orden: Mapped[int] = mapped_column(BigInteger, nullable=False, default=time.time_ns)  # desempata eventos del mismo instante
+    por: Mapped[str] = mapped_column(String(36), nullable=False)
+    texto: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+

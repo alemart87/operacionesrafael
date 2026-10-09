@@ -23,8 +23,9 @@ from ....services.audit_service import record_action
 from . import alertas as alertas_srv
 from . import api as sup
 from . import coaching as srv
+from . import operadores as maestro
 from .calculo import mes_de, supervisor_en
-from .models import OPERATIVA, BitacoraNota, Coaching, EquipoAsignacion, Operador
+from .models import OPERATIVA, BitacoraNota, Coaching, Operador
 
 router = APIRouter(prefix="/televentas-claro/supervision", tags=["televentas-claro · coaching"])
 
@@ -40,13 +41,6 @@ REGLAS = {
 
 def _regla(exc: srv.ReglaInvalida) -> HTTPException:
     return HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
-
-
-async def _supervisor_del_dia(db: AsyncSession, operador_id: str, fecha: date) -> str | None:
-    rows = (await db.execute(select(EquipoAsignacion).where(
-        EquipoAsignacion.operativa == OPERATIVA, EquipoAsignacion.periodo == mes_de(fecha),
-        EquipoAsignacion.operador_id == operador_id).order_by(EquipoAsignacion.desde))).scalars().all()
-    return supervisor_en([(a.desde, a.supervisor_id) for a in rows], fecha)
 
 
 # ------------------------------------------------------------------ alertas de uso con su plazo
@@ -409,7 +403,7 @@ async def nota(payload: NotaPayload, request: Request, user: CurrentUser = Depen
     ops: dict[str, Operador] = {}
     if payload.operador_id:
         o = await db.get(Operador, payload.operador_id)
-        if not o or await _supervisor_del_dia(db, o.id, payload.fecha) != user.id:
+        if not o or await maestro.supervisor_del_dia(db, o.id, payload.fecha) != user.id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Ese asesor no estaba en tu equipo el {payload.fecha:%d/%m}")
         ops[o.id] = o
     x = BitacoraNota(operativa=OPERATIVA, supervisor_id=user.id, fecha=payload.fecha, tipo=payload.tipo, texto=t,
