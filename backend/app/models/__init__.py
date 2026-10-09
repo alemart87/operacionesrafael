@@ -8,3 +8,4 @@ from .audit import AuditLog  # noqa: F401
 from .profile import Profile  # noqa: F401
 from .user import User  # noqa: F401
 from .seguridad import SecuritySettings, UserSession  # noqa: F401
+from .migracion import MigracionDatos  # noqa: F401

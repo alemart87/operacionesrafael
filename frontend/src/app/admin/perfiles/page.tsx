@@ -11,6 +11,10 @@ interface Perfil {
   name: string;
   description: string;
   permissions: string[];
+  /** Lo que la matriz deja marcar a este perfil (el resto va con candado). */
+  asignables: string[];
+  /** El perfil solo entra a su portal (Supervisor). */
+  solo_portal: boolean;
   updated_at: string | null;
   usuarios_activos: number;
 }
@@ -149,6 +153,7 @@ export default function PerfilesPage() {
                   <div className="text-[10px] font-normal text-brand-slate normal-case">
                     {p.usuarios_activos} usuario(s) activo(s)
                   </div>
+                  {p.solo_portal && <div className="mt-1"><span className="badge-cyan">Solo su portal</span></div>}
                 </th>
               ))}
             </tr>
@@ -181,10 +186,13 @@ export default function PerfilesPage() {
                       const set = draft[p.slug] ?? new Set<string>();
                       const checked = set.has(`${op.slug}.${u.key}`);
                       const sinAcceso = u.key !== "ver" && !set.has(`${op.slug}.ver`);
-                      if (u.solo_perfiles && !u.solo_perfiles.includes(p.slug)) {
+                      if (!p.asignables.includes(`${op.slug}.${u.key}`)) {
+                        const motivo = p.solo_portal
+                          ? `${p.name}: solo entra a su portal`
+                          : `${u.name}: solo superadmin y ${(u.solo_perfiles ?? []).map(nombrePerfil).join(", ")}`;
                         return (
                           <td key={p.slug} className="px-3 py-3 text-center">
-                            <span className="inline-flex text-brand-mist" title={`${u.name}: solo superadmin y ${u.solo_perfiles.map(nombrePerfil).join(", ")}`}>
+                            <span className="inline-flex text-brand-mist" title={motivo}>
                               <Lock size={14} aria-label="No asignable a este perfil" />
                             </span>
                           </td>
@@ -216,6 +224,10 @@ export default function PerfilesPage() {
           utilidad se marca el acceso, y al quitar el acceso se quitan todas las utilidades de esa operativa.
         </p>
         <p>El superadmin tiene siempre todos los permisos. Cada usuario además debe tener la operativa asignada en Usuarios.</p>
+        <p>
+          El perfil <strong>Supervisor</strong> solo entra a su portal (modelo Líder Coach Comercial): únicamente puede tener el
+          acceso a la operativa y el Portal del supervisor.
+        </p>
         {perfiles.some((p) => p.updated_at) && (
           <p className="text-brand-mist">
             Última modificación:{" "}

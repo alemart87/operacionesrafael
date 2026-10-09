@@ -24,6 +24,7 @@ export const ROLE_LABELS: Record<string, string> = {
   coordinador: "Coordinador",
   supervisor: "Supervisor",
   analista: "Analista",
+  auditor: "Auditor",
   cliente: "Cliente",
 };
 

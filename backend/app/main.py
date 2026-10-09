@@ -18,6 +18,7 @@ from .core.database import AsyncSessionLocal, Base, engine
 from .core.logging import configure_logging, logger
 from .core.operativas import filter_permissions
 from .core.perfiles import DEFAULT_PERMISSIONS, PERFILES
+from .models.migracion import MigracionDatos
 from .models.profile import Profile
 
 
@@ -104,6 +105,28 @@ async def _seed_profiles() -> int:
     return created
 
 
+async def _run_data_migrations() -> list[str]:
+    """Migraciones de datos de una sola vez (ver models/migracion.py): las pendientes, en orden."""
+    from sqlalchemy import select
+
+    hechas: list[str] = []
+    async with AsyncSessionLocal() as db:
+        aplicadas = {i for (i,) in (await db.execute(select(MigracionDatos.id))).all()}
+        for mid, fn in modulos_operativas.MIGRACIONES_DATOS:
+            if mid in aplicadas:
+                continue
+            try:
+                resultado = await fn(db)
+                db.add(MigracionDatos(id=mid, resultado=resultado or {}))
+                await db.commit()
+                hechas.append(mid)
+                logger.info(f"Boot: migración de datos {mid} → {resultado}")
+            except Exception as exc:  # noqa: BLE001 — se reintenta en el próximo arranque
+                await db.rollback()
+                logger.exception(f"Boot: migración de datos {mid} falló ({exc})")
+    return hechas
+
+
 def _check_upload_dir() -> None:
     """Deja en los logs dónde se guardan los archivos y avisa si en producción no parece un disco persistente.
 
@@ -161,6 +184,7 @@ async def lifespan(app: FastAPI):
     result = await _run_migrations()
     logger.info(f"Boot: migrations ok={len(result['ok'])} skipped={len(result['skipped'])}")
     logger.info(f"Boot: perfiles sembrados={await _seed_profiles()}")
+    logger.info(f"Boot: migraciones de datos aplicadas={await _run_data_migrations()}")
     _check_upload_dir()
     if settings.env == "production" and settings.secret_key in ("change-me", ""):
         logger.error("SECRET_KEY no configurada en producción: los tokens son inseguros.")

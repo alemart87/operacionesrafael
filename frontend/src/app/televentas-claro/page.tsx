@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { ROLE_LABELS, apiFetch } from "@/lib/api";
-import { type OperativaInfo, type Submodulo, operativaRoute } from "@/lib/operativas";
+import { PERM_PORTAL_SUPERVISOR, PORTAL_HREF, type OperativaInfo, type Submodulo, operativaRoute } from "@/lib/operativas";
 
 const RUTA = operativaRoute("televentas_claro")!;
 
@@ -18,14 +19,23 @@ export default function TeleventasClaroPage() {
 
 function Inicio() {
   const { user, isSuperadmin, can } = useSession();
+  const router = useRouter();
   const [op, setOp] = useState<OperativaInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // El supervisor solo entra a su portal: va directo.
+  const alPortal = user.role === "supervisor" && can(PERM_PORTAL_SUPERVISOR);
 
   useEffect(() => {
+    if (alPortal) {
+      router.replace(PORTAL_HREF);
+      return;
+    }
     apiFetch<OperativaInfo>("/api/v1/televentas-claro")
       .then(setOp)
       .catch((e) => setError(e.message));
-  }, []);
+  }, [alPortal, router]);
+
+  if (alPortal) return <div className="text-brand-slate">Abriendo tu portal…</div>;
 
   if (error) return <div className="card p-6 text-sm text-brand-primary-dark">{error}</div>;
   if (!op) return <div className="text-brand-slate">Cargando…</div>;

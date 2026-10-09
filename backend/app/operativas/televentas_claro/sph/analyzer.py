@@ -14,7 +14,8 @@ Definiciones:
   nombre. Exacto: están todas las palabras del agente. Probable: falta alguna, cambia la
   escritura (QUIÑONEZ / QUINONES) o el apellido aparece al final de un nombre largo (puede ser
   el segundo apellido). Uno a uno: un vendedor no va a dos agentes; con empate queda ambiguo y
-  no se asigna. Los vínculos manuales mandan sobre el cruce automático.
+  no se asigna. Los vínculos manuales mandan sobre el cruce automático. Desde Supervisión, el
+  cruce sale del maestro de operadores (la misma lógica, guardada y corregible a mano).
 - SPH del asesor = netas ÷ horas conectadas. Entra al ranking desde `min_horas_ranking`
   (2 h en un día; 6 h, una jornada, en una semana, un mes o un rango).
 - SPH de la operación = netas ÷ horas conectadas del equipo, sin las sesiones abiertas:
@@ -106,20 +107,30 @@ def evaluar(apellidos: list[str], nombres: list[str], vendedor: list[str]) -> tu
 
 
 def cruzar(agentes: Iterable[dict[str, Any]], vendedores: Iterable[str],
-           manuales: dict[str, str | None] | None = None) -> dict[str, dict[str, Any]]:
+           manuales: dict[str, str | None] | None = None,
+           fijos: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
     """Vínculo de cada agente con un vendedor del período: clave → {vendedor, nivel, candidatos}.
 
     `agentes`: [{"clave", ...}] (la clave de Productividad: «APELLIDOS, NOMBRES» sin tildes).
     `manuales`: clave → vendedor (None = no vincular). Mandan sobre el cruce automático.
+    `fijos`: clave → {vendedor, nivel, candidatos} ya resuelto (el maestro de operadores): se usa tal cual.
     """
     agentes = list(agentes)
     manuales = manuales or {}
+    fijos = fijos or {}
     roster = sorted(set(vendedores) - {SIN_VENDEDOR, "", None})
     out: dict[str, dict[str, Any]] = {}
     tomados: set[str] = set()
     for a in agentes:
         k = a["clave"]
-        if k in manuales:
+        if k in fijos:
+            f = fijos[k]
+            v = f.get("vendedor")
+            out[k] = {"vendedor": v, "nivel": f.get("nivel") or ("manual" if v else "descartado"),
+                      "candidatos": list(f.get("candidatos") or [])}
+            if v:
+                tomados.add(v)
+        elif k in manuales:
             v = manuales[k]
             out[k] = {"vendedor": v, "nivel": "manual" if v else "descartado", "candidatos": []}
             if v:
@@ -236,7 +247,8 @@ def _lista(x: Any) -> list[dict[str, Any]]:
 
 def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, Any]], ventas: dict[str, dict[str, Any]],
                      fuentes: dict[str, Any], manuales: dict[str, str | None] | None = None,
-                     min_horas_ranking: float | None = None, hasta_datos: date | None = None) -> dict[str, Any]:
+                     min_horas_ranking: float | None = None, hasta_datos: date | None = None,
+                     fijos: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """SPH de un período: un día, una semana, un mes o un rango.
 
     `produccion`: fecha → data del informe de Productividad de ese día (los días que lo tienen).
@@ -244,6 +256,7 @@ def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, 
     `fuentes`: {"productividad": [...], "ventas": [{"periodo", "fecha_dato", ...}]}: qué informes se
     usaron; se guarda tal cual y de ahí sale el corte de ventas de cada mes.
     `hasta_datos`: los días posteriores (p. ej. el resto del mes en curso) no se informan como faltantes.
+    `fijos`: el cruce de cada agente según el maestro de operadores (manda sobre el automático).
     """
     if min_horas_ranking is None:
         min_horas_ranking = MIN_HORAS_RANKING if desde == hasta else MIN_HORAS_RANKING_PERIODO
@@ -292,7 +305,7 @@ def calcular_periodo(desde: date, hasta: date, produccion: dict[date, dict[str, 
     for d in cubiertos:
         for a in produccion[d]["agentes"]:
             agentes[a["clave"]] = a
-    vinculos = cruzar(agentes.values(), roster, manuales)
+    vinculos = cruzar(agentes.values(), roster, manuales, fijos)
     vendedor_de = {k: v["vendedor"] for k, v in vinculos.items() if v["vendedor"]}
     agente_de = {v: k for k, v in vendedor_de.items()}
 

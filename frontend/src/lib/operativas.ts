@@ -41,6 +41,13 @@ export const PERM_SPH = "televentas_claro.sph";
 export const PERM_SPH_GESTION = "televentas_claro.sph_gestion";
 /** Auditoría de ventas: riesgos, informes de auditoría, hallazgos y seguimiento. */
 export const PERM_AUDITORIA = "televentas_claro.auditoria";
+/** Supervisión (modelo Líder Coach Comercial): ver / gestionar equipos, objetivos y calendario / vincular operadores. */
+export const PERM_SUPERVISION = "televentas_claro.supervision";
+export const PERM_SUPERVISION_GESTION = "televentas_claro.supervision_gestion";
+export const PERM_OPERADORES = "televentas_claro.operadores";
+/** Portal del supervisor: lo único que ve el perfil Supervisor. */
+export const PERM_PORTAL_SUPERVISOR = "televentas_claro.portal_supervisor";
+export const PORTAL_HREF = "/televentas-claro/portal";
 
 export interface OperativaNavItem {
   href: string;
@@ -128,6 +135,30 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
           { href: "/televentas-claro/sph", label: "Informes SPH", exact: true },
           { href: "/televentas-claro/sph/vinculos", label: "Vínculos", utilidad: "sph_gestion" },
         ],
+      },
+      {
+        utilidad: "supervision",
+        label: "Supervisión",
+        href: "/televentas-claro/supervision",
+        descripcion: "Modelo Líder Coach Comercial: equipos del mes por supervisor, objetivos de Pospago y GPON, avance y proyección al cierre, y asesores en alerta por líneas sin uso.",
+        contenido: ["Objetivos por supervisor", "Proyección al cierre", "Ritmo necesario por día hábil", "Supervisores en crítico", "Equipos del mes con fecha efectiva", "Maestro de operadores"],
+        gestion: "supervision_gestion",
+        gestionTexto: "Podés armar los equipos, cargar objetivos y el calendario.",
+        nav: [
+          { href: "/televentas-claro/supervision", label: "Objetivos y proyección", exact: true },
+          { href: "/televentas-claro/supervision/equipos", label: "Equipos del mes" },
+          { href: "/televentas-claro/supervision/operadores", label: "Operadores" },
+          { href: "/televentas-claro/supervision/calendario", label: "Calendario" },
+        ],
+      },
+      {
+        utilidad: "portal_supervisor",
+        label: "Mi portal",
+        href: "/televentas-claro/portal",
+        descripcion: "Tu equipo del mes, tus objetivos de Pospago y GPON, tu avance y proyección al cierre y tus asesores en alerta por líneas sin uso.",
+        contenido: ["Objetivos del mes", "Proyección al cierre", "Ritmo necesario", "Asesores en alerta", "Líneas a recuperar"],
+        acceso: "Mi equipo",
+        nav: [{ href: "/televentas-claro/portal", label: "Mi equipo", exact: true }],
       },
       {
         utilidad: "auditoria",

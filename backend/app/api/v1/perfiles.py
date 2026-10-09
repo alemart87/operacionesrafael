@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.operativas import ALL_PERMISSIONS, OPERATIVAS, RESTRINGIDAS, asignables, filter_permissions
+from ...core.operativas import ALL_PERMISSIONS, OPERATIVAS, PERFILES_SOLO_PORTAL, RESTRINGIDAS, asignables, filter_permissions
 from ...core.perfiles import PERFIL_SLUGS, PERFILES
 from ...models.profile import Profile
 from ...models.user import User
@@ -31,6 +31,9 @@ async def _perfiles_payload(db: AsyncSession) -> list[dict]:
         out.append({
             **p,
             "permissions": filter_permissions(row.permissions if row else [], p["slug"]),
+            # Lo que la matriz deja marcar (el resto va con candado) y si el perfil solo entra a su portal.
+            "asignables": sorted(asignables(p["slug"])),
+            "solo_portal": p["slug"] in PERFILES_SOLO_PORTAL,
             "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
             "usuarios_activos": counts.get(p["slug"], 0),
         })
@@ -69,10 +72,11 @@ async def update_perfil(
     if reservados:
         perfiles = {p["slug"]: p["name"] for p in PERFILES}
         utilidades = {f"{o['slug']}.{u['key']}": u["name"] for o in OPERATIVAS for u in o["utilidades"]}
-        detalle = "; ".join(
-            f"{utilidades[perm]} (solo {', '.join(['Superadmin', *(perfiles[x] for x in sorted(RESTRINGIDAS[perm]))])})"
-            for perm in reservados
-        )
+        def motivo(perm: str) -> str:
+            if perm in RESTRINGIDAS and slug not in PERFILES_SOLO_PORTAL:
+                return f"solo {', '.join(['Superadmin', *(perfiles[x] for x in sorted(RESTRINGIDAS[perm]))])}"
+            return "este perfil solo entra a su portal"
+        detalle = "; ".join(f"{utilidades[perm]} ({motivo(perm)})" for perm in reservados)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"El perfil {perfiles[slug]} no puede tener: {detalle}.")
     perms = filter_permissions(payload.permissions, slug)
 

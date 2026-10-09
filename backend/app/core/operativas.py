@@ -8,6 +8,8 @@ Cada operativa declara sus utilidades. Cada utilidad es un permiso con la forma
   solo la pueden tener los perfiles listados (ni la matriz ni la API dejan
   asignarla a otro, y aunque figure en la base no se hace efectiva). Con la lista
   vacía es exclusiva del superadmin.
+- Los perfiles de `PERFILES_SOLO_PORTAL` (el Supervisor) solo entran a su portal:
+  únicamente pueden tener las utilidades marcadas `portal: True`.
 - El superadmin asigna utilidades a cada perfil en /admin/perfiles.
 - A cada usuario se le asignan las operativas en las que trabaja.
 
@@ -26,11 +28,11 @@ OPERATIVAS: list[dict] = [
     {
         "slug": "televentas_claro",
         "name": "Televentas CLARO",
-        "description": "Operativa de televentas para Claro: ventas netas, productividad de llamadas, SPH estimado, auditoría, facturación e indicadores.",
+        "description": "Operativa de televentas para Claro: ventas netas, productividad de llamadas, SPH estimado, supervisión de equipos, auditoría, facturación e indicadores.",
         "color": "#E6332A",
         "available": True,
         "utilidades": [
-            {"key": "ver", "name": "Acceso a la operativa", "description": "Ver la operativa en el hub y entrar a ella."},
+            {"key": "ver", "name": "Acceso a la operativa", "description": "Ver la operativa en el hub y entrar a ella.", "portal": True},
             {
                 "key": "ventas_netas",
                 "name": "Ventas Netas · Ver informes",
@@ -60,6 +62,28 @@ OPERATIVAS: list[dict] = [
                 "key": "sph_gestion",
                 "name": "SPH · Gestión",
                 "description": "Calcular el SPH de un día, una semana, un mes o un rango cruzando Productividad con Ventas Netas, vincular agentes con vendedores a mano, publicar (uno por período), reemplazar, recalcular y eliminar.",
+            },
+            {
+                "key": "supervision",
+                "name": "Supervisión · Ver tablero",
+                "description": "Ver los equipos de cada mes, los objetivos de cada supervisor con su avance y su proyección al cierre, los asesores en alerta por líneas sin uso y el detalle de cada supervisor.",
+            },
+            {
+                "key": "supervision_gestion",
+                "name": "Supervisión · Gestión",
+                "description": "Armar los equipos del mes (asesores por supervisor, con fecha efectiva), cargar los objetivos de Pospago y GPON de cada supervisor y los días no laborables del calendario.",
+            },
+            {
+                "key": "operadores",
+                "name": "Operadores · Vincular",
+                "description": "Mantener el maestro de operadores: vincular el nombre de llamadas con el vendedor de Ventas Netas, separar, confirmar sin vínculo, renombrar y dar de baja. Lo usan Supervisión y el SPH.",
+            },
+            {
+                "key": "portal_supervisor",
+                "name": "Portal del supervisor",
+                "description": "El portal del supervisor: su equipo, sus objetivos, su avance y proyección al cierre y sus asesores en alerta. Es lo único que ve el perfil Supervisor.",
+                "solo_perfiles": ["supervisor"],
+                "portal": True,
             },
             {
                 "key": "auditoria",
@@ -96,16 +120,24 @@ SUPERADMIN_ONLY_PERMISSIONS: set[str] = {p for p, perfiles in RESTRINGIDAS.items
 # Permisos sin restricción: los puede tener cualquier perfil.
 ASSIGNABLE_PERMISSIONS: set[str] = ALL_PERMISSIONS - set(RESTRINGIDAS)
 
+# Perfiles que solo entran a su portal (el Supervisor): únicamente las utilidades marcadas `portal`.
+PERFILES_SOLO_PORTAL: frozenset[str] = frozenset({"supervisor"})
+PORTAL_PERMISSIONS: set[str] = {
+    f"{o['slug']}.{u['key']}" for o in OPERATIVAS for u in o["utilidades"] if u.get("portal")
+}
+
 
 def asignables(perfil: str | None) -> set[str]:
-    """Permisos que se le pueden dar a ese perfil: los sin restricción y los restringidos que lo incluyen."""
+    """Permisos que se le pueden dar a ese perfil: los sin restricción y los restringidos que lo incluyen.
+    Un perfil de solo portal, únicamente las utilidades del portal."""
+    if perfil in PERFILES_SOLO_PORTAL:
+        return {p for p in PORTAL_PERMISSIONS if p not in RESTRINGIDAS or perfil in RESTRINGIDAS[p]}
     return ASSIGNABLE_PERMISSIONS | {p for p, perfiles in RESTRINGIDAS.items() if perfil in perfiles}
 
 
 def utilidad_visible(slug_operativa: str, utilidad: dict, role: str) -> bool:
-    """Una utilidad restringida solo se le muestra al superadmin y a los perfiles habilitados."""
-    perm = f"{slug_operativa}.{utilidad['key']}"
-    return role == "superadmin" or perm not in RESTRINGIDAS or role in RESTRINGIDAS[perm]
+    """Una utilidad que el perfil no puede tener (restringida o fuera de su portal) no se le muestra."""
+    return role == "superadmin" or f"{slug_operativa}.{utilidad['key']}" in asignables(role)
 
 
 def get_operativa(slug: str) -> dict | None:

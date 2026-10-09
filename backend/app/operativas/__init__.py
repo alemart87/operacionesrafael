@@ -16,3 +16,4 @@ _MODULOS = [televentas_claro]
 ROUTERS = [r for m in _MODULOS for r in m.ROUTERS]
 WORKERS = {nombre: w for m in _MODULOS for nombre, w in m.WORKERS.items()}
 AL_ARRANCAR = {nombre: t for m in _MODULOS for nombre, t in getattr(m, "AL_ARRANCAR", {}).items()}
+MIGRACIONES_DATOS = [x for m in _MODULOS for x in getattr(m, "MIGRACIONES_DATOS", [])]

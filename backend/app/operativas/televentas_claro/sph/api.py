@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, datetime, timedelta, timezone
+from functools import partial
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -35,17 +36,19 @@ from ....core.config import settings
 from ....core.database import get_db
 from ....models.user import User
 from ....services.audit_service import record_action
+from ..fuentes import informes_productividad, informes_ventas
 from ..productividad.models import ESTADO_BORRADOR as PROD_BORRADOR
 from ..productividad.models import ESTADO_PUBLICADO as PROD_PUBLICADO
 from ..productividad.models import ProdInforme
-from ..ventas_netas.models import ESTADO_BORRADOR as VN_BORRADOR
-from ..ventas_netas.models import ESTADO_PUBLICADO as VN_PUBLICADO
+from ..supervision import operadores as maestro
+from ..supervision.models import Operador
 from ..ventas_netas.models import VentasNetasReport
 from .analyzer import (
     DIAS_MAX_PERIODO, SIN_VENDEDOR, VERSION_SPH, DatosIncompletos, calcular_periodo, nombre_mes, resumen_lista, tipo_periodo,
 )
-from .models import ESTADO_BORRADOR, ESTADO_PUBLICADO, ESTADO_REEMPLAZADO, SphInforme, SphVinculo
+from .models import ESTADO_BORRADOR, ESTADO_PUBLICADO, ESTADO_REEMPLAZADO, SphInforme
 
+OPERATIVA_SLUG = "televentas_claro"
 PERM_VER = "televentas_claro.sph"
 PERM_GESTION = "televentas_claro.sph_gestion"
 require_ver = require_perm(PERM_VER)
@@ -122,30 +125,10 @@ def _etiqueta(desde: date, hasta: date) -> str:
 
 
 # ------------------------------------------------------------------ fuentes del período
-async def _informes_productividad(db: AsyncSession, desde: date, hasta: date) -> dict[date, ProdInforme]:
-    """Por día: el publicado; si no hay, el borrador más reciente."""
-    rows = (await db.execute(select(ProdInforme).where(
-        ProdInforme.fecha >= desde, ProdInforme.fecha <= hasta,
-        ProdInforme.status.in_([PROD_PUBLICADO, PROD_BORRADOR]),
-    ))).scalars().all()
-    out: dict[date, ProdInforme] = {}
-    for r in sorted(rows, key=lambda r: (r.status == PROD_PUBLICADO, _utc(r.generated_at) or datetime.min.replace(tzinfo=timezone.utc))):
-        out[r.fecha] = r  # queda el mejor: publicado > generado más tarde
-    return out
-
-
-async def _informes_ventas(db: AsyncSession, periodos: set[str]) -> dict[str, VentasNetasReport]:
-    """Por mes: el publicado; si no hay, el borrador con el corte más reciente."""
-    if not periodos:
-        return {}
-    rows = (await db.execute(select(VentasNetasReport).where(
-        VentasNetasReport.periodo.in_(periodos), VentasNetasReport.status.in_([VN_PUBLICADO, VN_BORRADOR]),
-    ))).scalars().all()
-    out: dict[str, VentasNetasReport] = {}
-    for r in sorted(rows, key=lambda r: (r.status == VN_PUBLICADO, r.fecha_dato or date.min,
-                                         _utc(r.generated_at) or datetime.min.replace(tzinfo=timezone.utc))):
-        out[r.periodo] = r  # queda el mejor: publicado > corte más nuevo > generado más tarde
-    return out
+# Por día, el informe de Productividad publicado (si no, el borrador más reciente); por mes, el de
+# Ventas Netas publicado (si no, el borrador con el corte más nuevo). Lo mismo que lee Supervisión.
+_informes_productividad = informes_productividad
+_informes_ventas = informes_ventas
 
 
 def _desc_prod(r: ProdInforme) -> dict[str, Any]:
@@ -208,7 +191,9 @@ async def _fuentes(db: AsyncSession, desde: date, hasta: date) -> Fuentes:
 
 
 async def _manuales(db: AsyncSession) -> dict[str, str | None]:
-    return {v.clave: v.vendedor for v in (await db.execute(select(SphVinculo))).scalars().all()}
+    """Lo que decidió una persona en el maestro de operadores: agente → vendedor (None = no vende)."""
+    return {o.agente_clave: o.vendedor for o in await maestro.todos(db)
+            if o.agente_clave and (o.cruce == "descartado" or (o.cruce == "manual" and o.vendedor))}
 
 
 def _validar_periodo(desde: date | None, hasta: date | None) -> tuple[date, date]:
@@ -233,9 +218,12 @@ async def _calcular_borrador(db: AsyncSession, desde: date, hasta: date, user_id
               "ventas": [_desc_ventas(f.ventas[m]) for m in sorted(meses)]}
     produccion = {d: f.prods[d].data or {} for d in f.cubiertos}
     ventas = {m: f.ventas[m].data or {} for m in meses}
-    try:  # el cruce por nombre compara cientos de pares: fuera del loop del servidor
-        data = await asyncio.to_thread(calcular_periodo, desde, hasta, produccion, ventas, usados, await _manuales(db),
-                                       None, f.limite)
+    for m in sorted(meses):  # el cruce de nombres es el del maestro de operadores (fuente única)
+        await maestro.detectar(db, m)
+    fijos = maestro.vinculos_sph(await maestro.todos(db))
+    try:  # el cálculo recorre cientos de filas por día: fuera del loop del servidor
+        data = await asyncio.to_thread(partial(calcular_periodo, desde, hasta, produccion, ventas, usados,
+                                               hasta_datos=f.limite, fijos=fijos))
     except DatosIncompletos as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "datos_incompletos", "message": str(exc)}) from exc
     borrador = (await db.execute(
@@ -463,13 +451,17 @@ async def eliminar_informe(informe_id: str, request: Request, user: CurrentUser 
     return {"status": "deleted"}
 
 
-# ------------------------------------------------------------------ vínculos manuales
+# ------------------------------------------------------------------ vínculos manuales (maestro de operadores)
 @router.get("/vinculos")
 async def listar_vinculos(user: CurrentUser = Depends(require_gestion), db: AsyncSession = Depends(get_db)) -> dict:
-    rows = (await db.execute(select(SphVinculo).order_by(SphVinculo.nombre))).scalars().all()
-    nombres = await _nombres(db, {v.updated_by for v in rows})
-    return {"items": [{"clave": v.clave, "nombre": v.nombre, "vendedor": v.vendedor, "updated_at": _iso(v.updated_at),
-                       "updated_by": nombres.get(v.updated_by or "", v.updated_by)} for v in rows]}
+    """Los vínculos que decidió una persona (en el SPH o en Supervisión → Operadores)."""
+    rows = [o for o in await maestro.todos(db)
+            if o.agente_clave and (o.cruce == "descartado" or (o.cruce == "manual" and o.vendedor))]
+    rows.sort(key=lambda o: (o.agente_nombre or o.nombre or "").lower())
+    nombres = await _nombres(db, {o.updated_by for o in rows})
+    return {"items": [{"clave": o.agente_clave, "nombre": o.agente_nombre or o.nombre, "vendedor": o.vendedor,
+                       "updated_at": _iso(o.updated_at), "updated_by": nombres.get(o.updated_by or "", o.updated_by)}
+                      for o in rows]}
 
 
 class VinculoPayload(BaseModel):
@@ -482,31 +474,46 @@ class VinculoPayload(BaseModel):
 @router.put("/vinculos")
 async def guardar_vinculo(payload: VinculoPayload, request: Request, user: CurrentUser = Depends(require_gestion),
                           db: AsyncSession = Depends(get_db)) -> dict:
-    """vincular → este agente es ese vendedor · descartar → no es ninguno · automatico → vuelve al cruce por nombre."""
+    """vincular → este agente es ese vendedor · descartar → no es ninguno · automatico → vuelve al cruce por nombre.
+    Se guarda en el maestro de operadores: vale para el SPH y para Supervisión."""
     clave, vendedor = payload.clave.strip(), (payload.vendedor or "").strip() or None
-    actual = await db.get(SphVinculo, clave)
-    antes = actual.vendedor if actual else "automatico"
-    if payload.accion == "automatico":
-        if actual:
-            await db.delete(actual)
-    else:
+    if payload.accion == "vincular":
+        if not vendedor:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Elegí el vendedor a vincular")
+        if vendedor == SIN_VENDEDOR:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "«SIN VENDEDOR» agrupa ventas sin POS: no es una persona para vincular")
+    ops = await maestro.todos(db)
+    a_op = next((o for o in ops if o.agente_clave == clave), None)
+    antes = "automatico" if not a_op or a_op.cruce not in ("manual", "descartado") else a_op.vendedor
+    if not a_op:
+        a_op = Operador(operativa=OPERATIVA_SLUG, agente_clave=clave, agente_nombre=payload.nombre.strip(),
+                        nombre=payload.nombre.strip(), cruce="sin_cruce", candidatos=[])
+        db.add(a_op)
+        await db.flush()
+    ahora = datetime.now(timezone.utc)
+    try:
         if payload.accion == "vincular":
-            if not vendedor:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Elegí el vendedor a vincular")
-            if vendedor == SIN_VENDEDOR:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, "«SIN VENDEDOR» agrupa ventas sin POS: no es una persona para vincular")
-            otro = (await db.execute(select(SphVinculo).where(
-                SphVinculo.vendedor == vendedor, SphVinculo.clave != clave))).scalars().first()
-            if otro:
-                raise HTTPException(status.HTTP_409_CONFLICT, f"{vendedor} ya está vinculado a {otro.nombre}. Quitá ese vínculo primero.")
+            v_op = next((o for o in ops if o.vendedor == vendedor), None)
+            if not v_op:
+                v_op = Operador(operativa=OPERATIVA_SLUG, vendedor=vendedor, nombre=vendedor.title(), cruce="sin_agente", candidatos=[])
+                db.add(v_op)
+                await db.flush()
+            await maestro.vincular(db, a_op, v_op, user.id)
+        elif payload.accion == "descartar":
+            if a_op.vendedor:
+                await maestro.separar(db, a_op, user.id)
+            a_op.cruce, a_op.candidatos, a_op.updated_at, a_op.updated_by = "descartado", [], ahora, user.id
         else:
-            vendedor = None
-        if not actual:
-            actual = SphVinculo(clave=clave)
-            db.add(actual)
-        actual.nombre, actual.vendedor = payload.nombre.strip(), vendedor
-        actual.updated_at, actual.updated_by = datetime.now(timezone.utc), user.id
+            if a_op.cruce == "manual" and a_op.vendedor:
+                await maestro.separar(db, a_op, user.id)
+            if a_op.cruce in ("manual", "descartado") or not a_op.vendedor:
+                a_op.cruce, a_op.updated_at, a_op.updated_by = "sin_cruce", ahora, user.id
+                await maestro.cruzar_pendientes(db)
+    except maestro.VinculoInvalido as exc:
+        await db.rollback()
+        codigo = status.HTTP_409_CONFLICT if "ya está vinculado" in str(exc) else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(codigo, str(exc)) from exc
     await db.commit()
-    await record_action(db, user_id=user.id, action="sph_vinculo", resource_type="sph_vinculo", resource_id=clave,
+    await record_action(db, user_id=user.id, action="sph_vinculo", resource_type="operador", resource_id=clave,
                         ip=client_ip(request), extra={"agente": clave, "accion": payload.accion, "antes": antes, "vendedor": vendedor})
     return {"clave": clave, "accion": payload.accion, "vendedor": vendedor}

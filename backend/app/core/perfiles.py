@@ -14,8 +14,9 @@ PERFILES: list[dict] = [
     {"slug": "sub_gerente", "name": "Sub gerente", "description": "Conduce la operación: todos los módulos, incluida Facturación."},
     {"slug": "controller", "name": "Controller", "description": "Controla la operación: todos los módulos menos Facturación. Puede tener varias operativas."},
     {"slug": "coordinador", "name": "Coordinador", "description": "Coordina la operativa. Acceso amplio."},
-    {"slug": "supervisor", "name": "Supervisor", "description": "Supervisa equipos y sigue indicadores."},
+    {"slug": "supervisor", "name": "Supervisor", "description": "Líder coach de su equipo: entra solo a su portal (equipo, objetivos, proyección y alertas)."},
     {"slug": "analista", "name": "Analista", "description": "Carga datos y prepara reportes."},
+    {"slug": "auditor", "name": "Auditor", "description": "Revisa ventas y casos, y sigue el tablero de supervisión."},
     {"slug": "cliente", "name": "Cliente", "description": "Consulta la información publicada."},
 ]
 
@@ -29,10 +30,14 @@ _TODAS_TC = [u["key"] for o in OPERATIVAS if o["slug"] == _TC for u in o["utilid
 DEFAULT_PERMISSIONS: dict[str, list[str]] = {
     "sub_gerente": [f"{_TC}.{u}" for u in _TODAS_TC],
     "controller": [f"{_TC}.{u}" for u in _TODAS_TC if u != "facturacion"],
-    "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad", "sph")],
-    "supervisor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad", "sph")],
+    "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad", "sph",
+                                            "supervision", "supervision_gestion", "operadores")],
+    # El supervisor solo entra a su portal (ver core/operativas.PERFILES_SOLO_PORTAL).
+    "supervisor": [f"{_TC}.{u}" for u in ("ver", "portal_supervisor")],
     "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion", "auditoria",
-                                         "productividad", "productividad_gestion", "sph", "sph_gestion")],
+                                         "productividad", "productividad_gestion", "sph", "sph_gestion",
+                                         "supervision", "operadores")],
+    "auditor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "auditoria", "supervision")],
     "cliente": [f"{_TC}.{u}" for u in ("ver",)],
 }
 

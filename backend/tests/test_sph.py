@@ -233,11 +233,11 @@ async def test_flujo_calcular_vincular_y_publicar():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
         analista = await _new_user(ac, admin, "analista")      # gestión (perfil sembrado)
-        supervisor = await _new_user(ac, admin, "supervisor")  # solo ve lo publicado
+        lector = await _new_user(ac, admin, "coordinador")  # solo ve lo publicado (el supervisor solo entra a su portal)
         cuerpo = {"fecha": DIA.isoformat()}
 
         # Sin fuentes no se calcula: primero falta Productividad, después Ventas Netas.
-        assert (await ac.post(f"{BASE}/calcular", headers=supervisor, json=cuerpo)).status_code == 403
+        assert (await ac.post(f"{BASE}/calcular", headers=lector, json=cuerpo)).status_code == 403
         r = await ac.post(f"{BASE}/calcular", headers=analista, json=cuerpo)
         assert r.status_code == 409 and "Productividad" in r.json()["detail"]["message"]
         await _guardar(ProdInforme(fecha=DIA, status="published", data=productividad()))
@@ -252,7 +252,7 @@ async def test_flujo_calcular_vincular_y_publicar():
         f = (await ac.get(f"{BASE}/fuentes", headers=analista, params=cuerpo)).json()
         assert f["puede_calcular"] and f["ventas"][0]["fecha_dato"] == "2026-09-18" and f["sph"] == {}
         assert f["tipo"] == "dia" and f["dias_cubiertos"] == 1 and f["cobertura"] == [{"fecha": D, "productividad": "published", "horas": True, "ventas": True}]
-        assert (await ac.get(f"{BASE}/fuentes", headers=supervisor, params=cuerpo)).status_code == 403
+        assert (await ac.get(f"{BASE}/fuentes", headers=lector, params=cuerpo)).status_code == 403
         dias = (await ac.get(f"{BASE}/dias", headers=analista)).json()
         assert dias["dias"][0]["fecha"] == D and dias["dias"][0]["cubre"] and dias["sugerida"] == D
 
@@ -262,13 +262,13 @@ async def test_flujo_calcular_vincular_y_publicar():
         i1 = r.json()["informe"]["id"]
         assert r.json()["informe"]["status"] == "draft" and r.json()["informe"]["sph"] == 0.3
         assert r.json()["informe"]["horas"] == 30 and r.json()["informe"]["ventas_corte"] == "2026-09-18"
-        assert (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"] == []
-        assert (await ac.get(f"{BASE}/informes/{i1}", headers=supervisor)).status_code == 404
+        assert (await ac.get(f"{BASE}/informes", headers=lector)).json()["items"] == []
+        assert (await ac.get(f"{BASE}/informes/{i1}", headers=lector)).status_code == 404
         det = (await ac.get(f"{BASE}/informes/{i1}", headers=analista)).json()
         assert det["data"]["kpis"]["netas"] == 10 and det["fuentes_nuevas"] == [] and det["vinculos"] == {}
 
         # Vínculos a mano: Benítez es Dolly González; Nancy no es ninguno de la lista.
-        assert (await ac.put(f"{BASE}/vinculos", headers=supervisor, json={
+        assert (await ac.put(f"{BASE}/vinculos", headers=lector, json={
             "clave": "BENITEZ, ROSA", "nombre": "Benitez, Rosa", "accion": "vincular", "vendedor": "DOLLY GONZALEZ"})).status_code == 403
         r = await ac.put(f"{BASE}/vinculos", headers=analista, json={
             "clave": "BENITEZ, ROSA", "nombre": "Benitez, Rosa", "accion": "vincular", "vendedor": "DOLLY GONZALEZ"})
@@ -296,8 +296,8 @@ async def test_flujo_calcular_vincular_y_publicar():
         # Publicar; calcular otra vez genera otro borrador y publicarlo exige confirmar el reemplazo.
         r = await ac.post(f"{BASE}/informes/{i1}/publicar", headers=analista, json={})
         assert r.status_code == 200 and r.json()["status"] == "published"
-        assert [x["id"] for x in (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"]] == [i1]
-        assert (await ac.get(f"{BASE}/informes/{i1}", headers=supervisor)).json()["data"]["kpis"]["sph"] == 0.3
+        assert [x["id"] for x in (await ac.get(f"{BASE}/informes", headers=lector)).json()["items"]] == [i1]
+        assert (await ac.get(f"{BASE}/informes/{i1}", headers=lector)).json()["data"]["kpis"]["sph"] == 0.3
         i2 = (await ac.post(f"{BASE}/calcular", headers=analista, json=cuerpo)).json()["informe"]["id"]
         assert i2 != i1
         r = await ac.post(f"{BASE}/informes/{i2}/publicar", headers=analista, json={})
@@ -321,7 +321,7 @@ async def test_flujo_calcular_vincular_y_publicar():
             "clave": "BENITEZ, ROSA", "nombre": "Benitez, Rosa", "accion": "automatico"})).status_code == 200
         v = (await ac.get(f"{BASE}/vinculos", headers=analista)).json()["items"]
         assert [(x["clave"], x["vendedor"], x["updated_by"]) for x in v] == [("LOPEZ GIMENEZ, NANCY", None, "Usuario analista")]
-        assert (await ac.get(f"{BASE}/vinculos", headers=supervisor)).status_code == 403
+        assert (await ac.get(f"{BASE}/vinculos", headers=lector)).status_code == 403
 
         # Semana: es otro período (se publica aparte del día) y suma solo los días que cuentan.
         semana = {"desde": "2026-09-14", "hasta": "2026-09-20"}
@@ -334,16 +334,16 @@ async def test_flujo_calcular_vincular_y_publicar():
         sem = r.json()["informe"]
         assert sem["tipo"] == "semana" and sem["desde"] == "2026-09-14" and sem["hasta"] == "2026-09-20" and sem["dias"] == 1
         assert (await ac.post(f"{BASE}/informes/{sem['id']}/publicar", headers=analista, json={})).status_code == 200
-        publicados = [x for x in (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"]]
+        publicados = [x for x in (await ac.get(f"{BASE}/informes", headers=lector)).json()["items"]]
         assert {(x["tipo"], x["desde"]) for x in publicados} == {("semana", "2026-09-14"), ("dia", D)}
-        det = (await ac.get(f"{BASE}/informes/{sem['id']}", headers=supervisor)).json()
+        det = (await ac.get(f"{BASE}/informes/{sem['id']}", headers=lector)).json()
         assert det["data"]["kpis"]["dias_cubiertos"] == 1 and len(det["data"]["serie"]) == 1
         assert (await ac.get(f"{BASE}/dias", headers=analista)).json()["dias"][0]["sph"] == {"published": i2, "draft": i3}  # la semana no cuenta como SPH del día
 
         # No se elimina un publicado; despublicar lo vuelve borrador.
         assert (await ac.delete(f"{BASE}/informes/{i2}", headers=analista)).status_code == 400
         assert (await ac.post(f"{BASE}/informes/{i2}/despublicar", headers=analista)).json()["status"] == "draft"
-        assert [x["tipo"] for x in (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"]] == ["semana"]
-        assert (await ac.delete(f"{BASE}/informes/{i2}", headers=supervisor)).status_code == 403
+        assert [x["tipo"] for x in (await ac.get(f"{BASE}/informes", headers=lector)).json()["items"]] == ["semana"]
+        assert (await ac.delete(f"{BASE}/informes/{i2}", headers=lector)).status_code == 403
         assert (await ac.delete(f"{BASE}/informes/{i2}", headers=analista)).status_code == 200
         assert (await ac.get(f"{BASE}/informes/{i2}", headers=analista)).status_code == 404

@@ -56,14 +56,17 @@ operacionesrafaelmartinez/
 │   │   ├── api/
 │   │   │   ├── deps.py          # CurrentUser, require_superadmin, require_perm
 │   │   │   └── v1/              # auth · users · perfiles · audit · operativas (plataforma)
-│   │   ├── models/              # User, Profile, AuditLog, Agente (plataforma)
+│   │   ├── models/              # User, Profile, AuditLog, Agente, MigracionDatos (plataforma)
 │   │   ├── schemas/             # Pydantic (plataforma)
 │   │   ├── jobs/                # queue.py (cola genérica) · isolated.py (subproceso aislado)
 │   │   ├── services/            # audit · agent (motor del agente IA, compartido)
 │   │   └── operativas/          # código de cada operativa (ROUTERS + WORKERS)
 │   │       └── televentas_claro/
 │   │           ├── router.py    # portada de la operativa
+│   │           ├── fuentes.py   # qué informe de Productividad / Ventas Netas vale cada día y cada mes
 │   │           ├── ventas_netas/ # submódulo: api · models · schemas · parser · analyzer · exports · jobs
+│   │           ├── sph/         # submódulo SPH estimado: api · models · analyzer
+│   │           ├── supervision/ # submódulo Supervisión: api · models · calculo · operadores · migraciones
 │   │           └── facturacion/ # submódulo: api · agent_api · models/ · schemas
 │   │                            #   parser · analyzers/ · agent/ · jobs/
 │   ├── tests/                   # pytest (SQLite)
@@ -86,7 +89,7 @@ sus propias **utilidades**. La primera operativa es **Televentas CLARO**.
 | Concepto | Dónde se define | Quién lo cambia |
 |---|---|---|
 | Operativas y sus utilidades | `backend/app/core/operativas.py` | Desarrollo |
-| Perfiles (Sub gerente, Controller, Coordinador, Supervisor, Analista, Cliente) | `backend/app/core/perfiles.py` | Desarrollo |
+| Perfiles (Sub gerente, Controller, Coordinador, Supervisor, Analista, Auditor, Cliente) | `backend/app/core/perfiles.py` | Desarrollo |
 | Utilidades de cada perfil | Tabla `profiles`, pantalla **Administración → Perfiles** | Superadmin |
 | Perfil y operativas de cada usuario | Pantalla **Administración → Usuarios** | Superadmin |
 
@@ -103,20 +106,31 @@ cambios de permisos se aplican en la siguiente request, sin volver a loguearse.
 
 Utilidades iniciales de Televentas CLARO y permisos sembrados la primera vez
 (el superadmin los ajusta después). Una utilidad nueva aparece desmarcada en los
-perfiles que ya existen: el superadmin la asigna en **Administración → Perfiles**.
+perfiles que ya existen: el superadmin la asigna en **Administración → Perfiles**,
+salvo que venga con una **migración de datos de una sola vez** (`MIGRACIONES_DATOS`,
+tabla `migraciones_datos`): así se dieron las utilidades de Supervisión a los perfiles
+existentes según el modelo definido, y no se repite aunque el superadmin las cambie.
 
-| Utilidad | Sub gerente | Controller | Coordinador | Supervisor | Analista | Cliente |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Acceso a la operativa | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Ventas Netas · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | ✓ / | ✓ / ✓ | |
-| Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | ✓ / | ✓ / ✓ | |
-| SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | ✓ / | ✓ / ✓ | |
-| Auditoría de ventas | ✓ | ✓ | | | ✓ | |
-| Facturación (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
+| Utilidad | Sub gerente | Controller | Coordinador | Supervisor | Analista | Auditor | Cliente |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Acceso a la operativa | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Ventas Netas · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
+| Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
+| SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
+| Supervisión · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | 🔒 | ✓ / | ✓ / | |
+| Operadores · Vincular | ✓ | ✓ | ✓ | 🔒 | ✓ | | |
+| Portal del supervisor (restringida) | 🔒 | 🔒 | 🔒 | ✓ | 🔒 | 🔒 | 🔒 |
+| Auditoría de ventas | ✓ | ✓ | | 🔒 | ✓ | ✓ | |
+| Facturación (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
 
 - **Sub gerente:** todos los módulos, incluida Facturación.
 - **Controller:** todos los módulos menos Facturación; como cualquier usuario, puede
   tener varias operativas asignadas.
+- **Supervisor:** solo entra a **su portal** (`PERFILES_SOLO_PORTAL`): únicamente puede
+  tener las utilidades marcadas `portal` (el acceso y el Portal del supervisor). Al
+  iniciar sesión va directo al portal; cualquier otra ruta lo devuelve ahí.
+- **Auditor:** revisa ventas y casos (Auditoría y Ventas Netas) y ve el tablero de
+  Supervisión en lectura.
 
 Las utilidades con `solo_perfiles` en el catálogo son **restringidas**: además del
 superadmin, solo las pueden tener los perfiles listados (hoy: **Facturación → Sub
@@ -265,13 +279,61 @@ de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro
   se adivina) o **sin cruce**. Uno a uno: un vendedor no va a dos agentes.
 - **SPH por asesor (estimado):** netas del vendedor vinculado ÷ horas del agente;
   entra al ranking con 2 h conectadas o más en un día y 6 h (una jornada) en un período.
-- **Vínculos manuales:** gestión confirma, corrige o descarta cada vínculo; queda
-  guardado para los próximos cálculos y el día se recalcula.
+- **Vínculos:** el cruce sale del **maestro de operadores** de Supervisión (fuente única,
+  mismo motor de cruce): antes de calcular se detectan los agentes y vendedores del mes.
+  Gestión confirma, corrige o descarta cada vínculo desde el SPH o desde Supervisión →
+  Operadores; vale para los dos y para los próximos cálculos.
 - **Publicación:** como Productividad, uno publicado por período (el SPH del día y el
   de su semana se publican por separado), reemplazo con confirmación y un publicado
   no cambia (recalcular genera un borrador). El informe avisa si hay datos más nuevos.
 - **Permisos:** `televentas_claro.sph` (ver publicados) y `televentas_claro.sph_gestion`
   (calcular, borradores, vínculos, publicar, recalcular, eliminar).
+
+## Televentas CLARO · Supervisión (modelo Líder Coach Comercial)
+
+Gestión de los supervisores como líderes coach: equipos del mes, objetivos de Pospago y
+GPON por supervisor, avance y **proyección al cierre**, y asesores en alerta por líneas
+sin uso. Código en `backend/app/operativas/televentas_claro/supervision/`; la guía del
+modelo es el documento «Modelo Líder Coach Comercial». Fase 1 de 5 (siguen: tablero y
+scoring, coaching y bitácora, tickets con SLA y centro de comandos).
+
+| Pantalla | Ruta | Qué hace |
+|---|---|---|
+| Objetivos y proyección | `/televentas-claro/supervision` | Por supervisor: vendido / objetivo, proyección al cierre, ritmo necesario por día hábil, semáforo y alertas; la operación completa; **Cargar objetivos** en la misma tabla |
+| Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible) |
+| Equipos del mes | `…/supervision/equipos` | Tablero por supervisor y «Sin supervisor»; selección múltiple, **fecha efectiva**, copiar los equipos del mes anterior |
+| Operadores | `…/supervision/operadores` | Maestro de operadores: por revisar, vincular, separar, confirmar sin vínculo, renombrar, dar de baja |
+| Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana y días no laborables (más los feriados de Seguridad) |
+| Mi portal | `/televentas-claro/portal` | El portal del supervisor: su equipo, sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
+
+- **Maestro de operadores:** cada persona tiene un nombre en llamadas (agente de
+  Productividad) y otro como vendedor (POS de Ventas Netas), sin ID común. En cada mes
+  se detectan los dos y se cruzan por nombre con el motor del SPH; lo pendiente se
+  vincula a mano y lo que decide una persona no lo cambia el cruce automático. Unir dos
+  operadores que ya tienen equipo lo decide una persona. La detección se rehace sola
+  cuando cambian los informes del mes (firma de las fuentes). El legajo solo se toma si
+  identifica a un único vendedor (el de Ventas Netas es el de quien cargó la venta).
+- **Equipos del mes:** asignación supervisor → asesores por mes, con fecha efectiva para
+  los cambios a mitad de mes (`sup_equipo_asignaciones`). Cada neta cuenta para el
+  supervisor que tenía al asesor el día de la venta (si se vendió antes del mes, el del
+  día 1). Asignan los jefes (`supervision_gestion`); cada cambio queda auditado.
+- **Objetivos:** Pospago y GPON por supervisor y mes (`sup_objetivos`), los cargan los
+  jefes; el supervisor los ve y no los puede cambiar.
+- **Netas del mes:** las del informe de Ventas Netas del mes (mes de activación: la cifra
+  oficial). Fuente: el publicado; si no hay, el borrador con el corte más nuevo, marcado
+  como provisorio.
+- **Proyección al cierre** = vendido al corte ÷ días hábiles transcurridos × días hábiles
+  del mes; **ritmo necesario** = lo que falta ÷ días hábiles restantes. Días hábiles: de
+  lunes a viernes 1, sábado 0,5, domingo 0 (en septiembre el sábado vendió el 44% de un
+  día de semana), sin feriados ni días no laborables. Con menos de 3 días hábiles es
+  provisoria. Semáforo: en camino ≥ 100% del objetivo, en riesgo ≥ 90%, bajo objetivo.
+- **Supervisor crítico:** al menos un asesor de su equipo actual con más del 10% de sus
+  Pospago evaluables sin uso y 5 o más evaluables. **Líneas a recuperar:** las sin uso
+  que tienen que empezar a usarse para volver al 10%.
+- **Seguridad:** el portal filtra en el servidor por el usuario (solo sus asesores, en
+  las fechas en que los tuvo); ver las líneas sin uso de un asesor queda auditado.
+- **Permisos:** `supervision` (ver), `supervision_gestion` (equipos, objetivos,
+  calendario), `operadores` (vínculos) y `portal_supervisor` (solo el perfil Supervisor).
 
 ## Televentas CLARO · Auditoría de Ventas
 

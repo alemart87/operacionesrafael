@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
-import { OperativaInfo, operativaRoute } from "@/lib/operativas";
+import { OperativaInfo, PERM_PORTAL_SUPERVISOR, PORTAL_HREF, operativaRoute } from "@/lib/operativas";
 
 export default function InicioPage() {
   return (
@@ -15,15 +16,24 @@ export default function InicioPage() {
 }
 
 function Hub() {
-  const { user, isSuperadmin } = useSession();
+  const { user, isSuperadmin, can } = useSession();
+  const router = useRouter();
   const [operativas, setOperativas] = useState<OperativaInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // El supervisor solo entra a su portal: va directo.
+  const alPortal = user.role === "supervisor" && can(PERM_PORTAL_SUPERVISOR);
 
   useEffect(() => {
+    if (alPortal) {
+      router.replace(PORTAL_HREF);
+      return;
+    }
     apiFetch<OperativaInfo[]>("/api/v1/operativas")
       .then(setOperativas)
       .catch((e) => setError(e.message));
-  }, []);
+  }, [alPortal, router]);
+
+  if (alPortal) return <div className="text-brand-slate">Abriendo tu portal…</div>;
 
   return (
     <>
