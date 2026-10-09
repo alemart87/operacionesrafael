@@ -121,8 +121,9 @@ export function CalcularSph({ abierto, onCerrar, tipo = "dia" }: { abierto: bool
           <div className="p-6">
             <h2 id="calcular-sph" className="font-display text-2xl text-brand-ink uppercase leading-tight">Calcular SPH</h2>
             <p className="text-sm text-brand-slate mt-1.5 leading-relaxed">
-              Elegí el período. Se cruzan las <b>horas conectadas</b> de los informes de Productividad con las <b>netas</b> de
-              Ventas Netas, por fecha de venta. Un día cuenta si tiene horas y el corte de ventas ya lo alcanza.
+              Elegí el período. Se cruzan las <b>horas conectadas</b> de los informes de Productividad con las <b>ventas del día</b> de
+              la hoja de productividad de Ventas Netas: las cargadas ese día, finalizadas o pendientes (no las rechazadas ni las
+              canceladas). Un día cuenta si tiene horas y la planilla de ventas ya lo alcanza.
             </p>
 
             <div className="mt-5 grid grid-cols-4 gap-1 rounded-lg bg-brand-bg p-1" role="tablist" aria-label="Tipo de período">
@@ -223,7 +224,10 @@ export function CalcularSph({ abierto, onCerrar, tipo = "dia" }: { abierto: bool
                       <Fuente icono={<Receipt size={15} />} titulo="Ventas · Ventas Netas" ok={fuentes.cobertura.some((c) => c.horas && c.ventas)}>
                         {fuentes.ventas.length
                           ? fuentes.ventas.map((v) => (
-                            <span key={v.id} className="block">{nombreMes(v.periodo)}: corte del {v.fecha_dato ? fechaCorta(v.fecha_dato) : "—"} · {ESTADO_LABEL[v.status].toLowerCase()} · {n(v.netas)} netas en el mes</span>
+                            <span key={v.id} className="block">
+                              {nombreMes(v.periodo)}: corte del {v.fecha_dato ? fechaCorta(v.fecha_dato) : "—"} · {ESTADO_LABEL[v.status].toLowerCase()}
+                              {v.ventas != null ? <> · {n(v.ventas)} ventas en el mes</> : <span className="text-brand-primary"> · sin la hoja de productividad: recalculalo en Ventas Netas</span>}
+                            </span>
                           ))
                           : "No hay informe de Ventas Netas del mes."}
                       </Fuente>
@@ -266,7 +270,7 @@ export function CalcularSph({ abierto, onCerrar, tipo = "dia" }: { abierto: bool
       </div>
       <Procesando abierto={calculando} titulo="Calculando SPH" listo={listo}
         detalle={listo ? "Abriendo el resultado…"
-          : <>Cruzando las horas de {n(fuentes?.dias_cubiertos ?? 1)} día(s) con las netas por fecha de venta…</>} />
+          : <>Cruzando las horas de {n(fuentes?.dias_cubiertos ?? 1)} día(s) con las ventas de cada día…</>} />
     </>
   );
 }

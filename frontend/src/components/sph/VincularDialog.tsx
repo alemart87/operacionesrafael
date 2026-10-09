@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { n } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
 import { NivelChip } from "./ui";
-import { SPH_API, vinculado, type AgenteSph, type Nivel, type VendedorPeriodo, type VentaSinAgente } from "./tipos";
+import { SPH_API, UNIDAD, vinculado, type AgenteSph, type BaseSph, type Nivel, type VendedorPeriodo, type VentaSinAgente } from "./tipos";
 
 type Opcion = { id: string; titulo: string; sub: string; sugerido: boolean; actual?: boolean; ocupado?: string; nivel?: Nivel };
 
@@ -16,10 +16,12 @@ type Accion = "vincular" | "descartar" | "automatico";
  * Corrige el cruce de nombres: este agente es tal vendedor, no es ninguno, o vuelve al cruce
  * automático. Se guarda para los próximos cálculos; al guardar, el SPH del día se recalcula.
  */
-export function VincularDialog({ objetivo, agentes, vendedores, manual, onCerrar, onGuardado }: {
+export function VincularDialog({ objetivo, agentes, vendedores, manual, onCerrar, onGuardado, base = "ventas" }: {
   objetivo: Objetivo | null;
   agentes: AgenteSph[];
   vendedores: VendedorPeriodo[];
+  /** Ventas del día (v4) o netas (los SPH anteriores). */
+  base?: BaseSph;
   /** Vínculos manuales vigentes (clave del agente → vendedor; null = no vincular). */
   manual: Record<string, string | null>;
   onCerrar: () => void;
@@ -54,7 +56,7 @@ export function VincularDialog({ objetivo, agentes, vendedores, manual, onCerrar
       return vendedores
         .filter((v) => !t || v.vendedor.toLowerCase().includes(t))
         .sort((a, b) => peso(b.vendedor) - peso(a.vendedor) || a.vendedor.localeCompare(b.vendedor, "es"))
-        .map((v) => ({ id: v.vendedor, titulo: v.vendedor, sub: [v.subcanal, `${n(v.netas_mes)} netas en el mes`].filter(Boolean).join(" · "),
+        .map((v) => ({ id: v.vendedor, titulo: v.vendedor, sub: [v.subcanal, `${n(v.ventas_mes)} ${UNIDAD[base].varias} en el mes`].filter(Boolean).join(" · "),
           sugerido: cand.has(v.vendedor), actual: v.vendedor === actual,
           ocupado: duenio.get(v.vendedor)?.clave !== objetivo.agente.clave ? duenio.get(v.vendedor)?.nombre : undefined }));
     }
@@ -62,7 +64,7 @@ export function VincularDialog({ objetivo, agentes, vendedores, manual, onCerrar
       .filter((a) => !t || a.nombre.toLowerCase().includes(t))
       .sort((a, b) => Number(vinculado(a.nivel)) - Number(vinculado(b.nivel)) || a.nombre.localeCompare(b.nombre, "es"))
       .map((a) => ({ id: a.clave, titulo: a.nombre, sub: a.vendedor ? `Hoy: ${a.vendedor}` : "Sin vínculo", sugerido: false, nivel: a.nivel }));
-  }, [objetivo, vendedores, agentes, q, duenio]);
+  }, [objetivo, vendedores, agentes, q, duenio, base]);
 
   if (!objetivo) return null;
   const agente = objetivo.tipo === "agente" ? objetivo.agente : null;
@@ -111,7 +113,7 @@ export function VincularDialog({ objetivo, agentes, vendedores, manual, onCerrar
             </div>
           ) : (
             <p className="mt-2 text-sm text-brand-graphite">
-              <b>{objetivo.tipo === "vendedor" && objetivo.venta.vendedor}</b> tiene {objetivo.tipo === "vendedor" && n(objetivo.venta.netas)} neta(s)
+              <b>{objetivo.tipo === "vendedor" && objetivo.venta.vendedor}</b> tiene {objetivo.tipo === "vendedor" && n(objetivo.venta.ventas)} {UNIDAD[base].una}(s)
               sin asesor. ¿Qué agente de la plataforma es?
             </p>
           )}

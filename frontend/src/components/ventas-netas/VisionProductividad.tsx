@@ -252,7 +252,7 @@ export function VisionProductividad({ d }: { d: InformeData }) {
       {/* Salud de ventas por vendedor: estados + uso + riesgo */}
       <Seccion
         titulo="Salud de las ventas por vendedor"
-        sub={`${n(k.vendedores)} vendedores · finalizadas Pospago cruzadas con el consumo de DDI y con el riesgo de la carga · las cargas sin POS se atribuyen por legajo (${n(k.sin_atribuir)} quedan como "cargado por")`}
+        sub={`${n(k.vendedores)} vendedores · finalizadas Pospago cruzadas con el consumo de DDI y con el riesgo de la carga · las cargas sin POS se atribuyen por su línea activada o por legajo (${n(k.sin_atribuir)} quedan como "cargado por")`}
         accion={
           <div className="flex items-center gap-2 no-print flex-wrap">
             <input className="input max-w-[180px]" placeholder="Buscar vendedor…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -319,7 +319,7 @@ export function VisionProductividad({ d }: { d: InformeData }) {
         </div>
         <Tabla
           cols={[
-            { key: "vendedor", label: "Vendedor", render: (r: any) => <><b className={r.vendedor.startsWith("CARGADO POR") ? "text-brand-slate font-normal" : ""}>{r.vendedor}</b> <span className="text-brand-mist text-xs">{r.subcanal}</span>{r.por_legajo > 0 && <span className="text-brand-mist text-[10px] ml-1" title="Cargas atribuidas por legajo">({r.por_legajo} por legajo)</span>}</> },
+            { key: "vendedor", label: "Vendedor", render: (r: any) => <><b className={r.vendedor.startsWith("CARGADO POR") ? "text-brand-slate font-normal" : ""}>{r.vendedor}</b> <span className="text-brand-mist text-xs">{r.subcanal}</span>{r.por_linea > 0 && <span className="text-brand-mist text-[10px] ml-1" title="Cargas sin POS atribuidas por su línea ya activada">({r.por_linea} por línea)</span>}{r.por_legajo > 0 && <span className="text-brand-mist text-[10px] ml-1" title="Cargas sin POS atribuidas por legajo">({r.por_legajo} por legajo)</span>}</> },
             { key: "salud", label: "Salud", render: (r: any) => <Salud r={r} /> },
             { key: "total", label: "Cargas", align: "right", render: (r: any) => <b>{n(r.total)}</b> },
             { key: "finalizadas", label: "Final.", align: "right", render: (r: any) => n(r.finalizadas) },

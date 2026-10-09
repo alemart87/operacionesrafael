@@ -41,6 +41,7 @@ const ROLE_BADGE: Record<string, string> = {
   coordinador: "badge-primary",
   supervisor: "badge-cyan",
   analista: "badge-success",
+  auditor: "badge-neutral",
   cliente: "badge-neutral",
 };
 

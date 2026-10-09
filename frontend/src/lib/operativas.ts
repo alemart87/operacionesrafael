@@ -41,6 +41,15 @@ export const PERM_SPH = "televentas_claro.sph";
 export const PERM_SPH_GESTION = "televentas_claro.sph_gestion";
 /** Auditoría de ventas: riesgos, informes de auditoría, hallazgos y seguimiento. */
 export const PERM_AUDITORIA = "televentas_claro.auditoria";
+/** Supervisión (modelo Líder Coach Comercial): ver / gestionar equipos, objetivos y calendario / vincular operadores. */
+export const PERM_SUPERVISION = "televentas_claro.supervision";
+export const PERM_SUPERVISION_GESTION = "televentas_claro.supervision_gestion";
+export const PERM_OPERADORES = "televentas_claro.operadores";
+/** Parámetros del modelo (pesos del scoring): solo sub gerente y superadmin. */
+export const PERM_SUPERVISION_PARAMETROS = "televentas_claro.supervision_parametros";
+/** Portal del supervisor: lo único que ve el perfil Supervisor. */
+export const PERM_PORTAL_SUPERVISOR = "televentas_claro.portal_supervisor";
+export const PORTAL_HREF = "/televentas-claro/portal";
 
 export interface OperativaNavItem {
   href: string;
@@ -121,12 +130,45 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         label: "SPH estimado",
         href: "/televentas-claro/sph",
         descripcion: "Ventas netas por hora conectada: cruza las horas de Productividad con las netas de Ventas Netas, para la operación y por asesor.",
-        contenido: ["SPH de la operación", "Día, semana, mes o rango", "Ranking de SPH por asesor", "Cruce de nombres agente ↔ vendedor", "Netas sin asesor", "Vínculos corregidos a mano"],
+        contenido: ["SPH de la operación con las ventas del día", "Día, semana, mes o rango", "Ranking de SPH por asesor", "Cruce de nombres agente ↔ vendedor", "Ventas sin asesor", "Vínculos corregidos a mano"],
         gestion: "sph_gestion",
         gestionTexto: "Podés calcular, vincular nombres y publicar.",
         nav: [
           { href: "/televentas-claro/sph", label: "Informes SPH", exact: true },
           { href: "/televentas-claro/sph/vinculos", label: "Vínculos", utilidad: "sph_gestion" },
+        ],
+      },
+      {
+        utilidad: "supervision",
+        label: "Supervisión",
+        href: "/televentas-claro/supervision",
+        descripcion: "Modelo Líder Coach Comercial: el centro de comandos de los jefes, equipos del mes por supervisor, objetivos de Pospago y GPON, avance y proyección al cierre, asesores en alerta por líneas sin uso, la gestión de coaching de cada supervisor y los tickets de revisión con sus plazos.",
+        contenido: ["Centro de comandos: semáforo y alertas del día", "Objetivos y proyección al cierre", "Scoring de asesores y supervisores", "Gestión de coaching", "Tickets de revisión con plazos", "Línea de tiempo de cada supervisor", "Ficha de cada asesor", "Equipos del mes y maestro de operadores"],
+        gestion: "supervision_gestion",
+        gestionTexto: "Podés armar los equipos, cargar objetivos y el calendario.",
+        nav: [
+          { href: "/televentas-claro/supervision/comando", label: "Centro de comandos" },
+          { href: "/televentas-claro/supervision", label: "Objetivos y proyección", exact: true },
+          { href: "/televentas-claro/supervision/tablero", label: "Tablero" },
+          { href: "/televentas-claro/supervision/coaching", label: "Coaching" },
+          { href: "/televentas-claro/supervision/tickets", label: "Tickets" },
+          { href: "/televentas-claro/supervision/equipos", label: "Equipos del mes" },
+          { href: "/televentas-claro/supervision/operadores", label: "Operadores" },
+          { href: "/televentas-claro/supervision/calendario", label: "Calendario" },
+          { href: "/televentas-claro/supervision/parametros", label: "Parámetros", utilidad: "supervision_parametros" },
+        ],
+      },
+      {
+        utilidad: "portal_supervisor",
+        label: "Mi portal",
+        href: "/televentas-claro/portal",
+        descripcion: "Tu equipo del mes, tus objetivos de Pospago y GPON, tu avance y proyección al cierre, tus asesores en alerta, tu registro de coaching, seguimientos y bitácora, y los tickets que te envían.",
+        contenido: ["Objetivos del mes", "Proyección al cierre", "Asesores en alerta", "Coaching con impacto medido", "Seguimientos", "Bitácora", "Tickets"],
+        acceso: "Mi equipo",
+        nav: [
+          { href: "/televentas-claro/portal", label: "Mi equipo", exact: true },
+          { href: "/televentas-claro/portal/coaching", label: "Coaching y bitácora" },
+          { href: "/televentas-claro/portal/tickets", label: "Tickets" },
         ],
       },
       {

@@ -3,7 +3,7 @@
 import { Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { fechaCorta, n } from "@/components/productividad/tipos";
 import { FranjaDias } from "./ui";
-import { fmtHoras, fmtSph, type CoberturaDia, type SerieDia } from "./tipos";
+import { UNIDAD, estadoVenta, fmtHoras, fmtSph, type BaseSph, type CoberturaDia, type SerieDia } from "./tipos";
 
 const C_BARRA = "#00B2BF";
 const C_INK = "#0F1116";
@@ -13,17 +13,20 @@ const EJE = { fontSize: 11, fill: "#5B6275" };
  * SPH de cada día que cuenta en el período (una sola tinta), con el SPH del período como línea
  * de referencia, la franja de días y el detalle en tabla.
  */
-export function SerieSph({ serie, sph, desde, hasta, cobertura }: {
-  serie: SerieDia[]; sph: number | null; desde: string; hasta: string; cobertura: CoberturaDia[];
+export function SerieSph({ serie, sph, desde, hasta, cobertura, base = "ventas" }: {
+  serie: SerieDia[]; sph: number | null; desde: string; hasta: string; cobertura: CoberturaDia[]; base?: BaseSph;
 }) {
-  const datos = serie.map((x) => ({ ...x, etiqueta: fechaCorta(x.fecha) }));
+  const u = UNIDAD[base];
+  const datos = serie.map((x) => ({ ...x, etiqueta: fechaCorta(x.fecha), base }));
+  const fin = (x: SerieDia) => x.estados?.Vta_Finalizada ?? 0;
+  const pend = (x: SerieDia) => Object.entries(x.estados ?? {}).reduce((t, [e, v]) => t + (e !== "Vta_Finalizada" && estadoVenta(e).cuenta ? v : 0), 0);
   const tope = Math.max(0.5, Math.ceil((Math.max(...datos.map((d) => d.sph ?? 0), sph ?? 0) + 0.1) * 10) / 10);
   return (
     <section className="card p-5 min-w-0">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h3 className="font-display text-base uppercase text-brand-ink leading-tight">SPH por día</h3>
-          <p className="text-xs text-brand-slate mt-0.5">Netas ÷ horas conectadas de cada día que cuenta. La línea es el SPH del período.</p>
+          <p className="text-xs text-brand-slate mt-0.5">{u.Varias} ÷ horas conectadas de cada día que cuenta. La línea es el SPH del período.</p>
         </div>
         <div className="min-w-0 max-w-full"><FranjaDias desde={desde} hasta={hasta} cobertura={cobertura} /></div>
       </div>
@@ -55,8 +58,15 @@ export function SerieSph({ serie, sph, desde, hasta, cobertura }: {
                 <th className="py-2 pr-3">Día</th>
                 <th className="py-2 px-3 text-right">Agentes</th>
                 <th className="py-2 px-3 text-right">Horas</th>
-                <th className="py-2 px-3 text-right">Netas</th>
-                <th className="py-2 px-3 text-right" title="Ventas cargadas ese día (sin rechazadas)">Cargadas</th>
+                <th className="py-2 px-3 text-right">{u.Varias}</th>
+                {base === "ventas" ? (
+                  <>
+                    <th className="py-2 px-3 text-right" title="Ventas finalizadas (aprobadas)">Finalizadas</th>
+                    <th className="py-2 px-3 text-right" title="A confirmar o procesadas: ya cuentan">Pendientes</th>
+                  </>
+                ) : (
+                  <th className="py-2 px-3 text-right" title="Ventas cargadas ese día (sin rechazadas)">Cargadas</th>
+                )}
                 <th className="py-2 pl-3 text-right">SPH</th>
               </tr>
             </thead>
@@ -66,8 +76,15 @@ export function SerieSph({ serie, sph, desde, hasta, cobertura }: {
                   <td className="py-1.5 pr-3 capitalize">{fechaCorta(x.fecha)}</td>
                   <td className="py-1.5 px-3 text-right tabular-nums">{n(x.agentes)}</td>
                   <td className="py-1.5 px-3 text-right tabular-nums">{fmtHoras(x.horas)}</td>
-                  <td className="py-1.5 px-3 text-right tabular-nums">{n(x.netas)}</td>
-                  <td className="py-1.5 px-3 text-right tabular-nums">{n(x.cargadas)}</td>
+                  <td className="py-1.5 px-3 text-right tabular-nums">{n(x.ventas)}</td>
+                  {base === "ventas" ? (
+                    <>
+                      <td className="py-1.5 px-3 text-right tabular-nums">{n(fin(x))}</td>
+                      <td className="py-1.5 px-3 text-right tabular-nums">{n(pend(x))}</td>
+                    </>
+                  ) : (
+                    <td className="py-1.5 px-3 text-right tabular-nums">{n(x.cargadas ?? 0)}</td>
+                  )}
                   <td className="py-1.5 pl-3 text-right tabular-nums font-semibold">{fmtSph(x.sph)}</td>
                 </tr>
               ))}
@@ -79,7 +96,7 @@ export function SerieSph({ serie, sph, desde, hasta, cobertura }: {
   );
 }
 
-function Detalle({ active, payload }: { active?: boolean; payload?: { payload: SerieDia }[] }) {
+function Detalle({ active, payload }: { active?: boolean; payload?: { payload: SerieDia & { base: BaseSph } }[] }) {
   if (!active || !payload?.length) return null;
   const x = payload[0].payload;
   return (
@@ -87,7 +104,7 @@ function Detalle({ active, payload }: { active?: boolean; payload?: { payload: S
       <div className="font-semibold text-brand-ink capitalize">{fechaCorta(x.fecha)}</div>
       <div className="mt-1 grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5 tabular-nums">
         <span className="text-brand-slate">SPH</span><b className="text-right">{fmtSph(x.sph)}</b>
-        <span className="text-brand-slate">Netas</span><span className="text-right">{n(x.netas)}</span>
+        <span className="text-brand-slate">{UNIDAD[x.base].Varias}</span><span className="text-right">{n(x.ventas)}</span>
         <span className="text-brand-slate">Horas</span><span className="text-right">{fmtHoras(x.horas)}</span>
         <span className="text-brand-slate">Agentes</span><span className="text-right">{n(x.agentes)}</span>
       </div>

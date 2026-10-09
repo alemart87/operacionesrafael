@@ -9,9 +9,11 @@ Períodos: un día, una semana (lunes a domingo), un mes o un rango de hasta 62 
 suma día por día: cuenta cada día que tiene informe de Productividad (horas) y que el corte de
 ventas de su mes ya alcanza; los demás se informan.
 
-Fuentes (no se sube nada nuevo): por día, el informe de Productividad publicado (si no hay, el
-borrador más reciente); por mes, el informe de Ventas Netas publicado (si no hay, el borrador con
-el corte más nuevo). Queda avisado si se usó un borrador. El SPH queda congelado con esos datos.
+Fuentes (no se sube nada nuevo, `..fuentes`): por día, el informe de Productividad que llega más lejos
+en el día; por mes, el informe de Ventas Netas de corte más nuevo (cada planilla trae todo el mes y
+reemplaza a la anterior), publicado o no; a igual corte, el publicado. Las ventas de un día salen de la
+hoja de productividad (CARGAS) de la planilla de su mes: las cargadas ese día, no las netas. Queda
+avisado si se usó un borrador. El SPH queda congelado con esos datos y avisa cuando llegan datos más nuevos.
 
 Circuito (el mismo de Productividad): "Calcular" crea o rehace el borrador del período; como
 máximo hay un SPH publicado por período. Publicar sobre un período que ya tiene uno exige
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, datetime, timedelta, timezone
+from functools import partial
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -35,17 +38,18 @@ from ....core.config import settings
 from ....core.database import get_db
 from ....models.user import User
 from ....services.audit_service import record_action
-from ..productividad.models import ESTADO_BORRADOR as PROD_BORRADOR
-from ..productividad.models import ESTADO_PUBLICADO as PROD_PUBLICADO
+from ..fuentes import informes_productividad, informes_ventas
 from ..productividad.models import ProdInforme
-from ..ventas_netas.models import ESTADO_BORRADOR as VN_BORRADOR
-from ..ventas_netas.models import ESTADO_PUBLICADO as VN_PUBLICADO
+from ..supervision import operadores as maestro
+from ..supervision.models import Operador
 from ..ventas_netas.models import VentasNetasReport
 from .analyzer import (
     DIAS_MAX_PERIODO, SIN_VENDEDOR, VERSION_SPH, DatosIncompletos, calcular_periodo, nombre_mes, resumen_lista, tipo_periodo,
+    ventas_del_mes,
 )
-from .models import ESTADO_BORRADOR, ESTADO_PUBLICADO, ESTADO_REEMPLAZADO, SphInforme, SphVinculo
+from .models import ESTADO_BORRADOR, ESTADO_PUBLICADO, ESTADO_REEMPLAZADO, SphInforme
 
+OPERATIVA_SLUG = "televentas_claro"
 PERM_VER = "televentas_claro.sph"
 PERM_GESTION = "televentas_claro.sph_gestion"
 require_ver = require_perm(PERM_VER)
@@ -95,14 +99,16 @@ def _hasta(r: SphInforme) -> date:
 
 
 def _resumen(r: SphInforme) -> dict[str, Any]:
+    # Desde la v4 el SPH usa las ventas del día (hoja de productividad); los anteriores, las netas.
+    v4 = (r.version or 0) >= 4
     return {
         "id": r.id, "fecha": r.fecha.isoformat(), "desde": r.fecha.isoformat(), "hasta": _hasta(r).isoformat(),
         "tipo": r.tipo or "dia", "dias": r.dias or 1, "status": r.status,
         "generated_at": _iso(r.generated_at), "generated_by": r.generated_by,
         "published_at": _iso(r.published_at), "published_by": r.published_by,
         "replaced_at": _iso(r.replaced_at), "replaced_by_report_id": r.replaced_by_report_id,
-        "sph": r.sph, "netas": r.netas, "horas": r.horas, "agentes": r.agentes, "vinculados": r.vinculados,
-        "pct_cobertura": r.pct_cobertura, "pct_activadas": r.pct_activadas,
+        "version": r.version, "base": "ventas" if v4 else "netas", "ventas": (r.ventas or 0) if v4 else r.netas,
+        "sph": r.sph, "horas": r.horas, "agentes": r.agentes, "vinculados": r.vinculados, "pct_cobertura": r.pct_cobertura,
         "ventas_corte": r.ventas_corte.isoformat() if r.ventas_corte else None,
     }
 
@@ -122,30 +128,10 @@ def _etiqueta(desde: date, hasta: date) -> str:
 
 
 # ------------------------------------------------------------------ fuentes del período
-async def _informes_productividad(db: AsyncSession, desde: date, hasta: date) -> dict[date, ProdInforme]:
-    """Por día: el publicado; si no hay, el borrador más reciente."""
-    rows = (await db.execute(select(ProdInforme).where(
-        ProdInforme.fecha >= desde, ProdInforme.fecha <= hasta,
-        ProdInforme.status.in_([PROD_PUBLICADO, PROD_BORRADOR]),
-    ))).scalars().all()
-    out: dict[date, ProdInforme] = {}
-    for r in sorted(rows, key=lambda r: (r.status == PROD_PUBLICADO, _utc(r.generated_at) or datetime.min.replace(tzinfo=timezone.utc))):
-        out[r.fecha] = r  # queda el mejor: publicado > generado más tarde
-    return out
-
-
-async def _informes_ventas(db: AsyncSession, periodos: set[str]) -> dict[str, VentasNetasReport]:
-    """Por mes: el publicado; si no hay, el borrador con el corte más reciente."""
-    if not periodos:
-        return {}
-    rows = (await db.execute(select(VentasNetasReport).where(
-        VentasNetasReport.periodo.in_(periodos), VentasNetasReport.status.in_([VN_PUBLICADO, VN_BORRADOR]),
-    ))).scalars().all()
-    out: dict[str, VentasNetasReport] = {}
-    for r in sorted(rows, key=lambda r: (r.status == VN_PUBLICADO, r.fecha_dato or date.min,
-                                         _utc(r.generated_at) or datetime.min.replace(tzinfo=timezone.utc))):
-        out[r.periodo] = r  # queda el mejor: publicado > corte más nuevo > generado más tarde
-    return out
+# Por día, el informe de Productividad que llega más lejos en el día; por mes, el de Ventas Netas de corte
+# más nuevo (publicado o no; a igual corte, el publicado). Lo mismo que lee Supervisión (`..fuentes`).
+_informes_productividad = informes_productividad
+_informes_ventas = informes_ventas
 
 
 def _desc_prod(r: ProdInforme) -> dict[str, Any]:
@@ -154,8 +140,9 @@ def _desc_prod(r: ProdInforme) -> dict[str, Any]:
 
 
 def _desc_ventas(r: VentasNetasReport) -> dict[str, Any]:
+    """Con los datos del informe cargados: `ventas` son las del mes que cuentan (hoja de productividad)."""
     return {"id": r.id, "status": r.status, "periodo": r.periodo,
-            "fecha_dato": r.fecha_dato.isoformat() if r.fecha_dato else None, "netas": r.netas,
+            "fecha_dato": r.fecha_dato.isoformat() if r.fecha_dato else None, "ventas": ventas_del_mes(r.data or {}),
             "generated_at": _iso(r.generated_at)}
 
 
@@ -194,6 +181,10 @@ class Fuentes:
         return (f"El corte de ventas de {nombre_mes(v.periodo)} es del {v.fecha_dato:%d/%m}: todavía no trae las ventas de los "
                 f"días con horas ({', '.join(f'{d:%d/%m}' for d in con_horas[:6])}). Subí un corte de ventas posterior.")
 
+    def meses_ventas(self) -> list[str]:
+        """Los informes de Ventas Netas que entran en el cálculo: los del mes de cada día que cuenta."""
+        return sorted({_mes(d) for d in self.cubiertos})
+
     def descripcion(self) -> dict[str, Any]:
         return {
             "productividad": [_desc_prod(self.prods[d]) for d in sorted(self.prods)],
@@ -208,7 +199,9 @@ async def _fuentes(db: AsyncSession, desde: date, hasta: date) -> Fuentes:
 
 
 async def _manuales(db: AsyncSession) -> dict[str, str | None]:
-    return {v.clave: v.vendedor for v in (await db.execute(select(SphVinculo))).scalars().all()}
+    """Lo que decidió una persona en el maestro de operadores: agente → vendedor (None = no vende)."""
+    return {o.agente_clave: o.vendedor for o in await maestro.todos(db)
+            if o.agente_clave and (o.cruce == "descartado" or (o.cruce == "manual" and o.vendedor))}
 
 
 def _validar_periodo(desde: date | None, hasta: date | None) -> tuple[date, date]:
@@ -228,14 +221,17 @@ async def _calcular_borrador(db: AsyncSession, desde: date, hasta: date, user_id
     motivo = f.motivo()
     if motivo:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "sin_fuente", "message": motivo})
-    meses = {_mes(d) for d in f.cubiertos}
+    meses = f.meses_ventas()
     usados = {"productividad": [_desc_prod(f.prods[d]) for d in f.cubiertos],
-              "ventas": [_desc_ventas(f.ventas[m]) for m in sorted(meses)]}
+              "ventas": [_desc_ventas(f.ventas[m]) for m in meses]}
     produccion = {d: f.prods[d].data or {} for d in f.cubiertos}
     ventas = {m: f.ventas[m].data or {} for m in meses}
-    try:  # el cruce por nombre compara cientos de pares: fuera del loop del servidor
-        data = await asyncio.to_thread(calcular_periodo, desde, hasta, produccion, ventas, usados, await _manuales(db),
-                                       None, f.limite)
+    for m in sorted({_mes(d) for d in f.cubiertos}):  # el cruce de nombres es el del maestro de operadores (fuente única)
+        await maestro.detectar(db, m)
+    fijos = maestro.vinculos_sph(await maestro.todos(db))
+    try:  # el cálculo recorre cientos de filas por día: fuera del loop del servidor
+        data = await asyncio.to_thread(partial(calcular_periodo, desde, hasta, produccion, ventas, usados,
+                                               hasta_datos=f.limite, fijos=fijos))
     except DatosIncompletos as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "datos_incompletos", "message": str(exc)}) from exc
     borrador = (await db.execute(
@@ -289,14 +285,9 @@ async def ver_fuentes(desde: Optional[date] = Query(None), hasta: Optional[date]
 async def dias_disponibles(user: CurrentUser = Depends(require_gestion), db: AsyncSession = Depends(get_db)) -> dict:
     """Días recientes con informe de Productividad: si las ventas los cubren y si ya tienen SPH del día."""
     desde = date.today() - timedelta(days=DIAS_DISPONIBLES)
-    prod = (await db.execute(select(ProdInforme.fecha, ProdInforme.status).where(
-        ProdInforme.fecha >= desde, ProdInforme.status.in_([PROD_PUBLICADO, PROD_BORRADOR]),
-    ))).all()
-    estado_prod: dict[date, str] = {}
-    for f, s in prod:
-        if estado_prod.get(f) != PROD_PUBLICADO:
-            estado_prod[f] = s
-    ventas = await _informes_ventas(db, {_mes(f) for f in estado_prod})
+    # El estado del informe de llamadas que usaría el SPH de cada día (el que llega más lejos en el día).
+    estado_prod = {f: r.status for f, r in (await _informes_productividad(db, desde, date.today(), con_datos=False)).items()}
+    ventas = await _informes_ventas(db, {_mes(f) for f in estado_prod}, con_datos=False)
     sph = (await db.execute(select(SphInforme.fecha, SphInforme.status, SphInforme.id).where(
         SphInforme.fecha >= desde, func.coalesce(SphInforme.hasta, SphInforme.fecha) == SphInforme.fecha,
         SphInforme.status.in_([ESTADO_BORRADOR, ESTADO_PUBLICADO]),
@@ -334,7 +325,7 @@ async def calcular_sph(payload: CalcularPayload, request: Request, user: Current
         await db.refresh(informe)
     await record_action(db, user_id=user.id, action="sph_calculado", resource_type="sph_informe",
                         resource_id=informe.id, ip=client_ip(request),
-                        extra={"desde": desde.isoformat(), "hasta": hasta.isoformat(), "sph": informe.sph, "netas": informe.netas})
+                        extra={"desde": desde.isoformat(), "hasta": hasta.isoformat(), "sph": informe.sph, "ventas": informe.ventas})
     return {"informe": _resumen(informe)}
 
 
@@ -362,7 +353,7 @@ async def ver_informe(informe_id: str, request: Request, user: CurrentUser = Dep
         ventas_usadas = {(x.get("id"), x.get("fecha_dato")) for x in _lista(usadas.get("ventas"))}
         prods_hoy = {f.prods[d].id for d in f.cubiertos}
         ventas_hoy = {(f.ventas[m].id, f.ventas[m].fecha_dato and f.ventas[m].fecha_dato.isoformat())
-                      for m in {_mes(d) for d in f.cubiertos}}
+                      for m in f.meses_ventas()}
         out["fuentes_nuevas"] = [nombre for nombre, nuevas in (("Productividad", prods_hoy - prods_usados),
                                                                 ("Ventas Netas", ventas_hoy - ventas_usadas)) if nuevas]
         out["vinculos"] = await _manuales(db)
@@ -463,13 +454,17 @@ async def eliminar_informe(informe_id: str, request: Request, user: CurrentUser 
     return {"status": "deleted"}
 
 
-# ------------------------------------------------------------------ vínculos manuales
+# ------------------------------------------------------------------ vínculos manuales (maestro de operadores)
 @router.get("/vinculos")
 async def listar_vinculos(user: CurrentUser = Depends(require_gestion), db: AsyncSession = Depends(get_db)) -> dict:
-    rows = (await db.execute(select(SphVinculo).order_by(SphVinculo.nombre))).scalars().all()
-    nombres = await _nombres(db, {v.updated_by for v in rows})
-    return {"items": [{"clave": v.clave, "nombre": v.nombre, "vendedor": v.vendedor, "updated_at": _iso(v.updated_at),
-                       "updated_by": nombres.get(v.updated_by or "", v.updated_by)} for v in rows]}
+    """Los vínculos que decidió una persona (en el SPH o en Supervisión → Operadores)."""
+    rows = [o for o in await maestro.todos(db)
+            if o.agente_clave and (o.cruce == "descartado" or (o.cruce == "manual" and o.vendedor))]
+    rows.sort(key=lambda o: (o.agente_nombre or o.nombre or "").lower())
+    nombres = await _nombres(db, {o.updated_by for o in rows})
+    return {"items": [{"clave": o.agente_clave, "nombre": o.agente_nombre or o.nombre, "vendedor": o.vendedor,
+                       "updated_at": _iso(o.updated_at), "updated_by": nombres.get(o.updated_by or "", o.updated_by)}
+                      for o in rows]}
 
 
 class VinculoPayload(BaseModel):
@@ -482,31 +477,46 @@ class VinculoPayload(BaseModel):
 @router.put("/vinculos")
 async def guardar_vinculo(payload: VinculoPayload, request: Request, user: CurrentUser = Depends(require_gestion),
                           db: AsyncSession = Depends(get_db)) -> dict:
-    """vincular → este agente es ese vendedor · descartar → no es ninguno · automatico → vuelve al cruce por nombre."""
+    """vincular → este agente es ese vendedor · descartar → no es ninguno · automatico → vuelve al cruce por nombre.
+    Se guarda en el maestro de operadores: vale para el SPH y para Supervisión."""
     clave, vendedor = payload.clave.strip(), (payload.vendedor or "").strip() or None
-    actual = await db.get(SphVinculo, clave)
-    antes = actual.vendedor if actual else "automatico"
-    if payload.accion == "automatico":
-        if actual:
-            await db.delete(actual)
-    else:
+    if payload.accion == "vincular":
+        if not vendedor:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Elegí el vendedor a vincular")
+        if vendedor == SIN_VENDEDOR:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "«SIN VENDEDOR» agrupa ventas sin POS: no es una persona para vincular")
+    ops = await maestro.todos(db)
+    a_op = next((o for o in ops if o.agente_clave == clave), None)
+    antes = "automatico" if not a_op or a_op.cruce not in ("manual", "descartado") else a_op.vendedor
+    if not a_op:
+        a_op = Operador(operativa=OPERATIVA_SLUG, agente_clave=clave, agente_nombre=payload.nombre.strip(),
+                        nombre=payload.nombre.strip(), cruce="sin_cruce", candidatos=[])
+        db.add(a_op)
+        await db.flush()
+    ahora = datetime.now(timezone.utc)
+    try:
         if payload.accion == "vincular":
-            if not vendedor:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Elegí el vendedor a vincular")
-            if vendedor == SIN_VENDEDOR:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, "«SIN VENDEDOR» agrupa ventas sin POS: no es una persona para vincular")
-            otro = (await db.execute(select(SphVinculo).where(
-                SphVinculo.vendedor == vendedor, SphVinculo.clave != clave))).scalars().first()
-            if otro:
-                raise HTTPException(status.HTTP_409_CONFLICT, f"{vendedor} ya está vinculado a {otro.nombre}. Quitá ese vínculo primero.")
+            v_op = next((o for o in ops if o.vendedor == vendedor), None)
+            if not v_op:
+                v_op = Operador(operativa=OPERATIVA_SLUG, vendedor=vendedor, nombre=vendedor.title(), cruce="sin_agente", candidatos=[])
+                db.add(v_op)
+                await db.flush()
+            await maestro.vincular(db, a_op, v_op, user.id)
+        elif payload.accion == "descartar":
+            if a_op.vendedor:
+                await maestro.separar(db, a_op, user.id)
+            a_op.cruce, a_op.candidatos, a_op.updated_at, a_op.updated_by = "descartado", [], ahora, user.id
         else:
-            vendedor = None
-        if not actual:
-            actual = SphVinculo(clave=clave)
-            db.add(actual)
-        actual.nombre, actual.vendedor = payload.nombre.strip(), vendedor
-        actual.updated_at, actual.updated_by = datetime.now(timezone.utc), user.id
+            if a_op.cruce == "manual" and a_op.vendedor:
+                await maestro.separar(db, a_op, user.id)
+            if a_op.cruce in ("manual", "descartado") or not a_op.vendedor:
+                a_op.cruce, a_op.updated_at, a_op.updated_by = "sin_cruce", ahora, user.id
+                await maestro.cruzar_pendientes(db)
+    except maestro.VinculoInvalido as exc:
+        await db.rollback()
+        codigo = status.HTTP_409_CONFLICT if "ya está vinculado" in str(exc) else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(codigo, str(exc)) from exc
     await db.commit()
-    await record_action(db, user_id=user.id, action="sph_vinculo", resource_type="sph_vinculo", resource_id=clave,
+    await record_action(db, user_id=user.id, action="sph_vinculo", resource_type="operador", resource_id=clave,
                         ip=client_ip(request), extra={"agente": clave, "accion": payload.accion, "antes": antes, "vendedor": vendedor})
     return {"clave": clave, "accion": payload.accion, "vendedor": vendedor}

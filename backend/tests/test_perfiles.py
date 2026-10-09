@@ -57,7 +57,7 @@ def _set_perms(client, admin, role, perms):
 def test_perfiles_sembrados_con_defaults(client, admin):
     body = client.get("/api/v1/perfiles", headers=admin).json()
     slugs = [p["slug"] for p in body["perfiles"]]
-    assert slugs == ["sub_gerente", "controller", "coordinador", "supervisor", "analista", "cliente"]
+    assert slugs == ["sub_gerente", "controller", "coordinador", "supervisor", "analista", "auditor", "cliente"]
     assert body["operativas"][0]["slug"] == TC
     cliente = next(p for p in body["perfiles"] if p["slug"] == "cliente")
     assert cliente["permissions"] == sorted(DEFAULT_PERMISSIONS["cliente"])
@@ -73,7 +73,7 @@ def test_superadmin_ve_todo(client, admin):
 
 
 def test_crear_usuarios_de_cada_perfil(client, admin):
-    for role in ("sub_gerente", "controller", "coordinador", "supervisor", "analista", "cliente"):
+    for role in ("sub_gerente", "controller", "coordinador", "supervisor", "analista", "auditor", "cliente"):
         _new_user(client, admin, role, [TC])
     r = client.post("/api/v1/users", headers=admin, json={
         "email": "x@voicenter.com.py", "password": "Clave1234!", "full_name": "X", "role": "gerente",
@@ -133,3 +133,39 @@ def test_cambio_de_permisos_queda_auditado(client, admin):
     rows = client.get("/api/v1/audit?action=update_profile_permissions", headers=admin).json()
     assert rows and rows[0]["resource_id"] == "cliente"
     assert rows[0]["extra"]["quitados"] == [f"{TC}.ventas_netas"]
+
+
+def test_supervisor_solo_entra_a_su_portal(client, admin):
+    body = client.get("/api/v1/perfiles", headers=admin).json()
+    sup = next(p for p in body["perfiles"] if p["slug"] == "supervisor")
+    assert sup["solo_portal"] is True and sup["asignables"] == [f"{TC}.portal_supervisor", f"{TC}.ver"]
+    assert sup["permissions"] == [f"{TC}.portal_supervisor", f"{TC}.ver"]
+    coord = next(p for p in body["perfiles"] if p["slug"] == "coordinador")
+    assert coord["solo_portal"] is False and f"{TC}.portal_supervisor" not in coord["asignables"]
+
+    # La matriz no deja darle al supervisor nada fuera de su portal (ni al resto, el portal).
+    r = client.put("/api/v1/perfiles/supervisor", headers=admin, json={"permissions": [f"{TC}.ver", f"{TC}.productividad"]})
+    assert r.status_code == 400 and "solo entra a su portal" in r.json()["detail"]
+    r = client.put("/api/v1/perfiles/coordinador", headers=admin, json={"permissions": [f"{TC}.ver", f"{TC}.portal_supervisor"]})
+    assert r.status_code == 400 and "Supervisor" in r.json()["detail"]
+
+    # Un supervisor ve la operativa con una sola utilidad además del acceso: su portal.
+    _, tok = _new_user(client, admin, "supervisor", [TC])
+    me = client.get("/api/v1/auth/me", headers=tok).json()
+    assert sorted(me["permissions"]) == [f"{TC}.portal_supervisor", f"{TC}.ver"]
+    ut = [u["key"] for u in client.get("/api/v1/televentas-claro", headers=tok).json()["utilidades"]]
+    assert ut == ["ver", "portal_supervisor"]
+    assert client.get("/api/v1/televentas-claro/productividad/informes", headers=tok).status_code == 403
+    assert client.get("/api/v1/televentas-claro/supervision/resumen", headers=tok).status_code == 403
+    assert client.get("/api/v1/televentas-claro/supervision/portal", headers=tok).status_code == 200
+
+
+def test_auditor_ve_supervision_sin_gestionar(client, admin):
+    _, tok = _new_user(client, admin, "auditor", [TC])
+    perms = set(client.get("/api/v1/auth/me", headers=tok).json()["permissions"])
+    assert {f"{TC}.supervision", f"{TC}.auditoria", f"{TC}.ventas_netas"} <= perms
+    assert f"{TC}.supervision_gestion" not in perms and f"{TC}.portal_supervisor" not in perms
+    assert client.get("/api/v1/televentas-claro/supervision/resumen", headers=tok).status_code == 200
+    r = client.put("/api/v1/televentas-claro/supervision/objetivos", headers=tok,
+                   json={"periodo": "2026-10", "supervisor_id": "x", "pospago": 10})
+    assert r.status_code == 403

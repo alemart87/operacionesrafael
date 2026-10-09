@@ -18,6 +18,7 @@ from .core.database import AsyncSessionLocal, Base, engine
 from .core.logging import configure_logging, logger
 from .core.operativas import filter_permissions
 from .core.perfiles import DEFAULT_PERMISSIONS, PERFILES
+from .models.migracion import MigracionDatos
 from .models.profile import Profile
 
 
@@ -51,6 +52,9 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS tipo VARCHAR(10) DEFAULT 'dia'",
     "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS dias INTEGER DEFAULT 1",
     "UPDATE sph_informes SET hasta = fecha WHERE hasta IS NULL",
+    # v0.7 · SPH con las ventas del día de la hoja de productividad (no las netas)
+    "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS version INTEGER",
+    "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS ventas INTEGER",
 ]
 
 
@@ -102,6 +106,28 @@ async def _seed_profiles() -> int:
                 created += 1
         await db.commit()
     return created
+
+
+async def _run_data_migrations() -> list[str]:
+    """Migraciones de datos de una sola vez (ver models/migracion.py): las pendientes, en orden."""
+    from sqlalchemy import select
+
+    hechas: list[str] = []
+    async with AsyncSessionLocal() as db:
+        aplicadas = {i for (i,) in (await db.execute(select(MigracionDatos.id))).all()}
+        for mid, fn in modulos_operativas.MIGRACIONES_DATOS:
+            if mid in aplicadas:
+                continue
+            try:
+                resultado = await fn(db)
+                db.add(MigracionDatos(id=mid, resultado=resultado or {}))
+                await db.commit()
+                hechas.append(mid)
+                logger.info(f"Boot: migración de datos {mid} → {resultado}")
+            except Exception as exc:  # noqa: BLE001 — se reintenta en el próximo arranque
+                await db.rollback()
+                logger.exception(f"Boot: migración de datos {mid} falló ({exc})")
+    return hechas
 
 
 def _check_upload_dir() -> None:
@@ -161,6 +187,7 @@ async def lifespan(app: FastAPI):
     result = await _run_migrations()
     logger.info(f"Boot: migrations ok={len(result['ok'])} skipped={len(result['skipped'])}")
     logger.info(f"Boot: perfiles sembrados={await _seed_profiles()}")
+    logger.info(f"Boot: migraciones de datos aplicadas={await _run_data_migrations()}")
     _check_upload_dir()
     if settings.env == "production" and settings.secret_key in ("change-me", ""):
         logger.error("SECRET_KEY no configurada en producción: los tokens son inseguros.")

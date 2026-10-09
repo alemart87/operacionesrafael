@@ -186,7 +186,8 @@ export interface Productividad {
   por_zona: (FilaProd & { zona: string })[];
   por_departamento: (FilaProd & { departamento: string; zona: string })[];
   por_ciudad: (FilaProd & { ciudad: string; zona: string })[];
-  por_vendedor: (FilaProd & { vendedor: string; subcanal: string | null; por_legajo: number })[];
+  /** `por_linea`: cargas sin POS atribuidas por su línea ya activada (desde el análisis v9). */
+  por_vendedor: (FilaProd & { vendedor: string; subcanal: string | null; por_legajo: number; por_linea?: number })[];
   riesgo_uso?: { riesgo: string; cargas: number; con_uso: number; sin_uso: number; pct_sin_uso: number }[];
   detalle_cargas?: DetalleCarga[];
 }
@@ -206,7 +207,12 @@ export interface DetalleCarga {
   departamento: string | null;
   ciudad: string | null;
   vendedor: string;
-  atribucion: "pos" | "legajo" | "sin_atribuir";
+  /** Subcanal del vendedor (desde el análisis v9). */
+  subcanal?: string | null;
+  /** pos: el de la carga · linea: el de su línea ya activada (mismo SDS) · legajo: el único POS del legajo que cargó. */
+  atribucion: "pos" | "linea" | "legajo" | "sin_atribuir";
+  /** Figura finalizada pero se canceló administrativamente (no se activa). */
+  cancelada?: boolean;
   legajo: string | null;
   /** ESPERA: activada hace menos de 3 días al corte, todavía no se evalúa (no es alerta). */
   uso: "SI" | "NO" | "ESPERA" | null;

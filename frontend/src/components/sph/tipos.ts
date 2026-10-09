@@ -11,6 +11,9 @@ export const VINCULADOS: Nivel[] = ["exacto", "manual", "probable"];
 /** Período del SPH: un día, una semana (lunes a domingo), un mes o un rango libre. */
 export type TipoPeriodo = "dia" | "semana" | "mes" | "rango";
 
+/** Qué ventas usa el SPH: desde la v4, las del día de la hoja de productividad; antes, las netas (líneas activadas). */
+export type BaseSph = "ventas" | "netas";
+
 export interface AgenteSph {
   clave: string;
   nombre: string;
@@ -29,40 +32,48 @@ export interface AgenteSph {
   conversacion: number;
   modo: Modo | null;
   turno: Turno | null;
-  /** null = sin vínculo (no se sabe cuántas vendió). */
-  netas: number | null;
-  /** Netas de los días con sesión abierta (no cuentan). */
-  netas_sesion_abierta: number;
+  /** Ventas que cuentan. null = sin vínculo (no se sabe cuántas vendió). */
+  ventas: number | null;
+  /** Ventas de los días con sesión abierta (no cuentan). */
+  ventas_sesion_abierta: number;
   productos: Record<string, number>;
-  cargadas: number | null;
+  /** Cargas del vendedor por estado (también las que no cuentan). Vacío en los SPH con netas. */
+  estados: Record<string, number>;
   sph: number | null;
-  sph_cargadas: number | null;
   en_ranking: boolean;
 }
 
-export interface VentaSinAgente { vendedor: string; subcanal: string | null; netas: number; cargadas: number }
-export interface VendedorPeriodo { vendedor: string; subcanal: string | null; netas_mes: number }
+export interface VentaSinAgente { vendedor: string; subcanal: string | null; ventas: number; estados: Record<string, number> }
+export interface VendedorPeriodo { vendedor: string; subcanal: string | null; ventas_mes: number }
+/** Ventas cargadas sin POS por un legajo que carga para varios vendedores: no se sabe quién vendió. */
+export interface SinVendedor { cargado_por: string; ventas: number }
 
 export interface FuenteProd {
   id: string; status: EstadoInforme; fecha: string; corte_final: string | null; agentes: number; generated_at: string | null;
 }
 export interface FuenteVentas {
-  id: string; status: EstadoInforme; periodo: string; fecha_dato: string | null; netas: number; generated_at: string | null;
+  id: string; status: EstadoInforme; periodo: string; fecha_dato: string | null;
+  /** Ventas del mes que cuentan (hoja de productividad). `netas`: las de los SPH anteriores. */
+  ventas?: number | null; netas?: number; generated_at: string | null;
 }
 
 export interface KpisSph {
   sph: number | null;
-  netas: number;
-  netas_operacion: number;
-  netas_sesion_abierta: number;
-  netas_vinculadas: number;
-  netas_sin_agente: number;
+  ventas: number;
+  ventas_operacion: number;
+  ventas_sesion_abierta: number;
+  ventas_vinculadas: number;
+  ventas_sin_agente: number;
+  ventas_sin_vendedor: number;
   horas: number;
   horas_vinculadas: number;
   sph_vinculados: number | null;
-  cargadas: number;
-  sph_cargadas: number | null;
-  pct_activadas: number | null;
+  /** Cargas por estado (también las rechazadas y canceladas, que no cuentan). */
+  estados: Record<string, number>;
+  finalizadas: number;
+  pendientes: number;
+  no_cuentan: number;
+  pct_finalizadas: number | null;
   agentes: number;
   agentes_validos: number;
   sesiones_abiertas: number;
@@ -72,29 +83,38 @@ export interface KpisSph {
   pct_cobertura: number | null;
   pct_cobertura_horas: number | null;
   productos: Record<string, number>;
-  netas_sin_fecha_mes: number;
   dias: number;
   dias_cubiertos: number;
   agentes_por_dia: number;
+  /** Solo los SPH con netas: cargadas del día (sin rechazadas) y cuántas ya activaron. */
+  cargadas?: number;
+  pct_activadas?: number | null;
 }
 
-export interface SerieDia { fecha: string; netas: number; netas_operacion: number; horas: number; sph: number | null; cargadas: number; agentes: number }
+export interface SerieDia {
+  fecha: string; ventas: number; ventas_operacion: number; horas: number; sph: number | null;
+  estados: Record<string, number>; agentes: number;
+  /** Solo los SPH con netas. */
+  cargadas?: number;
+}
 export interface CoberturaDia { fecha: string; horas: boolean; ventas: boolean; productividad?: EstadoInforme | null }
 
 export interface DatosSph {
   version: number;
+  base: BaseSph;
   fecha: string;
   desde: string;
   hasta: string;
   tipo: TipoPeriodo;
-  fuentes: { productividad: FuenteProd[]; ventas: FuenteVentas[]; dias_despues: number | null };
-  parametros: { min_horas_ranking: number; dias_maduracion: number };
+  fuentes: { productividad: FuenteProd[]; ventas: FuenteVentas[]; dias_despues?: number | null };
+  parametros: { min_horas_ranking: number };
   kpis: KpisSph;
   serie: SerieDia[];
   cobertura: CoberturaDia[];
   agentes: AgenteSph[];
   ventas_sin_agente: VentaSinAgente[];
-  por_subcanal: { subcanal: string; netas: number }[];
+  sin_vendedor: SinVendedor[];
+  por_subcanal: { subcanal: string; ventas: number }[];
   vendedores: VendedorPeriodo[];
   avisos: string[];
 }
@@ -114,13 +134,16 @@ export interface InformeSphResumen {
   published_by: string | null;
   replaced_at: string | null;
   replaced_by_report_id: string | null;
+  /** Versión del cálculo (vacía: anterior a la v4, con netas). */
+  version: number | null;
+  base: BaseSph;
+  /** Las ventas que usó el SPH: del día (v4) o netas (antes). */
+  ventas: number;
   sph: number | null;
-  netas: number;
   horas: number;
   agentes: number;
   vinculados: number;
   pct_cobertura: number | null;
-  pct_activadas: number | null;
   ventas_corte: string | null;
 }
 
@@ -216,22 +239,76 @@ export function periodoCorto(desde: string, hasta: string, tipo: TipoPeriodo): s
 }
 
 /**
- * Los SPH calculados antes de los períodos (v1) traían las fuentes sueltas y el tiempo de las sesiones
- * abiertas dentro de `login`: se llevan a la forma actual para mostrarlos igual.
+ * Lleva los SPH anteriores a la forma actual para mostrarlos igual:
+ * - v1 (antes de los períodos): las fuentes venían sueltas y el tiempo de las sesiones abiertas dentro de `login`.
+ * - v1 a v3: se calcularon con las netas (líneas activadas); quedan con `base: "netas"` para nombrarlas así.
  */
 export function normalizar(d: DatosSph): DatosSph {
-  if ((d.version ?? 1) >= 2) return d;
-  const lista = <T,>(x: T | T[] | null | undefined): T[] => (Array.isArray(x) ? x : x ? [x] : []);
-  const f = d.fuentes as any;
+  if ((d.version ?? 1) >= 4) return { ...d, base: d.base ?? "ventas", sin_vendedor: d.sin_vendedor ?? [] };
+  const x = d as any;
+  const lista = <T,>(v: T | T[] | null | undefined): T[] => (Array.isArray(v) ? v : v ? [v] : []);
+  const v1 = (d.version ?? 1) < 2;
+  const k = x.kpis;
+  const agentes: AgenteSph[] = (x.agentes as any[]).map((a) => {
+    const base = { ...a, ventas: a.netas, ventas_sesion_abierta: a.netas_sesion_abierta ?? 0, estados: {} };
+    if (!v1) return base;
+    return a.sesion_abierta
+      ? { ...base, login_abierta: a.login, login: 0, dias: 1, dias_sesion_abierta: 1, ventas_sesion_abierta: a.netas ?? 0, ventas: a.vendedor ? 0 : null }
+      : { ...base, login_abierta: 0, dias: 1, dias_sesion_abierta: 0, ventas_sesion_abierta: 0 };
+  });
   return {
     ...d,
-    desde: d.fecha, hasta: d.fecha, tipo: "dia", serie: [], cobertura: [],
-    fuentes: { ...f, productividad: lista(f.productividad), ventas: lista(f.ventas) },
-    kpis: { ...d.kpis, dias: 1, dias_cubiertos: 1, agentes_por_dia: d.kpis.agentes },
-    agentes: d.agentes.map((a) => a.sesion_abierta
-      ? { ...a, login_abierta: a.login, login: 0, dias: 1, dias_sesion_abierta: 1, netas_sesion_abierta: a.netas ?? 0, netas: a.vendedor ? 0 : null }
-      : { ...a, login_abierta: 0, dias: 1, dias_sesion_abierta: 0, netas_sesion_abierta: 0 }),
+    base: "netas",
+    ...(v1 ? { desde: d.fecha, hasta: d.fecha, tipo: "dia" as TipoPeriodo } : {}),
+    fuentes: { ...x.fuentes, productividad: lista(x.fuentes.productividad), ventas: lista(x.fuentes.ventas) },
+    kpis: {
+      ...k,
+      ventas: k.netas, ventas_operacion: k.netas_operacion ?? k.netas, ventas_sesion_abierta: k.netas_sesion_abierta ?? 0,
+      ventas_vinculadas: k.netas_vinculadas ?? 0, ventas_sin_agente: k.netas_sin_agente ?? 0, ventas_sin_vendedor: 0,
+      estados: {}, finalizadas: 0, pendientes: 0, no_cuentan: 0, pct_finalizadas: null,
+      ...(v1 ? { dias: 1, dias_cubiertos: 1, agentes_por_dia: k.agentes } : {}),
+    },
+    serie: v1 ? [] : (x.serie as any[]).map((s) => ({ ...s, ventas: s.netas, ventas_operacion: s.netas_operacion ?? s.netas, estados: {} })),
+    cobertura: v1 ? [] : d.cobertura,
+    agentes,
+    ventas_sin_agente: (x.ventas_sin_agente as any[]).map((v) => ({ ...v, ventas: v.netas, estados: {} })),
+    sin_vendedor: [],
+    por_subcanal: (x.por_subcanal ?? []).map((p: any) => ({ subcanal: p.subcanal, ventas: p.netas })),
+    vendedores: (x.vendedores ?? []).map((v: any) => ({ ...v, ventas_mes: v.netas_mes ?? 0 })),
   };
+}
+
+// ------------------------------------------------------------------ ventas y estados
+/** Cómo se nombra lo que cuenta el SPH: ventas del día (v4) o netas (los anteriores). */
+export const UNIDAD: Record<BaseSph, { una: string; varias: string; Varias: string }> = {
+  ventas: { una: "venta", varias: "ventas", Varias: "Ventas" },
+  netas: { una: "neta", varias: "netas", Varias: "Netas" },
+};
+
+/** Estados de la hoja de productividad, en orden. Las rechazadas y las canceladas no cuentan como venta. */
+type EstadoVenta = { key: string; label: string; una: string; plural: string; color: string; cuenta: boolean };
+export const ESTADOS_VENTA: EstadoVenta[] = [
+  { key: "Vta_Finalizada", label: "Finalizada", una: "finalizada", plural: "finalizadas", color: "#00B2BF", cuenta: true },
+  { key: "Vta_A_Confirmar", label: "A confirmar", una: "a confirmar", plural: "a confirmar", color: "#F39200", cuenta: true },
+  { key: "Vta_Procesado", label: "Procesado", una: "procesada", plural: "procesadas", color: "#7B3FA0", cuenta: true },
+  { key: "Vta_Rechazada", label: "Rechazada", una: "rechazada", plural: "rechazadas", color: "#E6332A", cuenta: false },
+  { key: "Vta_Cancelada_Adm", label: "Cancelada (adm.)", una: "cancelada", plural: "canceladas", color: "#5B6275", cuenta: false },
+];
+const ESTADO_POR_KEY = new Map(ESTADOS_VENTA.map((e) => [e.key, e]));
+/** Un estado que la hoja trae y el SPH no conoce cuenta como venta (el cálculo lo avisa). */
+export const estadoVenta = (key: string): EstadoVenta => {
+  const conocido = ESTADO_POR_KEY.get(key);
+  if (conocido) return conocido;
+  const texto = key.replace(/^Vta_/, "").replace(/_/g, " ");
+  return { key, label: texto, una: texto.toLowerCase(), plural: texto.toLowerCase(), color: "#9ca3af", cuenta: true };
+};
+
+/** "3 finalizadas · 1 a confirmar" (solo las que cuentan, o solo las que no con `cuentan = false`). */
+export function fmtEstados(estados: Record<string, number> | undefined, cuentan = true): string {
+  return Object.entries(estados ?? {})
+    .filter(([e, v]) => v > 0 && estadoVenta(e).cuenta === cuentan)
+    .map(([e, v]) => `${v.toLocaleString("es-PY")} ${v === 1 ? estadoVenta(e).una : estadoVenta(e).plural}`)
+    .join(" · ");
 }
 
 // ------------------------------------------------------------------ formatos

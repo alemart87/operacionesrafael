@@ -72,9 +72,9 @@ function Informes() {
           <div className="text-[11px] uppercase tracking-wider2 text-brand-slate mb-2">Televentas CLARO</div>
           <h1 className="font-display text-4xl text-brand-ink uppercase leading-tight">SPH estimado</h1>
           <p className="text-sm text-brand-slate mt-2 max-w-3xl">
-            Ventas netas por hora conectada: cruza las horas del informe de <b>Productividad</b> con las netas del informe de{" "}
-            <b>Ventas Netas</b>, por fecha de venta. El SPH de la operación sale de los totales; el de cada asesor es estimado
-            porque el cruce es por nombre.{" "}
+            Ventas por hora conectada: cruza las horas del informe de <b>Productividad</b> con las <b>ventas del día</b> de la hoja
+            de productividad de la planilla de <b>Ventas Netas</b> (las cargadas ese día, finalizadas o pendientes). El SPH de la
+            operación sale de los totales; el de cada asesor es estimado porque el cruce es por nombre.{" "}
             {gestion ? "Calculás un día, una semana, un mes o un rango; lo revisás y publicás uno por período." : "Se muestran los períodos publicados."}
           </p>
         </div>
@@ -105,7 +105,7 @@ function Informes() {
           <Gauge size={28} className="mx-auto text-brand-mist" />
           <p className="text-brand-slate mt-3 max-w-xl mx-auto">
             {gestion
-              ? "Todavía no hay SPH calculados. Necesitás el informe de Productividad del día y el de Ventas Netas de ese mes: con los dos cargados, calculalo."
+              ? "Todavía no hay SPH calculados. Necesitás el informe de Productividad del día y la planilla de Ventas Netas de ese mes con ese día: con los dos cargados, calculalo."
               : "Todavía no hay días publicados."}
           </p>
           {gestion && <button type="button" onClick={() => setCalcular("dia")} className="btn-primary mt-5 inline-flex"><Calculator size={16} /> Calcular SPH</button>}
@@ -137,11 +137,11 @@ function Informes() {
                       <th className="px-5 py-2.5">Período</th>
                       <th className="px-3 py-2.5">Estado</th>
                       <th className="px-3 py-2.5 text-right">SPH</th>
-                      <th className="px-3 py-2.5 text-right">Netas</th>
+                      <th className="px-3 py-2.5 text-right" title="Ventas que cuentan (los SPH anteriores, netas)">Ventas</th>
                       <th className="px-3 py-2.5 text-right" title="Días que cuentan: con horas y ventas al corte">Días</th>
                       <th className="px-3 py-2.5 text-right">Horas</th>
                       <th className="px-3 py-2.5 text-right">Asesores vinculados</th>
-                      <th className="px-3 py-2.5 text-right">Netas con asesor</th>
+                      <th className="px-3 py-2.5 text-right">Ventas con asesor</th>
                       <th className="px-3 py-2.5">Corte de ventas</th>
                       <th className="px-5 py-2.5 text-right">Acciones</th>
                     </tr>
@@ -159,9 +159,15 @@ function Informes() {
                         </td>
                         <td className="px-3 py-2.5"><EstadoBadge estado={r.status} /></td>
                         <td className="px-3 py-2.5 text-right tabular-nums font-display text-lg text-brand-ink">{fmtSph(r.sph)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{n(r.netas)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap">
+                          {n(r.ventas)}
+                          {r.base === "netas" && (
+                            <span title="Calculado con las netas (método anterior): recalculalo para usar las ventas del día"
+                              className="ml-1.5 align-middle rounded border border-brand-orange/40 bg-brand-orange/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wider2 text-[#8A5200]">netas</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.dias)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{r.horas.toLocaleString("es-PY", { maximumFractionDigits: 1 })} h</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">{r.horas.toLocaleString("es-PY", { maximumFractionDigits: 1 })} h</td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.vinculados)} de {n(r.agentes)}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{pct(r.pct_cobertura)}</td>
                         <td className="px-3 py-2.5 text-xs capitalize">{r.ventas_corte ? fechaCorta(r.ventas_corte) : "—"}</td>

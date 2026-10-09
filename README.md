@@ -56,14 +56,17 @@ operacionesrafaelmartinez/
 │   │   ├── api/
 │   │   │   ├── deps.py          # CurrentUser, require_superadmin, require_perm
 │   │   │   └── v1/              # auth · users · perfiles · audit · operativas (plataforma)
-│   │   ├── models/              # User, Profile, AuditLog, Agente (plataforma)
+│   │   ├── models/              # User, Profile, AuditLog, Agente, MigracionDatos (plataforma)
 │   │   ├── schemas/             # Pydantic (plataforma)
 │   │   ├── jobs/                # queue.py (cola genérica) · isolated.py (subproceso aislado)
 │   │   ├── services/            # audit · agent (motor del agente IA, compartido)
 │   │   └── operativas/          # código de cada operativa (ROUTERS + WORKERS)
 │   │       └── televentas_claro/
 │   │           ├── router.py    # portada de la operativa
+│   │           ├── fuentes.py   # qué informe de Productividad / Ventas Netas vale cada día y cada mes
 │   │           ├── ventas_netas/ # submódulo: api · models · schemas · parser · analyzer · exports · jobs
+│   │           ├── sph/         # submódulo SPH estimado: api · models · analyzer
+│   │           ├── supervision/ # submódulo Supervisión: api · coaching_api · tickets_api · comando_api · models · calculo · scoring · coaching · impacto · alertas · tickets · sla · comando · operadores · migraciones
 │   │           └── facturacion/ # submódulo: api · agent_api · models/ · schemas
 │   │                            #   parser · analyzers/ · agent/ · jobs/
 │   ├── tests/                   # pytest (SQLite)
@@ -86,7 +89,7 @@ sus propias **utilidades**. La primera operativa es **Televentas CLARO**.
 | Concepto | Dónde se define | Quién lo cambia |
 |---|---|---|
 | Operativas y sus utilidades | `backend/app/core/operativas.py` | Desarrollo |
-| Perfiles (Sub gerente, Controller, Coordinador, Supervisor, Analista, Cliente) | `backend/app/core/perfiles.py` | Desarrollo |
+| Perfiles (Sub gerente, Controller, Coordinador, Supervisor, Analista, Auditor, Cliente) | `backend/app/core/perfiles.py` | Desarrollo |
 | Utilidades de cada perfil | Tabla `profiles`, pantalla **Administración → Perfiles** | Superadmin |
 | Perfil y operativas de cada usuario | Pantalla **Administración → Usuarios** | Superadmin |
 
@@ -103,20 +106,33 @@ cambios de permisos se aplican en la siguiente request, sin volver a loguearse.
 
 Utilidades iniciales de Televentas CLARO y permisos sembrados la primera vez
 (el superadmin los ajusta después). Una utilidad nueva aparece desmarcada en los
-perfiles que ya existen: el superadmin la asigna en **Administración → Perfiles**.
+perfiles que ya existen: el superadmin la asigna en **Administración → Perfiles**,
+salvo que venga con una **migración de datos de una sola vez** (`MIGRACIONES_DATOS`,
+tabla `migraciones_datos`): así se dieron las utilidades de Supervisión a los perfiles
+existentes según el modelo definido, y no se repite aunque el superadmin las cambie.
 
-| Utilidad | Sub gerente | Controller | Coordinador | Supervisor | Analista | Cliente |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Acceso a la operativa | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Ventas Netas · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | ✓ / | ✓ / ✓ | |
-| Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | ✓ / | ✓ / ✓ | |
-| SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | ✓ / | ✓ / ✓ | |
-| Auditoría de ventas | ✓ | ✓ | | | ✓ | |
-| Facturación (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
+| Utilidad | Sub gerente | Controller | Coordinador | Supervisor | Analista | Auditor | Cliente |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Acceso a la operativa | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Ventas Netas · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
+| Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
+| SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
+| Supervisión · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | 🔒 | ✓ / | ✓ / | |
+| Supervisión · Tickets de revisión | ✓ | ✓ | ✓ | 🔒 | | ✓ | |
+| Supervisión · Parámetros del modelo (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
+| Operadores · Vincular | ✓ | ✓ | ✓ | 🔒 | ✓ | | |
+| Portal del supervisor (restringida) | 🔒 | 🔒 | 🔒 | ✓ | 🔒 | 🔒 | 🔒 |
+| Auditoría de ventas | ✓ | ✓ | | 🔒 | ✓ | ✓ | |
+| Facturación (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
 
 - **Sub gerente:** todos los módulos, incluida Facturación.
 - **Controller:** todos los módulos menos Facturación; como cualquier usuario, puede
   tener varias operativas asignadas.
+- **Supervisor:** solo entra a **su portal** (`PERFILES_SOLO_PORTAL`): únicamente puede
+  tener las utilidades marcadas `portal` (el acceso y el Portal del supervisor). Al
+  iniciar sesión va directo al portal; cualquier otra ruta lo devuelve ahí.
+- **Auditor:** revisa ventas y casos (Auditoría y Ventas Netas), envía tickets de revisión
+  a los supervisores y ve el tablero de Supervisión en lectura.
 
 Las utilidades con `solo_perfiles` en el catálogo son **restringidas**: además del
 superadmin, solo las pueden tener los perfiles listados (hoy: **Facturación → Sub
@@ -157,7 +173,7 @@ Reglas del análisis (`analyzer.py`):
 - **Uso**: `CONSUMO_DATOS` solo aplica a Pospago. Una línea sin uso es alerta
   de posible PFI. Un vendedor entra en alerta con ≥ 5 líneas y < 50 % en uso.
 - **Vendedor** de una neta = `POS_NOMBRE` sin el prefijo del subcanal; las
-  cargas pendientes no traen POS y se atribuyen por `VENDEDOR_LEGAJO`.
+  cargas pendientes no traen POS: se atribuyen por su línea activada o por `VENDEDOR_LEGAJO`.
 - Suspendidas y portadas que no llegaron a DDI se cuentan y se marcan, no se descartan.
 - **En espera de uso**: una Pospago sin consumo activada hace menos de 3 días al
   corte (`DIAS_ESPERA_USO`) todavía no tuvo tiempo de usarse. No es alerta: no
@@ -175,8 +191,10 @@ Reglas del análisis (`analyzer.py`):
   estados (finalizada, a confirmar, procesado, rechazada), Pospago (CO) vs
   Internet (IF) e IPTV, y **zonas**: Capital y Central por un lado, Interior por
   el otro (`DEPARTAMENTO_FACT`). Las cargas pendientes no traen POS: se
-  atribuyen al vendedor cuando el legajo que cargó siempre carga para un único
-  POS; si no, quedan como "cargado por <legajo>".
+  atribuyen al vendedor de su línea ya activada (el mismo SDS en DDI o
+  PORTABILIDAD); si todavía no se activó, al del legajo que cargó cuando ese
+  legajo siempre carga para un único POS; si no, quedan como "cargado por
+  <legajo>". Las canceladas administrativamente (`SDS_CANC_ADM`) quedan marcadas.
 
 Publicación (`api.py`):
 
@@ -235,43 +253,200 @@ totales acumulados desde las 00:00 hasta la hora del export). Código en
 
 ## Televentas CLARO · SPH estimado
 
-SPH = ventas **netas** por hora conectada. Cruza dos módulos que ya existen, sin subir
-archivos nuevos: las horas de los informes de **Productividad** y las netas del informe
-de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro/sph/`.
+SPH = **ventas del día** por hora conectada. Cruza dos módulos que ya existen, sin subir
+archivos nuevos: las horas de los informes de **Productividad** y la **hoja de
+productividad** (CARGAS) de la planilla de **Ventas Netas** del mes. No usa las netas.
+Código en `backend/app/operativas/televentas_claro/sph/`.
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
 | Informes SPH | `/televentas-claro/sph` | **Calcular SPH** por día, semana, mes o rango (ver qué días cuentan y qué falta subir), filtros por tipo, publicar/despublicar |
-| Informe | `…/sph/informes/{id}` | SPH de la operación, SPH por día (períodos), ranking por asesor, cruce de nombres, netas sin asesor, tabla de asesores (CSV) |
+| Informe | `…/sph/informes/{id}` | SPH de la operación, ventas por estado, SPH por día (períodos), ranking por asesor, cruce de nombres, ventas sin asesor, tabla de asesores (CSV) |
 | Vínculos | `…/sph/vinculos` | Vínculos agente → vendedor corregidos a mano |
 
 - **Períodos:** un día, una semana (lunes a domingo), un mes o un rango de hasta 62
   días. Se suma día por día: **cuenta** cada día con informe de Productividad y que el
   corte de ventas de su mes ya alcanza; los demás se informan (y el mes en curso se
-  puede recalcular a medida que llegan datos). Cada neta se atribuye al asesor solo
+  puede recalcular a medida que llegan datos). Cada venta se atribuye al asesor solo
   los días en que estuvo conectado.
-- **Fuentes:** de cada día, el informe de Productividad publicado; de cada mes, el de
-  Ventas Netas publicado; si no hay, el borrador más reciente (queda avisado).
-- **Netas del día:** líneas DDI cuya **fecha de venta** (de la carga; si falta, la de
-  carga) es ese día. Las netas de un día se siguen activando hasta dos semanas
-  después: el informe muestra cuánto de lo cargado ya activó y avisa si el corte
-  de ventas es cercano.
-- **SPH de la operación:** netas ÷ horas conectadas del equipo, sin sesiones
-  abiertas (ni sus horas ni sus netas). No depende del cruce de nombres.
+- **Fuentes** (`fuentes.py`, las mismas que usa Supervisión): cada planilla de Ventas Netas
+  trae las ventas de todo el mes hasta su corte, así que **la de corte más nuevo reemplaza
+  a las anteriores**, publicada o no (a igual corte, la publicada). De las llamadas, el
+  informe del día que llega más lejos (corte final más tardío; a igual corte, el
+  publicado): un día publicado a mitad de jornada no deja afuera las horas de la tarde.
+  Si se usó un borrador, queda avisado.
+- **Ventas del día:** las cargadas ese día (fecha de alta) en la hoja de productividad
+  de la planilla del mes del día, en el estado en que estén: **finalizadas** (aprobadas),
+  **a confirmar** o **procesadas**. No cuentan las **rechazadas** ni las **canceladas
+  administrativamente** (`SDS_CANC_ADM`: figuran finalizadas pero no se activan). Se cruzan
+  con las horas de **ese mismo día**: las llamadas del 10/10 van contra las ventas del 10/10
+  que trae la planilla subida el 11/10 (corte del 10), aunque todavía no esté publicada.
+  **No se usan las netas** (líneas activadas): se activan días después y llegan en la
+  planilla del mes de la activación, que puede ser otro. Cada planilla nueva trae el
+  último estado de cada venta (una pendiente que se rechaza deja de contar al recalcular):
+  el informe avisa que hay datos más nuevos, muestra las ventas por estado y avisa si la
+  planilla se subió el mismo día que cuenta (puede no traer el día completo).
+- **Vendedor de cada venta:** el POS de la carga; las pendientes no lo traen y se
+  atribuyen al vendedor de su **línea ya activada** (mismo SDS en DDI o PORTABILIDAD) o al
+  del legajo que la cargó si ese legajo carga para un único POS (lo resuelve Ventas Netas).
+  Si no (un legajo que carga para varios vendedores), no se sabe quién la vendió: cuenta
+  en el SPH de la operación y se informa aparte.
+- **SPH de la operación:** ventas ÷ horas conectadas del equipo, sin sesiones
+  abiertas (ni sus horas ni sus ventas). No depende del cruce de nombres.
 - **Cruce de nombres (sin ID común):** el agente de la plataforma («APELLIDO,
   NOMBRE») se vincula con el vendedor del POS de Claro por su primer nombre y un
   apellido. **Exacto** (están todas sus palabras), **probable** (falta alguna,
   cambia la escritura o el apellido puede ser el segundo), **ambiguo** (empate: no
   se adivina) o **sin cruce**. Uno a uno: un vendedor no va a dos agentes.
-- **SPH por asesor (estimado):** netas del vendedor vinculado ÷ horas del agente;
+- **SPH por asesor (estimado):** ventas del vendedor vinculado ÷ horas del agente;
   entra al ranking con 2 h conectadas o más en un día y 6 h (una jornada) en un período.
-- **Vínculos manuales:** gestión confirma, corrige o descarta cada vínculo; queda
-  guardado para los próximos cálculos y el día se recalcula.
+- **SPH anteriores (hasta la v3):** se calcularon con las netas. No cambian (un publicado
+  nunca cambia): la lista y el informe los marcan como «netas» y, al recalcularlos, se
+  genera un borrador con las ventas del día.
+- **Vínculos:** el cruce sale del **maestro de operadores** de Supervisión (fuente única,
+  mismo motor de cruce): antes de calcular se detectan los agentes y vendedores del mes.
+  Gestión confirma, corrige o descarta cada vínculo desde el SPH o desde Supervisión →
+  Operadores; vale para los dos y para los próximos cálculos.
 - **Publicación:** como Productividad, uno publicado por período (el SPH del día y el
   de su semana se publican por separado), reemplazo con confirmación y un publicado
   no cambia (recalcular genera un borrador). El informe avisa si hay datos más nuevos.
 - **Permisos:** `televentas_claro.sph` (ver publicados) y `televentas_claro.sph_gestion`
   (calcular, borradores, vínculos, publicar, recalcular, eliminar).
+
+## Televentas CLARO · Supervisión (modelo Líder Coach Comercial)
+
+Gestión de los supervisores como líderes coach: equipos del mes, objetivos de Pospago y
+GPON por supervisor, avance y **proyección al cierre**, y asesores en alerta por líneas
+sin uso. Código en `backend/app/operativas/televentas_claro/supervision/`; la guía del
+modelo es el documento «Modelo Líder Coach Comercial». Las 5 fases están habilitadas:
+equipos, objetivos y proyección; tablero y scoring; coaching y bitácora; tickets de revisión
+con SLA; y el centro de comandos de los jefes.
+
+| Pantalla | Ruta | Qué hace |
+|---|---|---|
+| Centro de comandos | `…/supervision/comando` | El día de la operación: cabecera (score, avance y proyección, % sin uso contra el umbral, supervisores en crítico, líneas a recuperar, tickets y cobertura de coaching), **semáforo de supervisores** con sus motivos y **alertas del día** (tomar y anotar qué se hizo, **pedir revisión** con un clic, descartar con el motivo); rutina de seguimiento |
+| Objetivos y proyección | `/televentas-claro/supervision` | Por supervisor: vendido / objetivo, proyección al cierre, ritmo necesario por día hábil, semáforo y alertas; la operación completa; **Cargar objetivos** en la misma tabla |
+| Tablero | `…/supervision/tablero` | Scoring 0–100 de la operación, ranking de supervisores y de asesores, con la tendencia contra el mes anterior |
+| Coaching | `…/supervision/coaching` | Gestión de coaching de todos los supervisores: cobertura, foco, seguimientos, coachings, vencidos y última actividad (primero, quien tiene algo vencido) |
+| Tickets | `…/supervision/tickets` | Tickets de revisión: **Enviar ticket**, bandeja (abiertos o los del mes, primero lo vencido), detalle con historial (comentar, mandar los datos pedidos, reabrir, reasignar, cancelar) y métricas por supervisor |
+| Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible); pestañas **Coaching y bitácora** (`…/{id}/coaching`, solo lectura), **Tickets** (`…/{id}/tickets`) y **Línea de tiempo** (`…/{id}/linea`: coachings, seguimientos, notas, tickets, cambios de equipo, objetivos y alertas, lo más nuevo primero) |
+| Ficha del asesor | `…/supervision/asesores/{id}` | Del supervisor al asesor y del asesor a sus líneas y tickets: equipo del mes, puntaje y componentes, ventas y uso (líneas sin uso), alertas de uso, coachings, tickets y notas de bitácora |
+| Equipos del mes | `…/supervision/equipos` | Tablero por supervisor y «Sin supervisor»; selección múltiple, **fecha efectiva**, copiar los equipos del mes anterior |
+| Operadores | `…/supervision/operadores` | Maestro de operadores: por revisar, vincular, separar, confirmar sin vínculo, renombrar, dar de baja |
+| Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana, días no laborables (más los feriados de Seguridad) y el **horario de atención** (horas hábiles de los plazos de los tickets) |
+| Parámetros | `…/supervision/parametros` | Pesos y umbrales del scoring, versionados (solo sub gerente y superadmin) |
+| Mi portal | `/televentas-claro/portal` | El portal del supervisor: «Para hoy» (seguimientos y alertas por atender), su equipo, sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
+| Coaching y bitácora | `/televentas-claro/portal/coaching` | El supervisor registra coachings (con compromiso y fecha de seguimiento), seguimientos con el impacto medido, aclaraciones y notas de bitácora; ve su gestión del mes |
+| Tickets (portal) | `/televentas-claro/portal/tickets` | La bandeja del supervisor: responde, pide datos y resuelve los tickets que le envían, con sus plazos |
+
+- **Maestro de operadores:** cada persona tiene un nombre en llamadas (agente de
+  Productividad) y otro como vendedor (POS de Ventas Netas), sin ID común. En cada mes
+  se detectan los dos y se cruzan por nombre con el motor del SPH; lo pendiente se
+  vincula a mano y lo que decide una persona no lo cambia el cruce automático. Unir dos
+  operadores que ya tienen equipo lo decide una persona. La detección se rehace sola
+  cuando cambian los informes del mes (firma de las fuentes). El legajo solo se toma si
+  identifica a un único vendedor (el de Ventas Netas es el de quien cargó la venta).
+- **Equipos del mes:** asignación supervisor → asesores por mes, con fecha efectiva para
+  los cambios a mitad de mes (`sup_equipo_asignaciones`). Cada neta cuenta para el
+  supervisor que tenía al asesor el día de la venta (si se vendió antes del mes, el del
+  día 1). Asignan los jefes (`supervision_gestion`); cada cambio queda auditado.
+- **Objetivos:** Pospago y GPON por supervisor y mes (`sup_objetivos`), los cargan los
+  jefes; el supervisor los ve y no los puede cambiar.
+- **Netas del mes:** las del informe de Ventas Netas del mes (mes de activación: la cifra
+  oficial). Fuente: la planilla de corte más nuevo (cada una trae todo el mes y reemplaza a
+  la anterior); si todavía no se publicó, se marca como provisoria.
+- **Proyección al cierre** = vendido al corte ÷ días hábiles transcurridos × días hábiles
+  del mes; **ritmo necesario** = lo que falta ÷ días hábiles restantes. Días hábiles: de
+  lunes a viernes 1, sábado 0,5, domingo 0 (en septiembre el sábado vendió el 44% de un
+  día de semana), sin feriados ni días no laborables. Con menos de 3 días hábiles es
+  provisoria. Semáforo: en camino ≥ 100% del objetivo, en riesgo ≥ 90%, bajo objetivo.
+- **Supervisor crítico:** al menos un asesor de su equipo actual con más del 10% de sus
+  Pospago evaluables sin uso y 5 o más evaluables. **Líneas a recuperar:** las sin uso
+  que tienen que empezar a usarse para volver al 10%.
+- **Scoring v1** (`supervision/scoring.py`, cuentas puras):
+  - Asesor: Pospago 35, uso de líneas 25, conversación 25 y GPON 15, con puntos lineales
+    entre dos extremos. Pospago y GPON se miden contra el objetivo de referencia al corte:
+    la parte del objetivo del equipo según los días que trabajó (días con conexión en
+    Productividad, escalados si faltan informes). Uso: completo con 10% sin uso o menos,
+    cero con 35%. Conversación: con las metas de Productividad (completo desde 37%, cero
+    con 25%; más de 47% no resta y se marca).
+  - Lo que no tiene datos suficientes no se evalúa y su peso se reparte. Si se evaluó
+    menos del 60% del peso, el puntaje es **parcial** (se marca y va después en el ranking).
+  - Supervisor: 60 por el resultado del equipo y 40 por la gestión: cobertura 15 (% del
+    equipo actual con al menos un coaching en el mes), foco 10 (% de las alertas de uso con
+    coaching sobre uso dentro de los 5 días hábiles desde que aparecieron; las que siguen en
+    plazo o se resolvieron solas antes no cuentan), seguimientos 5 (% de los compromisos
+    seguidos en la fecha acordada o al día siguiente) y tickets 10 (% de los tickets del mes
+    respondidos y resueltos en plazo). La gestión se mide desde el día en que se instaló el registro de coaching
+    (`gestion_desde`, migración de datos): los meses anteriores no se reescriben. Operación:
+    los mismos componentes sobre toda la operación. Tendencia: contra el mes anterior.
+  - Los pesos los cambia el sub gerente (utilidad restringida `supervision_parametros`);
+    cada cambio es una versión nueva con historial y auditoría.
+- **Coaching y bitácora** (`supervision/coaching.py`, `coaching_api.py`; tablas
+  `sup_coachings`, `sup_coaching_eventos`, `sup_bitacora`, `sup_alertas`):
+  - Lo registra el supervisor desde su portal, solo para los asesores que tenía en su
+    equipo ese día (lo controla el servidor): asesor, fecha, tipo (diario en puesto,
+    semanal uno a uno, mensual de resultados), métrica (Pospago, GPON, uso de líneas,
+    conversación u otra), diagnóstico, compromiso y fecha de seguimiento (hasta 45 días).
+  - La hora la pone el servidor. La fecha puede ser de este mes (o de los últimos 2 días);
+    con más de 48 h de atraso cuenta igual, pero queda **fuera de término**. Se corrige o se
+    anula (si fue un error) durante 24 h; después solo se agregan el seguimiento y
+    aclaraciones. Nada se borra: cada versión queda en `sup_coaching_eventos` y en la
+    auditoría. La bitácora (novedades, ausencias, incidencias, reconocimientos) no se edita.
+  - **Impacto medido** (`supervision/impacto.py`, cuentas puras), antes contra después:
+    conversación de 5 días con conexión de cada lado (Productividad); Pospago y GPON en
+    netas por hora conectada, solo con netas maduras (se activan hasta 7 días después de la
+    venta); uso de líneas, % sin uso de las Pospago vendidas después contra las de antes
+    **con la misma antigüedad** (de 3 a 21 días de activadas: las de antes salen de la foto
+    que se guarda al registrar). Resultado: mejoró, igual o empeoró según una banda de
+    tolerancia, o sin datos. Al registrar el seguimiento se guarda la medición; si no
+    mejoró, el portal propone un coaching nuevo sobre la misma métrica (queda encadenado).
+  - **Alertas de uso con fecha** (`supervision/alertas.py`): al leer el mes en curso se
+    abren las alertas nuevas (el día en que se generó el informe de Ventas Netas que las
+    mostró) y se cierran las que ya no están; con esa fecha se mide el foco.
+- **Tickets de revisión** (`supervision/tickets.py`, `sla.py`, `tickets_api.py`; tablas
+  `sup_tickets`, `sup_ticket_eventos`):
+  - Los envían quienes tienen la utilidad `tickets` (coordinador, sub gerente, controller,
+    auditor y el superadmin): tipo (venta observada, línea sin uso, calidad de atención,
+    reclamo, conducta u otro), prioridad, asesor, referencia y descripción. Si nombra a un
+    asesor, llega al supervisor que lo tenía el día del caso; si no, se elige el supervisor.
+  - Plazos en horas hábiles del horario de atención (por defecto de lunes a viernes de 7 a
+    19 y el sábado de 8 a 12; un día hábil = la jornada completa): alta 2 h para la primera
+    respuesta y 1 día para resolver; media 8 h y 2 días; baja 1 día y 5 días. Se guardan al
+    enviar el ticket.
+  - Primera respuesta: lo primero que hace el supervisor (responder, pedir datos o
+    resolver). La resolución corre mientras el ticket está nuevo o en gestión: se detiene
+    mientras espera datos de quien lo envió (sin respuesta en 2 días hábiles se cierra
+    solo) y sigue desde donde estaba si se reabre (hasta 5 días hábiles después de
+    resuelto; la reapertura queda contada). Al 75% del plazo pasa a «por vencer».
+  - Métricas: cumplimiento (respondidos y resueltos en plazo; los vencidos cuentan como
+    fuera de plazo, los cancelados y los cerrados sin datos no cuentan), velocidad en
+    mediana y percentil 90, reaperturas y antigüedad de la bandeja. Los avisos de
+    vencimiento se ven en la aplicación (bandeja de los jefes y «Para hoy» del portal).
+- **Centro de comandos** (`supervision/comando.py`, `comando_api.py`; tabla `sup_alertas_comando`):
+  - **Semáforo:** «atención» si tiene un ticket o un seguimiento vencido, una alerta de uso sin
+    coaching a tiempo, una proyección bajo el 90% del objetivo (no provisoria) o 3 días hábiles
+    o más sin registrar gestión (coachings, seguimientos, notas o respuestas a tickets, desde que
+    se mide la gestión o desde que recibió el equipo); «revisar» si está en crítico, en riesgo o
+    con plazos por vencer; «al día» si no. Ordenado: primero quien necesita atención.
+  - **Alertas del día:** supervisor en crítico, asesor que cruza el umbral de sin uso,
+    proyección bajo el 90%, ticket o seguimiento vencido, supervisor sin registrar gestión,
+    asesores sin supervisor y nombres sin vincular. Se ponen al día al abrir el centro: se
+    abren cuando aparece la condición (con la fecha en que empezó) y se cierran solas cuando
+    deja de cumplirse; si vuelve con el mismo inicio, se reabre la misma. Cada una guarda
+    quién la tomó y qué hizo, el ticket que se pidió desde ahí («pedir revisión»: llega al
+    supervisor de la alerta, con el asesor si es de uno) o el motivo del descarte. Actúan
+    quienes gestionan Supervisión (`supervision_gestion`: coordinador, sub gerente y
+    controller); pedir una revisión pide además la utilidad `tickets`. Auditor y analista lo
+    ven en lectura. Cada acción queda auditada y en la línea de tiempo del supervisor.
+- **Seguridad:** el portal filtra en el servidor por el usuario (solo sus asesores, en
+  las fechas en que los tuvo, y solo sus coachings, notas y tickets); ver las líneas sin uso de un
+  asesor y cada registro de coaching quedan auditados. Los jefes ven el coaching de cada
+  supervisor sin poder cambiarlo.
+- **Permisos:** `supervision` (ver, también los tickets), `supervision_gestion` (equipos,
+  objetivos, calendario), `tickets` (enviar y seguir tickets), `operadores` (vínculos),
+  `supervision_parametros` (pesos del scoring, solo sub gerente) y `portal_supervisor`
+  (solo el perfil Supervisor).
 
 ## Televentas CLARO · Auditoría de Ventas
 

@@ -282,11 +282,11 @@ async def test_flujo_de_cortes_y_publicacion():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
         analista = await _new_user(ac, admin, "analista")      # gestión (perfil sembrado)
-        supervisor = await _new_user(ac, admin, "supervisor")  # solo ve lo publicado
+        lector = await _new_user(ac, admin, "coordinador")  # solo ve lo publicado (el supervisor solo entra a su portal)
 
         dia18 = reporte(UN_CORTE)
         # Permisos y validaciones de la carga.
-        assert (await _subir(ac, supervisor, nombre_archivo(DIA, 18), dia18)).status_code == 403
+        assert (await _subir(ac, lector, nombre_archivo(DIA, 18), dia18)).status_code == 403
         assert (await _subir(ac, analista, "tiempos.xlsx", dia18)).status_code == 400
         r = await _subir(ac, analista, "Tiempos_Acumulados.csv", dia18)
         assert r.status_code == 400 and r.json()["detail"]["code"] == "sin_fecha"
@@ -301,8 +301,8 @@ async def test_flujo_de_cortes_y_publicacion():
         assert body["corte"]["fecha"] == "2026-10-07" and body["corte"]["hora"] == "18:00" and body["corte"]["umbrales_cortas"] == [30]
         i1 = body["informe"]["id"]
         assert body["informe"]["status"] == "draft" and body["informe"]["llamadas"] == 860 and body["informe"]["banda"] == "bajo"
-        assert (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"] == []
-        assert (await ac.get(f"{BASE}/informes/{i1}", headers=supervisor)).status_code == 404
+        assert (await ac.get(f"{BASE}/informes", headers=lector)).json()["items"] == []
+        assert (await ac.get(f"{BASE}/informes/{i1}", headers=lector)).status_code == 404
         det = (await ac.get(f"{BASE}/informes/{i1}", headers=analista)).json()
         assert det["data"]["kpis"]["agentes"] == 6 and len(det["cortes_del_dia"]) == 1 and det["cortes_nuevos"] == 0
 
@@ -314,8 +314,8 @@ async def test_flujo_de_cortes_y_publicacion():
         # Publicar.
         r = await ac.post(f"{BASE}/informes/{i1}/publicar", headers=analista, json={})
         assert r.status_code == 200 and r.json()["status"] == "published"
-        assert [x["id"] for x in (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"]] == [i1]
-        assert (await ac.get(f"{BASE}/informes/{i1}", headers=supervisor)).json()["data"]["kpis"]["llamadas"] == 860
+        assert [x["id"] for x in (await ac.get(f"{BASE}/informes", headers=lector)).json()["items"]] == [i1]
+        assert (await ac.get(f"{BASE}/informes/{i1}", headers=lector)).json()["data"]["kpis"]["llamadas"] == 860
 
         # Un corte de mitad de día: nuevo borrador del día con dos cortes (no toca el publicado).
         r = await _subir(ac, analista, nombre_archivo(DIA, 13), reporte([fila("PEREZ, ANA", 3 * H, 4000, 150, 70, acw=1500)]))
@@ -339,7 +339,7 @@ async def test_flujo_de_cortes_y_publicacion():
         assert items[i1]["status"] == "replaced" and items[i1]["replaced_by_report_id"] == i2
 
         # Acumulado: solo lo publicado; gestión ve qué días tienen borrador sin publicar.
-        acu = (await ac.get(f"{BASE}/acumulado", headers=supervisor, params={"desde": "2026-10-05", "hasta": "2026-10-11"})).json()
+        acu = (await ac.get(f"{BASE}/acumulado", headers=lector, params={"desde": "2026-10-05", "hasta": "2026-10-11"})).json()
         assert acu["acumulado"]["kpis"]["dias_publicados"] == 1 and acu["acumulado"]["dias"][0]["informe_id"] == i2
         assert acu["pendientes_publicar"] == [] and acu["ultimo_publicado"] == "2026-10-07"
         acu = (await ac.get(f"{BASE}/acumulado", headers=analista, params={"desde": "2026-10-05", "hasta": "2026-10-11"})).json()
@@ -348,7 +348,7 @@ async def test_flujo_de_cortes_y_publicacion():
         assert (await ac.get(f"{BASE}/acumulado", headers=analista, params={"desde": "2026-01-01", "hasta": "2026-12-31"})).status_code == 400
 
         # Parámetros: todos los ven; solo el superadmin los cambia.
-        par = (await ac.get(f"{BASE}/parametros", headers=supervisor)).json()
+        par = (await ac.get(f"{BASE}/parametros", headers=lector)).json()
         assert par["parametros"]["meta_min"] == 37 and par["parametros"]["contacto_desde_seg"] == 30 and par["puede_editar"] is False
         assert (await ac.put(f"{BASE}/parametros", headers=analista, json={"parametros": {"meta_min": 35}})).status_code == 403
         assert (await ac.put(f"{BASE}/parametros", headers=admin, json={"parametros": {"meta_min": 50}})).status_code == 400
@@ -357,7 +357,7 @@ async def test_flujo_de_cortes_y_publicacion():
         assert (await ac.get(f"{BASE}/informes/{i2}", headers=analista)).json()["parametros_distintos"] is True
 
         # Recalcular un publicado no lo toca: genera el borrador del día con los parámetros vigentes.
-        assert (await ac.post(f"{BASE}/informes/{i2}/recalcular", headers=supervisor)).status_code == 403
+        assert (await ac.post(f"{BASE}/informes/{i2}/recalcular", headers=lector)).status_code == 403
         r = (await ac.post(f"{BASE}/informes/{i2}/recalcular", headers=analista)).json()
         i3 = r["informe"]["id"]
         assert r["nuevo_borrador"] is True and r["informe"]["status"] == "draft"
@@ -367,14 +367,14 @@ async def test_flujo_de_cortes_y_publicacion():
         # Eliminar el corte de las 13:00 rehace el borrador del día con el corte que queda.
         cortes = (await ac.get(f"{BASE}/cortes", headers=analista, params={"fecha": "2026-10-07"})).json()["items"]
         assert [c["hora"] for c in cortes] == ["13:00", "18:00"]
-        assert (await ac.get(f"{BASE}/cortes", headers=supervisor, params={"fecha": "2026-10-07"})).status_code == 403
+        assert (await ac.get(f"{BASE}/cortes", headers=lector, params={"fecha": "2026-10-07"})).status_code == 403
         r = (await ac.delete(f"{BASE}/cortes/{cortes[0]['id']}", headers=analista)).json()
         assert r["informe"]["id"] == i3 and r["informe"]["cortes"] == 1
 
         # No se elimina un publicado; despublicar lo vuelve borrador.
         assert (await ac.delete(f"{BASE}/informes/{i2}", headers=analista)).status_code == 400
         assert (await ac.post(f"{BASE}/informes/{i2}/despublicar", headers=analista)).json()["status"] == "draft"
-        assert (await ac.get(f"{BASE}/informes", headers=supervisor)).json()["items"] == []
-        assert (await ac.delete(f"{BASE}/informes/{i2}", headers=supervisor)).status_code == 403
+        assert (await ac.get(f"{BASE}/informes", headers=lector)).json()["items"] == []
+        assert (await ac.delete(f"{BASE}/informes/{i2}", headers=lector)).status_code == 403
         assert (await ac.delete(f"{BASE}/informes/{i2}", headers=analista)).status_code == 200
         assert (await ac.get(f"{BASE}/informes/{i2}", headers=analista)).status_code == 404
