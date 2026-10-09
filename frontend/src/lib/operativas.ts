@@ -130,7 +130,7 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         label: "SPH estimado",
         href: "/televentas-claro/sph",
         descripcion: "Ventas netas por hora conectada: cruza las horas de Productividad con las netas de Ventas Netas, para la operación y por asesor.",
-        contenido: ["SPH de la operación", "Día, semana, mes o rango", "Ranking de SPH por asesor", "Cruce de nombres agente ↔ vendedor", "Netas sin asesor", "Vínculos corregidos a mano"],
+        contenido: ["SPH de la operación con las ventas del día", "Día, semana, mes o rango", "Ranking de SPH por asesor", "Cruce de nombres agente ↔ vendedor", "Ventas sin asesor", "Vínculos corregidos a mano"],
         gestion: "sph_gestion",
         gestionTexto: "Podés calcular, vincular nombres y publicar.",
         nav: [

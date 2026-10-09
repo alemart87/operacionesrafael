@@ -19,8 +19,10 @@ Reglas acordadas con el negocio:
 * Productividad (hoja CARGAS): evolutivo diario por fecha de alta de la venta,
   estados, Pospago vs Internet (IF) e IPTV, y zonas: Capital y Central por un
   lado, Interior por el otro (`DEPARTAMENTO_FACT`). Las cargas pendientes no
-  traen POS: se atribuyen al vendedor cuando el legajo que cargó siempre carga
-  para un único POS; si no, quedan como "cargado por <legajo>".
+  traen POS: se atribuyen al vendedor de su línea ya activada (el mismo SDS en
+  DDI o PORTABILIDAD); si todavía no se activó, al del legajo que cargó cuando
+  ese legajo siempre carga para un único POS; si no, quedan como "cargado por
+  <legajo>" (suele ser un backoffice que carga para varios vendedores).
 """
 from __future__ import annotations
 
@@ -264,7 +266,10 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
 
     # Uso por SDS (solo Pospago de DDI) para cruzar las cargas finalizadas con su consumo.
     uso_por_sds = {r["sds_number"]: (None if en_espera(r) else r.get("consumo_datos") == "SI") for r in ddi_all if r.get("tipo_producto") == "Pospago"}
-    productividad = _productividad(cargas, cargas_all, fecha_dato, uso_por_sds)
+    # Vendedor de cada línea activada (DDI o PORTABILIDAD) por SDS: dice quién vendió una carga que no trae POS.
+    pos_por_sds = {r["sds_number"]: vendedor_de(r.get("pos_nombre"), r.get("subcanal"))
+                   for r in [*por_all, *ddi_all] if r.get("sds_number") and r.get("pos_nombre")}
+    productividad = _productividad(cargas, cargas_all, fecha_dato, uso_por_sds, pos_por_sds)
 
     kpis = {
         "periodo": periodo,
@@ -480,10 +485,17 @@ def _mapa_legajo_pos(cargas_all: list[dict]) -> dict[str, tuple[str, str | None]
 RIESGOS = ["A", "M", "B"]  # alto · medio · bajo (RIESGO_ORI de la carga)
 
 
+def cancelada_adm(r: dict[str, Any]) -> bool:
+    """Venta cancelada administrativamente (`SDS_CANC_ADM`): figura finalizada pero no se activa."""
+    return (r.get("sds_canc_adm") or "").strip().upper() in ("SI", "S")
+
+
 def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date | None,
-                   uso_por_sds: dict[str, bool | None] | None = None) -> dict[str, Any]:
+                   uso_por_sds: dict[str, bool | None] | None = None,
+                   pos_por_sds: dict[str, tuple[str, str | None]] | None = None) -> dict[str, Any]:
     mapa = _mapa_legajo_pos(cargas_all)
     uso_por_sds = uso_por_sds or {}
+    pos_por_sds = pos_por_sds or {}
     estados = [e for e in ESTADOS_ORDEN if any(r.get("sds_estado") == e for r in cargas)]
     estados += sorted({r.get("sds_estado") for r in cargas} - set(estados) - {None})
     productos = ["Pospago", "Internet", "IPTV"]
@@ -583,7 +595,8 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
         sumar(ciudades.setdefault(c, fila_vacia(ciudad=c, zona=zona_de(r.get("departamento_fact")))), r)
     por_ciudad = sorted((cerrar(f) for f in ciudades.values()), key=lambda f: -f["total"])[:25]
 
-    # Vendedores: POS de la carga; si no trae, el vendedor único del legajo; si no, "cargado por".
+    # Vendedores: POS de la carga; si no trae, el de su línea activada (mismo SDS); si no, el vendedor único
+    # del legajo; si no, "cargado por".
     vend: dict[str, dict] = {}
     sin_atribuir = 0
     detalle_cargas: list[dict[str, Any]] = []
@@ -591,6 +604,9 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
         if r.get("pos_nombre"):
             nombre, subcanal = vendedor_de(r.get("pos_nombre"), r.get("subcanal"))
             atrib = "pos"
+        elif r["sds_number"] in pos_por_sds:
+            nombre, subcanal = pos_por_sds[r["sds_number"]]
+            atrib = "linea"
         elif r.get("vendedor_legajo") in mapa:
             nombre, subcanal = mapa[r["vendedor_legajo"]]
             atrib = "legajo"
@@ -599,9 +615,11 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
             nombre, subcanal = f"CARGADO POR {r.get('vendedor_legajo') or '—'} {quien}".strip(), None
             atrib = "sin_atribuir"
             sin_atribuir += 1
-        f = vend.setdefault(nombre, fila_vacia(vendedor=nombre, subcanal=subcanal, por_legajo=0))
+        f = vend.setdefault(nombre, fila_vacia(vendedor=nombre, subcanal=subcanal, por_legajo=0, por_linea=0))
         if atrib == "legajo":
             f["por_legajo"] += 1
+        elif atrib == "linea":
+            f["por_linea"] += 1
         sumar(f, r)
         prod = producto_de(r)
         finalizada = r.get("sds_estado") == ESTADO_FINALIZADA
@@ -613,6 +631,7 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
             "sds_number": r["sds_number"],
             "fecha_alta": r.get("sds_fecha_alta_venta"),
             "estado": r.get("sds_estado"),
+            "cancelada": cancelada_adm(r),
             "producto": prod,
             "plan": r.get("plan_descripcion_orig"),
             "campania": r.get("campania_descripcion"),
@@ -623,6 +642,7 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
             "departamento": r.get("departamento_fact"),
             "ciudad": r.get("ciudad_fact"),
             "vendedor": nombre,
+            "subcanal": subcanal,
             "atribucion": atrib,
             "legajo": r.get("vendedor_legajo"),
             "uso": uso,

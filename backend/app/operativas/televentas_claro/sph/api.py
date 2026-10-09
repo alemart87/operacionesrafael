@@ -11,9 +11,9 @@ ventas de su mes ya alcanza; los demás se informan.
 
 Fuentes (no se sube nada nuevo, `..fuentes`): por día, el informe de Productividad que llega más lejos
 en el día; por mes, el informe de Ventas Netas de corte más nuevo (cada planilla trae todo el mes y
-reemplaza a la anterior), publicado o no; a igual corte, el publicado. Las netas de un día salen del
-informe de su mes y del siguiente (lo vendido a fin de mes que se activa después). Queda avisado si se
-usó un borrador. El SPH queda congelado con esos datos y avisa cuando llegan datos más nuevos.
+reemplaza a la anterior), publicado o no; a igual corte, el publicado. Las ventas de un día salen de la
+hoja de productividad (CARGAS) de la planilla de su mes: las cargadas ese día, no las netas. Queda
+avisado si se usó un borrador. El SPH queda congelado con esos datos y avisa cuando llegan datos más nuevos.
 
 Circuito (el mismo de Productividad): "Calcular" crea o rehace el borrador del período; como
 máximo hay un SPH publicado por período. Publicar sobre un período que ya tiene uno exige
@@ -44,8 +44,8 @@ from ..supervision import operadores as maestro
 from ..supervision.models import Operador
 from ..ventas_netas.models import VentasNetasReport
 from .analyzer import (
-    DIAS_MAX_PERIODO, SIN_VENDEDOR, VERSION_SPH, DatosIncompletos, calcular_periodo, mes_siguiente, nombre_mes, resumen_lista,
-    tipo_periodo, usa_mes_siguiente,
+    DIAS_MAX_PERIODO, SIN_VENDEDOR, VERSION_SPH, DatosIncompletos, calcular_periodo, nombre_mes, resumen_lista, tipo_periodo,
+    ventas_del_mes,
 )
 from .models import ESTADO_BORRADOR, ESTADO_PUBLICADO, ESTADO_REEMPLAZADO, SphInforme
 
@@ -99,14 +99,16 @@ def _hasta(r: SphInforme) -> date:
 
 
 def _resumen(r: SphInforme) -> dict[str, Any]:
+    # Desde la v4 el SPH usa las ventas del día (hoja de productividad); los anteriores, las netas.
+    v4 = (r.version or 0) >= 4
     return {
         "id": r.id, "fecha": r.fecha.isoformat(), "desde": r.fecha.isoformat(), "hasta": _hasta(r).isoformat(),
         "tipo": r.tipo or "dia", "dias": r.dias or 1, "status": r.status,
         "generated_at": _iso(r.generated_at), "generated_by": r.generated_by,
         "published_at": _iso(r.published_at), "published_by": r.published_by,
         "replaced_at": _iso(r.replaced_at), "replaced_by_report_id": r.replaced_by_report_id,
-        "sph": r.sph, "netas": r.netas, "horas": r.horas, "agentes": r.agentes, "vinculados": r.vinculados,
-        "pct_cobertura": r.pct_cobertura, "pct_activadas": r.pct_activadas,
+        "version": r.version, "base": "ventas" if v4 else "netas", "ventas": (r.ventas or 0) if v4 else r.netas,
+        "sph": r.sph, "horas": r.horas, "agentes": r.agentes, "vinculados": r.vinculados, "pct_cobertura": r.pct_cobertura,
         "ventas_corte": r.ventas_corte.isoformat() if r.ventas_corte else None,
     }
 
@@ -138,8 +140,9 @@ def _desc_prod(r: ProdInforme) -> dict[str, Any]:
 
 
 def _desc_ventas(r: VentasNetasReport) -> dict[str, Any]:
+    """Con los datos del informe cargados: `ventas` son las del mes que cuentan (hoja de productividad)."""
     return {"id": r.id, "status": r.status, "periodo": r.periodo,
-            "fecha_dato": r.fecha_dato.isoformat() if r.fecha_dato else None, "netas": r.netas,
+            "fecha_dato": r.fecha_dato.isoformat() if r.fecha_dato else None, "ventas": ventas_del_mes(r.data or {}),
             "generated_at": _iso(r.generated_at)}
 
 
@@ -178,28 +181,20 @@ class Fuentes:
         return (f"El corte de ventas de {nombre_mes(v.periodo)} es del {v.fecha_dato:%d/%m}: todavía no trae las ventas de los "
                 f"días con horas ({', '.join(f'{d:%d/%m}' for d in con_horas[:6])}). Subí un corte de ventas posterior.")
 
-    def _meses(self, dias: list[date]) -> list[str]:
-        """Los informes de Ventas Netas de esos días: el de su mes y, para los de las últimas dos semanas del mes,
-        el del siguiente si ya hay (lo vendido a fin de mes que se activó después viene en esa planilla)."""
-        meses = {_mes(d) for d in dias}
-        siguientes = {mes_siguiente(_mes(d)) for d in dias if usa_mes_siguiente(d)} & set(self.ventas)
-        return sorted(meses | siguientes)
-
     def meses_ventas(self) -> list[str]:
-        """Los que entran en el cálculo (los de los días que cuentan)."""
-        return self._meses(self.cubiertos)
+        """Los informes de Ventas Netas que entran en el cálculo: los del mes de cada día que cuenta."""
+        return sorted({_mes(d) for d in self.cubiertos})
 
     def descripcion(self) -> dict[str, Any]:
         return {
             "productividad": [_desc_prod(self.prods[d]) for d in sorted(self.prods)],
-            "ventas": [_desc_ventas(self.ventas[m]) for m in self._meses(_dias(self.desde, self.hasta)) if m in self.ventas],
+            "ventas": [_desc_ventas(self.ventas[m]) for m in sorted(self.ventas)],
         }
 
 
 async def _fuentes(db: AsyncSession, desde: date, hasta: date) -> Fuentes:
     prods = await _informes_productividad(db, desde, hasta)
-    meses = {_mes(d) for d in _dias(desde, hasta)}
-    ventas = await _informes_ventas(db, meses | {mes_siguiente(m) for m in meses})
+    ventas = await _informes_ventas(db, {_mes(d) for d in _dias(desde, hasta)})
     return Fuentes(desde, hasta, prods, ventas)
 
 
@@ -292,7 +287,7 @@ async def dias_disponibles(user: CurrentUser = Depends(require_gestion), db: Asy
     desde = date.today() - timedelta(days=DIAS_DISPONIBLES)
     # El estado del informe de llamadas que usaría el SPH de cada día (el que llega más lejos en el día).
     estado_prod = {f: r.status for f, r in (await _informes_productividad(db, desde, date.today(), con_datos=False)).items()}
-    ventas = await _informes_ventas(db, {_mes(f) for f in estado_prod})
+    ventas = await _informes_ventas(db, {_mes(f) for f in estado_prod}, con_datos=False)
     sph = (await db.execute(select(SphInforme.fecha, SphInforme.status, SphInforme.id).where(
         SphInforme.fecha >= desde, func.coalesce(SphInforme.hasta, SphInforme.fecha) == SphInforme.fecha,
         SphInforme.status.in_([ESTADO_BORRADOR, ESTADO_PUBLICADO]),
@@ -330,7 +325,7 @@ async def calcular_sph(payload: CalcularPayload, request: Request, user: Current
         await db.refresh(informe)
     await record_action(db, user_id=user.id, action="sph_calculado", resource_type="sph_informe",
                         resource_id=informe.id, ip=client_ip(request),
-                        extra={"desde": desde.isoformat(), "hasta": hasta.isoformat(), "sph": informe.sph, "netas": informe.netas})
+                        extra={"desde": desde.isoformat(), "hasta": hasta.isoformat(), "sph": informe.sph, "ventas": informe.ventas})
     return {"informe": _resumen(informe)}
 
 

@@ -52,6 +52,9 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS tipo VARCHAR(10) DEFAULT 'dia'",
     "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS dias INTEGER DEFAULT 1",
     "UPDATE sph_informes SET hasta = fecha WHERE hasta IS NULL",
+    # v0.7 · SPH con las ventas del día de la hoja de productividad (no las netas)
+    "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS version INTEGER",
+    "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS ventas INTEGER",
 ]
 
 

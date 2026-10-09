@@ -173,7 +173,7 @@ Reglas del análisis (`analyzer.py`):
 - **Uso**: `CONSUMO_DATOS` solo aplica a Pospago. Una línea sin uso es alerta
   de posible PFI. Un vendedor entra en alerta con ≥ 5 líneas y < 50 % en uso.
 - **Vendedor** de una neta = `POS_NOMBRE` sin el prefijo del subcanal; las
-  cargas pendientes no traen POS y se atribuyen por `VENDEDOR_LEGAJO`.
+  cargas pendientes no traen POS: se atribuyen por su línea activada o por `VENDEDOR_LEGAJO`.
 - Suspendidas y portadas que no llegaron a DDI se cuentan y se marcan, no se descartan.
 - **En espera de uso**: una Pospago sin consumo activada hace menos de 3 días al
   corte (`DIAS_ESPERA_USO`) todavía no tuvo tiempo de usarse. No es alerta: no
@@ -191,8 +191,10 @@ Reglas del análisis (`analyzer.py`):
   estados (finalizada, a confirmar, procesado, rechazada), Pospago (CO) vs
   Internet (IF) e IPTV, y **zonas**: Capital y Central por un lado, Interior por
   el otro (`DEPARTAMENTO_FACT`). Las cargas pendientes no traen POS: se
-  atribuyen al vendedor cuando el legajo que cargó siempre carga para un único
-  POS; si no, quedan como "cargado por <legajo>".
+  atribuyen al vendedor de su línea ya activada (el mismo SDS en DDI o
+  PORTABILIDAD); si todavía no se activó, al del legajo que cargó cuando ese
+  legajo siempre carga para un único POS; si no, quedan como "cargado por
+  <legajo>". Las canceladas administrativamente (`SDS_CANC_ADM`) quedan marcadas.
 
 Publicación (`api.py`):
 
@@ -251,20 +253,21 @@ totales acumulados desde las 00:00 hasta la hora del export). Código en
 
 ## Televentas CLARO · SPH estimado
 
-SPH = ventas **netas** por hora conectada. Cruza dos módulos que ya existen, sin subir
-archivos nuevos: las horas de los informes de **Productividad** y las netas del informe
-de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro/sph/`.
+SPH = **ventas del día** por hora conectada. Cruza dos módulos que ya existen, sin subir
+archivos nuevos: las horas de los informes de **Productividad** y la **hoja de
+productividad** (CARGAS) de la planilla de **Ventas Netas** del mes. No usa las netas.
+Código en `backend/app/operativas/televentas_claro/sph/`.
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
 | Informes SPH | `/televentas-claro/sph` | **Calcular SPH** por día, semana, mes o rango (ver qué días cuentan y qué falta subir), filtros por tipo, publicar/despublicar |
-| Informe | `…/sph/informes/{id}` | SPH de la operación, SPH por día (períodos), ranking por asesor, cruce de nombres, netas sin asesor, tabla de asesores (CSV) |
+| Informe | `…/sph/informes/{id}` | SPH de la operación, ventas por estado, SPH por día (períodos), ranking por asesor, cruce de nombres, ventas sin asesor, tabla de asesores (CSV) |
 | Vínculos | `…/sph/vinculos` | Vínculos agente → vendedor corregidos a mano |
 
 - **Períodos:** un día, una semana (lunes a domingo), un mes o un rango de hasta 62
   días. Se suma día por día: **cuenta** cada día con informe de Productividad y que el
   corte de ventas de su mes ya alcanza; los demás se informan (y el mes en curso se
-  puede recalcular a medida que llegan datos). Cada neta se atribuye al asesor solo
+  puede recalcular a medida que llegan datos). Cada venta se atribuye al asesor solo
   los días en que estuvo conectado.
 - **Fuentes** (`fuentes.py`, las mismas que usa Supervisión): cada planilla de Ventas Netas
   trae las ventas de todo el mes hasta su corte, así que **la de corte más nuevo reemplaza
@@ -272,25 +275,34 @@ de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro
   informe del día que llega más lejos (corte final más tardío; a igual corte, el
   publicado): un día publicado a mitad de jornada no deja afuera las horas de la tarde.
   Si se usó un borrador, queda avisado.
-- **Netas del día:** líneas DDI cuya **fecha de venta** (de la carga; si falta, la de
-  carga) es ese día, cruzadas con las horas de **ese mismo día**: las llamadas del 10/10
-  van contra las ventas del 10/10 que trae la planilla subida el 11/10 (corte del 10),
-  aunque todavía no esté publicada. Se leen de la planilla del mes del día y, para las
-  ventas de las últimas dos semanas del mes, de la del **mes siguiente**: lo vendido a fin
-  de mes y activado en los primeros días del otro mes viene en esa planilla y suma al día
-  de la venta (cada línea, una sola vez). Las netas de
-  un día se siguen activando hasta dos semanas después: el informe muestra cuánto de lo
-  cargado ya activó, avisa si el corte de ventas es cercano y, cuando llega una planilla
-  más nueva, avisa que hay datos más nuevos para recalcular.
-- **SPH de la operación:** netas ÷ horas conectadas del equipo, sin sesiones
-  abiertas (ni sus horas ni sus netas). No depende del cruce de nombres.
+- **Ventas del día:** las cargadas ese día (fecha de alta) en la hoja de productividad
+  de la planilla del mes del día, en el estado en que estén: **finalizadas** (aprobadas),
+  **a confirmar** o **procesadas**. No cuentan las **rechazadas** ni las **canceladas
+  administrativamente** (`SDS_CANC_ADM`: figuran finalizadas pero no se activan). Se cruzan
+  con las horas de **ese mismo día**: las llamadas del 10/10 van contra las ventas del 10/10
+  que trae la planilla subida el 11/10 (corte del 10), aunque todavía no esté publicada.
+  **No se usan las netas** (líneas activadas): se activan días después y llegan en la
+  planilla del mes de la activación, que puede ser otro. Cada planilla nueva trae el
+  último estado de cada venta (una pendiente que se rechaza deja de contar al recalcular):
+  el informe avisa que hay datos más nuevos, muestra las ventas por estado y avisa si la
+  planilla se subió el mismo día que cuenta (puede no traer el día completo).
+- **Vendedor de cada venta:** el POS de la carga; las pendientes no lo traen y se
+  atribuyen al vendedor de su **línea ya activada** (mismo SDS en DDI o PORTABILIDAD) o al
+  del legajo que la cargó si ese legajo carga para un único POS (lo resuelve Ventas Netas).
+  Si no (un legajo que carga para varios vendedores), no se sabe quién la vendió: cuenta
+  en el SPH de la operación y se informa aparte.
+- **SPH de la operación:** ventas ÷ horas conectadas del equipo, sin sesiones
+  abiertas (ni sus horas ni sus ventas). No depende del cruce de nombres.
 - **Cruce de nombres (sin ID común):** el agente de la plataforma («APELLIDO,
   NOMBRE») se vincula con el vendedor del POS de Claro por su primer nombre y un
   apellido. **Exacto** (están todas sus palabras), **probable** (falta alguna,
   cambia la escritura o el apellido puede ser el segundo), **ambiguo** (empate: no
   se adivina) o **sin cruce**. Uno a uno: un vendedor no va a dos agentes.
-- **SPH por asesor (estimado):** netas del vendedor vinculado ÷ horas del agente;
+- **SPH por asesor (estimado):** ventas del vendedor vinculado ÷ horas del agente;
   entra al ranking con 2 h conectadas o más en un día y 6 h (una jornada) en un período.
+- **SPH anteriores (hasta la v3):** se calcularon con las netas. No cambian (un publicado
+  nunca cambia): la lista y el informe los marcan como «netas» y, al recalcularlos, se
+  genera un borrador con las ventas del día.
 - **Vínculos:** el cruce sale del **maestro de operadores** de Supervisión (fuente única,
   mismo motor de cruce): antes de calcular se detectan los agentes y vendedores del mes.
   Gestión confirma, corrige o descarta cada vínculo desde el SPH o desde Supervisión →

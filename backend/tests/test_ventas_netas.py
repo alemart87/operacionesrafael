@@ -40,8 +40,9 @@ def _ddi(sds, fecha, producto, plan, port, consumo, pos, estado="A", razon="PNPI
             "TIGO" if port == "SI" else None, "ASUNCION", "MASIVO", "TKM", "1", pos, consumo, sds, f"L{sds}", estado, razon, 1, 0]
 
 
-def _carga(sds, alta, estado, producto="Pospago", venta=None, port="SI-PreSusp", legajo="EXP1", pos=None, riesgo="M", depto="CAPITAL"):
-    return ["202609", sds, alta, venta, estado, "NO", producto, "Control 15GB", "CAMPAÑA X", venta, port,
+def _carga(sds, alta, estado, producto="Pospago", venta=None, port="SI-PreSusp", legajo="EXP1", pos=None, riesgo="M", depto="CAPITAL",
+           canc="NO"):
+    return ["202609", sds, alta, venta, estado, canc, producto, "Control 15GB", "CAMPAÑA X", venta, port,
             "TIGO" if port != "NO" else None, riesgo, depto, "ASUNCION", legajo, "NILDA", "CACERES", pos, "TKM" if pos else None, None, CORTE]
 
 
@@ -172,6 +173,22 @@ def test_parser_y_analisis(xlsx):
     assert len(dc) == 11 and dc["1002"]["riesgosa"] is True and dc["1002"]["uso"] == "NO" and dc["1002"]["riesgo"] == "M"
     assert dc["1001"]["uso"] == "SI" and dc["1005"]["uso"] is None and dc["1009"]["uso"] is None  # Internet / sin DDI
     assert dc["2001"]["vendedor"] == "ANA PEREZ" and dc["2001"]["atribucion"] == "legajo" and dc["2004"]["zona"] == "Interior"
+
+
+def test_cargas_sin_pos_se_atribuyen_por_su_linea_activada(tmp_path):
+    """Una venta pendiente sin POS cuya línea ya se activó (mismo SDS en DDI) la vendió el POS de esa línea, aunque el
+    legajo que la cargó cargue para otro vendedor. Sin línea activada sigue por legajo. Las canceladas quedan marcadas."""
+    ddi = [_ddi(4001, D(2026, 9, 14), "Pospago", "Control 15GB", "SI", "SI", "TKM - JUAN LOPEZ")]
+    cargas = [_carga(4001, D(2026, 9, 12), "Vta_A_Confirmar"),  # EXP1 carga para ANA PEREZ; la línea es de JUAN LOPEZ
+              _carga(4002, D(2026, 9, 12), "Vta_Finalizada", venta=D(2026, 9, 12), legajo="EXP3", pos="ADG - LUIS SOSA", canc="SI")]
+    a = analyze_ventas_netas(parse_ventas_netas(build_xlsx(tmp_path / "l.xlsx", ddi_extra=ddi, cargas_extra=cargas)))
+    pr = a["productividad"]
+    dc = {c["sds_number"]: c for c in pr["detalle_cargas"]}
+    assert (dc["4001"]["vendedor"], dc["4001"]["atribucion"], dc["4001"]["subcanal"]) == ("JUAN LOPEZ", "linea", "TKM")
+    assert (dc["2001"]["vendedor"], dc["2001"]["atribucion"]) == ("ANA PEREZ", "legajo")
+    assert dc["4002"]["cancelada"] is True and dc["4002"]["subcanal"] == "ADG" and dc["1001"]["cancelada"] is False
+    pv = {v["vendedor"]: v for v in pr["por_vendedor"]}
+    assert pv["JUAN LOPEZ"]["por_linea"] == 1 and pv["ANA PEREZ"]["por_linea"] == 0 and pr["kpis"]["sin_atribuir"] == 1
 
 
 def test_alerta_por_vendedor(tmp_path):

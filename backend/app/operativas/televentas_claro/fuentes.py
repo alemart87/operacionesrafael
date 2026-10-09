@@ -8,8 +8,9 @@ los datos más completos, publicado o no (quien lo muestra avisa si es un borrad
 - Productividad: el informe del día se rehace con cada corte de llamadas, así que vale el que llega
   más lejos en el día (corte final más tardío). A igual corte, el publicado; si no, el generado más tarde.
 
-Así, subir el corte de ventas de hoy alcanza para que el SPH de ayer use sus netas, aunque todavía
-no se haya publicado; y un día publicado a mitad de jornada no deja afuera las horas de la tarde.
+Así, subir el corte de ventas de hoy alcanza para que el SPH de ayer use las ventas de ayer (y su último
+estado), aunque todavía no se haya publicado; y un día publicado a mitad de jornada no deja afuera las
+horas de la tarde.
 """
 from __future__ import annotations
 

@@ -115,7 +115,7 @@ async def identidades(db: AsyncSession, periodo: str, prods: dict[date, ProdInfo
             ver(n.get("vendedor"), n.get("subcanal"), n.get("legajo"),
                 _fecha(n.get("fecha_venta")) or _fecha(n.get("fecha_carga")) or _fecha(n.get("fecha_activacion")))
         for c in (data.get("productividad") or {}).get("detalle_cargas") or []:
-            if c.get("atribucion") in ("pos", "legajo"):
+            if c.get("atribucion") in ("pos", "linea", "legajo"):
                 ver(c.get("vendedor"), c.get("subcanal"), c.get("legajo"), _fecha(c.get("fecha_alta")))
         # El legajo de Ventas Netas es el de quien CARGÓ la venta: solo identifica a un vendedor si
         # carga únicamente para él (un mismo legajo de backoffice aparece en muchos vendedores).

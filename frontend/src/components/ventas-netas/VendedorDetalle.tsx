@@ -166,7 +166,8 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
                   { key: "riesgo", label: "Riesgo", align: "center", render: (c) => (c.riesgo ? <span className={c.riesgo === "A" ? "font-semibold text-brand-primary" : ""}>{c.riesgo} · {RIESGO_LABEL[c.riesgo] ?? ""}</span> : "—") },
                   { key: "portacion", label: "Port.", align: "center", render: (c) => (c.portacion === "SI" ? c.origen_portacion ?? "SI" : "Nativa") },
                   { key: "zona", label: "Zona", render: (c) => <>{c.zona === "Interior" ? "Interior" : "Cap./Central"} <span className="text-brand-mist text-xs">{c.ciudad}</span></> },
-                  { key: "atribucion", label: "", render: (c) => (c.atribucion === "legajo" ? <span className="text-brand-mist text-[10px]" title="Atribuida por legajo">por legajo</span> : "") },
+                  { key: "atribucion", label: "", render: (c) => (c.atribucion === "legajo" ? <span className="text-brand-mist text-[10px]" title="Sin POS: atribuida por el legajo que la cargó">por legajo</span>
+                    : c.atribucion === "linea" ? <span className="text-brand-mist text-[10px]" title="Sin POS: atribuida por su línea ya activada (mismo SDS)">por línea</span> : "") },
                 ]}
                 rows={soloRiesgosas ? riesgosas : cargas}
                 alerta={(c) => c.riesgosa}

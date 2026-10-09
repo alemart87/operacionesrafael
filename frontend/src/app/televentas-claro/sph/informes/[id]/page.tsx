@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Clock, Gauge, Info, Receipt, RefreshCw, Users, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Gauge, Info, Receipt, RefreshCw, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -14,9 +14,10 @@ import { RankingSph } from "@/components/sph/RankingSph";
 import { SerieSph } from "@/components/sph/SerieSph";
 import { TablaAsesores, type FiltroAsesor } from "@/components/sph/TablaAsesores";
 import {
-  SPH_API, SPH_HREF, TIPO_LABEL, etiquetaPeriodo, fmtHoras, fmtProductos, fmtSph, normalizar, type InformeSphDetalle,
+  SPH_API, SPH_HREF, TIPO_LABEL, UNIDAD, etiquetaPeriodo, fmtEstados, fmtHoras, fmtProductos, fmtSph, normalizar,
+  type InformeSphDetalle,
 } from "@/components/sph/tipos";
-import { CruceNombres, MetodoSph, VentasSinAsesor } from "@/components/sph/ui";
+import { CruceNombres, EstadosVentas, MetodoSph, VentasSinAsesor } from "@/components/sph/ui";
 import { VincularDialog, type Objetivo } from "@/components/sph/VincularDialog";
 import { EstadoBadge, Tabs } from "@/components/ventas-netas/ui";
 import { apiFetch } from "@/lib/api";
@@ -86,12 +87,14 @@ function Informe() {
   const d = normalizar(r.data);
   const k = d.kpis;
   const f = d.fuentes;
+  const u = UNIDAD[d.base];
+  const conNetas = d.base === "netas"; // calculado antes de la v4: con las netas (líneas activadas)
   const periodo = r.tipo !== "dia";
   const prod = f.productividad[0];
-  // La planilla del mes del último día; las del mes siguiente traen lo vendido a fin de mes que se activó después.
+  // La planilla del mes del último día. Los SPH con netas también leían la del mes siguiente (lo activado después).
   const mesHasta = r.hasta.slice(0, 7);
   const ventas = [...f.ventas].reverse().find((v) => v.periodo <= mesHasta) ?? f.ventas[f.ventas.length - 1];
-  const siguientes = f.ventas.filter((v) => v.periodo > mesHasta);
+  const siguientes = conNetas ? f.ventas.filter((v) => v.periodo > mesHasta) : [];
   const nombre = (uid: string | null) => (uid && r.usuarios[uid]) || "—";
   const etiqueta = etiquetaPeriodo(r.desde, r.hasta, r.tipo);
   const titulo = `SPH estimado · ${etiqueta}`;
@@ -153,7 +156,20 @@ function Informe() {
           </div>
         )}
         {(error || errorPublicar) && <div className="card p-4 text-brand-primary">{error || errorPublicar}</div>}
-        {gestion && !!r.fuentes_nuevas?.length && (
+        {conNetas && (
+          <div role="note" className="rounded-md border border-brand-orange/40 bg-brand-orange/10 p-3 text-sm text-brand-graphite flex items-start justify-between gap-3 flex-wrap">
+            <span className="flex items-start gap-2 min-w-0">
+              <AlertTriangle size={17} className="text-[#8A5200] shrink-0 mt-0.5" />
+              <span>
+                Este SPH se calculó con las <b>netas</b> (líneas activadas), el método anterior. Ahora el SPH usa las <b>ventas del día</b> de la
+                hoja de productividad: las netas llegan días después y pueden ser de otro mes.
+                {gestion ? (r.status === "draft" ? " Recalculalo para actualizarlo." : " Al recalcularlo se genera un borrador con el método nuevo.") : " Gestión puede recalcularlo."}
+              </span>
+            </span>
+            {gestion && <button onClick={() => recalcular()} disabled={!!proceso} className="btn-secondary text-xs px-3 py-2"><RefreshCw size={14} /> Recalcular</button>}
+          </div>
+        )}
+        {gestion && !conNetas && !!r.fuentes_nuevas?.length && (
           <div className="rounded-md border border-brand-orange/40 bg-brand-orange/10 p-3 text-sm text-brand-graphite flex items-center justify-between gap-3 flex-wrap">
             <span>Hay datos más nuevos de <b>{r.fuentes_nuevas.join(" y ")}</b> que los usados en este cálculo.
               {r.status === "draft" ? " Recalculalo para usarlos." : " Al recalcular se genera un borrador nuevo con esos datos."}</span>
@@ -181,24 +197,29 @@ function Informe() {
         <div className="space-y-5">
           <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <Indicador titulo="SPH de la operación" valor={fmtSph(k.sph)} icono={<Gauge size={16} />} borde="border-l-brand-cyan"
-              detalle={<>{n(k.netas_operacion)} netas ÷ {fmtHoras(k.horas)} conectadas{k.sph_vinculados !== null && <> · asesores vinculados: <b>{fmtSph(k.sph_vinculados)}</b></>}</>} />
-            <Indicador titulo={periodo ? "Netas del período" : "Netas del día"} valor={n(k.netas)} icono={<Receipt size={16} />} borde="border-l-brand-ink"
-              detalle={<>{fmtProductos(k.productos) || "Sin netas"}{k.pct_activadas !== null && <> · {pct(k.pct_activadas)} de las {n(k.cargadas)} cargadas ya activó</>}</>} />
+              detalle={<>{n(k.ventas_operacion)} {u.varias} ÷ {fmtHoras(k.horas)} conectadas{k.sph_vinculados !== null && <> · asesores vinculados: <b>{fmtSph(k.sph_vinculados)}</b></>}</>} />
+            <Indicador titulo={`${u.Varias} ${periodo ? "del período" : "del día"}`} valor={n(k.ventas)} icono={<Receipt size={16} />} borde="border-l-brand-ink"
+              detalle={conNetas
+                ? <>{fmtProductos(k.productos) || "Sin netas"}{k.pct_activadas != null && <> · {pct(k.pct_activadas)} de las {n(k.cargadas ?? 0)} cargadas ya activó</>}</>
+                : <>{fmtEstados(k.estados) || "Sin ventas"}{k.no_cuentan > 0 && <> · {fmtEstados(k.estados, false)} no cuentan</>}
+                  {fmtProductos(k.productos) && <><br />{fmtProductos(k.productos)}</>}</>} />
             <Indicador titulo="Horas conectadas" valor={fmtHoras(k.horas)} icono={<Clock size={16} />} borde="border-l-brand-purple"
               detalle={<>{periodo ? <>{n(k.agentes)} agentes · {k.agentes_por_dia.toLocaleString("es-PY")} por día</> : <>{n(k.agentes_validos)} agentes con jornada válida</>}
                 {k.sesiones_abiertas ? <> · <b className="text-brand-primary-dark">{n(k.sesiones_abiertas)} {periodo ? "jornada(s)" : "sesión(es)"} con sesión abierta fuera</b></> : null}</>} />
             <Indicador titulo="Asesores vinculados" valor={<>{n(k.vinculados)}<span className="text-lg text-brand-slate"> / {n(k.agentes)}</span></>} icono={<Users size={16} />}
               borde="border-l-brand-orange" onClick={() => verAsesores("vinculados")} cta="Ver asesores"
-              detalle={<>{pct(k.pct_cobertura)} de las netas con asesor · {n(k.niveles.probable ?? 0)} vínculo(s) probable(s)</>} />
+              detalle={<>{pct(k.pct_cobertura)} de las {u.varias} con asesor · {n(k.niveles.probable ?? 0)} vínculo(s) probable(s)</>} />
           </div>
 
-          {periodo && <SerieSph serie={d.serie} sph={k.sph} desde={r.desde} hasta={r.hasta} cobertura={d.cobertura} />}
+          {periodo && <SerieSph serie={d.serie} sph={k.sph} desde={r.desde} hasta={r.hasta} cobertura={d.cobertura} base={d.base} />}
 
           <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
-            <RankingSph agentes={d.agentes} promedio={k.sph_vinculados} minHoras={d.parametros.min_horas_ranking} />
+            <RankingSph agentes={d.agentes} promedio={k.sph_vinculados} minHoras={d.parametros.min_horas_ranking} base={d.base} />
             <div className="space-y-5 min-w-0">
-              <CruceNombres k={k} onVer={(nivel) => verAsesores(nivel === "sin_vinculo" ? "sin_vinculo" : nivel === "probable" ? "probable" : "vinculados")} />
-              <VentasSinAsesor ventas={d.ventas_sin_agente} periodo={periodo} onVincular={gestion ? (v) => setObjetivo({ tipo: "vendedor", venta: v }) : undefined} />
+              {!conNetas && <EstadosVentas k={k} periodo={periodo} />}
+              <CruceNombres k={k} base={d.base} onVer={(nivel) => verAsesores(nivel === "sin_vinculo" ? "sin_vinculo" : nivel === "probable" ? "probable" : "vinculados")} />
+              <VentasSinAsesor ventas={d.ventas_sin_agente} sinVendedor={d.sin_vendedor} base={d.base} periodo={periodo}
+                onVincular={gestion ? (v) => setObjetivo({ tipo: "vendedor", venta: v }) : undefined} />
             </div>
           </div>
 
@@ -208,14 +229,14 @@ function Informe() {
 
       {vista === "asesores" && (
         <section className="card p-5">
-          <TablaAsesores agentes={d.agentes} filtro={filtro} onFiltro={setFiltro} periodo={periodo}
+          <TablaAsesores agentes={d.agentes} filtro={filtro} onFiltro={setFiltro} periodo={periodo} base={d.base}
             archivo={periodo ? `sph_${r.desde}_${r.hasta}.csv` : `sph_${r.desde}.csv`}
             minHoras={d.parametros.min_horas_ranking} onVincular={gestion ? (a) => setObjetivo({ tipo: "agente", agente: a }) : undefined} />
         </section>
       )}
 
       {dialogo}
-      <VincularDialog objetivo={objetivo} agentes={d.agentes} vendedores={d.vendedores} manual={r.vinculos ?? {}}
+      <VincularDialog objetivo={objetivo} agentes={d.agentes} vendedores={d.vendedores} manual={r.vinculos ?? {}} base={d.base}
         onCerrar={() => setObjetivo(null)}
         onGuardado={async () => { setObjetivo(null); await recalcular("Guardando el vínculo y recalculando el SPH…"); }} />
       <Procesando abierto={!!proceso} titulo="Procesando" listo={listo} detalle={listo ? "Abriendo el borrador nuevo…" : proceso} />

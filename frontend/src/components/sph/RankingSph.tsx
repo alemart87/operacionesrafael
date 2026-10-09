@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { n } from "@/components/productividad/tipos";
-import { NIVEL, fmtHoras, fmtProductos, fmtSph, type AgenteSph } from "./tipos";
+import { NIVEL, UNIDAD, fmtEstados, fmtHoras, fmtProductos, fmtSph, type AgenteSph, type BaseSph } from "./tipos";
 
 const C_BARRA = "#00B2BF";
 const C_INK = "#0F1116";
@@ -36,11 +36,13 @@ function useAnchoEje() {
  * Ranking de SPH por asesor (barras horizontales, una sola tinta). La línea es el promedio de
  * los asesores vinculados: la misma base que cada barra. Un vínculo probable lleva «≈» en el nombre.
  */
-export function RankingSph({ agentes, promedio, minHoras }: { agentes: AgenteSph[]; promedio: number | null; minHoras: number }) {
+export function RankingSph({ agentes, promedio, minHoras, base = "ventas" }: {
+  agentes: AgenteSph[]; promedio: number | null; minHoras: number; base?: BaseSph;
+}) {
   const datos = agentes
     .filter((a) => a.en_ranking && a.sph !== null)
-    .sort((a, b) => (b.sph ?? 0) - (a.sph ?? 0) || (b.netas ?? 0) - (a.netas ?? 0))
-    .map((a) => ({ ...a, etiqueta: `${a.nombre}${a.nivel === "probable" ? " ≈" : ""}` }));
+    .sort((a, b) => (b.sph ?? 0) - (a.sph ?? 0) || (b.ventas ?? 0) - (a.ventas ?? 0))
+    .map((a) => ({ ...a, etiqueta: `${a.nombre}${a.nivel === "probable" ? " ≈" : ""}`, base }));
   const tope = Math.max(0.5, Math.ceil(((datos[0]?.sph ?? 0) + 0.1) * 10) / 10);
   const eje = useAnchoEje();
 
@@ -48,7 +50,7 @@ export function RankingSph({ agentes, promedio, minHoras }: { agentes: AgenteSph
     <section className="card p-5 min-w-0">
       <h3 className="font-display text-base uppercase text-brand-ink leading-tight">SPH por asesor</h3>
       <p className="text-xs text-brand-slate mt-0.5">
-        Netas ÷ horas conectadas, asesores con {minHoras} h o más. La línea es el promedio de los asesores vinculados.
+        {UNIDAD[base].Varias} ÷ horas conectadas, asesores con {minHoras} h o más. La línea es el promedio de los asesores vinculados.
         {datos.some((d) => d.nivel === "probable") && <> <b>≈</b> vínculo probable: revisalo en la tabla.</>}
       </p>
       {!datos.length ? (
@@ -80,7 +82,7 @@ export function RankingSph({ agentes, promedio, minHoras }: { agentes: AgenteSph
   );
 }
 
-function Detalle({ active, payload }: { active?: boolean; payload?: { payload: AgenteSph }[] }) {
+function Detalle({ active, payload }: { active?: boolean; payload?: { payload: AgenteSph & { base: BaseSph } }[] }) {
   if (!active || !payload?.length) return null;
   const a = payload[0].payload;
   return (
@@ -89,10 +91,11 @@ function Detalle({ active, payload }: { active?: boolean; payload?: { payload: A
       <div className="text-brand-slate">{a.vendedor} · {NIVEL[a.nivel].label.toLowerCase()}</div>
       <div className="mt-1.5 grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5 tabular-nums">
         <span className="text-brand-slate">SPH</span><b className="text-right">{fmtSph(a.sph)}</b>
-        <span className="text-brand-slate">Netas</span><span className="text-right">{n(a.netas ?? 0)}</span>
+        <span className="text-brand-slate">{UNIDAD[a.base].Varias}</span><span className="text-right">{n(a.ventas ?? 0)}</span>
         <span className="text-brand-slate">Horas</span><span className="text-right">{fmtHoras(a.login)}</span>
       </div>
-      {!!a.netas && <div className="text-brand-slate mt-1">{fmtProductos(a.productos)}</div>}
+      {!!a.ventas && <div className="text-brand-slate mt-1">{fmtProductos(a.productos)}</div>}
+      {!!fmtEstados(a.estados) && <div className="text-brand-slate">{fmtEstados(a.estados)}</div>}
     </div>
   );
 }

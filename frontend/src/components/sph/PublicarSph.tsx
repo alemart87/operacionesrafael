@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { fechaCorta, fechaHora, n, pct } from "@/components/productividad/tipos";
 import { ApiError, apiFetch } from "@/lib/api";
-import { SPH_API, etiquetaPeriodo, fmtSph, type InformeSphResumen } from "./tipos";
+import { SPH_API, UNIDAD, etiquetaPeriodo, fmtSph, type InformeSphResumen } from "./tipos";
 
 type Existente = InformeSphResumen & { published_by: string | null };
 
@@ -36,9 +36,9 @@ export function usePublicarSph(onDone: () => Promise<void> | void) {
   const tarjeta = (titulo: string, r: InformeSphResumen, extra?: string | null, nuevo?: boolean) => (
     <div className={`rounded-md border p-3 ${nuevo ? "border-brand-primary/40 bg-brand-primary-light/40" : "border-brand-border"}`}>
       <div className={`text-[10px] uppercase tracking-wider2 mb-1 ${nuevo ? "text-brand-primary-dark" : "text-brand-slate"}`}>{titulo}</div>
-      <div>SPH <b className="tabular-nums">{fmtSph(r.sph)}</b> · {n(r.netas)} netas{r.tipo !== "dia" && <> · {n(r.dias)} día(s)</>}</div>
+      <div>SPH <b className="tabular-nums">{fmtSph(r.sph)}</b> · {n(r.ventas)} {UNIDAD[r.base ?? "netas"].varias}{r.tipo !== "dia" && <> · {n(r.dias)} día(s)</>}</div>
       <div>Corte de ventas {r.ventas_corte ? fechaCorta(r.ventas_corte) : "—"}</div>
-      <div>{pct(r.pct_cobertura)} de las netas con asesor</div>
+      <div>{pct(r.pct_cobertura)} de las {UNIDAD[r.base ?? "netas"].varias} con asesor</div>
       {extra && <div className="text-brand-mist mt-1">{extra}</div>}
     </div>
   );

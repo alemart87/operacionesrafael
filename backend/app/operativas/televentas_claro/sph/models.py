@@ -25,7 +25,8 @@ ESTADO_REEMPLAZADO = "replaced"
 
 
 class SphInforme(Base):
-    """SPH de un período (día, semana, mes o rango): las horas de Productividad cruzadas con las netas de Ventas Netas."""
+    """SPH de un período (día, semana, mes o rango): las horas de Productividad cruzadas con las ventas del día de la
+    hoja de productividad de Ventas Netas (hasta la v3, con las netas)."""
     __tablename__ = "sph_informes"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -34,6 +35,7 @@ class SphInforme(Base):
     hasta: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     tipo: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, default="dia")
     dias: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=1)  # días que cuentan
+    version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # del cálculo (vacía: anterior a la v4)
     status: Mapped[str] = mapped_column(String(12), default=ESTADO_BORRADOR, nullable=False, index=True)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     generated_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
@@ -49,12 +51,13 @@ class SphInforme(Base):
 
     # Resumen desnormalizado para la lista (sin abrir el JSON).
     sph: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    netas: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ventas: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # desde la v4: ventas del período que cuentan
+    netas: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # hasta la v3: netas del período (después, 0)
     horas: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     agentes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     vinculados: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     pct_cobertura: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # % de las netas con asesor
-    pct_activadas: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # netas ÷ cargadas del día
+    pct_activadas: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # hasta la v3: netas ÷ cargadas del día
 
     data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
