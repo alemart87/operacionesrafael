@@ -4,9 +4,10 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Headset, ShoppingBag, X } fro
 import { useEffect, useState, type ReactNode } from "react";
 import { fechaLarga, n, nombreMes } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
+import { MetodoScoring, ScoreCelda, ScoringCard } from "./scoring";
 import {
   CRUCE, ESTADO, dm, mesActual, num, sumarMeses,
-  type Calendario, type Cruce, type DetalleSupervisor, type EstadoObjetivo, type FuenteVentas,
+  type AsesorEquipo, type Calendario, type Cruce, type DetalleSupervisor, type EstadoObjetivo, type FuenteVentas,
   type LineasAsesor, type ParametrosSup, type Proyeccion, type Uso,
 } from "./tipos";
 
@@ -317,16 +318,18 @@ export function TablaEquipo({ d, lineasUrl }: { d: DetalleSupervisor; lineasUrl:
         </div>
       </div>
       <div className="relative overflow-x-auto">
-        <table className="w-full text-sm min-w-[720px]">
+        <table className="w-full text-sm min-w-[860px]">
           <thead>
             <tr className="bg-brand-bg text-[10px] uppercase tracking-wider2 text-brand-slate">
               <th className="text-left px-5 py-2.5">Asesor</th>
               <th className="text-right px-3 py-2.5">Pospago</th>
               <th className="text-right px-3 py-2.5">GPON</th>
+              <th className="text-right px-3 py-2.5" title="% del tiempo conectado en conversación (Productividad)">Conv.</th>
               <th className="text-right px-3 py-2.5" title="Pospago con 3 días o más desde la activación">Evaluables</th>
               <th className="text-right px-3 py-2.5">Sin uso</th>
               <th className="text-right px-3 py-2.5">% sin uso</th>
               <th className="text-right px-3 py-2.5" title="Líneas sin uso que tienen que empezar a usarse para volver al umbral">A recuperar</th>
+              <th className="text-right px-3 py-2.5" title="Scoring del asesor (0 a 100)">Score</th>
               <th className="px-5 py-2.5"><span className="sr-only">Líneas</span></th>
             </tr>
           </thead>
@@ -343,10 +346,12 @@ export function TablaEquipo({ d, lineasUrl }: { d: DetalleSupervisor; lineasUrl:
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{a.pospago === null ? "—" : n(a.pospago)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{a.gpon === null ? "—" : n(a.gpon)}</td>
+                <td className="px-3 py-2.5 text-right"><ConvCelda a={a} /></td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{a.uso ? n(a.uso.evaluables) : "—"}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{a.uso ? n(a.uso.sin_uso) : "—"}</td>
                 <td className="px-3 py-2.5 text-right"><UsoCelda uso={a.uso} p={p} /></td>
                 <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-brand-primary-dark">{a.uso?.a_recuperar ? n(a.uso.a_recuperar) : ""}</td>
+                <td className="px-3 py-2.5 text-right">{a.actual ? <ScoreCelda total={a.score} parcial={a.parcial} /> : <span className="text-brand-mist">—</span>}</td>
                 <td className="px-5 py-2.5 text-right whitespace-nowrap">
                   {!!(a.uso && (a.uso.sin_uso || a.uso.en_espera)) && (
                     <button type="button" onClick={() => setAbierta(a.id)} className="text-xs font-semibold text-brand-primary hover:underline">
@@ -361,6 +366,19 @@ export function TablaEquipo({ d, lineasUrl }: { d: DetalleSupervisor; lineasUrl:
       </div>
       <LineasDialog url={abierta ? lineasUrl(abierta) : null} onClose={() => setAbierta(null)} />
     </section>
+  );
+}
+
+/** % de conversación del asesor en el mes (Productividad), marcado si está en rojo o sobre la meta. */
+function ConvCelda({ a }: { a: AsesorEquipo }) {
+  const c = a.componentes.find((x) => x.clave === "conversacion");
+  if (!c || c.valor === null) return <span className="text-brand-mist">—</span>;
+  const rojo = c.rel === 0;
+  return (
+    <span className={`tabular-nums font-semibold ${rojo ? "text-brand-primary-dark" : c.sobre_meta ? "text-[#8A5200]" : "text-brand-ink"}`}
+      title={c.rel === null ? `Pocas horas conectadas (${num(c.horas)} h): no se evalúa` : c.sobre_meta ? "Sobre la meta: revisar" : rojo ? "En la banda roja" : undefined}>
+      {num(c.valor)}%
+    </span>
   );
 }
 
@@ -389,9 +407,11 @@ export function VistaSupervisor({ d, lineasUrl, extra }: { d: DetalleSupervisor;
           </p>
         </section>
       </div>
+      {d.scoring && <ScoringCard s={d.scoring} mesAnterior={nombreMes(sumarMeses(d.periodo, -1))} minEvaluables={d.parametros.min_evaluables} />}
       {extra}
       <TablaEquipo d={d} lineasUrl={lineasUrl} />
       <MetodoSupervision p={d.parametros} />
+      {d.scoring && <MetodoScoring p={d.scoring.parametros} umbral={d.parametros.umbral_sin_uso} minEvaluables={d.parametros.min_evaluables} />}
     </div>
   );
 }

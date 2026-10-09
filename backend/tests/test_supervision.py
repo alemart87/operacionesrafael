@@ -250,6 +250,35 @@ async def test_flujo_equipos_objetivos_proyeccion_y_portal(monkeypatch):
         r = (await ac.get(f"{BASE}/resumen", headers=coord, params={"periodo": "2026-10"})).json()
         assert r["calendario"]["transcurridos"] == 5.5 and r["calendario"]["total"] == 23.5
 
+        # Tablero y scoring: operación, ranking de supervisores y asesores, con el mes anterior.
+        t = await ac.get(f"{BASE}/tablero", headers=auditor, params={"periodo": "2026-10"})
+        assert t.status_code == 200, t.text
+        t = t.json()
+        assert t["scoring"]["version"] == 1 and t["scoring"]["conversacion"]["meta_min"] == 37.0
+        assert t["operacion"]["total"] is not None and t["anterior"]["periodo"] == "2026-09"
+        assert {s["nombre"] for s in t["supervisores"]} == {"Silvia Uno", "Sergio Dos"}
+        silvia_sc = next(s for s in t["supervisores"] if s["nombre"] == "Silvia Uno")
+        assert silvia_sc["total"] == silvia_sc["resultado"] and silvia_sc["anterior"] is None
+        assert {c["clave"] for c in silvia_sc["componentes"]} == {"pospago", "uso", "conversacion", "gpon"}
+        ana_sc = next(a for a in t["asesores"] if a["nombre"] == "Perez, Ana")
+        assert ana_sc["supervisor"] == "Silvia Uno" and ana_sc["total"] is not None
+        assert (await ac.get(f"{BASE}/tablero", headers=sup1)).status_code == 403
+        p1 = (await ac.get(f"{BASE}/portal", headers=sup1, params={"periodo": "2026-10"})).json()
+        assert p1["scoring"]["total"] == silvia_sc["total"] and p1["asesores"][0]["score"] is not None
+
+        # Parámetros del scoring: los ve Supervisión; los cambia el sub gerente (o el superadmin), con versión.
+        par = (await ac.get(f"{BASE}/parametros/scoring", headers=coord)).json()
+        assert par["version"] == 1 and par["puede_editar"] is False and par["asesor"]["pospago"] == 35
+        cuerpo = {"asesor": {"pospago": 40, "uso": 25, "conversacion": 20, "gpon": 15},
+                  "supervisor": {"resultado": 60, "cobertura": 15, "foco": 10, "tickets": 10, "seguimiento": 5},
+                  "uso_cero": 35, "min_horas_conversacion": 2}
+        assert (await ac.put(f"{BASE}/parametros/scoring", headers=coord, json=cuerpo)).status_code == 403
+        assert (await ac.put(f"{BASE}/parametros/scoring", headers=admin, json={**cuerpo, "asesor": {**cuerpo["asesor"], "gpon": 20}})).status_code == 400
+        assert (await ac.put(f"{BASE}/parametros/scoring", headers=admin, json={**cuerpo, "uso_cero": 10})).status_code == 400
+        r = await ac.put(f"{BASE}/parametros/scoring", headers=admin, json=cuerpo)
+        assert r.status_code == 200 and r.json()["version"] == 2 and r.json()["historial"][0]["antes"]["asesor"]["pospago"] == 35
+        assert (await ac.get(f"{BASE}/tablero", headers=coord, params={"periodo": "2026-10"})).json()["scoring"]["asesor"]["pospago"] == 40
+
         # Copiar a noviembre: con los equipos con que cerró octubre.
         c = (await ac.post(f"{BASE}/equipos/copiar", headers=coord, json={"periodo": "2026-11"})).json()
         assert c["copiados"] == 3

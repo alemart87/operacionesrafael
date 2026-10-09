@@ -58,6 +58,9 @@ export interface OperadorCorto {
 }
 
 export interface AsesorEquipo extends OperadorCorto {
+  score: number | null;
+  parcial: boolean;
+  componentes: Componente[];
   actual: boolean;
   desde: string | null;
   hasta: string | null;
@@ -76,6 +79,7 @@ export interface DetalleSupervisor extends Comun {
   asesores_en_alerta: number;
   a_recuperar: number;
   asesores: AsesorEquipo[];
+  scoring: ScoringSupervisor | null;
 }
 
 export interface FilaSupervisor extends SupervisorRef {
@@ -242,4 +246,88 @@ export function periodoEnUrl(periodo: string) {
   if (periodo === mesActual()) url.searchParams.delete("periodo");
   else url.searchParams.set("periodo", periodo);
   window.history.replaceState(null, "", url.toString());
+}
+
+// ------------------------------------------------------------------ scoring
+export type ClaveComponente =
+  | "pospago" | "gpon" | "uso" | "conversacion"
+  | "resultado" | "cobertura" | "foco" | "tickets" | "seguimiento";
+
+export interface Componente {
+  clave: ClaveComponente;
+  nombre: string;
+  peso: number;
+  peso_efectivo: number;
+  rel: number | null;
+  puntos: number | null;
+  valor: number | null;
+  netas?: number | null;
+  esperado?: number | null;
+  evaluables?: number;
+  sin_uso?: number;
+  horas?: number;
+  sobre_meta?: boolean;
+  pendiente?: boolean;
+  detalle?: string;
+}
+
+export interface ParametrosScoring {
+  version: number;
+  asesor: { pospago: number; uso: number; conversacion: number; gpon: number };
+  supervisor: { resultado: number; cobertura: number; foco: number; tickets: number; seguimiento: number };
+  uso_cero: number;
+  min_horas_conversacion: number;
+  conversacion: { rojo: number; meta_min: number; meta_max: number };
+  min_cobertura?: number;
+  productividad?: { dias: number; ultimo_dia: string | null; borradores: number };
+}
+
+export interface ScoringSupervisor {
+  total: number | null;
+  parcial: boolean;
+  resultado: number | null;
+  partes: Componente[];
+  componentes: Componente[];
+  parametros: ParametrosScoring;
+  anterior?: number | null;
+}
+
+export interface FilaTableroSupervisor extends SupervisorRef {
+  asesores: number;
+  total: number | null;
+  parcial: boolean;
+  resultado: number | null;
+  partes: Componente[];
+  componentes: Componente[];
+  anterior: number | null;
+  critico: boolean;
+  asesores_en_alerta: number;
+  a_recuperar: number;
+}
+
+export interface FilaTableroAsesor extends OperadorCorto {
+  supervisor_id: string | null;
+  supervisor: string | null;
+  total: number | null;
+  parcial: boolean;
+  cobertura: number;
+  componentes: Componente[];
+  dias: number | null;
+  anterior: number | null;
+  alerta: boolean;
+}
+
+export interface Tablero extends Comun {
+  scoring: ParametrosScoring;
+  operacion: { total: number | null; componentes: Componente[]; anterior: number | null };
+  supervisores: FilaTableroSupervisor[];
+  asesores: FilaTableroAsesor[];
+  anterior: { periodo: string; nombre_mes: string };
+}
+
+export interface ParametrosScoringCompletos extends ParametrosScoring {
+  umbral_sin_uso: number;
+  min_evaluables: number;
+  historial: { version: number; fecha: string; por: string | null; antes: Partial<ParametrosScoring> }[];
+  puede_editar: boolean;
 }

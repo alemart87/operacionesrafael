@@ -33,6 +33,8 @@ from ..sph.analyzer import nombre_mes
 from ..ventas_netas.models import ESTADO_PUBLICADO as VN_PUBLICADO
 from ..ventas_netas.models import VentasNetasReport
 from . import operadores as maestro
+from . import scoring
+from .datos import parametros_scoring, productividad_del_mes
 from .calculo import (
     PARAMETROS_DEFECTO, atribuir, calendario, limites, lineas_netas, mes_anterior, proyeccion, supervisor_en,
     validar_periodo,
@@ -46,10 +48,12 @@ PERM_VER = f"{OPERATIVA}.supervision"
 PERM_GESTION = f"{OPERATIVA}.supervision_gestion"
 PERM_OPERADORES = f"{OPERATIVA}.operadores"
 PERM_PORTAL = f"{OPERATIVA}.portal_supervisor"
+PERM_PARAMETROS = f"{OPERATIVA}.supervision_parametros"
 require_ver = require_perm(PERM_VER)
 require_gestion = require_perm(PERM_GESTION)
 require_operadores = require_perm(PERM_OPERADORES)
 require_portal = require_perm(PERM_PORTAL)
+require_parametros = require_perm(PERM_PARAMETROS)
 
 router = APIRouter(prefix="/televentas-claro/supervision", tags=["televentas-claro · supervisión"])
 
@@ -206,6 +210,27 @@ class Contexto:
         self.supervisores = await _supervisores(db, ids)
         return self
 
+    async def cargar_scoring(self, db: AsyncSession, gestion: dict[str, list[dict[str, Any]]] | None = None) -> "Contexto":
+        """Suma Productividad (conversación) y calcula el scoring del mes."""
+        self.sc_params = await parametros_scoring(db)
+        self.prod, self.fuente_prod = await productividad_del_mes(db, self.periodo)
+        self.sc = scoring.calcular(
+            primero=self.primero, ultimo=self.ultimo, corte=self.reporte.fecha_dato if self.reporte else None,
+            cal=self.cal, p=self.p, sc=self.sc_params, pp=self.sc_params["conversacion"],
+            agentes={o.id: o.agente_clave for o in self.ops.values() if o.agente_clave},
+            vendedores={o.id: o.vendedor for o in self.ops.values() if o.vendedor},
+            tramos=self.tramos, ref=self.ref, atrib=self.atrib,
+            objetivos={sid: (o.pospago, o.gpon) for sid, o in self.objetivos.items()},
+            prod=self.prod, supervisores=set(self.supervisores), gestion=gestion,
+        )
+        return self
+
+    def info_scoring(self) -> dict[str, Any]:
+        sc = self.sc_params
+        return {"version": sc["version"], "asesor": sc["asesor"], "supervisor": sc["supervisor"], "uso_cero": sc["uso_cero"],
+                "min_horas_conversacion": sc["min_horas_conversacion"], "conversacion": sc["conversacion"],
+                "min_cobertura": scoring.MIN_COBERTURA, "productividad": self.fuente_prod}
+
     def actual(self, op_id: str) -> str | None:
         return supervisor_en(self.tramos.get(op_id, []), self.ref)
 
@@ -253,8 +278,12 @@ class Contexto:
             if not o:
                 continue
             a = atribuidas.get(op_id, {})
+            sc_op = self.sc["asesores"].get(op_id) if hasattr(self, "sc") and op_id in actuales else None
             asesores.append({
                 **_op_corto(o),
+                "score": sc_op["total"] if sc_op else None,
+                "parcial": bool(sc_op and sc_op["parcial"]),
+                "componentes": sc_op["componentes"] if sc_op else [],
                 "actual": op_id in actuales,
                 "desde": mios[0]["desde"].isoformat() if mios and mios[0]["desde"] > self.primero else None,
                 "hasta": mios[-1]["hasta"].isoformat() if mios and mios[-1]["hasta"] < self.ultimo and op_id not in actuales else None,
@@ -275,7 +304,28 @@ class Contexto:
             "asesores_actuales": len(actuales),
             "critico": en_alerta > 0, "asesores_en_alerta": en_alerta, "a_recuperar": a_recuperar,
             "asesores": asesores,
+            "scoring": self.scoring_supervisor(sup_id) if hasattr(self, "sc") else None,
         }
+
+    def scoring_supervisor(self, sup_id: str) -> dict[str, Any] | None:
+        x = self.sc["supervisores"].get(sup_id)
+        if not x:
+            return None
+        return {"total": x["total"], "resultado": x["resultado"], "partes": x["partes"], "componentes": x["componentes"],
+                "parcial": x["parcial"], "parametros": self.info_scoring()}
+
+
+async def contexto(db: AsyncSession, periodo: str, *, con_scoring: bool = True) -> Contexto:
+    ctx = await Contexto(periodo).cargar(db)
+    if con_scoring:
+        await ctx.cargar_scoring(db)
+    return ctx
+
+
+def _anterior(prev: Contexto, tipo: str, clave: str | None = None) -> float | None:
+    if tipo == "operacion":
+        return prev.sc["operacion"]["total"]
+    return ((prev.sc[tipo].get(clave) or {}).get("total")) if clave else None
 
 
 # ------------------------------------------------------------------ resumen de todos los supervisores
@@ -343,11 +393,15 @@ async def listar_supervisores(user: CurrentUser = Depends(require_ver_operadores
 @router.get("/supervisores/{supervisor_id}")
 async def ver_supervisor(supervisor_id: str, periodo: Optional[str] = Query(None), user: CurrentUser = Depends(require_ver),
                          db: AsyncSession = Depends(get_db)) -> dict:
-    ctx = await Contexto(_periodo(periodo)).cargar(db)
+    per = _periodo(periodo)
+    ctx = await contexto(db, per)
     if supervisor_id not in ctx.supervisores:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Supervisor no encontrado")
     nombres = await _nombres(db, {o.updated_by for o in ctx.objetivos.values()})
-    return ctx.detalle(supervisor_id, nombres)
+    d = ctx.detalle(supervisor_id, nombres)
+    if d["scoring"]:
+        d["scoring"]["anterior"] = _anterior(await contexto(db, mes_anterior(per)), "supervisores", supervisor_id)
+    return d
 
 
 def _lineas_de(ctx: Contexto, lineas: list[dict[str, Any]], op_id: str) -> list[dict[str, Any]]:
@@ -377,11 +431,15 @@ async def lineas_sin_uso(operador_id: str, request: Request, periodo: Optional[s
 async def portal(periodo: Optional[str] = Query(None), user: CurrentUser = Depends(require_portal),
                  db: AsyncSession = Depends(get_db)) -> dict:
     """El mes del supervisor que entra: su equipo, sus objetivos, su avance y proyección y sus alertas."""
-    ctx = await Contexto(_periodo(periodo)).cargar(db)
+    per = _periodo(periodo)
+    ctx = await contexto(db, per)
     nombres = await _nombres(db, {o.updated_by for o in ctx.objetivos.values()} | {user.id})
     if user.id not in ctx.supervisores:
         ctx.supervisores[user.id] = {"id": user.id, "nombre": user.full_name, "activo": user.role == ROL_SUPERVISOR}
-    return ctx.detalle(user.id, nombres)
+    d = ctx.detalle(user.id, nombres)
+    if d["scoring"]:
+        d["scoring"]["anterior"] = _anterior(await contexto(db, mes_anterior(per)), "supervisores", user.id)
+    return d
 
 
 @router.get("/portal/lineas")
@@ -786,3 +844,113 @@ async def editar_operador(operador_id: str, payload: OperadorPatch, request: Req
                         ip=client_ip(request), extra={"antes": antes, "despues": {"nombre": o.nombre, "activo": o.activo}})
     return {"operador": _op_corto(o)}
 
+
+# ------------------------------------------------------------------ tablero y scoring
+def _con_actividad(x: dict[str, Any]) -> bool:
+    return any(c["valor"] is not None or (c.get("netas") or 0) > 0 for c in x["componentes"])
+
+
+@router.get("/tablero")
+async def tablero(periodo: Optional[str] = Query(None), user: CurrentUser = Depends(require_ver),
+                  db: AsyncSession = Depends(get_db)) -> dict:
+    """Scoring del mes: la operación, el ranking de supervisores y cada asesor, con la tendencia contra el mes anterior."""
+    per = _periodo(periodo)
+    ctx = await contexto(db, per)
+    prev = await contexto(db, mes_anterior(per))
+    sups = []
+    for sid, x in ctx.sc["supervisores"].items():
+        info = ctx.supervisores.get(sid) or {"id": sid, "nombre": sid, "activo": False}
+        equipo = ctx.equipo(sid)
+        if not equipo and not info["activo"] and x["total"] is None:
+            continue
+        en_alerta, a_recuperar = ctx.alerta_de(equipo)
+        sups.append({**info, "asesores": len(equipo), "total": x["total"], "resultado": x["resultado"],
+                     "partes": x["partes"], "componentes": x["componentes"], "parcial": x["parcial"],
+                     "anterior": _anterior(prev, "supervisores", sid),
+                     "critico": en_alerta > 0, "asesores_en_alerta": en_alerta, "a_recuperar": a_recuperar})
+    sups.sort(key=lambda r: (r["total"] is None, -(r["total"] or 0), r["nombre"].lower()))
+    asesores = []
+    for op, x in ctx.sc["asesores"].items():
+        o = ctx.ops.get(op)
+        if not o or not _con_actividad(x):
+            continue
+        sid = x["supervisor_id"]
+        asesores.append({**_op_corto(o), "supervisor_id": sid,
+                         "supervisor": (ctx.supervisores.get(sid) or {}).get("nombre") if sid else None,
+                         "total": x["total"], "componentes": x["componentes"], "dias": x["dias"],
+                         "parcial": x["parcial"], "cobertura": x["cobertura"],
+                         "anterior": _anterior(prev, "asesores", op),
+                         "alerta": bool((ctx.atrib["operadores"].get(op) or {}).get("alerta"))})
+    asesores.sort(key=lambda r: (r["total"] is None, r["parcial"], -(r["total"] or 0), r["nombre"].lower()))
+    return {
+        **ctx.comun(),
+        "scoring": ctx.info_scoring(),
+        "operacion": {**ctx.sc["operacion"], "anterior": _anterior(prev, "operacion")},
+        "supervisores": sups,
+        "asesores": asesores,
+        "anterior": {"periodo": prev.periodo, "nombre_mes": nombre_mes(prev.periodo)},
+    }
+
+
+@router.get("/parametros/scoring")
+async def ver_parametros_scoring(user: CurrentUser = Depends(require_ver), db: AsyncSession = Depends(get_db)) -> dict:
+    sc = await parametros_scoring(db)
+    row = await db.get(SupParametros, OPERATIVA)
+    historial = list(((row.data if row else None) or {}).get("scoring_historial") or [])[-10:]
+    nombres = await _nombres(db, {h.get("por") for h in historial})
+    p = await parametros(db)
+    return {**sc, "umbral_sin_uso": p["umbral_sin_uso"], "min_evaluables": p["min_evaluables"],
+            "historial": [{**h, "por": nombres.get(h.get("por") or "", h.get("por"))} for h in reversed(historial)],
+            "puede_editar": user.has_perm(PERM_PARAMETROS)}
+
+
+class PesosAsesor(BaseModel):
+    pospago: int = Field(..., ge=0, le=100)
+    uso: int = Field(..., ge=0, le=100)
+    conversacion: int = Field(..., ge=0, le=100)
+    gpon: int = Field(..., ge=0, le=100)
+
+
+class PesosSupervisor(BaseModel):
+    resultado: int = Field(..., ge=0, le=100)
+    cobertura: int = Field(..., ge=0, le=100)
+    foco: int = Field(..., ge=0, le=100)
+    tickets: int = Field(..., ge=0, le=100)
+    seguimiento: int = Field(..., ge=0, le=100)
+
+
+class ScoringPayload(BaseModel):
+    asesor: PesosAsesor
+    supervisor: PesosSupervisor
+    uso_cero: float = Field(..., gt=0, le=100)
+    min_horas_conversacion: float = Field(..., ge=0.5, le=40)
+
+
+@router.put("/parametros/scoring")
+async def guardar_parametros_scoring(payload: ScoringPayload, request: Request, user: CurrentUser = Depends(require_parametros),
+                                     db: AsyncSession = Depends(get_db)) -> dict:
+    """Pesos y umbrales del scoring. Cada cambio es una versión nueva y queda en el historial y la auditoría."""
+    if sum(payload.asesor.model_dump().values()) != 100:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Los pesos del asesor tienen que sumar 100")
+    if sum(payload.supervisor.model_dump().values()) != 100:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Los pesos del supervisor tienen que sumar 100")
+    p = await parametros(db)
+    if payload.uso_cero <= p["umbral_sin_uso"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"El % sin uso con cero puntos tiene que ser mayor que el umbral ({p['umbral_sin_uso']}%)")
+    actual = await parametros_scoring(db)
+    row = await db.get(SupParametros, OPERATIVA)
+    if not row:
+        row = SupParametros(operativa=OPERATIVA, data={})
+        db.add(row)
+    data = dict(row.data or {})
+    antes = {k: actual[k] for k in ("version", "asesor", "supervisor", "uso_cero", "min_horas_conversacion")}
+    nuevo = {"version": int(actual["version"]) + 1, "asesor": payload.asesor.model_dump(), "supervisor": payload.supervisor.model_dump(),
+             "uso_cero": payload.uso_cero, "min_horas_conversacion": payload.min_horas_conversacion}
+    data["scoring"] = nuevo
+    data["scoring_historial"] = [*(data.get("scoring_historial") or []),
+                                 {"version": nuevo["version"], "fecha": datetime.now(timezone.utc).isoformat(), "por": user.id, "antes": antes}][-50:]
+    row.data, row.updated_at, row.updated_by = data, datetime.now(timezone.utc), user.id
+    await db.commit()
+    await record_action(db, user_id=user.id, action="scoring_parametros", resource_type="parametros", resource_id=OPERATIVA,
+                        ip=client_ip(request), extra={"antes": antes, "despues": nuevo})
+    return await ver_parametros_scoring(user, db)

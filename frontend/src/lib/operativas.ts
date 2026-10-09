@@ -45,6 +45,8 @@ export const PERM_AUDITORIA = "televentas_claro.auditoria";
 export const PERM_SUPERVISION = "televentas_claro.supervision";
 export const PERM_SUPERVISION_GESTION = "televentas_claro.supervision_gestion";
 export const PERM_OPERADORES = "televentas_claro.operadores";
+/** Parámetros del modelo (pesos del scoring): solo sub gerente y superadmin. */
+export const PERM_SUPERVISION_PARAMETROS = "televentas_claro.supervision_parametros";
 /** Portal del supervisor: lo único que ve el perfil Supervisor. */
 export const PERM_PORTAL_SUPERVISOR = "televentas_claro.portal_supervisor";
 export const PORTAL_HREF = "/televentas-claro/portal";
@@ -141,14 +143,16 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         label: "Supervisión",
         href: "/televentas-claro/supervision",
         descripcion: "Modelo Líder Coach Comercial: equipos del mes por supervisor, objetivos de Pospago y GPON, avance y proyección al cierre, y asesores en alerta por líneas sin uso.",
-        contenido: ["Objetivos por supervisor", "Proyección al cierre", "Ritmo necesario por día hábil", "Supervisores en crítico", "Equipos del mes con fecha efectiva", "Maestro de operadores"],
+        contenido: ["Objetivos por supervisor", "Proyección al cierre", "Scoring de asesores y supervisores", "Supervisores en crítico", "Equipos del mes con fecha efectiva", "Maestro de operadores"],
         gestion: "supervision_gestion",
         gestionTexto: "Podés armar los equipos, cargar objetivos y el calendario.",
         nav: [
           { href: "/televentas-claro/supervision", label: "Objetivos y proyección", exact: true },
+          { href: "/televentas-claro/supervision/tablero", label: "Tablero" },
           { href: "/televentas-claro/supervision/equipos", label: "Equipos del mes" },
           { href: "/televentas-claro/supervision/operadores", label: "Operadores" },
           { href: "/televentas-claro/supervision/calendario", label: "Calendario" },
+          { href: "/televentas-claro/supervision/parametros", label: "Parámetros", utilidad: "supervision_parametros" },
         ],
       },
       {

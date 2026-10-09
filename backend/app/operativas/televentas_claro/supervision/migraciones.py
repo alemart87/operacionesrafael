@@ -30,6 +30,17 @@ async def permisos_supervision(db: AsyncSession) -> dict[str, Any]:
     return {"perfiles": cambios}
 
 
+async def permisos_parametros(db: AsyncSession) -> dict[str, Any]:
+    """El sub gerente recibe los parámetros del modelo (pesos del scoring), restringidos a su perfil."""
+    perm = f"{OPERATIVA}.supervision_parametros"
+    row = await db.get(Profile, "sub_gerente")
+    if not row or perm in (row.permissions or []):
+        return {"sub_gerente": False}
+    row.permissions = filter_permissions([*(row.permissions or []), perm], "sub_gerente")
+    await db.commit()
+    return {"sub_gerente": True}
+
+
 async def vinculos_sph_al_maestro(db: AsyncSession) -> dict[str, Any]:
     return await maestro.importar_vinculos_sph(db)
 
@@ -37,4 +48,5 @@ async def vinculos_sph_al_maestro(db: AsyncSession) -> dict[str, Any]:
 MIGRACIONES = [
     ("2026-10-supervision-permisos", permisos_supervision),
     ("2026-10-operadores-desde-sph", vinculos_sph_al_maestro),
+    ("2026-10-supervision-parametros", permisos_parametros),
 ]

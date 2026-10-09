@@ -118,6 +118,7 @@ existentes según el modelo definido, y no se repite aunque el superadmin las ca
 | Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
 | SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
 | Supervisión · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | 🔒 | ✓ / | ✓ / | |
+| Supervisión · Parámetros del modelo (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
 | Operadores · Vincular | ✓ | ✓ | ✓ | 🔒 | ✓ | | |
 | Portal del supervisor (restringida) | 🔒 | 🔒 | 🔒 | ✓ | 🔒 | 🔒 | 🔒 |
 | Auditoría de ventas | ✓ | ✓ | | 🔒 | ✓ | ✓ | |
@@ -294,16 +295,18 @@ de **Ventas Netas** del mes. Código en `backend/app/operativas/televentas_claro
 Gestión de los supervisores como líderes coach: equipos del mes, objetivos de Pospago y
 GPON por supervisor, avance y **proyección al cierre**, y asesores en alerta por líneas
 sin uso. Código en `backend/app/operativas/televentas_claro/supervision/`; la guía del
-modelo es el documento «Modelo Líder Coach Comercial». Fase 1 de 5 (siguen: tablero y
-scoring, coaching y bitácora, tickets con SLA y centro de comandos).
+modelo es el documento «Modelo Líder Coach Comercial». Fases 1 y 2 de 5: equipos, objetivos
+y proyección; tablero y scoring (siguen coaching y bitácora, tickets con SLA y centro de comandos).
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
 | Objetivos y proyección | `/televentas-claro/supervision` | Por supervisor: vendido / objetivo, proyección al cierre, ritmo necesario por día hábil, semáforo y alertas; la operación completa; **Cargar objetivos** en la misma tabla |
+| Tablero | `…/supervision/tablero` | Scoring 0–100 de la operación, ranking de supervisores y de asesores, con la tendencia contra el mes anterior |
 | Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible) |
 | Equipos del mes | `…/supervision/equipos` | Tablero por supervisor y «Sin supervisor»; selección múltiple, **fecha efectiva**, copiar los equipos del mes anterior |
 | Operadores | `…/supervision/operadores` | Maestro de operadores: por revisar, vincular, separar, confirmar sin vínculo, renombrar, dar de baja |
 | Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana y días no laborables (más los feriados de Seguridad) |
+| Parámetros | `…/supervision/parametros` | Pesos y umbrales del scoring, versionados (solo sub gerente y superadmin) |
 | Mi portal | `/televentas-claro/portal` | El portal del supervisor: su equipo, sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
 
 - **Maestro de operadores:** cada persona tiene un nombre en llamadas (agente de
@@ -330,10 +333,25 @@ scoring, coaching y bitácora, tickets con SLA y centro de comandos).
 - **Supervisor crítico:** al menos un asesor de su equipo actual con más del 10% de sus
   Pospago evaluables sin uso y 5 o más evaluables. **Líneas a recuperar:** las sin uso
   que tienen que empezar a usarse para volver al 10%.
+- **Scoring v1** (`supervision/scoring.py`, cuentas puras):
+  - Asesor: Pospago 35, uso de líneas 25, conversación 25 y GPON 15, con puntos lineales
+    entre dos extremos. Pospago y GPON se miden contra el objetivo de referencia al corte:
+    la parte del objetivo del equipo según los días que trabajó (días con conexión en
+    Productividad, escalados si faltan informes). Uso: completo con 10% sin uso o menos,
+    cero con 35%. Conversación: con las metas de Productividad (completo desde 37%, cero
+    con 25%; más de 47% no resta y se marca).
+  - Lo que no tiene datos suficientes no se evalúa y su peso se reparte. Si se evaluó
+    menos del 60% del peso, el puntaje es **parcial** (se marca y va después en el ranking).
+  - Supervisor: 60 por el resultado del equipo y 40 por la gestión (coaching, foco,
+    seguimientos y tickets, a medida que existen los registros). Operación: los mismos
+    componentes sobre toda la operación. Tendencia: contra el mes anterior.
+  - Los pesos los cambia el sub gerente (utilidad restringida `supervision_parametros`);
+    cada cambio es una versión nueva con historial y auditoría.
 - **Seguridad:** el portal filtra en el servidor por el usuario (solo sus asesores, en
   las fechas en que los tuvo); ver las líneas sin uso de un asesor queda auditado.
 - **Permisos:** `supervision` (ver), `supervision_gestion` (equipos, objetivos,
-  calendario), `operadores` (vínculos) y `portal_supervisor` (solo el perfil Supervisor).
+  calendario), `operadores` (vínculos), `supervision_parametros` (pesos del scoring, solo
+  sub gerente) y `portal_supervisor` (solo el perfil Supervisor).
 
 ## Televentas CLARO · Auditoría de Ventas
 

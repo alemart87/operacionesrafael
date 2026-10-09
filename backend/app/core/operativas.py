@@ -74,6 +74,12 @@ OPERATIVAS: list[dict] = [
                 "description": "Armar los equipos del mes (asesores por supervisor, con fecha efectiva), cargar los objetivos de Pospago y GPON de cada supervisor y los días no laborables del calendario.",
             },
             {
+                "key": "supervision_parametros",
+                "name": "Supervisión · Parámetros del modelo",
+                "description": "Pesos y umbrales del scoring de asesores, supervisores y operación (cada cambio es una versión nueva y queda en el historial).",
+                "solo_perfiles": ["sub_gerente"],
+            },
+            {
                 "key": "operadores",
                 "name": "Operadores · Vincular",
                 "description": "Mantener el maestro de operadores: vincular el nombre de llamadas con el vendedor de Ventas Netas, separar, confirmar sin vínculo, renombrar y dar de baja. Lo usan Supervisión y el SPH.",
