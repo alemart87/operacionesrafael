@@ -21,7 +21,7 @@ from .alertas import dia_local
 from .calculo import _fecha, limites, mes_anterior, mes_de, mes_siguiente
 from .datos import productividad_del_mes, ventas_del_mes
 from .impacto import (
-    DIAS_ATRAS, DIAS_MADURACION, histograma, impacto_conversacion, impacto_uso, impacto_ventas, sin_medicion,
+    DIAS_ATRAS, DIAS_MADURACION, METRICAS, combinar, histograma, impacto_conversacion, impacto_uso, impacto_ventas, sin_medicion,
 )
 from .models import OPERATIVA, BitacoraNota, Coaching, CoachingEvento, Operador, SupParametros
 
@@ -34,10 +34,26 @@ SEGUIMIENTO_SUGERIDO = {"diario": 3, "semanal": 7, "mensual": 30}  # días hasta
 TIPOS_NOTA = ("novedad", "ausencia", "incidencia", "reconocimiento", "otro")
 MIN_TEXTO, MAX_TEXTO = 10, 2000
 PRODUCTO = {"pospago": "Pospago", "gpon": "GPON"}
+NOMBRE_METRICA = {"pospago": "Pospago", "gpon": "GPON", "uso": "Uso de líneas", "conversacion": "Conversación", "otra": "Otra"}
+NOMBRE_RESULTADO = {"mejoro": "mejoró", "igual": "igual", "empeoro": "empeoró", "mixto": "mixto", "sin_datos": "sin datos"}
 
 
 class ReglaInvalida(ValueError):
     """El registro no cumple una regla del modelo (el mensaje es para el usuario)."""
+
+
+def metricas_de(c: Any) -> list[str]:
+    """Las métricas que se trabajaron en un coaching (los anteriores a poder elegir varias tienen solo `metrica`)."""
+    return list(getattr(c, "metricas", None) or [c.metrica])
+
+
+def normalizar_metricas(ms: list[str] | None) -> list[str]:
+    """Sin repetir y en el orden de METRICAS (la primera es la principal). Al menos una."""
+    elegidas = set(ms or [])
+    out = [m for m in METRICAS if m in elegidas]
+    if not out:
+        raise ReglaInvalida("Elegí al menos una métrica")
+    return out
 
 
 # ------------------------------------------------------------------ reglas
@@ -109,7 +125,7 @@ async def para_scoring_del_mes(db: AsyncSession, periodo: str) -> list[Coaching]
 
 
 def para_scoring(cs: list[Coaching]) -> list[dict[str, Any]]:
-    return [{"operador_id": c.operador_id, "supervisor_id": c.supervisor_id, "metrica": c.metrica, "fecha": c.fecha,
+    return [{"operador_id": c.operador_id, "supervisor_id": c.supervisor_id, "metrica": c.metrica, "metricas": metricas_de(c), "fecha": c.fecha,
              "seguimiento_fecha": c.seguimiento_fecha, "seguimiento_dia": dia_local(c.seguimiento_at)}
             for c in cs if c.estado != "anulado"]
 
@@ -257,8 +273,21 @@ class Medidor:
         return histograma(lineas), edad_max, corte.isoformat() if corte else None
 
     async def medir(self, c: Coaching, op: Operador | None) -> dict[str, Any]:
+        """El impacto de cada métrica trabajada (en `metricas`) y el resultado del coaching. Con una sola métrica, sus
+        campos van también arriba (como en los coachings anteriores)."""
+        ms = metricas_de(c)
+        partes = [await self.medir_metrica(c, op, m) for m in ms]
+        if len(partes) == 1:
+            return {**partes[0], "metricas": partes}
+        return {
+            "metrica": ms[0], "resultado": combinar(p["resultado"] for p in partes), "delta": None,
+            "completo": all(p.get("completo", True) for p in partes),
+            "detalle": " · ".join(f"{NOMBRE_METRICA[p['metrica']]}: {NOMBRE_RESULTADO[p['resultado']]}" for p in partes),
+            "metricas": partes,
+        }
+
+    async def medir_metrica(self, c: Coaching, op: Operador | None, m: str) -> dict[str, Any]:
         hasta = self.hoy - timedelta(days=1)  # el día de hoy todavía no terminó
-        m = c.metrica
         if m == "otra":
             return sin_medicion()
         if op is None:
@@ -293,14 +322,14 @@ def a_dict(c: Coaching, *, nombres: dict[str, str], ops: dict[str, Operador], ho
         "id": c.id, "supervisor_id": c.supervisor_id, "supervisor": nombres.get(c.supervisor_id, c.supervisor_id),
         "operador_id": c.operador_id, "operador": o.nombre if o else "—", "agente": o.agente_nombre if o else None,
         "vendedor": o.vendedor if o else None,
-        "fecha": c.fecha.isoformat(), "tipo": c.tipo, "metrica": c.metrica, "diagnostico": c.diagnostico,
+        "fecha": c.fecha.isoformat(), "tipo": c.tipo, "metrica": c.metrica, "metricas": metricas_de(c), "diagnostico": c.diagnostico,
         "compromiso": c.compromiso, "seguimiento_fecha": c.seguimiento_fecha.isoformat(), "estado": c.estado,
         "seguimiento": estado_seguimiento(c, hoy),
-        "seguimiento_at": _iso(c.seguimiento_at), "seguimiento_comentario": c.seguimiento_comentario,
+        "seguimiento_at": iso(c.seguimiento_at), "seguimiento_comentario": c.seguimiento_comentario,
         "resultado": c.resultado, "impacto": impacto if impacto is not None else (c.impacto or None),
         "impacto_guardado": c.estado == "cerrado", "base": {k: v for k, v in (c.base or {}).items() if k != "uso"},
         "fuera_de_termino": c.fuera_de_termino, "anterior_id": c.anterior_id,
-        "created_at": _iso(c.created_at), "updated_at": _iso(c.updated_at),
+        "created_at": iso(c.created_at), "updated_at": iso(c.updated_at),
         "editable": bool(mio and momento and editable(c, momento)),
     }
 
@@ -308,14 +337,14 @@ def a_dict(c: Coaching, *, nombres: dict[str, str], ops: dict[str, Operador], ho
 def nota_dict(x: BitacoraNota, ops: dict[str, Operador]) -> dict[str, Any]:
     o = ops.get(x.operador_id or "")
     return {"id": x.id, "fecha": x.fecha.isoformat(), "tipo": x.tipo, "texto": x.texto, "operador_id": x.operador_id,
-            "operador": o.nombre if o else None, "fuera_de_termino": x.fuera_de_termino, "created_at": _iso(x.created_at)}
+            "operador": o.nombre if o else None, "fuera_de_termino": x.fuera_de_termino, "created_at": iso(x.created_at)}
 
 
 def evento_dict(e: CoachingEvento, nombres: dict[str, str]) -> dict[str, Any]:
-    return {"id": e.id, "tipo": e.tipo, "at": _iso(e.at), "por": nombres.get(e.por, e.por), "datos": e.datos or {}}
+    return {"id": e.id, "tipo": e.tipo, "at": iso(e.at), "por": nombres.get(e.por, e.por), "datos": e.datos or {}}
 
 
-def _iso(d: datetime | None) -> str | None:
+def iso(d: datetime | None) -> str | None:
     if d is None:
         return None
     return (d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d).isoformat()

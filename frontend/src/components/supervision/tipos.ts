@@ -87,6 +87,9 @@ export interface DetalleSupervisor extends Comun {
 export interface ParaHoy {
   seguimientos_vencidos: number;
   seguimientos_hoy: number;
+  /** Seguimientos de los próximos días hábiles (hasta `proximos_hasta`): para prepararlos antes de que lleguen. */
+  seguimientos_proximos?: number;
+  proximos_hasta?: string;
   alertas_vencidas: number;
   alertas_en_plazo: number;
   sin_coaching: number;
@@ -358,7 +361,7 @@ export interface ParametrosScoringCompletos extends ParametrosScoring {
 // ------------------------------------------------------------------ coaching y bitácora
 export type TipoCoaching = "diario" | "semanal" | "mensual";
 export type MetricaCoaching = "pospago" | "gpon" | "uso" | "conversacion" | "otra";
-export type ResultadoImpacto = "mejoro" | "igual" | "empeoro" | "sin_datos";
+export type ResultadoImpacto = "mejoro" | "igual" | "empeoro" | "mixto" | "sin_datos";
 export type EstadoSeguimiento = "a_tiempo" | "tarde" | "vencido" | "hoy" | "proximo";
 export type EstadoAlerta = "vencida" | "en_plazo" | "cubierta" | "resuelta";
 export type TipoNota = "novedad" | "ausencia" | "incidencia" | "reconocimiento" | "otro";
@@ -387,6 +390,8 @@ export interface Impacto {
   detalle: string;
   edades?: [number, number] | null;
   maduras_hasta?: string | null;
+  /** El impacto de cada métrica trabajada (con una sola, es la misma de arriba). */
+  metricas?: Impacto[];
 }
 
 export interface Coaching {
@@ -399,7 +404,10 @@ export interface Coaching {
   vendedor: string | null;
   fecha: string;
   tipo: TipoCoaching;
+  /** La principal: la primera de `metricas`. */
   metrica: MetricaCoaching;
+  /** Las que se trabajaron (una o varias). */
+  metricas: MetricaCoaching[];
   diagnostico: string;
   compromiso: string;
   seguimiento_fecha: string;
@@ -478,6 +486,8 @@ export interface ReglasCoaching {
 
 export interface VistaCoachingData extends Comun {
   hoy: string;
+  /** Hasta qué día un seguimiento es «próximo» (los próximos 2 días hábiles), como en «Para hoy». */
+  proximos_hasta?: string;
   supervisor: SupervisorRef;
   gestion_desde: string | null;
   scoring: ScoringSupervisor | null;
@@ -521,6 +531,90 @@ export interface GestionCoaching extends Comun {
   reglas: ReglasCoaching;
 }
 
+// ------------------------------------------------------------------ registro de coaching por rango de fechas
+export interface ResultadoMetrica { metrica: MetricaCoaching; resultado: ResultadoImpacto; delta: number | null }
+
+/** Un coaching en el registro: lo que se trabajó, la devolución y el resultado por métrica (el detalle se abre aparte). */
+export interface CoachingRegistro extends Omit<Coaching, "base" | "impacto"> {
+  resultados: ResultadoMetrica[];
+}
+
+export type FiltroSeguimiento = "pendientes" | "proximos" | "vencidos" | "a_tiempo" | "tarde";
+export type FiltroResultado = "mejoro" | "igual" | "empeoro" | "mixto" | "sin_datos" | "sin_mejora";
+
+export interface KpisRegistro {
+  coachings: number;
+  anulados: number;
+  asesores: number;
+  supervisores: number;
+  fuera_de_termino: number;
+  por_tipo: Partial<Record<TipoCoaching, number>>;
+  seguimientos: Record<EstadoSeguimiento, number>;
+  pct_a_tiempo: number | null;
+  proximos: number;
+  cerrados: number;
+  resultados: Record<ResultadoImpacto, number>;
+  pct_mejora: number | null;
+}
+
+export interface MetricaRegistro {
+  metrica: MetricaCoaching;
+  coachings: number;
+  cerrados: number;
+  mejoro: number;
+  igual: number;
+  empeoro: number;
+  sin_datos: number;
+  pct_mejora: number | null;
+}
+
+export interface SupervisorRegistro {
+  id: string;
+  nombre: string;
+  coachings: number;
+  asesores: number;
+  a_tiempo: number;
+  tarde: number;
+  vencido: number;
+  pendientes: number;
+  proximos: number;
+  cerrados: number;
+  mejoro: number;
+  con_datos: number;
+  pct_a_tiempo: number | null;
+  pct_mejora: number | null;
+  ultimo: string;
+}
+
+export interface AsesorRegistro {
+  id: string;
+  nombre: string;
+  supervisores: string[];
+  coachings: number;
+  metricas: Partial<Record<MetricaCoaching, number>>;
+  pendientes: number;
+  vencido: number;
+  cerrados: number;
+  mejoro: number;
+  sin_mejora: number;
+  ultimo: string;
+}
+
+export interface RegistroCoaching {
+  desde: string;
+  hasta: string;
+  hoy: string;
+  proximos_hasta: string;
+  kpis: KpisRegistro;
+  por_metrica: MetricaRegistro[];
+  por_supervisor: SupervisorRegistro[];
+  por_asesor: AsesorRegistro[];
+  items: CoachingRegistro[];
+  total_items: number;
+  truncado: boolean;
+  opciones: { supervisores: { id: string; nombre: string }[]; asesores: { id: string; nombre: string }[] };
+}
+
 const VERDE = "bg-emerald-50 text-emerald-800 border-emerald-200";
 const NARANJA = "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40";
 const ROJO = "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30";
@@ -535,6 +629,19 @@ export const METRICA: Record<MetricaCoaching, { label: string; ayuda: string }> 
   otra: { label: "Otra", ayuda: "Sin medición automática: vale el comentario del seguimiento" },
 };
 
+/** En el orden en que se guardan (la primera es la principal). */
+export const METRICAS_ORDEN: MetricaCoaching[] = ["pospago", "gpon", "uso", "conversacion", "otra"];
+
+/** «Pospago + GPON»: las métricas de un coaching (los anteriores a poder elegir varias tienen solo `metrica`). */
+export function nombreMetricas(c: { metrica: MetricaCoaching; metricas?: MetricaCoaching[] | null } | MetricaCoaching[]): string {
+  const ms = Array.isArray(c) ? c : c.metricas?.length ? c.metricas : [c.metrica];
+  return ms.map((m) => METRICA[m]?.label ?? m).join(" + ");
+}
+
+/** Las métricas de un coaching (con los anteriores, la única que tenían). */
+export const metricasDe = (c: { metrica: MetricaCoaching; metricas?: MetricaCoaching[] | null }): MetricaCoaching[] =>
+  c.metricas?.length ? c.metricas : [c.metrica];
+
 export const TIPO_COACHING: Record<TipoCoaching, { label: string; ayuda: string }> = {
   diario: { label: "Diario en puesto", ayuda: "Corregir en el momento una práctica observada en una llamada · 5 a 10 min" },
   semanal: { label: "Semanal uno a uno", ayuda: "Revisar los datos de la semana y acordar un compromiso · 20 a 30 min" },
@@ -545,6 +652,7 @@ export const RESULTADO: Record<ResultadoImpacto, { label: string; chip: string }
   mejoro: { label: "Mejoró", chip: VERDE },
   igual: { label: "Igual", chip: GRIS },
   empeoro: { label: "Empeoró", chip: ROJO },
+  mixto: { label: "Mixto", chip: NARANJA },
   sin_datos: { label: "Sin datos", chip: GRIS },
 };
 

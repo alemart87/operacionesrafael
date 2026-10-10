@@ -150,7 +150,8 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
           { href: "/televentas-claro/supervision/comando", label: "Centro de comandos" },
           { href: "/televentas-claro/supervision", label: "Objetivos y proyección", exact: true },
           { href: "/televentas-claro/supervision/tablero", label: "Tablero" },
-          { href: "/televentas-claro/supervision/coaching", label: "Coaching" },
+          { href: "/televentas-claro/supervision/coaching", label: "Coaching", exact: true },
+          { href: "/televentas-claro/supervision/coaching/registro", label: "Registro de coaching" },
           { href: "/televentas-claro/supervision/tickets", label: "Tickets" },
           { href: "/televentas-claro/supervision/equipos", label: "Equipos del mes" },
           { href: "/televentas-claro/supervision/operadores", label: "Operadores" },
@@ -168,6 +169,7 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         nav: [
           { href: "/televentas-claro/portal", label: "Mi equipo", exact: true },
           { href: "/televentas-claro/portal/coaching", label: "Coaching y bitácora" },
+          { href: "/televentas-claro/portal/historial", label: "Mi historial" },
           { href: "/televentas-claro/portal/tickets", label: "Tickets" },
         ],
       },

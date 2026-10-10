@@ -126,7 +126,9 @@ class Coaching(Base):
     operador_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     tipo: Mapped[str] = mapped_column(String(10), nullable=False)        # diario | semanal | mensual
-    metrica: Mapped[str] = mapped_column(String(15), nullable=False)     # pospago | gpon | uso | conversacion | otra
+    metrica: Mapped[str] = mapped_column(String(15), nullable=False)     # la principal: la primera de `metricas`
+    # Las que se trabajaron (pospago | gpon | uso | conversacion | otra), en ese orden. Vacía en los anteriores: solo `metrica`.
+    metricas: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     diagnostico: Mapped[str] = mapped_column(Text, nullable=False)
     compromiso: Mapped[str] = mapped_column(Text, nullable=False)
     seguimiento_fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)

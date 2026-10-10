@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from . import sla
 from .alertas import ZONA, dia_local
 from .calculo import limites, peso_dia, proyeccion
-from .coaching import ORDEN_EVENTO, estado_seguimiento
+from .coaching import NOMBRE_RESULTADO, ORDEN_EVENTO, estado_seguimiento, metricas_de
 from .impacto import METRICAS
 from .models import (
     OPERATIVA, AlertaComando, BitacoraNota, Coaching, CoachingEvento, EquipoAsignacion, ObjetivoSupervisor, Ticket,
@@ -47,6 +47,11 @@ TIPOS: dict[str, tuple[int, str, str | None]] = {
 }
 NOMBRE_METRICA = {"pospago": "Pospago", "gpon": "GPON", "uso": "uso de líneas", "conversacion": "conversación", "otra": "otra métrica"}
 assert set(NOMBRE_METRICA) == set(METRICAS)
+
+
+def _sobre(c: Coaching) -> str:
+    """«Pospago + GPON»: las métricas que se trabajaron."""
+    return " + ".join(NOMBRE_METRICA.get(m, m) for m in metricas_de(c))
 
 
 def _pl(k: int, uno: str, varios: str) -> str:
@@ -219,7 +224,7 @@ def condiciones(ctx: Any, *, dia: date, nombres: dict[str, str], tickets: list[t
         if estado_seguimiento(c, dia) != "vencido":
             continue
         add(_cond("seguimiento_vencido", c.id, f"Seguimiento vencido · {sup(c.supervisor_id)}",
-                  f"Coaching a {asesor(c.operador_id)} del {_dm(c.fecha)} sobre {NOMBRE_METRICA.get(c.metrica, c.metrica)}: "
+                  f"Coaching a {asesor(c.operador_id)} del {_dm(c.fecha)} sobre {_sobre(c)}: "
                   f"el seguimiento era el {_dm(c.seguimiento_fecha)}.",
                   supervisor_id=c.supervisor_id, operador_id=c.operador_id, desde=_medianoche(c.seguimiento_fecha + timedelta(days=2)),
                   coaching_id=c.id))
@@ -381,7 +386,7 @@ async def linea_de_tiempo(db: AsyncSession, sid: str, periodo: str, *, nombres: 
                                 .order_by(CoachingEvento.at, case(ORDEN_EVENTO, value=CoachingEvento.tipo, else_=9)))).scalars().all()
         for e in evs:
             c = cs[e.coaching_id]
-            quien, metrica = asesor(c.operador_id), NOMBRE_METRICA.get(c.metrica, c.metrica)
+            quien, metrica = asesor(c.operador_id), _sobre(c)
             titulo = {
                 "creado": f"Coaching {c.tipo} a {quien} sobre {metrica}",
                 "editado": f"Corrigió el coaching a {quien}",
@@ -392,7 +397,7 @@ async def linea_de_tiempo(db: AsyncSession, sid: str, periodo: str, *, nombres: 
             d = e.datos or {}
             detalle = {
                 "creado": d.get("compromiso"), "anulado": d.get("motivo"), "aclaracion": d.get("texto"),
-                "seguimiento": (f"Resultado: {({'mejoro': 'mejoró', 'igual': 'igual', 'empeoro': 'empeoró'}).get(d.get('resultado'), 'sin datos')}"
+                "seguimiento": (f"Resultado: {NOMBRE_RESULTADO.get(d.get('resultado'), 'sin datos')}"
                                 f"{'' if d.get('a_tiempo', True) else ' · fuera de la fecha acordada'}. {d.get('comentario') or ''}").strip(),
             }.get(e.tipo)
             out.append(_ev(e.at, "seguimiento" if e.tipo == "seguimiento" else "coaching", titulo, detalle, nom(e.por),

@@ -256,7 +256,8 @@ async def test_flujo_coaching_seguimiento_bitacora_y_gestion(monkeypatch):
         assert v["puede_registrar"] and v["items"] == [] and v["reglas"]["horas_edicion"] == 24
         # El portal resume lo que hay que atender hoy.
         assert (await ac.get(f"{BASE}/portal", headers=sup1)).json()["coaching"] == {
-            "seguimientos_vencidos": 0, "seguimientos_hoy": 0, "alertas_vencidas": 0, "alertas_en_plazo": 1, "sin_coaching": 2,
+            "seguimientos_vencidos": 0, "seguimientos_hoy": 0, "seguimientos_proximos": 0, "proximos_hasta": "2026-10-14",
+            "alertas_vencidas": 0, "alertas_en_plazo": 1, "sin_coaching": 2,
             "tickets_nuevos": 0, "tickets_por_vencer": 0, "tickets_vencidos": 0}
 
         nuevo = {"operador_id": rob, "fecha": "2026-10-12", "tipo": "semanal", "metrica": "uso",

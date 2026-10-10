@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, Info, TriangleAlert } from "lucide-react";
+import { CircleCheck, Info, ListChecks, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
@@ -84,6 +84,9 @@ function Gestion() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap print:hidden">
+          <Link href={`${SUP_HREF}/coaching/registro`} className="btn-secondary !py-2 !px-4 text-xs">
+            <ListChecks size={15} /> Registro por fechas
+          </Link>
           <SelectorMes periodo={periodo} onChange={setPeriodo} />
           <PrintButton />
         </div>
@@ -114,7 +117,11 @@ function Gestion() {
           <section className="card min-w-0">
             <div className="px-5 pt-5 pb-3">
               <h2 className="font-display text-xl uppercase text-brand-ink leading-tight">Supervisores</h2>
-              <p className="text-xs text-brand-slate mt-0.5">Cobertura, foco y seguimientos son la gestión que suma al scoring. Abrí cada uno para ver sus coachings y su bitácora.</p>
+              <p className="text-xs text-brand-slate mt-0.5">
+                Cobertura, foco y seguimientos son la gestión que suma al scoring. Abrí cada uno para ver sus coachings y su bitácora, o
+                mirá todos los coachings con su devolución en el{" "}
+                <Link href={`${SUP_HREF}/coaching/registro`} className="font-semibold text-brand-primary hover:underline">registro por fechas</Link>.
+              </p>
             </div>
             {!d.supervisores.length ? (
               <p className="px-5 py-8 text-center text-sm text-brand-slate border-t border-brand-border">No hay supervisores con equipo este mes.</p>

@@ -57,6 +57,8 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS ventas INTEGER",
     # v0.8 · Facturación: copia de cada liquidación en la base (reprocesar sin depender del disco)
     "ALTER TABLE facturacion_uploads ADD COLUMN IF NOT EXISTS contenido_gz BYTEA",
+    # v0.9 · Coaching: varias métricas por coaching (Pospago + GPON…)
+    "ALTER TABLE sup_coachings ADD COLUMN IF NOT EXISTS metricas JSON",
 ]
 
 

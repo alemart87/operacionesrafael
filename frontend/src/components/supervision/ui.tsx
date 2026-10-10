@@ -3,7 +3,7 @@
 import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, CircleCheck, Headset, MessageSquareText, ShoppingBag, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { fechaLarga, n, nombreMes } from "@/components/productividad/tipos";
+import { fechaCorta, fechaLarga, n, nombreMes } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
 import { BotonCoaching } from "./hacer-coaching";
 import { MetodoScoring, ScoreCelda, ScoringCard } from "./scoring";
@@ -514,6 +514,10 @@ export function ParaHoyCard({ x, href, hrefTickets, nuevoCoaching }: {
     { k: tk.por_vencer, t: pl(tk.por_vencer, "ticket por vencer", "tickets por vencer"), c: naranja, h: hrefTickets },
     { k: tk.nuevos, t: pl(tk.nuevos, "ticket sin responder", "tickets sin responder"), c: azul, h: hrefTickets },
     { k: x.seguimientos_hoy, t: pl(x.seguimientos_hoy, "seguimiento para hoy", "seguimientos para hoy"), c: azul, h: href },
+    {
+      k: x.seguimientos_proximos ?? 0, c: azul, h: href,
+      t: `${pl(x.seguimientos_proximos ?? 0, "seguimiento próximo", "seguimientos próximos")}${x.proximos_hasta ? ` · hasta el ${fechaCorta(x.proximos_hasta)}` : ""}`,
+    },
     { k: x.alertas_en_plazo, t: pl(x.alertas_en_plazo, "alerta de uso esperando coaching", "alertas de uso esperando coaching"), c: naranja, h: href },
     { k: x.sin_coaching, t: pl(x.sin_coaching, "asesor sin coaching este mes", "asesores sin coaching este mes"), c: naranja, h: href },
   ].filter((i) => i.k > 0);
