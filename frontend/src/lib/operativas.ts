@@ -47,6 +47,8 @@ export const PERM_SUPERVISION_GESTION = "televentas_claro.supervision_gestion";
 export const PERM_OPERADORES = "televentas_claro.operadores";
 /** Parámetros del modelo (pesos del scoring): solo sub gerente y superadmin. */
 export const PERM_SUPERVISION_PARAMETROS = "televentas_claro.supervision_parametros";
+/** Informe diario: lo preparan coordinador, sub gerente y superadmin (el seguimiento de todos, solo el superadmin). */
+export const PERM_INFORME_DIARIO = "televentas_claro.informe_diario";
 /** Portal del supervisor: lo único que ve el perfil Supervisor. */
 export const PERM_PORTAL_SUPERVISOR = "televentas_claro.portal_supervisor";
 export const PORTAL_HREF = "/televentas-claro/portal";
@@ -60,6 +62,8 @@ export interface OperativaNavItem {
   utilidad?: string;
   /** Activo solo con la ruta exacta (para rutas que son prefijo de otras). */
   exact?: boolean;
+  /** Solo lo ve el superadmin. */
+  soloSuperadmin?: boolean;
 }
 
 /**
@@ -157,6 +161,18 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
           { href: "/televentas-claro/supervision/operadores", label: "Operadores" },
           { href: "/televentas-claro/supervision/calendario", label: "Calendario" },
           { href: "/televentas-claro/supervision/parametros", label: "Parámetros", utilidad: "supervision_parametros" },
+        ],
+      },
+      {
+        utilidad: "informe_diario",
+        label: "Informe diario",
+        href: "/televentas-claro/informe-diario",
+        descripcion: "El seguimiento diario de la operación: resultados del día, datos importados de la plataforma, resumen, métricas críticas con sus compromisos y la firma. Se guarda con fecha y se descarga en PDF para enviar.",
+        contenido: ["Resultados del día: Pospago, GPON y otros", "Importar llamadas, ventas, proyección y coaching", "Métricas críticas con compromisos", "Seguimiento de compromisos", "Firma y código de verificación", "PDF para enviar"],
+        acceso: "Preparar informes",
+        nav: [
+          { href: "/televentas-claro/informe-diario", label: "Mis informes", exact: true },
+          { href: "/televentas-claro/informe-diario/seguimiento", label: "Seguimiento", soloSuperadmin: true },
         ],
       },
       {

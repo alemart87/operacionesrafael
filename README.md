@@ -67,6 +67,7 @@ operacionesrafaelmartinez/
 │   │           ├── ventas_netas/ # submódulo: api · models · schemas · parser · analyzer · exports · jobs
 │   │           ├── sph/         # submódulo SPH estimado: api · models · analyzer
 │   │           ├── supervision/ # submódulo Supervisión: api · coaching_api · tickets_api · comando_api · models · calculo · scoring · coaching · impacto · alertas · tickets · sla · comando · operadores · migraciones
+│   │           ├── informe_diario/ # informe diario: api · models · informe (reglas y firma) · importar · palabras · seguimiento · pdf · migraciones
 │   │           └── facturacion/ # submódulo: api · agent_api · models/ · schemas
 │   │                            #   parser · analyzers/ · agent/ · jobs/
 │   ├── tests/                   # pytest (SQLite)
@@ -121,13 +122,14 @@ existentes según el modelo definido, y no se repite aunque el superadmin las ca
 | Supervisión · Tickets de revisión | ✓ | ✓ | ✓ | 🔒 | | ✓ | |
 | Supervisión · Parámetros del modelo (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
 | Operadores · Vincular | ✓ | ✓ | ✓ | 🔒 | ✓ | | |
+| Informe diario | ✓ | | ✓ | 🔒 | | | |
 | Portal del supervisor (restringida) | 🔒 | 🔒 | 🔒 | ✓ | 🔒 | 🔒 | 🔒 |
 | Auditoría de ventas | ✓ | ✓ | | 🔒 | ✓ | ✓ | |
 | Facturación (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
 
 - **Sub gerente:** todos los módulos, incluida Facturación.
-- **Controller:** todos los módulos menos Facturación; como cualquier usuario, puede
-  tener varias operativas asignadas.
+- **Controller:** todos los módulos menos Facturación (el informe diario no viene por
+  defecto, pero se le puede asignar); como cualquier usuario, puede tener varias operativas asignadas.
 - **Supervisor:** solo entra a **su portal** (`PERFILES_SOLO_PORTAL`): únicamente puede
   tener las utilidades marcadas `portal` (el acceso y el Portal del supervisor). Al
   iniciar sesión va directo al portal; cualquier otra ruta lo devuelve ahí.
@@ -467,6 +469,65 @@ con SLA; y el centro de comandos de los jefes.
   `supervision_parametros` (pesos del scoring, solo sub gerente) y `portal_supervisor`
   (solo el perfil Supervisor).
 
+## Televentas CLARO · Informe diario
+
+El seguimiento diario de la operación. Lo preparan el **coordinador**, el **sub gerente** y el
+**superadmin** (utilidad `informe_diario`; a otro perfil, como el controller, se le puede asignar en
+Perfiles). Código en `backend/app/operativas/televentas_claro/informe_diario/`.
+
+| Pantalla | Ruta | Qué hace |
+|---|---|---|
+| Preparar informe diario | Botón en el inicio de Televentas CLARO, en el centro de comandos y en Mis informes | Abre el borrador del día (o el que ya existe): uno por persona y fecha, de hoy o de hasta 7 días atrás |
+| Mis informes | `/televentas-claro/informe-diario` | El de hoy, los últimos 14 días (firmado, borrador o sin informe), los compromisos abiertos y los comentarios nuevos del superadmin |
+| Informe | `…/informe-diario/{id}` | El editor mientras es borrador; después, la lectura con **Descargar PDF** y **Compartir** (en el celular, a WhatsApp o al correo) y los comentarios |
+| Seguimiento (superadmin) | `…/informe-diario/seguimiento` | Cumplimiento por autor y día, informes sin revisar, alertas por palabras clave, compromisos abiertos y vencidos, y el diccionario |
+
+- **Contenido**, en este orden (también en el PDF):
+  1. **Resultados del día** (zona manual): Pospago y GPON, obligatorios (pueden ser 0), y **otros** que se
+     agregan con +; cada uno con meta opcional (calcula el % de cumplimiento), comentario y el valor del día
+     anterior. Si la planilla de netas más nueva tiene las cargas del día, se ofrecen con un clic («Usar estos
+     valores») y quedan anotadas como fuente.
+  2. **Datos de la plataforma**: se importan datos ya cargados: Productividad de llamadas del día (agentes,
+     horas, % de conversación, llamadas, contacto, AHT, pausas, agentes en rojo, alertas y turnos), las ventas
+     del día de la planilla de netas, los objetivos y la proyección del mes por supervisor, y el coaching del
+     día. Los calcula el servidor (con `fuentes.py`, como el SPH y Supervisión) y quedan **congelados** en el
+     informe; «Actualizar» los vuelve a traer. Cada fuente exige el permiso de su módulo; Facturación no se ofrece.
+  3. **Resumen del día**.
+  4. **Métricas críticas** (con +): nombre, indicador, estado (crítica, atención o en orden), comentario y
+     **compromiso o anotación**, con responsable y fecha. «Traer las del informe anterior» copia las métricas
+     del último informe, con su valor como «antes».
+  5. **Seguimiento de compromisos**: los compromisos abiertos de informes anteriores; en cada informe se marcan
+     cumplido, en curso o no cumplido, con una nota. Cumplido y no cumplido los cierran.
+  6. **Firma**: nombre y cargo (editable; se recuerda) y, si se quiere, la **firma manuscrita** dibujada con el
+     dedo o el mouse (PNG validado con Pillow, hasta 120 KB; se guarda para los próximos informes).
+- **Guardado automático** del borrador (a 1,2 s del último cambio), con aviso si se intenta salir sin guardar.
+- **Firmar**: hacen falta Pospago, GPON y el resumen (20 caracteres o más). El informe queda cerrado con un
+  **código de verificación** (SHA-256 del contenido, el nombre, el cargo, la hora y la firma): si alguien lo
+  modificara en la base, el código deja de coincidir y el superadmin lo ve. Después solo se agregan comentarios.
+- **PDF** (`reportlab`, A4, con el logo y las tipografías de la marca, Manrope y Barlow Condensed, licencia
+  OFL, en `backend/app/assets/fonts`): encabezado, resultados con su cumplimiento y el día anterior, datos
+  importados, resumen, métricas críticas, seguimiento de compromisos y la firma con el código. Un borrador sale
+  con la marca de agua «BORRADOR». El texto del usuario se escapa y lo que la tipografía no puede dibujar
+  (emojis) se quita.
+- **Palabras clave** (`palabras.py`, explicable y sin servicios externos): normaliza el texto (minúsculas, sin
+  tildes) sin mover las posiciones, busca las frases y palabras de cada tema con su plural y las raíces con
+  `*`, y no cuenta las negadas («no hubo reclamos»; la negación no cruza comas ni puntos, ni sale de una frase
+  ya encontrada como «sin uso»). Los temas críticos (riesgo y urgencia) dan la alerta del informe: alta con 3
+  o más menciones, media con 1 o 2. El superadmin ve las palabras resaltadas en cada informe, los temas y las
+  palabras más mencionadas del período, las menciones por día y las alertas, y **edita el diccionario**
+  (temas, palabras y cuáles son críticos; se puede restablecer).
+- **Seguimiento del superadmin**: se espera un informe firmado por día hábil (de lunes a viernes, sin feriados
+  ni no laborables del calendario de Supervisión) desde el día en que se instaló el módulo; el sábado cuenta si
+  hay informe. Muestra el cumplimiento por autor y día, quién firmó después de su día, los informes sin
+  revisar, las alertas y los compromisos abiertos y vencidos. El superadmin comenta cada informe (queda
+  revisado) y el autor responde; los comentarios nuevos le aparecen al autor en su lista.
+- **Seguridad**: cada informe lo ven su autor y el superadmin; solo el autor edita su borrador; el seguimiento
+  y el diccionario son del superadmin. Preparar, importar, firmar, descargar el PDF, comentar, revisar y
+  cambiar el diccionario o la firma quedan en la auditoría.
+- Tablas: `informes_diarios`, `informes_diarios_compromisos`, `informes_diarios_comentarios`,
+  `informes_diarios_firmas` e `informes_diarios_parametros`. Migraciones de datos: la utilidad para el
+  coordinador y el sub gerente, y el día desde el que se mide el seguimiento.
+
 ## Televentas CLARO · Auditoría de Ventas
 
 Circuito de trabajo del área de Auditoría de Ventas sobre los informes de
@@ -616,6 +677,8 @@ que un cambio rige al instante, también para las sesiones abiertas.
 | * | `/api/v1/televentas-claro/auditoria/*` (fuentes, parametros, riesgos, informes, hallazgos, seguimientos, estado) | `televentas_claro.auditoria` |
 | * | `/api/v1/televentas-claro/supervision/*` (resumen, tablero, coaching, gestion, **registro**, comando, tickets…) | `televentas_claro.supervision` (lo que cambia algo, además `supervision_gestion`, `tickets` u `operadores`) |
 | * | `/api/v1/televentas-claro/supervision/portal/*` (portal, coaching, **registro**, bitácora, tickets) | `televentas_claro.portal_supervisor` (solo lo del supervisor que entra) |
+| * | `/api/v1/televentas-claro/informe-diario/*` (preparar, guardar, importar, firmar, PDF, comentar, firma) | `televentas_claro.informe_diario` (cada informe: su autor y el superadmin) |
+| GET · PUT | `/api/v1/televentas-claro/informe-diario/seguimiento` · `/palabras` | Superadmin |
 | * | `/api/v1/televentas-claro/facturacion/*` · `/facturacion-agent/*` | Solo superadmin |
 | GET | `/health` · `/api/v1/health` | Público |
 | POST | `/api/v1/admin/migrate?token=<SECRET_KEY>` | Emergencia |
