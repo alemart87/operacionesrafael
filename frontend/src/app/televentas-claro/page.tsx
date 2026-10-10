@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { ROLE_LABELS, apiFetch } from "@/lib/api";
-import { PERM_PORTAL_SUPERVISOR, PORTAL_HREF, type OperativaInfo, type Submodulo, operativaRoute } from "@/lib/operativas";
+import { PrepararInforme } from "@/components/informe-diario/boton";
+import { PERM_INFORME_DIARIO, PERM_PORTAL_SUPERVISOR, PORTAL_HREF, type OperativaInfo, type Submodulo, operativaRoute } from "@/lib/operativas";
 
 const RUTA = operativaRoute("televentas_claro")!;
 
@@ -53,6 +54,21 @@ function Inicio() {
         </h1>
         <p className="text-base text-brand-slate mt-2 max-w-2xl">{op.description}</p>
       </div>
+
+      {can(PERM_INFORME_DIARIO) && (
+        <section className="card overflow-visible mb-8 p-5 sm:p-6 border-brand-primary/30 bg-gradient-to-r from-brand-primary-light/70 via-white to-white flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <div className="min-w-0 max-w-2xl">
+            <h2 className="font-display text-2xl sm:text-3xl uppercase text-brand-ink leading-tight">Informe diario</h2>
+            <p className="text-sm text-brand-graphite mt-1">
+              Resultados del día, datos de la plataforma, resumen y métricas críticas con tus compromisos. Lo firmás y lo descargás en PDF para enviar.
+            </p>
+          </div>
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            <Link href="/televentas-claro/informe-diario" className="btn-secondary">Mis informes</Link>
+            <PrepararInforme className="btn-primary !px-6 !py-3 text-base shadow-elevated" onError={setError} />
+          </div>
+        </section>
+      )}
 
       <section>
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-5">

@@ -2,11 +2,13 @@
 
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppShell } from "@/components/AppShell";
+import { AppShell, useSession } from "@/components/AppShell";
+import { PrepararInforme } from "@/components/informe-diario/boton";
 import { AlertasDia, CabeceraOperacion, MetodoComando, RutinaCard, Semaforo } from "@/components/supervision/comando";
 import { SUP_API, fechaHoraCorta, type CentroComandos } from "@/components/supervision/tipos";
 import { FuenteDatos } from "@/components/supervision/ui";
 import { apiFetch } from "@/lib/api";
+import { PERM_INFORME_DIARIO } from "@/lib/operativas";
 
 const REFRESCO_MS = 5 * 60 * 1000; // con la pestaña a la vista, se pone al día cada 5 minutos
 
@@ -19,6 +21,8 @@ export default function ComandoPage() {
 }
 
 function Vista() {
+  const { can } = useSession();
+  const puedeInforme = can(PERM_INFORME_DIARIO);
   const [d, setD] = useState<CentroComandos | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -50,8 +54,9 @@ function Vista() {
             con quién las tomó y las revisiones pedidas.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {d && <span className="text-[11px] text-brand-slate tabular-nums">Actualizado {fechaHoraCorta(d.actualizado).slice(-5)}</span>}
+          {puedeInforme && <PrepararInforme className="btn-primary !py-2 !px-4" onError={setError} />}
           <button type="button" className="btn-secondary !py-2 !px-4" onClick={cargar} disabled={cargando}>
             <RefreshCw size={15} className={cargando ? "animate-spin" : ""} aria-hidden /> {cargando ? "Actualizando…" : "Actualizar"}
           </button>

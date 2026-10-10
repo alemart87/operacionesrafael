@@ -9,6 +9,7 @@
   (fuente única de los vínculos agente ↔ vendedor, también para el SPH), portal del supervisor, scoring,
   coaching y bitácora, tickets de revisión y el centro de comandos.
 - `fuentes.py`: qué informe de Productividad y de Ventas Netas vale para cada día y cada mes.
+- `informe_diario/`: el informe diario de la operación (coordinador, sub gerente y superadmin) y su seguimiento.
 - `facturacion/`: submódulo de la utilidad Facturación (solo superadmin).
 
 Cada submódulo nuevo va en su propia carpeta y suma acá sus routers y workers.
@@ -19,6 +20,8 @@ from .auditoria import api as auditoria_api
 from .facturacion import agent_api as facturacion_agent_api
 from .facturacion import api as facturacion_api
 from .facturacion.jobs.queue import facturacion_worker
+from .informe_diario import api as informe_diario_api
+from .informe_diario.migraciones import MIGRACIONES as informe_diario_migraciones
 from .productividad import api as productividad_api
 from .router import router
 from .sph import api as sph_api
@@ -34,7 +37,7 @@ from .ventas_netas.jobs import queue as ventas_netas_queue
 
 ROUTERS = [router, ventas_netas_api.router, productividad_api.router, sph_api.router, supervision_api.router,
            supervision_coaching_api.router, supervision_tickets_api.router, supervision_comando_api.router,
-           auditoria_api.router, facturacion_api.router, facturacion_agent_api.router]
+           informe_diario_api.router, auditoria_api.router, facturacion_api.router, facturacion_agent_api.router]
 
 # Workers de fondo: nombre -> coroutine factory. main.py los supervisa.
 WORKERS = {"ventas_netas": ventas_netas_queue.worker, "facturacion": facturacion_worker}
@@ -43,4 +46,4 @@ WORKERS = {"ventas_netas": ventas_netas_queue.worker, "facturacion": facturacion
 AL_ARRANCAR = {"ventas_netas_actualizar": ventas_netas_actualizar}
 
 # Migraciones de datos de una sola vez (id, coroutine(db)): main.py las corre al arrancar y las anota.
-MIGRACIONES_DATOS = [*supervision_migraciones, *facturacion_migraciones]
+MIGRACIONES_DATOS = [*supervision_migraciones, *facturacion_migraciones, *informe_diario_migraciones]

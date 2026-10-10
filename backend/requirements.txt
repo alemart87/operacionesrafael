@@ -21,4 +21,7 @@ openai-agents==0.17.4
 # 0.17.4 no envía (ValidationError en cada respuesta): se fija la última compatible.
 openai==2.44.0
 segno==1.6.1
+# PDF del informe diario (Pillow valida además las firmas dibujadas)
+reportlab==4.2.5
+pillow==12.3.0
 tzdata==2026.4

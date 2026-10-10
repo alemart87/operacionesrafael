@@ -116,7 +116,9 @@ def test_sub_gerente_usa_facturacion_y_el_controller_no(client, admin):
 
     ctrl = _usuario(client, admin, "controller")
     ut = {u["key"]: u["habilitada"] for u in client.get("/api/v1/televentas-claro", headers=ctrl).json()["utilidades"]}
-    assert "facturacion" not in ut and all(ut.values())  # todos los demás módulos, con gestión
+    # Todos los demás módulos, con gestión; el informe diario no viene por defecto (se le puede asignar).
+    assert "facturacion" not in ut and ut["informe_diario"] is False
+    assert all(v for k, v in ut.items() if k != "informe_diario")
     assert {"ventas_netas_gestion", "productividad_gestion", "sph_gestion", "auditoria"} <= set(ut)
     assert client.get(f"{BASE}/reports", headers=ctrl).status_code == 403
     assert FACT not in client.get("/api/v1/auth/me", headers=ctrl).json()["permissions"]

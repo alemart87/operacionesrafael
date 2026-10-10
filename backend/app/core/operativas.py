@@ -97,6 +97,11 @@ OPERATIVAS: list[dict] = [
                 "portal": True,
             },
             {
+                "key": "informe_diario",
+                "name": "Informe diario",
+                "description": "Preparar el informe diario de la operación: resultados del día (Pospago, GPON y otros), datos importados de la plataforma (llamadas, ventas del día, proyección y coaching), resumen, métricas críticas con indicador, comentario y compromiso, seguimiento de los compromisos anteriores y firma; se guarda con fecha y se descarga en PDF para enviar. El superadmin sigue los informes de todos, sus palabras clave, y los comenta.",
+            },
+            {
                 "key": "auditoria",
                 "name": "Auditoría de ventas",
                 "description": "Circuito de auditoría: riesgos y ranking de vendedores, informes de auditoría con hallazgos, seguimiento, estados y PDF. Los datos analizados quedan congelados en cada informe.",
