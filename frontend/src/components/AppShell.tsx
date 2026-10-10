@@ -14,6 +14,7 @@ const ADMIN_NAV = [
   { href: "/admin/perfiles", label: "Perfiles" },
   { href: "/admin/audit", label: "Auditoría" },
   { href: "/admin/seguridad", label: "Seguridad" },
+  { href: "/admin/sistema", label: "Sistema" },
 ];
 
 interface Session {

@@ -4,10 +4,11 @@ import {
   Ban, CalendarCheck, CircleCheck, CircleDashed, ClipboardCheck, CornerDownRight, History, Info, MessageSquarePlus,
   MessageSquareText, NotebookPen, Pencil, Plus, Target, Ticket, TriangleAlert, Users,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { fechaCorta, fechaLarga, n } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
 import { CoachingDialog, Modal, NotaDialog, SeguimientoDialog, TextoDialog, type Inicial } from "./dialogos";
+import { BotonCoaching, CoachingFlotante, leerNuevoCoaching } from "./hacer-coaching";
 import { ImpactoVista, ResultadoChip } from "./impacto";
 import { MedidorScore, ScoreCelda } from "./scoring";
 import {
@@ -105,9 +106,8 @@ function AlertasCard({ alertas, diasFoco, onCoaching }: { alertas: AlertaFoco[];
                 <Chip label={e.label} chip={e.chip} ayuda={e.ayuda}
                   icono={a.estado === "cubierta" ? <CircleCheck size={11} aria-hidden /> : a.estado === "vencida" ? <TriangleAlert size={11} aria-hidden /> : undefined} />
                 {onCoaching && (a.estado === "en_plazo" || a.estado === "vencida") && (
-                  <button type="button" onClick={() => onCoaching({ operador_id: a.operador_id, metrica: "uso" })}
-                    className="text-xs font-semibold text-brand-primary hover:underline inline-flex items-center gap-1">
-                    <Plus size={13} aria-hidden /> Coaching
+                  <button type="button" onClick={() => onCoaching({ operador_id: a.operador_id, metrica: "uso" })} className="btn-coaching-sm">
+                    <MessageSquareText size={14} aria-hidden /> Hacer coaching
                   </button>
                 )}
               </li>
@@ -194,8 +194,9 @@ function EquipoCoaching({ equipo, nombreMes, onCoaching }: { equipo: MiembroCoac
                   )}
                   {onCoaching && m.actual && (
                     <button type="button" onClick={() => onCoaching({ operador_id: m.id })}
-                      className="text-xs font-semibold text-brand-primary hover:underline inline-flex items-center gap-1 shrink-0">
-                      <Plus size={13} aria-hidden /> Coaching
+                      className={`${sin ? "btn-coaching-sm" : "btn-coaching-sm-outline"} shrink-0`}
+                      title={sin ? "No tiene coaching este mes" : `Registrar otro coaching a ${m.nombre}`}>
+                      <MessageSquareText size={14} aria-hidden /> {sin ? "Hacer coaching" : "Coaching"}
                     </button>
                   )}
                 </div>
@@ -490,6 +491,17 @@ export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; p
   const cerrar = useCallback(() => setDialogo(null), []);
   const nuevo = useCallback((inicial?: Inicial) => setDialogo({ tipo: "nuevo", inicial }), []);
   const abrir = useCallback((c: Coaching) => setDialogo({ tipo: "detalle", id: c.id }), []);
+  const ancla = useRef<HTMLDivElement>(null);
+  // Desde «Mi equipo» (botón «Hacer coaching» o el de un asesor) se llega con ?nuevo=1: se abre el registro una vez.
+  const pedido = useRef(false);
+  useEffect(() => {
+    if (!puede || pedido.current) return;
+    pedido.current = true;
+    const x = leerNuevoCoaching();
+    if (x) nuevo(x.operador_id && d.equipo.some((m) => m.id === x.operador_id && m.actual) ? { operador_id: x.operador_id } : undefined);
+  }, [puede, nuevo, d.equipo]);
+  const sinCoaching = d.equipo.filter((m) => m.actual && !m.coachings).length;
+  const alertasEsperando = d.alertas.filter((a) => a.estado === "en_plazo" || a.estado === "vencida").length;
   const listo = (msg: string) => { setDialogo(null); setAviso(msg); onCambio(); };
   const ultimo = `${d.periodo}-31`;
   const gestionDespues = d.gestion_desde && d.gestion_desde > ultimo;
@@ -504,16 +516,31 @@ export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; p
         </div>
       )}
       {puede && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-brand-slate max-w-2xl">
-            Cada coaching parte de un dato, termina en un compromiso con fecha y se cierra cuando el dato del asesor mejora.
-          </p>
-          <div className="flex gap-2">
-            <button type="button" className="btn-secondary" onClick={() => setDialogo({ tipo: "nota" })}><NotebookPen size={15} /> Nota de bitácora</button>
-            <button type="button" className="btn-primary" onClick={() => nuevo()}><MessageSquareText size={15} /> Registrar coaching</button>
+        <section aria-label="Hacer coaching"
+          className="card overflow-visible border-brand-primary/30 bg-gradient-to-r from-brand-primary-light/70 via-white to-white p-5 sm:p-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <div className="min-w-0 max-w-2xl">
+            <h2 className="font-display text-2xl sm:text-3xl uppercase text-brand-ink leading-tight">¿Con quién hacés coaching hoy?</h2>
+            <p className="text-sm text-brand-graphite mt-1">
+              {sinCoaching || alertasEsperando ? (
+                <>
+                  {sinCoaching > 0 && <b className="text-brand-primary-dark">{plural(sinCoaching, "asesor sin coaching", "asesores sin coaching")} este mes</b>}
+                  {sinCoaching > 0 && alertasEsperando > 0 && " · "}
+                  {alertasEsperando > 0 && <b className="text-brand-primary-dark">{plural(alertasEsperando, "alerta de uso esperando coaching", "alertas de uso esperando coaching")}</b>}
+                </>
+              ) : "Todo el equipo tiene coaching este mes: seguí con los compromisos y sus seguimientos."}
+            </p>
+            <p className="text-xs text-brand-slate mt-1">
+              Cada coaching parte de un dato, termina en un compromiso con fecha y se cierra cuando el dato del asesor mejora.
+            </p>
           </div>
-        </div>
+          {/* En el celular, el botón principal arriba y a lo ancho (a mano del pulgar). */}
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            <button type="button" className="btn-secondary" onClick={() => setDialogo({ tipo: "nota" })}><NotebookPen size={15} /> Nota de bitácora</button>
+            <div ref={ancla} className="flex"><BotonCoaching onClick={() => nuevo()} className="w-full sm:w-auto" /></div>
+          </div>
+        </section>
       )}
+      {puede && <CoachingFlotante ancla={ancla} onClick={() => nuevo()} />}
       {portal && !mesEnCurso && (
         <p className="text-xs text-brand-slate flex items-center gap-1.5"><Info size={13} aria-hidden /> Estás viendo otro mes: para registrar, volvé a este mes.</p>
       )}
@@ -546,6 +573,7 @@ export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; p
         <BitacoraCard notas={d.notas} onNueva={puede ? () => setDialogo({ tipo: "nota" }) : undefined} />
       </div>
       <MetodoCoaching r={d.reglas} />
+      {puede && <div className="h-16 print:hidden" aria-hidden />}{/* lugar para el botón flotante al final */}
 
       {dialogo?.tipo === "nuevo" && (
         <CoachingDialog vista={d} inicial={dialogo.inicial} onClose={cerrar}

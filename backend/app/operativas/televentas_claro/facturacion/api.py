@@ -7,6 +7,7 @@ facturación (móvil y GPON) y el registro de simulaciones.
 """
 from __future__ import annotations
 
+import gzip
 import hashlib
 import uuid
 from datetime import datetime
@@ -52,7 +53,8 @@ def _parse_period(period_month: Optional[str]):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "period_month debe ser YYYY-MM-DD")
 
 
-async def _save(file: UploadFile, upload_id: str) -> tuple[str, str, str]:
+async def _save(file: UploadFile, upload_id: str) -> tuple[str, str, str, bytes]:
+    """Guarda la liquidación en el disco y devuelve también su copia comprimida para la base."""
     if not file.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Archivo sin nombre")
     if not file.filename.lower().endswith(".txt"):
@@ -68,7 +70,7 @@ async def _save(file: UploadFile, upload_id: str) -> tuple[str, str, str]:
             f"El archivo excede {settings.max_upload_size_mb}MB",
         )
     target.write_bytes(content)
-    return file.filename, str(target.resolve()), hashlib.sha256(content).hexdigest()
+    return file.filename, str(target.resolve()), hashlib.sha256(content).hexdigest(), gzip.compress(content)
 
 
 # ============================ UPLOADS ============================
@@ -89,7 +91,7 @@ async def create_upload(
     await db.commit()
     await db.refresh(upload)
 
-    upload.filename, upload.file_path, upload.file_sha256 = await _save(file, upload.id)
+    upload.filename, upload.file_path, upload.file_sha256, upload.contenido_gz = await _save(file, upload.id)
     await db.commit()
 
     await record_action(

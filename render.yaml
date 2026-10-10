@@ -39,7 +39,8 @@ services:
       - key: ENV
         value: production
       # DEBE quedar dentro del mount path del disco (arriba). Si el disco se creó a mano
-      # con otro mount path, poné esa ruta acá: <mount path>/uploads.
+      # con otro mount path, poné esa ruta acá: <mount path>/uploads (con las mismas mayúsculas).
+      # Si quedó afuera y hay un solo disco, el sistema usa <disco>/uploads (Administración → Sistema).
       - key: UPLOAD_DIR
         value: /var/data/uploads
       - key: BACKEND_URL

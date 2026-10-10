@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { fechaHora } from "@/components/productividad/tipos";
 import { SUP_API, mesActual, periodoDeUrl, periodoEnUrl, type DetalleSupervisor } from "@/components/supervision/tipos";
+import { CoachingFlotante, hrefNuevoCoaching } from "@/components/supervision/hacer-coaching";
 import { CriticoBadge, ParaHoyCard, SelectorMes, VistaSupervisor } from "@/components/supervision/ui";
 import { apiFetch } from "@/lib/api";
 
@@ -21,6 +22,7 @@ function Portal() {
   const [periodo, setPeriodo] = useState(periodoDeUrl);
   const [d, setD] = useState<DetalleSupervisor | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const ancla = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (p: string) => {
     setError(null);
@@ -54,9 +56,17 @@ function Portal() {
       ) : (
         <div className="space-y-6">
           {d.coaching && periodo === mesActual() && (
-            <ParaHoyCard x={d.coaching} href="/televentas-claro/portal/coaching" hrefTickets="/televentas-claro/portal/tickets" />
+            <>
+              <div ref={ancla}>
+                <ParaHoyCard x={d.coaching} href="/televentas-claro/portal/coaching" hrefTickets="/televentas-claro/portal/tickets"
+                  nuevoCoaching={hrefNuevoCoaching()} />
+              </div>
+              <CoachingFlotante ancla={ancla} href={hrefNuevoCoaching()} />
+            </>
           )}
-          <VistaSupervisor d={d} lineasUrl={(op) => `${SUP_API}/portal/lineas?periodo=${periodo}&operador_id=${op}`} />
+          <VistaSupervisor d={d} lineasUrl={(op) => `${SUP_API}/portal/lineas?periodo=${periodo}&operador_id=${op}`}
+            coachingHref={periodo === mesActual() ? hrefNuevoCoaching : undefined} />
+          {d.coaching && periodo === mesActual() && <div className="h-10 print:hidden" aria-hidden />}
         </div>
       )}
     </>

@@ -1,10 +1,11 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, CircleCheck, Headset, ShoppingBag, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, CircleCheck, Headset, MessageSquareText, ShoppingBag, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { fechaLarga, n, nombreMes } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
+import { BotonCoaching } from "./hacer-coaching";
 import { MetodoScoring, ScoreCelda, ScoringCard } from "./scoring";
 import {
   CRUCE, ESTADO, SUP_HREF, dm, mesActual, num, sumarMeses,
@@ -297,8 +298,10 @@ function TablaLineas({ titulo, lineas }: { titulo: string; lineas: LineasAsesor[
 }
 
 // ------------------------------------------------------------------ equipo de un supervisor
-export function TablaEquipo({ d, lineasUrl, fichaHref }: {
+export function TablaEquipo({ d, lineasUrl, fichaHref, coachingHref }: {
   d: DetalleSupervisor; lineasUrl: (operadorId: string) => string; fichaHref?: (operadorId: string) => string;
+  /** Portal del supervisor: «Coaching» en cada asesor actual (abre el registro con el asesor elegido). */
+  coachingHref?: (operadorId: string) => string;
 }) {
   const [abierta, setAbierta] = useState<string | null>(null);
   const p = d.parametros;
@@ -360,11 +363,19 @@ export function TablaEquipo({ d, lineasUrl, fichaHref }: {
                 <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-brand-primary-dark">{a.uso?.a_recuperar ? n(a.uso.a_recuperar) : ""}</td>
                 <td className="px-3 py-2.5 text-right">{a.actual ? <ScoreCelda total={a.score} parcial={a.parcial} /> : <span className="text-brand-mist">—</span>}</td>
                 <td className="px-5 py-2.5 text-right whitespace-nowrap">
-                  {!!(a.uso && (a.uso.sin_uso || a.uso.en_espera)) && (
-                    <button type="button" onClick={() => setAbierta(a.id)} className="text-xs font-semibold text-brand-primary hover:underline">
-                      Ver líneas
-                    </button>
-                  )}
+                  <div className="inline-flex items-center gap-3">
+                    {!!(a.uso && (a.uso.sin_uso || a.uso.en_espera)) && (
+                      <button type="button" onClick={() => setAbierta(a.id)} className="text-xs font-semibold text-brand-primary hover:underline">
+                        Ver líneas
+                      </button>
+                    )}
+                    {coachingHref && a.actual && (
+                      <Link href={coachingHref(a.id)} className={a.uso?.alerta ? "btn-coaching-sm" : "btn-coaching-sm-outline"}
+                        title={a.uso?.alerta ? "En alerta de uso: necesita coaching" : `Registrar un coaching a ${a.nombre}`}>
+                        <MessageSquareText size={14} aria-hidden /> Coaching
+                      </Link>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -390,8 +401,9 @@ function ConvCelda({ a }: { a: AsesorEquipo }) {
 }
 
 /** Lo que ve un supervisor de su mes (y los jefes en el detalle de cada supervisor). */
-export function VistaSupervisor({ d, lineasUrl, extra, fichaHref }: {
+export function VistaSupervisor({ d, lineasUrl, extra, fichaHref, coachingHref }: {
   d: DetalleSupervisor; lineasUrl: (id: string) => string; extra?: ReactNode; fichaHref?: (id: string) => string;
+  coachingHref?: (id: string) => string;
 }) {
   return (
     <div className="space-y-6">
@@ -418,7 +430,7 @@ export function VistaSupervisor({ d, lineasUrl, extra, fichaHref }: {
       </div>
       {d.scoring && <ScoringCard s={d.scoring} mesAnterior={nombreMes(sumarMeses(d.periodo, -1))} minEvaluables={d.parametros.min_evaluables} />}
       {extra}
-      <TablaEquipo d={d} lineasUrl={lineasUrl} fichaHref={fichaHref} />
+      <TablaEquipo d={d} lineasUrl={lineasUrl} fichaHref={fichaHref} coachingHref={coachingHref} />
       <MetodoSupervision p={d.parametros} />
       {d.scoring && <MetodoScoring p={d.scoring.parametros} umbral={d.parametros.umbral_sin_uso} minEvaluables={d.parametros.min_evaluables} />}
     </div>
@@ -486,7 +498,11 @@ export function TabsSupervisor({ id, periodo, activa }: { id: string; periodo: s
 const pl = (k: number, uno: string, varios: string) => `${k} ${k === 1 ? uno : varios}`;
 
 /** Lo que el supervisor tiene que atender de su gestión, al entrar a su portal. */
-export function ParaHoyCard({ x, href, hrefTickets }: { x: ParaHoy; href: string; hrefTickets: string }) {
+export function ParaHoyCard({ x, href, hrefTickets, nuevoCoaching }: {
+  x: ParaHoy; href: string; hrefTickets: string;
+  /** Portal del supervisor: el botón «Hacer coaching» (abre el registro). */
+  nuevoCoaching?: string;
+}) {
   const rojo = "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30";
   const naranja = "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40";
   const azul = "bg-[#2A78D6]/10 text-[#1D5BA6] border-[#2A78D6]/30";
@@ -502,7 +518,7 @@ export function ParaHoyCard({ x, href, hrefTickets }: { x: ParaHoy; href: string
     { k: x.sin_coaching, t: pl(x.sin_coaching, "asesor sin coaching este mes", "asesores sin coaching este mes"), c: naranja, h: href },
   ].filter((i) => i.k > 0);
   return (
-    <section className="card p-4 flex items-center justify-between gap-x-4 gap-y-3 flex-wrap" aria-label="Para hoy">
+    <section className="card p-4 overflow-visible flex items-center justify-between gap-x-4 gap-y-3 flex-wrap" aria-label="Para hoy">
       <div className="flex items-center gap-2 flex-wrap min-w-0">
         <span className="font-display text-lg uppercase text-brand-ink leading-none mr-1">Para hoy</span>
         {items.length ? items.map((i) => (
@@ -511,9 +527,10 @@ export function ParaHoyCard({ x, href, hrefTickets }: { x: ParaHoy; href: string
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><CircleCheck size={14} aria-hidden /> Gestión al día: sin tickets, seguimientos ni alertas pendientes.</span>
         )}
       </div>
-      <div className="flex gap-2 flex-wrap min-w-0">
+      <div className="flex gap-2 flex-wrap items-center min-w-0">
         <Link href={hrefTickets} className="btn-secondary !py-2 !px-4">Tickets <ArrowRight size={15} /></Link>
         <Link href={href} className="btn-secondary !py-2 !px-4">Coaching y bitácora <ArrowRight size={15} /></Link>
+        {nuevoCoaching && <BotonCoaching href={nuevoCoaching} className="!py-2.5 w-full sm:w-auto" />}
       </div>
     </section>
   );

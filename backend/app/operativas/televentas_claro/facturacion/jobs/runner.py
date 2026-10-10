@@ -7,7 +7,10 @@ fue reclamado (status='processing').
 """
 from __future__ import annotations
 
+import gzip
+import tempfile
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -55,8 +58,19 @@ async def run_facturacion(upload_id: str) -> None:
             return
         path = upload.file_path
         period_hint = upload.period_month
+        # Sin el archivo en el disco (p. ej. un despliegue sin disco persistente), se usa la copia de la base.
+        copia = None
+        if not (path and Path(path).is_file()):
+            copia = (await db.execute(select(FacturacionUpload.contenido_gz).where(FacturacionUpload.id == upload_id))).scalar()
 
+    temporal: Path | None = None
     try:
+        if copia:
+            with tempfile.NamedTemporaryFile(prefix="liquidacion_", suffix=".txt", delete=False) as tmp:
+                tmp.write(gzip.decompress(copia))
+                temporal = Path(tmp.name)
+            path = str(temporal)
+            logger.info(f"[facturacion-job] {upload_id}: sin el archivo en el disco, se procesa la copia de la base")
         analysis = await run_isolated(_build, path)
         k = analysis["kpis"]
         periodo = k.get("periodo")
@@ -92,3 +106,6 @@ async def run_facturacion(upload_id: str) -> None:
                 up.last_error = friendly_error(exc)
                 up.retry_count = (up.retry_count or 0) + 1
                 await db.commit()
+    finally:
+        if temporal:
+            temporal.unlink(missing_ok=True)

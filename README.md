@@ -335,8 +335,8 @@ con SLA; y el centro de comandos de los jefes.
 | Operadores | `…/supervision/operadores` | Maestro de operadores: por revisar, vincular, separar, confirmar sin vínculo, renombrar, dar de baja |
 | Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana, días no laborables (más los feriados de Seguridad) y el **horario de atención** (horas hábiles de los plazos de los tickets) |
 | Parámetros | `…/supervision/parametros` | Pesos y umbrales del scoring, versionados (solo sub gerente y superadmin) |
-| Mi portal | `/televentas-claro/portal` | El portal del supervisor: «Para hoy» (seguimientos y alertas por atender), su equipo, sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
-| Coaching y bitácora | `/televentas-claro/portal/coaching` | El supervisor registra coachings (con compromiso y fecha de seguimiento), seguimientos con el impacto medido, aclaraciones y notas de bitácora; ve su gestión del mes |
+| Mi portal | `/televentas-claro/portal` | El portal del supervisor: «Para hoy» (seguimientos y alertas por atender) con el botón **Hacer coaching**, su equipo (con «Coaching» en cada asesor), sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
+| Coaching y bitácora | `/televentas-claro/portal/coaching` | El supervisor registra coachings (con compromiso y fecha de seguimiento), seguimientos con el impacto medido, aclaraciones y notas de bitácora; ve su gestión del mes. **Hacer coaching** es la acción principal: brilla con un pulso (fijo si el sistema pide menos movimiento), queda flotante al bajar por la página y cada asesor sin coaching del mes lo tiene destacado |
 | Tickets (portal) | `/televentas-claro/portal/tickets` | La bandeja del supervisor: responde, pide datos y resuelve los tickets que le envían, con sus plazos |
 
 - **Maestro de operadores:** cada persona tiene un nombre en llamadas (agente de
@@ -680,9 +680,16 @@ su lista. Aparece sola en la matriz de perfiles, desmarcada para todos.
 ## Deploy en Render
 
 Ver [docs/deployment-render.md](docs/deployment-render.md). En resumen: crear
-la base PostgreSQL, crear el Web Service con runtime Docker y disco en
+la base PostgreSQL (plan pago: tiene respaldos), crear el Web Service con runtime Docker y disco en
 `/var/data`, y setear `DATABASE_URL`, `SECRET_KEY`, `SUPERADMIN_EMAIL` y
 `SUPERADMIN_PASSWORD`. `DATABASE_URL` se convierte sola a `postgresql+asyncpg://`.
+
+- **Qué se guarda dónde:** PostgreSQL guarda todas las tablas, los informes y lo necesario para recalcularlos
+  (Ventas Netas, Productividad y una copia de cada liquidación de Facturación). El disco (`UPLOAD_DIR`) guarda los
+  archivos originales y las fotos de perfil. `UPLOAD_DIR` tiene que quedar dentro del mount path del disco; si en
+  producción quedó afuera y hay un solo disco montado, el sistema usa `<disco>/uploads` y lo avisa.
+- **Administración → Sistema** (solo superadmin): estado del almacenamiento (base, disco, espacio y qué se puede
+  recalcular sin el disco), con lo que haya que corregir.
 
 ## Variables de entorno
 
