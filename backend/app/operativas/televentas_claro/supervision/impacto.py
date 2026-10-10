@@ -152,6 +152,19 @@ def impacto_uso(antes: dict[str, list[int]] | None, despues: dict[str, list[int]
             "completo": edad_max >= EDAD_MAX, "detalle": detalle}
 
 
+def combinar(resultados: Iterable[str]) -> str:
+    """El resultado de un coaching con varias métricas: mejoró o empeoró si las que tienen datos van para el mismo lado
+    (o se quedan igual), «mixto» si unas mejoran y otras empeoran, y sin datos si ninguna tiene."""
+    con = [r for r in resultados if r != "sin_datos"]
+    if not con:
+        return "sin_datos"
+    if "mejoro" in con and "empeoro" in con:
+        return "mixto"
+    if "mejoro" in con:
+        return "mejoro"
+    return "empeoro" if "empeoro" in con else "igual"
+
+
 def sin_medicion(metrica: str = "otra", motivo: str | None = None) -> dict[str, Any]:
     return {"metrica": metrica, "resultado": "sin_datos", "delta": None, "completo": True,
             "detalle": motivo or "Métrica sin medición automática: vale el comentario del seguimiento."}

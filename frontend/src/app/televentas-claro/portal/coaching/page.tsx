@@ -1,5 +1,7 @@
 "use client";
 
+import { History } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { VistaCoaching } from "@/components/supervision/coaching";
@@ -38,7 +40,10 @@ function Coaching() {
             tu gestión suma al scoring.
           </p>
         </div>
-        <SelectorMes periodo={periodo} onChange={setPeriodo} max={mesActual()} />
+        <div className="flex items-center gap-2 flex-wrap print:hidden">
+          <Link href="/televentas-claro/portal/historial" className="btn-secondary !py-2 !px-4 text-xs"><History size={15} /> Mi historial</Link>
+          <SelectorMes periodo={periodo} onChange={setPeriodo} max={mesActual()} />
+        </div>
       </div>
       {error && <div className="card p-4 text-sm text-brand-primary mb-4">{error}</div>}
       {!d ? (

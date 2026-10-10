@@ -9,13 +9,14 @@ Las reglas del registro están en `coaching.py`; la gestión que suma al scoring
 from __future__ import annotations
 
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from ....api.deps import CurrentUser, client_ip
 from ....core.database import get_db
@@ -25,6 +26,7 @@ from . import api as sup
 from . import coaching as srv
 from . import operadores as maestro
 from .calculo import mes_de, supervisor_en
+from .impacto import METRICAS as METRICAS_ORDEN
 from .models import OPERATIVA, BitacoraNota, Coaching, Operador
 
 router = APIRouter(prefix="/televentas-claro/supervision", tags=["televentas-claro · coaching"])
@@ -98,6 +100,7 @@ async def _vista(db: AsyncSession, periodo: str, sid: str, *, portal: bool) -> d
     sup_info = ctx.supervisores.get(sid) or {"id": sid, "nombre": nombres.get(sid, sid), "activo": False}
     return {
         **ctx.comun(), "hoy": dia.isoformat(), "supervisor": sup_info,
+        "proximos_hasta": sup.proximos_hasta(ctx.p, dia).isoformat(),
         "gestion_desde": ctx.inicio_gestion.isoformat() if ctx.inicio_gestion else None,
         "scoring": ctx.scoring_supervisor(sid),
         "equipo": equipo, "alertas": _alertas_de(ctx, sid, dia),
@@ -153,7 +156,7 @@ async def gestion(periodo: Optional[str] = Query(None), user: CurrentUser = Depe
         ultima = srv.dia_local(max(momentos)) if momentos else None
         filas.append({
             **info, "asesores": len(equipo), "total": x["total"], "partes": x["partes"][1:],
-            "coachings": len(mios), "por_metrica": dict(Counter(c.metrica for c in mios)),
+            "coachings": len(mios), "por_metrica": dict(Counter(m for c in mios for m in srv.metricas_de(c))),
             "fuera_de_termino": sum(1 for c in mios if c.fuera_de_termino),
             "sin_mejora": sum(1 for c in mios if c.estado == "cerrado" and c.resultado in ("igual", "empeoro")),
             "seguimientos_abiertos": len(abiertos_sid),
@@ -178,6 +181,238 @@ async def gestion(periodo: Optional[str] = Query(None), user: CurrentUser = Depe
         "supervisores": filas,
         "reglas": {**REGLAS, "dias_foco": sup.scoring.DIAS_FOCO},
     }
+
+
+# ------------------------------------------------------------------ registro por rango de fechas (jefes y supervisor)
+DIAS_REGISTRO_MAX = 400       # un año y un poco más
+LIMITE_ITEMS = 1500           # la lista; los indicadores cuentan todos
+LOTE = 500                    # ids por consulta (los textos de la lista)
+# Lo que necesitan los indicadores: sin los textos ni la foto al registrar (se leen solo para lo que se lista).
+_LIVIANAS = (Coaching.id, Coaching.supervisor_id, Coaching.operador_id, Coaching.fecha, Coaching.tipo, Coaching.metrica,
+             Coaching.metricas, Coaching.seguimiento_fecha, Coaching.seguimiento_at, Coaching.estado, Coaching.resultado,
+             Coaching.impacto, Coaching.fuera_de_termino, Coaching.anterior_id, Coaching.created_at, Coaching.updated_at)
+DIAS_PROXIMOS_REGISTRO = 7    # en el registro, «próximos»: los seguimientos de la próxima semana
+SeguimientoFiltro = Literal["pendientes", "proximos", "vencidos", "a_tiempo", "tarde"]
+ResultadoFiltro = Literal["mejoro", "igual", "empeoro", "mixto", "sin_datos", "sin_mejora"]
+_EST_FILTRO = {"vencidos": "vencido", "a_tiempo": "a_tiempo", "tarde": "tarde"}
+
+
+def _pct(a: float, b: float) -> float | None:
+    return round(a / b * 100, 1) if b else None
+
+
+def _resultados_por_metrica(c: Coaching) -> list[dict[str, Any]]:
+    """Métrica, resultado y diferencia de cada métrica de un coaching cerrado (lo que se guardó con su seguimiento)."""
+    imp = c.impacto or {}
+    partes = imp.get("metricas") or ([imp] if imp.get("metrica") else [])
+    if not partes:
+        return [{"metrica": m, "resultado": c.resultado or "sin_datos", "delta": None} for m in srv.metricas_de(c)]
+    return [{"metrica": x.get("metrica") or c.metrica, "resultado": x.get("resultado") or "sin_datos", "delta": x.get("delta")}
+            for x in partes]
+
+
+def _item(c: Coaching, textos: tuple[str, str, str | None], *, nombres: dict[str, str], ops: dict[str, Operador],
+          dia: date) -> dict[str, Any]:
+    """Un coaching en la lista del registro: lo que se trabajó, el compromiso, la devolución y el resultado por métrica
+    (la foto al registrar y la medición completa se ven al abrir el detalle). Los campos de `coaching.a_dict`."""
+    o = ops.get(c.operador_id)
+    diagnostico, compromiso, comentario = textos
+    return {
+        "id": c.id, "supervisor_id": c.supervisor_id, "supervisor": nombres.get(c.supervisor_id, c.supervisor_id),
+        "operador_id": c.operador_id, "operador": o.nombre if o else "—", "agente": o.agente_nombre if o else None,
+        "vendedor": o.vendedor if o else None, "fecha": c.fecha.isoformat(), "tipo": c.tipo, "metrica": c.metrica,
+        "metricas": srv.metricas_de(c), "diagnostico": diagnostico, "compromiso": compromiso,
+        "seguimiento_fecha": c.seguimiento_fecha.isoformat(), "estado": c.estado, "seguimiento": srv.estado_seguimiento(c, dia),
+        "seguimiento_at": srv.iso(c.seguimiento_at), "seguimiento_comentario": comentario, "resultado": c.resultado,
+        "resultados": _resultados_por_metrica(c) if c.estado == "cerrado" else [], "impacto_guardado": c.estado == "cerrado",
+        "fuera_de_termino": c.fuera_de_termino, "anterior_id": c.anterior_id, "created_at": srv.iso(c.created_at),
+        "updated_at": srv.iso(c.updated_at), "editable": False,
+    }
+
+
+async def _textos(db: AsyncSession, ids: list[str]) -> dict[str, tuple[str, str, str | None]]:
+    """Diagnóstico, compromiso y comentario del seguimiento de los coachings que se listan (de a lotes)."""
+    out: dict[str, tuple[str, str, str | None]] = {}
+    for k in range(0, len(ids), LOTE):
+        filas = await db.execute(select(Coaching.id, Coaching.diagnostico, Coaching.compromiso, Coaching.seguimiento_comentario)
+                                 .where(Coaching.id.in_(ids[k:k + LOTE])))
+        out.update({i: (d, c, s) for i, d, c, s in filas.all()})
+    return out
+
+
+def _rango(desde: date | None, hasta: date | None) -> tuple[date, date]:
+    dia = sup.hoy()
+    hasta = hasta or dia
+    desde = desde or hasta.replace(day=1)
+    if desde > hasta:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "La fecha inicial es posterior a la final")
+    if (hasta - desde).days > DIAS_REGISTRO_MAX:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"El rango puede tener hasta {DIAS_REGISTRO_MAX} días")
+    return desde, hasta
+
+
+async def _registro(db: AsyncSession, *, desde: date, hasta: date, supervisor_id: str | None, operador_id: str | None,
+                    metrica: str | None, tipo: str | None, seguimiento: str | None, resultado: str | None, anulados: bool,
+                    solo_supervisor: str | None = None) -> dict[str, Any]:
+    """Todos los coachings con fecha en el rango que cumplen los filtros: qué se trabajó (diagnóstico y compromiso), el
+    seguimiento (la devolución) y su resultado, con los indicadores del rango por métrica, por supervisor y por asesor.
+    `solo_supervisor`: el portal, que ve solo lo suyo."""
+    dia = sup.hoy()
+    tope = dia + timedelta(days=DIAS_PROXIMOS_REGISTRO)
+    base = select(Coaching).where(Coaching.operativa == OPERATIVA, Coaching.fecha >= desde, Coaching.fecha <= hasta)
+    if solo_supervisor:
+        base = base.where(Coaching.supervisor_id == solo_supervisor)
+    q = base
+    if supervisor_id:
+        q = q.where(Coaching.supervisor_id == supervisor_id)
+    if operador_id:
+        q = q.where(Coaching.operador_id == operador_id)
+    if tipo:
+        q = q.where(Coaching.tipo == tipo)
+    cs = list((await db.execute(q.options(load_only(*_LIVIANAS)).order_by(Coaching.fecha.desc(), Coaching.created_at.desc())))
+              .scalars().all())
+
+    def proximo(c: Coaching) -> bool:
+        return c.estado == "abierto" and srv.estado_seguimiento(c, dia) in ("hoy", "proximo") and c.seguimiento_fecha <= tope
+
+    def pasa(c: Coaching) -> bool:
+        if metrica and metrica not in srv.metricas_de(c):
+            return False
+        if seguimiento == "pendientes" and c.estado != "abierto":
+            return False
+        if seguimiento == "proximos" and not proximo(c):
+            return False
+        if seguimiento in _EST_FILTRO and srv.estado_seguimiento(c, dia) != _EST_FILTRO[seguimiento]:
+            return False
+        if resultado:
+            if c.estado != "cerrado":
+                return False
+            return c.resultado in ("igual", "empeoro") if resultado == "sin_mejora" else c.resultado == resultado
+        return True
+
+    cs = [c for c in cs if pasa(c)]
+    validos = [c for c in cs if c.estado != "anulado"]
+    n_anulados = len(cs) - len(validos)   # los anulados se cuentan siempre; se listan solo si se piden
+    if not anulados:
+        cs = validos
+
+    # Nombres y opciones de los filtros (los supervisores y asesores con coachings en el rango, sin los demás filtros).
+    pares = (await db.execute(select(Coaching.supervisor_id, Coaching.operador_id).where(base.whereclause).distinct())).all()
+    sup_ids = {s for s, _ in pares} | {c.supervisor_id for c in cs}
+    op_ids = {o for _, o in pares} | {c.operador_id for c in cs}
+    nombres = await sup._nombres(db, sup_ids)
+    ops = {o.id: o for o in (await db.execute(select(Operador).where(Operador.id.in_(op_ids)))).scalars().all()} if op_ids else {}
+
+    # ---- indicadores del rango
+    est = Counter(srv.estado_seguimiento(c, dia) for c in validos)
+    cerrados = [c for c in validos if c.estado == "cerrado"]
+    res = Counter(c.resultado or "sin_datos" for c in cerrados)
+    con_datos = sum(res[r] for r in ("mejoro", "mixto", "igual", "empeoro"))
+    exigibles = est["a_tiempo"] + est["tarde"] + est["vencido"]
+    kpis = {
+        "coachings": len(validos), "anulados": n_anulados,
+        "asesores": len({c.operador_id for c in validos}), "supervisores": len({c.supervisor_id for c in validos}),
+        "fuera_de_termino": sum(1 for c in validos if c.fuera_de_termino),
+        "por_tipo": {t: n for t, n in Counter(c.tipo for c in validos).items()},
+        "seguimientos": {k: est.get(k, 0) for k in ("a_tiempo", "tarde", "vencido", "hoy", "proximo")},
+        "pct_a_tiempo": _pct(est["a_tiempo"], exigibles),
+        "proximos": sum(1 for c in validos if proximo(c)),
+        "cerrados": len(cerrados),
+        "resultados": {k: res.get(k, 0) for k in ("mejoro", "mixto", "igual", "empeoro", "sin_datos")},
+        "pct_mejora": _pct(res["mejoro"], con_datos),
+    }
+
+    # ---- por métrica: cuántos la trabajaron y, de los cerrados, cómo le fue a esa métrica
+    pm: dict[str, dict[str, Any]] = {m: {"metrica": m, "coachings": 0, "cerrados": 0, "mejoro": 0, "igual": 0, "empeoro": 0,
+                                        "sin_datos": 0} for m in METRICAS_ORDEN}
+    for c in validos:
+        for m in srv.metricas_de(c):
+            pm[m]["coachings"] += 1
+        if c.estado == "cerrado":
+            for x in _resultados_por_metrica(c):
+                if x["metrica"] in pm:
+                    pm[x["metrica"]]["cerrados"] += 1
+                    pm[x["metrica"]][x["resultado"] if x["resultado"] in ("mejoro", "igual", "empeoro") else "sin_datos"] += 1
+    por_metrica = [{**x, "pct_mejora": _pct(x["mejoro"], x["mejoro"] + x["igual"] + x["empeoro"])}
+                   for x in pm.values() if x["coachings"]]
+
+    # ---- por supervisor y por asesor
+    fs: dict[str, dict[str, Any]] = {}
+    fa: dict[str, dict[str, Any]] = {}
+    for c in validos:
+        e = srv.estado_seguimiento(c, dia)
+        f = fs.setdefault(c.supervisor_id, {"id": c.supervisor_id, "nombre": nombres.get(c.supervisor_id, c.supervisor_id),
+                                            "coachings": 0, "asesores": set(), "a_tiempo": 0, "tarde": 0, "vencido": 0,
+                                            "pendientes": 0, "proximos": 0, "cerrados": 0, "mejoro": 0, "con_datos": 0, "ultimo": None})
+        o = ops.get(c.operador_id)
+        a = fa.setdefault(c.operador_id, {"id": c.operador_id, "nombre": o.nombre if o else "—", "supervisores": set(),
+                                          "coachings": 0, "metricas": Counter(), "pendientes": 0, "vencido": 0, "cerrados": 0,
+                                          "mejoro": 0, "sin_mejora": 0, "ultimo": None})
+        for x in (f, a):
+            x["coachings"] += 1
+            x["ultimo"] = max(x["ultimo"], c.fecha) if x["ultimo"] else c.fecha
+            if c.estado == "abierto":
+                x["pendientes"] += 1
+            if e == "vencido":
+                x["vencido"] += 1
+            if c.estado == "cerrado":
+                x["cerrados"] += 1
+                x["mejoro"] += c.resultado == "mejoro"
+        f["asesores"].add(c.operador_id)
+        if e in ("a_tiempo", "tarde"):
+            f[e] += 1
+        f["proximos"] += proximo(c)
+        f["con_datos"] += c.estado == "cerrado" and c.resultado in ("mejoro", "mixto", "igual", "empeoro")
+        a["supervisores"].add(nombres.get(c.supervisor_id, c.supervisor_id))
+        a["metricas"].update(srv.metricas_de(c))
+        a["sin_mejora"] += c.estado == "cerrado" and c.resultado in ("igual", "empeoro")
+    por_supervisor = sorted(({**f, "asesores": len(f["asesores"]), "ultimo": f["ultimo"].isoformat(),
+                              "pct_a_tiempo": _pct(f["a_tiempo"], f["a_tiempo"] + f["tarde"] + f["vencido"]),
+                              "pct_mejora": _pct(f["mejoro"], f["con_datos"])} for f in fs.values()),
+                            key=lambda x: (-x["coachings"], x["nombre"].lower()))
+    por_asesor = sorted(({**a, "supervisores": sorted(a["supervisores"]), "metricas": dict(a["metricas"]),
+                          "ultimo": a["ultimo"].isoformat()} for a in fa.values()),
+                        key=lambda x: (-x["coachings"], x["nombre"].lower()))
+
+    lista = cs[:LIMITE_ITEMS]
+    textos = await _textos(db, [c.id for c in lista])
+    return {
+        "desde": desde.isoformat(), "hasta": hasta.isoformat(), "hoy": dia.isoformat(), "proximos_hasta": tope.isoformat(),
+        "kpis": kpis, "por_metrica": por_metrica, "por_supervisor": por_supervisor, "por_asesor": por_asesor,
+        "items": [_item(c, textos.get(c.id, ("", "", None)), nombres=nombres, ops=ops, dia=dia) for c in lista],
+        "total_items": len(cs), "truncado": len(cs) > LIMITE_ITEMS,
+        "opciones": {
+            "supervisores": sorted(({"id": i, "nombre": nombres.get(i, i)} for i in {s for s, _ in pares}),
+                                   key=lambda x: x["nombre"].lower()),
+            "asesores": sorted(({"id": i, "nombre": ops[i].nombre} for i in {o for _, o in pares} if i in ops),
+                               key=lambda x: x["nombre"].lower()),
+        },
+    }
+
+
+@router.get("/registro")
+async def registro(desde: Optional[date] = Query(None), hasta: Optional[date] = Query(None),
+                   supervisor_id: Optional[str] = Query(None, max_length=36), operador_id: Optional[str] = Query(None, max_length=36),
+                   metrica: Optional[Metrica] = Query(None), tipo: Optional[Tipo] = Query(None),
+                   seguimiento: Optional[SeguimientoFiltro] = Query(None), resultado: Optional[ResultadoFiltro] = Query(None),
+                   anulados: bool = Query(False), user: CurrentUser = Depends(sup.require_ver),
+                   db: AsyncSession = Depends(get_db)) -> dict:
+    """Registro de coaching de toda la operación por rango de fechas (jefes, solo lectura)."""
+    d, h = _rango(desde, hasta)
+    return await _registro(db, desde=d, hasta=h, supervisor_id=supervisor_id, operador_id=operador_id, metrica=metrica,
+                           tipo=tipo, seguimiento=seguimiento, resultado=resultado, anulados=anulados)
+
+
+@router.get("/portal/registro")
+async def portal_registro(desde: Optional[date] = Query(None), hasta: Optional[date] = Query(None),
+                          operador_id: Optional[str] = Query(None, max_length=36), metrica: Optional[Metrica] = Query(None),
+                          tipo: Optional[Tipo] = Query(None), seguimiento: Optional[SeguimientoFiltro] = Query(None),
+                          resultado: Optional[ResultadoFiltro] = Query(None), anulados: bool = Query(False),
+                          user: CurrentUser = Depends(sup.require_portal), db: AsyncSession = Depends(get_db)) -> dict:
+    """El historial de coaching del supervisor que entra, por rango de fechas: solo lo suyo."""
+    d, h = _rango(desde, hasta)
+    return await _registro(db, desde=d, hasta=h, supervisor_id=None, operador_id=operador_id, metrica=metrica, tipo=tipo,
+                           seguimiento=seguimiento, resultado=resultado, anulados=anulados, solo_supervisor=user.id)
 
 
 async def _detalle(db: AsyncSession, c: Coaching, *, portal: bool) -> dict[str, Any]:
@@ -219,7 +454,8 @@ class CoachingPayload(BaseModel):
     operador_id: str = Field(..., min_length=1, max_length=36)
     fecha: date
     tipo: Tipo
-    metrica: Metrica
+    metricas: Optional[list[Metrica]] = Field(None, max_length=5)  # las que se trabajaron (una o varias)
+    metrica: Optional[Metrica] = None  # una sola (como antes de poder elegir varias)
     diagnostico: str = Field(..., max_length=srv.MAX_TEXTO)
     compromiso: str = Field(..., max_length=srv.MAX_TEXTO)
     seguimiento_fecha: date
@@ -234,6 +470,7 @@ async def registrar(payload: CoachingPayload, request: Request, user: CurrentUse
     try:
         fuera = srv.validar_fecha(payload.fecha, dia)
         srv.validar_seguimiento(payload.fecha, payload.seguimiento_fecha, dia)
+        metricas = srv.normalizar_metricas(payload.metricas or ([payload.metrica] if payload.metrica else []))
         diagnostico = srv.texto(payload.diagnostico, "el diagnóstico")
         compromiso = srv.texto(payload.compromiso, "el compromiso")
     except srv.ReglaInvalida as exc:
@@ -247,24 +484,25 @@ async def registrar(payload: CoachingPayload, request: Request, user: CurrentUse
         if not prev or prev.supervisor_id != user.id or prev.operador_id != op.id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "El coaching anterior no es de ese asesor")
     c = Coaching(operativa=OPERATIVA, supervisor_id=user.id, operador_id=op.id, fecha=payload.fecha, tipo=payload.tipo,
-                 metrica=payload.metrica, diagnostico=diagnostico, compromiso=compromiso,
+                 metrica=metricas[0], metricas=metricas, diagnostico=diagnostico, compromiso=compromiso,
                  seguimiento_fecha=payload.seguimiento_fecha, estado="abierto", anterior_id=payload.anterior_id,
                  base=await srv.foto(db, op, payload.fecha, ctx.sc["asesores"].get(op.id)), impacto={},
                  fuera_de_termino=fuera, created_at=srv.ahora(), created_by=user.id)
     db.add(c)
     await db.flush()
-    srv.evento(db, c, "creado", user.id, tipo=c.tipo, metrica=c.metrica, fecha=c.fecha, seguimiento_fecha=c.seguimiento_fecha,
+    srv.evento(db, c, "creado", user.id, tipo=c.tipo, metrica=c.metrica, metricas=metricas, fecha=c.fecha, seguimiento_fecha=c.seguimiento_fecha,
                diagnostico=diagnostico, compromiso=compromiso, fuera_de_termino=fuera)
     await db.commit()
     await record_action(db, user_id=user.id, action="coaching_registrado", resource_type="coaching", resource_id=c.id,
                         ip=client_ip(request), extra={"asesor": op.nombre, "fecha": c.fecha.isoformat(), "tipo": c.tipo,
-                                                     "metrica": c.metrica, "fuera_de_termino": fuera})
+                                                     "metricas": metricas, "fuera_de_termino": fuera})
     return await _detalle(db, c, portal=True)
 
 
 class CoachingPatch(BaseModel):
     tipo: Optional[Tipo] = None
-    metrica: Optional[Metrica] = None
+    metricas: Optional[list[Metrica]] = Field(None, max_length=5)
+    metrica: Optional[Metrica] = None  # una sola (como antes de poder elegir varias)
     diagnostico: Optional[str] = Field(None, max_length=srv.MAX_TEXTO)
     compromiso: Optional[str] = Field(None, max_length=srv.MAX_TEXTO)
     seguimiento_fecha: Optional[date] = None
@@ -282,8 +520,11 @@ async def editar(coaching_id: str, payload: CoachingPatch, request: Request, use
         nuevos: dict[str, Any] = {}
         if payload.tipo is not None:
             nuevos["tipo"] = payload.tipo
-        if payload.metrica is not None:
-            nuevos["metrica"] = payload.metrica
+        if payload.metricas is not None or payload.metrica is not None:
+            ms = srv.normalizar_metricas(payload.metricas if payload.metricas is not None else [payload.metrica])
+            if ms != srv.metricas_de(c):
+                antes["metricas"], despues["metricas"] = srv.metricas_de(c), ms
+                c.metricas, c.metrica = ms, ms[0]
         if payload.diagnostico is not None:
             nuevos["diagnostico"] = srv.texto(payload.diagnostico, "el diagnóstico")
         if payload.compromiso is not None:

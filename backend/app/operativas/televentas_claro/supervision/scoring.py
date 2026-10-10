@@ -143,7 +143,7 @@ def gestion_supervisor(sid: str, *, ws: dict[str, Any], equipo: list[str], coach
     """Cobertura, foco y seguimientos de un supervisor en el mes (los tickets, pendientes).
 
     `coachings`: los no anulados con fecha en el mes (o un poco después, para el foco de las alertas de
-    fin de mes) y los que tienen su seguimiento en el mes: operador_id, supervisor_id, metrica, fecha,
+    fin de mes) y los que tienen su seguimiento en el mes: operador_id, supervisor_id, metrica(s), fecha,
     seguimiento_fecha y seguimiento_dia (día en que se registró el seguimiento, o None).
     `alertas`: las de uso del mes ya atribuidas a un supervisor: operador_id, supervisor_id, vence, hasta."""
     # ---- cobertura: asesores del equipo actual con algún coaching en el mes
@@ -159,8 +159,8 @@ def gestion_supervisor(sid: str, *, ws: dict[str, Any], equipo: list[str], coach
     for a in alertas:
         if a["supervisor_id"] != sid:
             continue
-        cubierta = any(c["operador_id"] == a["operador_id"] and c["metrica"] == "uso" and primero <= c["fecha"] <= a["vence"]
-                       for c in coachings)
+        cubierta = any(c["operador_id"] == a["operador_id"] and "uso" in (c.get("metricas") or [c["metrica"]])
+                       and primero <= c["fecha"] <= a["vence"] for c in coachings)
         if cubierta:
             cubiertas += 1
             exigibles += 1

@@ -1,12 +1,13 @@
 "use client";
 
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ListChecks } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { PrintButton } from "@/components/PrintButton";
 import { VistaCoaching } from "@/components/supervision/coaching";
+import { hrefRegistro } from "@/components/supervision/registro";
 import { SUP_API, SUP_HREF, periodoDeUrl, periodoEnUrl, type VistaCoachingData } from "@/components/supervision/tipos";
 import { SelectorMes, TabsSupervisor } from "@/components/supervision/ui";
 import { apiFetch } from "@/lib/api";
@@ -45,6 +46,7 @@ function Detalle() {
           <p className="text-xs text-brand-slate mt-2">Lo que registró en su portal: coachings, seguimientos, alertas de uso y bitácora. Solo lectura.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap print:hidden">
+          <Link href={hrefRegistro({ supervisor: id })} className="btn-secondary !py-2 !px-4 text-xs"><ListChecks size={15} /> Registro por fechas</Link>
           <SelectorMes periodo={periodo} onChange={setPeriodo} />
           <PrintButton />
         </div>

@@ -95,7 +95,8 @@ def del_supervisor(filas: list[AlertaAsesor], sid: str, *, p: dict[str, Any], tr
     """Las alertas de uso del mes que le tocan a un supervisor (el que tenía al asesor al vencer el plazo, o hoy)
     y en qué quedó cada una: con coaching a tiempo, en plazo, vencida o resuelta sola antes del plazo."""
     out = []
-    usos = sorted((c for c in coachings if c.metrica == "uso" and c.estado != "anulado"), key=lambda c: c.fecha)
+    usos = sorted((c for c in coachings if "uso" in (getattr(c, "metricas", None) or [c.metrica]) and c.estado != "anulado"),
+                  key=lambda c: c.fecha)
     for a in filas:
         v = vence(a, p)
         if supervisor_en(tramos.get(a.operador_id, []), min(v, ref)) != sid:

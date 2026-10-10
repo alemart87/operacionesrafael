@@ -306,7 +306,7 @@ async def linea_de_tiempo(supervisor_id: str, periodo: Optional[str] = Query(Non
 def _alertas_uso(filas: list[AlertaAsesor], coachings: list[Coaching], p: dict[str, Any], primero: date,
                  dia: date) -> list[dict[str, Any]]:
     """Las alertas de uso del asesor en el mes y en qué quedó cada una (como en la gestión del supervisor)."""
-    usos = sorted((c for c in coachings if c.metrica == "uso" and c.estado != "anulado"), key=lambda c: c.fecha)
+    usos = sorted((c for c in coachings if "uso" in coaching_srv.metricas_de(c) and c.estado != "anulado"), key=lambda c: c.fecha)
     out = []
     for a in filas:
         v = alertas_srv.vence(a, p)

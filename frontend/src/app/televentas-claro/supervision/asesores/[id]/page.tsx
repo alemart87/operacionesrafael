@@ -8,11 +8,12 @@ import { AppShell } from "@/components/AppShell";
 import { PrintButton } from "@/components/PrintButton";
 import { fechaCorta, n, nombreMes } from "@/components/productividad/tipos";
 import { EstadoCoaching, VerCoachingDialog } from "@/components/supervision/coaching";
+import { hrefRegistro } from "@/components/supervision/registro";
 import { BarraUmbral } from "@/components/supervision/comando";
 import { Desglose, MedidorScore, Tendencia } from "@/components/supervision/scoring";
 import { ListaTickets, TicketDialog } from "@/components/supervision/tickets";
 import {
-  ALERTA, METRICA, SUP_API, SUP_HREF, TIPO_COACHING, TIPO_NOTA, dm, num, periodoDeUrl, periodoEnUrl, sumarMeses,
+  ALERTA, SUP_API, SUP_HREF, TIPO_COACHING, TIPO_NOTA, dm, nombreMetricas, num, periodoDeUrl, periodoEnUrl, sumarMeses,
   type FichaAsesor,
 } from "@/components/supervision/tipos";
 import { FuenteDatos, Identidades, LineasDialog, SelectorMes } from "@/components/supervision/ui";
@@ -215,7 +216,12 @@ function Ficha() {
           <div className="grid xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-6 items-start">
             <div className="space-y-6 min-w-0">
               <Tarjeta titulo="Coachings" icono={<ClipboardList size={17} aria-hidden />}
-                sub={`Los de ${d.nombre_mes.toLowerCase()} (de cualquier supervisor) y los que todavía esperan su seguimiento.`}>
+                sub={`Los de ${d.nombre_mes.toLowerCase()} (de cualquier supervisor) y los que todavía esperan su seguimiento.`}
+                accion={(
+                  <Link href={hrefRegistro({ asesor: id })} className="text-xs font-semibold text-brand-primary hover:underline inline-flex items-center gap-1 print:hidden">
+                    Su historia de coaching <ChevronRight size={13} aria-hidden />
+                  </Link>
+                )}>
                 {d.coachings.length ? (
                   <ul className="divide-y divide-brand-border border-t border-brand-border">
                     {d.coachings.map((c) => (
@@ -223,7 +229,7 @@ function Ficha() {
                         <button type="button" onClick={() => setCoaching(c.id)}
                           className={`w-full text-left px-5 py-3 hover:bg-brand-bg-soft transition-colors ${c.estado === "anulado" ? "opacity-60" : ""}`}>
                           <div className="flex items-center gap-x-2 gap-y-1 flex-wrap">
-                            <span className="text-sm font-semibold text-brand-ink">{METRICA[c.metrica].label}</span>
+                            <span className="text-sm font-semibold text-brand-ink">{nombreMetricas(c)}</span>
                             <span className="text-xs text-brand-slate">· {TIPO_COACHING[c.tipo].label} · {fechaCorta(c.fecha)} · {c.supervisor}</span>
                             <EstadoCoaching c={c} />
                           </div>

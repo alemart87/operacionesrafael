@@ -76,10 +76,22 @@ async def inicio_gestion(db: AsyncSession) -> dict[str, Any]:
     return {"gestion_desde": hoy}
 
 
+async def coaching_metricas(db: AsyncSession) -> dict[str, Any]:
+    """Los coachings anteriores a poder elegir varias métricas: su lista es la métrica que tenían."""
+    from .models import Coaching
+    n = 0
+    for c in (await db.execute(select(Coaching).where(Coaching.metricas.is_(None)))).scalars().all():
+        c.metricas = [c.metrica]
+        n += 1
+    await db.commit()
+    return {"coachings": n}
+
+
 MIGRACIONES = [
     ("2026-10-supervision-permisos", permisos_supervision),
     ("2026-10-operadores-desde-sph", vinculos_sph_al_maestro),
     ("2026-10-supervision-parametros", permisos_parametros),
     ("2026-10-gestion-desde", inicio_gestion),
     ("2026-10-tickets-permisos", permisos_tickets),
+    ("2026-10-coaching-metricas", coaching_metricas),
 ]

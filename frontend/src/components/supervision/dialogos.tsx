@@ -1,18 +1,17 @@
 "use client";
 
-import { Ban, CalendarClock, ClipboardCheck, MessageSquarePlus, NotebookPen, Plus, Save, TriangleAlert, X } from "lucide-react";
+import { Ban, CalendarClock, Check, ClipboardCheck, MessageSquarePlus, NotebookPen, Plus, Save, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { fechaCorta } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
 import { ImpactoVista } from "./impacto";
 import {
-  METRICA, SUP_API, TIPO_COACHING, TIPO_NOTA, diasEntre, dm, num, sumarDias,
+  METRICA, METRICAS_ORDEN, SUP_API, TIPO_COACHING, TIPO_NOTA, diasEntre, dm, metricasDe, nombreMetricas, num, sumarDias,
   type Coaching, type CoachingDetalle, type MetricaCoaching, type MiembroCoaching, type NotaBitacora, type TipoCoaching,
   type TipoNota, type VistaCoachingData,
 } from "./tipos";
 
 const TIPOS: TipoCoaching[] = ["diario", "semanal", "mensual"];
-const METRICAS: MetricaCoaching[] = ["pospago", "gpon", "uso", "conversacion", "otra"];
 const TIPOS_NOTA: TipoNota[] = ["novedad", "ausencia", "incidencia", "reconocimiento", "otro"];
 
 // ------------------------------------------------------------------ marco de los diálogos
@@ -92,8 +91,12 @@ function metricaSugerida(m: MiembroCoaching | undefined): MetricaCoaching | null
   return null;
 }
 
+/** En el orden en que se guardan (la primera es la principal). */
+const ordenar = (ms: MetricaCoaching[]) => METRICAS_ORDEN.filter((m) => ms.includes(m));
+const mismas = (a: MetricaCoaching[], b: MetricaCoaching[]) => a.length === b.length && a.every((m, k) => m === b[k]);
+
 // ------------------------------------------------------------------ registrar o corregir un coaching
-export interface Inicial { operador_id?: string; metrica?: MetricaCoaching; tipo?: TipoCoaching; anterior_id?: string }
+export interface Inicial { operador_id?: string; metricas?: MetricaCoaching[]; tipo?: TipoCoaching; anterior_id?: string }
 
 export function CoachingDialog({ vista, inicial, editar, onClose, onGuardado }: {
   vista: VistaCoachingData; inicial?: Inicial; editar?: Coaching; onClose: () => void; onGuardado: (c: CoachingDetalle) => void;
@@ -104,8 +107,10 @@ export function CoachingDialog({ vista, inicial, editar, onClose, onGuardado }: 
   const [fecha, setFecha] = useState(editar?.fecha ?? hoy);
   const [tipo, setTipo] = useState<TipoCoaching>(editar?.tipo ?? inicial?.tipo ?? "semanal");
   const miembro = vista.equipo.find((m) => m.id === operador);
-  const [metrica, setMetrica] = useState<MetricaCoaching>(editar?.metrica ?? inicial?.metrica ?? metricaSugerida(miembro) ?? "pospago");
-  const [metricaTocada, setMetricaTocada] = useState(!!(editar || inicial?.metrica));
+  const sugeridaInicial = metricaSugerida(miembro);
+  const [metricas, setMetricas] = useState<MetricaCoaching[]>(
+    editar ? metricasDe(editar) : inicial?.metricas?.length ? ordenar(inicial.metricas) : sugeridaInicial ? [sugeridaInicial] : []);
+  const [metricaTocada, setMetricaTocada] = useState(!!(editar || inicial?.metricas?.length));
   const [diagnostico, setDiagnostico] = useState(editar?.diagnostico ?? "");
   const [compromiso, setCompromiso] = useState(editar?.compromiso ?? "");
   const sugerido = (t: TipoCoaching, f: string) => {
@@ -120,15 +125,19 @@ export function CoachingDialog({ vista, inicial, editar, onClose, onGuardado }: 
   const disponibles = useMemo(() => vista.equipo.filter((m) => enEquipo(m, fecha)), [vista.equipo, fecha]);
   useEffect(() => { if (!segTocado) setSeguimiento(sugerido(tipo, fecha)); }, [tipo, fecha]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const s = metricaSugerida(miembro);
-    if (!metricaTocada && s) setMetrica(s);
+    // Hasta que el supervisor elige, la métrica sugerida sigue al asesor (en alerta de uso, conversación en rojo).
+    if (!metricaTocada) { const s = metricaSugerida(miembro); setMetricas(s ? [s] : []); }
   }, [operador]); // eslint-disable-line react-hooks/exhaustive-deps
+  const alternar = (m: MetricaCoaching) => {
+    setMetricas((ms) => ordenar(ms.includes(m) ? ms.filter((x) => x !== m) : [...ms, m]));
+    setMetricaTocada(true);
+  };
 
   const atraso = diasEntre(fecha, hoy);
   const segMax = sumarDias(fecha, r.dias_seguimiento_max);
   const segMin = sumarDias(fecha, 1) > hoy ? sumarDias(fecha, 1) : hoy;
   const segIgual = !!editar && seguimiento === editar.seguimiento_fecha;
-  const listo = !!operador && diagnostico.trim().length >= r.min_texto && compromiso.trim().length >= r.min_texto
+  const listo = !!operador && metricas.length > 0 && diagnostico.trim().length >= r.min_texto && compromiso.trim().length >= r.min_texto
     && (segIgual || (seguimiento >= segMin && seguimiento <= segMax));
   const sugerida = metricaSugerida(miembro);
 
@@ -136,13 +145,16 @@ export function CoachingDialog({ vista, inicial, editar, onClose, onGuardado }: 
     setOcupado(true);
     setError(null);
     try {
-      const cambios = editar && Object.fromEntries(Object.entries({ tipo, metrica, diagnostico, compromiso, seguimiento_fecha: seguimiento })
-        .filter(([k, v]) => (editar as any)[k] !== v));
+      const cambios = editar && {
+        ...Object.fromEntries(Object.entries({ tipo, diagnostico, compromiso, seguimiento_fecha: seguimiento })
+          .filter(([k, v]) => (editar as any)[k] !== v)),
+        ...(mismas(metricas, metricasDe(editar)) ? {} : { metricas }),
+      };
       const c = editar
         ? await apiFetch<CoachingDetalle>(`${SUP_API}/portal/coaching/${editar.id}`, { method: "PATCH", body: JSON.stringify(cambios) })
         : await apiFetch<CoachingDetalle>(`${SUP_API}/portal/coaching`, {
           method: "POST",
-          body: JSON.stringify({ operador_id: operador, fecha, tipo, metrica, diagnostico, compromiso, seguimiento_fecha: seguimiento,
+          body: JSON.stringify({ operador_id: operador, fecha, tipo, metricas, diagnostico, compromiso, seguimiento_fecha: seguimiento,
             anterior_id: inicial?.anterior_id ?? null }),
         });
       onGuardado(c);
@@ -150,7 +162,7 @@ export function CoachingDialog({ vista, inicial, editar, onClose, onGuardado }: 
   };
 
   return (
-    <Modal onClose={onClose} ancho="max-w-2xl" sobre={editar ? `Corregir · se puede durante ${r.horas_edicion} h` : inicial?.anterior_id ? "Nuevo coaching sobre la misma métrica" : "Registrar coaching"}
+    <Modal onClose={onClose} ancho="max-w-2xl" sobre={editar ? `Corregir · se puede durante ${r.horas_edicion} h` : inicial?.anterior_id ? "Nuevo coaching sobre lo que no mejoró" : "Registrar coaching"}
       titulo={editar ? editar.operador : miembro?.nombre ?? "Coaching"}
       pie={<>
         <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
@@ -203,15 +215,25 @@ export function CoachingDialog({ vista, inicial, editar, onClose, onGuardado }: 
           </div>
         </Campo>
 
-        <Campo label="Métrica que se trabajó" ayuda={<>{METRICA[metrica].ayuda}.</>}>
-          <div role="radiogroup" aria-label="Métrica" className="flex flex-wrap gap-1.5">
-            {METRICAS.map((m) => (
-              <button key={m} type="button" role="radio" aria-checked={metrica === m} onClick={() => { setMetrica(m); setMetricaTocada(true); }}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${metrica === m ? "border-brand-ink bg-brand-ink text-white" : "border-brand-border text-brand-graphite hover:border-brand-slate"}`}>
-                {METRICA[m].label}
-                {sugerida === m && <span className={`text-[9px] uppercase tracking-wider2 ${metrica === m ? "text-white/80" : "text-brand-primary-dark"}`}>{m === "uso" ? "en alerta" : "en rojo"}</span>}
-              </button>
-            ))}
+        <Campo label="Métricas que se trabajaron"
+          ayuda={metricas.length ? (
+            <ul className="space-y-0.5">
+              {metricas.map((m) => <li key={m}><b className="text-brand-graphite">{METRICA[m].label}:</b> {METRICA[m].ayuda.charAt(0).toLowerCase() + METRICA[m].ayuda.slice(1)}.</li>)}
+              {metricas.length > 1 && <li>El sistema mide cada una por separado y da el resultado de todas juntas.</li>}
+            </ul>
+          ) : <span className="text-[#8A5200]">Elegí una o varias (por ejemplo, Pospago + GPON).</span>}>
+          <div role="group" aria-label="Métricas que se trabajaron" className="flex flex-wrap gap-1.5">
+            {METRICAS_ORDEN.map((m) => {
+              const on = metricas.includes(m);
+              return (
+                <button key={m} type="button" role="checkbox" aria-checked={on} onClick={() => alternar(m)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${on ? "border-brand-ink bg-brand-ink text-white" : "border-brand-border text-brand-graphite hover:border-brand-slate"}`}>
+                  {on ? <Check size={12} strokeWidth={3} aria-hidden /> : <Plus size={12} aria-hidden className="text-brand-mist" />}
+                  {METRICA[m].label}
+                  {sugerida === m && <span className={`text-[9px] uppercase tracking-wider2 ${on ? "text-white/80" : "text-brand-primary-dark"}`}>{m === "uso" ? "en alerta" : "en rojo"}</span>}
+                </button>
+              );
+            })}
           </div>
         </Campo>
 
@@ -241,7 +263,9 @@ export function CoachingDialog({ vista, inicial, editar, onClose, onGuardado }: 
 
 // ------------------------------------------------------------------ seguimiento con el impacto medido
 export function SeguimientoDialog({ c, vista, onClose, onGuardado, onNuevo }: {
-  c: Coaching; vista: VistaCoachingData; onClose: () => void; onGuardado: (c: CoachingDetalle) => void; onNuevo: (c: Coaching) => void;
+  c: Coaching; vista: VistaCoachingData; onClose: () => void; onGuardado: (c: CoachingDetalle) => void;
+  /** Nuevo coaching al mismo asesor sobre las métricas que no mejoraron. */
+  onNuevo: (c: Coaching, metricas: MetricaCoaching[]) => void;
 }) {
   const [comentario, setComentario] = useState("");
   const [ocupado, setOcupado] = useState(false);
@@ -261,22 +285,25 @@ export function SeguimientoDialog({ c, vista, onClose, onGuardado, onNuevo }: {
   };
 
   if (hecho) {
-    const mejoro = hecho.resultado === "mejoro";
+    // Las que no mejoraron (con varias, cada una por separado): sobre esas sigue el trabajo.
+    const partes = hecho.impacto?.metricas?.length ? hecho.impacto.metricas : [{ metrica: hecho.metrica, resultado: hecho.resultado }];
+    const sinMejora = partes.filter((p) => p.resultado !== "mejoro").map((p) => p.metrica);
+    const todo = sinMejora.length === 0;
     return (
-      <Modal onClose={onClose} sobre="Seguimiento registrado" titulo={hecho.operador} acento={mejoro ? "bg-emerald-500" : "bg-brand-cyan"}
+      <Modal onClose={onClose} sobre="Seguimiento registrado" titulo={hecho.operador} acento={todo ? "bg-emerald-500" : "bg-brand-cyan"}
         pie={<>
-          {!mejoro && (
-            <button type="button" className="btn-secondary" onClick={() => onNuevo(hecho)}>
-              <Plus size={15} /> Nuevo coaching sobre {METRICA[hecho.metrica].label.toLowerCase()}
+          {!todo && (
+            <button type="button" className="btn-secondary" onClick={() => onNuevo(hecho, sinMejora)}>
+              <Plus size={15} /> Nuevo coaching sobre {nombreMetricas(sinMejora).toLowerCase()}
             </button>
           )}
           <button type="button" className="btn-primary" onClick={onClose}>Listo</button>
         </>}>
         <ImpactoVista i={hecho.impacto} />
-        {!mejoro && (
+        {!todo && (
           <p className="text-xs text-brand-slate mt-4 leading-relaxed">
-            Si el dato no mejoró, el modelo pide volver a observar y registrar un nuevo coaching sobre la misma métrica, con un
-            compromiso nuevo.
+            Si el dato no mejoró, el modelo pide volver a observar y registrar un nuevo coaching sobre esa métrica, con un
+            compromiso nuevo{partes.length > 1 ? ": el nuevo coaching ya viene con las que no mejoraron" : ""}.
           </p>
         )}
       </Modal>
@@ -293,7 +320,7 @@ export function SeguimientoDialog({ c, vista, onClose, onGuardado, onNuevo }: {
       </>}>
       <div className="space-y-4">
         <div className="rounded-md bg-brand-bg-soft border border-brand-border px-3.5 py-3">
-          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">Compromiso del {dm(c.fecha)} · {METRICA[c.metrica].label}</div>
+          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">Compromiso del {dm(c.fecha)} · {nombreMetricas(c)}</div>
           <p className="text-sm text-brand-ink mt-1 whitespace-pre-line">{c.compromiso}</p>
         </div>
         <div>

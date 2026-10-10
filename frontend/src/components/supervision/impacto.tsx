@@ -1,10 +1,21 @@
 "use client";
 
-import { ArrowDownRight, ArrowRight, ArrowUpRight, CircleCheck, CircleDashed, Minus, TriangleAlert } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpDown, ArrowUpRight, CircleCheck, CircleDashed, Minus, TriangleAlert } from "lucide-react";
 import { n } from "@/components/productividad/tipos";
-import { RESULTADO, dm, num, type Impacto, type LadoImpacto, type ResultadoImpacto } from "./tipos";
+import { METRICA, RESULTADO, dm, num, type Impacto, type LadoImpacto, type ResultadoImpacto } from "./tipos";
 
-const ICONO: Record<ResultadoImpacto, typeof CircleCheck> = { mejoro: CircleCheck, igual: Minus, empeoro: TriangleAlert, sin_datos: CircleDashed };
+const ICONO: Record<ResultadoImpacto, typeof CircleCheck> = {
+  mejoro: CircleCheck, igual: Minus, empeoro: TriangleAlert, mixto: ArrowUpDown, sin_datos: CircleDashed,
+};
+
+/** Qué quiere decir el resultado de un coaching con varias métricas. */
+const RESUMEN: Record<ResultadoImpacto, string> = {
+  mejoro: "Mejoró al menos una métrica y ninguna empeoró.",
+  igual: "Ninguna métrica cambió más allá de la tolerancia.",
+  empeoro: "Empeoró al menos una métrica y ninguna mejoró.",
+  mixto: "Unas métricas mejoraron y otras empeoraron.",
+  sin_datos: "Todavía no hay datos suficientes de ninguna métrica.",
+};
 
 /** Resultado del impacto (lo calcula el sistema): ícono y texto, nunca solo color. */
 export function ResultadoChip({ r, delta, metrica, compacto }: { r: ResultadoImpacto; delta?: number | null; metrica?: string; compacto?: boolean }) {
@@ -59,9 +70,32 @@ function Lado({ titulo, i, l }: { titulo: string; i: Impacto; l: LadoImpacto | u
   );
 }
 
-/** Antes contra después de un coaching, con el resultado que calcula el sistema. */
+/**
+ * Antes contra después de un coaching, con el resultado que calcula el sistema. Si se trabajó más de una métrica, el
+ * resultado de todas juntas y el antes y después de cada una.
+ */
 export function ImpactoVista({ i, compacto }: { i: Impacto | null; compacto?: boolean }) {
   if (!i) return <p className="text-sm text-brand-slate">Todavía sin medición.</p>;
+  const partes = i.metricas ?? [];
+  if (partes.length <= 1) return <ImpactoMetrica i={i} compacto={compacto} />;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <ResultadoChip r={i.resultado} />
+        <span className="text-[11px] text-brand-slate">{RESUMEN[i.resultado]}</span>
+      </div>
+      {partes.map((p) => (
+        <div key={p.metrica} className="rounded-md border border-brand-border bg-brand-bg-soft/60 p-3 space-y-2 min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-wider2 text-brand-ink">{METRICA[p.metrica]?.label ?? p.metrica}</div>
+          <ImpactoMetrica i={p} compacto={compacto} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** El impacto de una métrica. */
+function ImpactoMetrica({ i, compacto }: { i: Impacto; compacto?: boolean }) {
   if (!i.antes || i.metrica === "otra") {
     return (
       <div className="flex items-start gap-2 text-sm text-brand-slate">

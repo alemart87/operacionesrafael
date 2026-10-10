@@ -328,6 +328,7 @@ con SLA; y el centro de comandos de los jefes.
 | Objetivos y proyección | `/televentas-claro/supervision` | Por supervisor: vendido / objetivo, proyección al cierre, ritmo necesario por día hábil, semáforo y alertas; la operación completa; **Cargar objetivos** en la misma tabla |
 | Tablero | `…/supervision/tablero` | Scoring 0–100 de la operación, ranking de supervisores y de asesores, con la tendencia contra el mes anterior |
 | Coaching | `…/supervision/coaching` | Gestión de coaching de todos los supervisores: cobertura, foco, seguimientos, coachings, vencidos y última actividad (primero, quien tiene algo vencido) |
+| Registro de coaching | `…/supervision/coaching/registro` | **Todos los coachings y seguimientos por rango de fechas** (este mes, mes anterior, 7, 30 o 90 días, este año o libre, hasta 400 días): qué se trabajó (diagnóstico), el compromiso, la **devolución del seguimiento** y el resultado medido por métrica. Filtros por supervisor, asesor, métrica, tipo, seguimiento (pendientes, próximos, vencidos, a tiempo, tarde), resultado y anulados; indicadores del rango, desglose **por métrica, por supervisor y por asesor** (un clic filtra), búsqueda en los textos, detalle con historial y aclaraciones, CSV e impresión. Los filtros quedan en la URL (para compartir la vista) |
 | Tickets | `…/supervision/tickets` | Tickets de revisión: **Enviar ticket**, bandeja (abiertos o los del mes, primero lo vencido), detalle con historial (comentar, mandar los datos pedidos, reabrir, reasignar, cancelar) y métricas por supervisor |
 | Detalle del supervisor | `…/supervision/supervisores/{id}` | Lo mismo que ve el supervisor en su portal, para los jefes (imprimible); pestañas **Coaching y bitácora** (`…/{id}/coaching`, solo lectura), **Tickets** (`…/{id}/tickets`) y **Línea de tiempo** (`…/{id}/linea`: coachings, seguimientos, notas, tickets, cambios de equipo, objetivos y alertas, lo más nuevo primero) |
 | Ficha del asesor | `…/supervision/asesores/{id}` | Del supervisor al asesor y del asesor a sus líneas y tickets: equipo del mes, puntaje y componentes, ventas y uso (líneas sin uso), alertas de uso, coachings, tickets y notas de bitácora |
@@ -335,8 +336,9 @@ con SLA; y el centro de comandos de los jefes.
 | Operadores | `…/supervision/operadores` | Maestro de operadores: por revisar, vincular, separar, confirmar sin vínculo, renombrar, dar de baja |
 | Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana, días no laborables (más los feriados de Seguridad) y el **horario de atención** (horas hábiles de los plazos de los tickets) |
 | Parámetros | `…/supervision/parametros` | Pesos y umbrales del scoring, versionados (solo sub gerente y superadmin) |
-| Mi portal | `/televentas-claro/portal` | El portal del supervisor: «Para hoy» (seguimientos y alertas por atender) con el botón **Hacer coaching**, su equipo (con «Coaching» en cada asesor), sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
+| Mi portal | `/televentas-claro/portal` | El portal del supervisor: «Para hoy» (seguimientos vencidos, de hoy y **próximos** —los de los próximos 2 días hábiles—, alertas y tickets por atender) con el botón **Hacer coaching**, su equipo (con «Coaching» en cada asesor), sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
 | Coaching y bitácora | `/televentas-claro/portal/coaching` | El supervisor registra coachings (con compromiso y fecha de seguimiento), seguimientos con el impacto medido, aclaraciones y notas de bitácora; ve su gestión del mes. **Hacer coaching** es la acción principal: brilla con un pulso (fijo si el sistema pide menos movimiento), queda flotante al bajar por la página y cada asesor sin coaching del mes lo tiene destacado |
+| Mi historial | `/televentas-claro/portal/historial` | El registro por rango de fechas, solo con lo del supervisor: sus coachings, compromisos, devoluciones y resultados, con los mismos filtros, indicadores y CSV |
 | Tickets (portal) | `/televentas-claro/portal/tickets` | La bandeja del supervisor: responde, pide datos y resuelve los tickets que le envían, con sus plazos |
 
 - **Maestro de operadores:** cada persona tiene un nombre en llamadas (agente de
@@ -386,8 +388,10 @@ con SLA; y el centro de comandos de los jefes.
   `sup_coachings`, `sup_coaching_eventos`, `sup_bitacora`, `sup_alertas`):
   - Lo registra el supervisor desde su portal, solo para los asesores que tenía en su
     equipo ese día (lo controla el servidor): asesor, fecha, tipo (diario en puesto,
-    semanal uno a uno, mensual de resultados), métrica (Pospago, GPON, uso de líneas,
-    conversación u otra), diagnóstico, compromiso y fecha de seguimiento (hasta 45 días).
+    semanal uno a uno, mensual de resultados), **una o varias métricas** (Pospago, GPON, uso
+    de líneas, conversación u otra; por ejemplo Pospago + GPON), diagnóstico, compromiso y
+    fecha de seguimiento (hasta 45 días). Las métricas se guardan en `metricas`, en ese orden;
+    `metrica` es la principal (la primera). Los coachings anteriores tienen su única métrica.
   - La hora la pone el servidor. La fecha puede ser de este mes (o de los últimos 2 días);
     con más de 48 h de atraso cuenta igual, pero queda **fuera de término**. Se corrige o se
     anula (si fue un error) durante 24 h; después solo se agregan el seguimiento y
@@ -399,8 +403,23 @@ con SLA; y el centro de comandos de los jefes.
     venta); uso de líneas, % sin uso de las Pospago vendidas después contra las de antes
     **con la misma antigüedad** (de 3 a 21 días de activadas: las de antes salen de la foto
     que se guarda al registrar). Resultado: mejoró, igual o empeoró según una banda de
-    tolerancia, o sin datos. Al registrar el seguimiento se guarda la medición; si no
-    mejoró, el portal propone un coaching nuevo sobre la misma métrica (queda encadenado).
+    tolerancia, o sin datos. Con varias métricas se mide **cada una por separado** y el
+    resultado del coaching las combina: mejoró o empeoró si las que tienen datos van para el
+    mismo lado (o quedan igual), **mixto** si unas mejoran y otras empeoran. Al registrar el
+    seguimiento se guarda la medición; si algo no mejoró, el portal propone un coaching nuevo
+    sobre **las métricas que no mejoraron** (queda encadenado). El foco cuenta un coaching si
+    «uso de líneas» es una de sus métricas.
+  - **Seguimientos próximos:** «Para hoy» avisa los seguimientos de los próximos 2 días hábiles
+    (con sábados a medio día y feriados) y la tarjeta de seguimientos marca cada uno con
+    «Hoy», «Último día», «Mañana» o «En N días» (en azul los próximos). A los jefes, el
+    centro de comandos les avisa los seguimientos vencidos y el registro filtra los próximos
+    7 días.
+  - **Registro por rango** (`GET …/supervision/registro` para los jefes, `GET …/portal/registro`
+    para el supervisor, que ve solo lo suyo): indicadores (coachings, seguimientos a tiempo,
+    próximos, mejora medida), por métrica, por supervisor y por asesor, y la lista con los
+    textos (hasta 1.500; los indicadores cuentan todos). Para que un año entero responda
+    rápido, los indicadores leen solo las columnas que necesitan y los textos se piden solo
+    para lo que se lista.
   - **Alertas de uso con fecha** (`supervision/alertas.py`): al leer el mes en curso se
     abren las alertas nuevas (el día en que se generó el informe de Ventas Netas que las
     mostró) y se cierran las que ya no están; con esa fecha se mide el foco.
@@ -595,6 +614,8 @@ que un cambio rige al instante, también para las sesiones abiertas.
 | GET | `/api/v1/televentas-claro/ventas-netas/reports[/{id}][/export.xlsx]` | `televentas_claro.ventas_netas` |
 | POST · DELETE | `/api/v1/televentas-claro/ventas-netas/uploads` · `/reports/{id}[/publish\|/unpublish\|/reprocess]` | `televentas_claro.ventas_netas_gestion` |
 | * | `/api/v1/televentas-claro/auditoria/*` (fuentes, parametros, riesgos, informes, hallazgos, seguimientos, estado) | `televentas_claro.auditoria` |
+| * | `/api/v1/televentas-claro/supervision/*` (resumen, tablero, coaching, gestion, **registro**, comando, tickets…) | `televentas_claro.supervision` (lo que cambia algo, además `supervision_gestion`, `tickets` u `operadores`) |
+| * | `/api/v1/televentas-claro/supervision/portal/*` (portal, coaching, **registro**, bitácora, tickets) | `televentas_claro.portal_supervisor` (solo lo del supervisor que entra) |
 | * | `/api/v1/televentas-claro/facturacion/*` · `/facturacion-agent/*` | Solo superadmin |
 | GET | `/health` · `/api/v1/health` | Público |
 | POST | `/api/v1/admin/migrate?token=<SECRET_KEY>` | Emergencia |

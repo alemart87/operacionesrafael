@@ -41,7 +41,7 @@ from .datos import parametros, parametros_scoring, productividad_del_mes, ventas
 from .sla import estado as estado_sla
 from .sla import validar_horario
 from .calculo import (
-    atribuir, calendario, limites, mes_anterior, proyeccion, supervisor_en,
+    atribuir, calendario, limites, mes_anterior, proyeccion, sumar_habiles, supervisor_en,
     validar_periodo,
 )
 from .models import (
@@ -432,10 +432,22 @@ async def portal(periodo: Optional[str] = Query(None), user: CurrentUser = Depen
     return d
 
 
+DIAS_PROXIMOS = 2  # seguimientos «próximos»: los de los próximos 2 días hábiles
+
+
+def proximos_hasta(p: dict[str, Any], dia: date) -> date:
+    """Hasta qué día un seguimiento es «próximo»: los próximos días hábiles (el sábado suma medio, con los feriados)."""
+    return sumar_habiles(dia, DIAS_PROXIMOS, p["pesos_dia"], p["feriados"])
+
+
 async def _para_hoy(db: AsyncSession, ctx: Contexto, sid: str) -> dict[str, Any]:
     """Lo que el supervisor tiene que atender de su gestión: seguimientos y alertas de uso, y quién no tuvo coaching."""
     dia = hoy()
-    seguimientos = Counter(coaching_srv.estado_seguimiento(c, dia) for c in await coaching_srv.abiertos(db, sid))
+    pendientes = await coaching_srv.abiertos(db, sid)
+    seguimientos = Counter(coaching_srv.estado_seguimiento(c, dia) for c in pendientes)
+    # Los que vienen en los próximos días hábiles (para prepararlos antes de que lleguen).
+    tope = proximos_hasta(ctx.p, dia)
+    proximos = sum(1 for c in pendientes if coaching_srv.estado_seguimiento(c, dia) == "proximo" and c.seguimiento_fecha <= tope)
     alertas = Counter(a["estado"] for a in alertas_srv.del_supervisor(
         ctx.alertas, sid, p=ctx.p, tramos=ctx.tramos, ref=ctx.ref, primero=ctx.primero, coachings=ctx.coachings, hoy=dia,
         nombres={}))
@@ -444,6 +456,7 @@ async def _para_hoy(db: AsyncSession, ctx: Contexto, sid: str) -> dict[str, Any]
     abiertos = await tickets_srv.abiertos(db, sid)
     situacion = Counter(estado_sla(t, ctx.horario, momento)["situacion"] for t in abiertos)
     return {"seguimientos_vencidos": seguimientos.get("vencido", 0), "seguimientos_hoy": seguimientos.get("hoy", 0),
+            "seguimientos_proximos": proximos, "proximos_hasta": tope.isoformat(),
             "alertas_vencidas": alertas.get("vencida", 0), "alertas_en_plazo": alertas.get("en_plazo", 0),
             "sin_coaching": sum(1 for op in ctx.equipo(sid) if op not in con),
             "tickets_nuevos": sum(1 for t in abiertos if t.estado == "nuevo"),

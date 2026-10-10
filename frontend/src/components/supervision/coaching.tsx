@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Ban, CalendarCheck, CircleCheck, CircleDashed, ClipboardCheck, CornerDownRight, History, Info, MessageSquarePlus,
+  Ban, CalendarCheck, CalendarClock, CircleCheck, CircleDashed, ClipboardCheck, CornerDownRight, History, Info, MessageSquarePlus,
   MessageSquareText, NotebookPen, Pencil, Plus, Target, Ticket, TriangleAlert, Users,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -12,7 +12,7 @@ import { BotonCoaching, CoachingFlotante, leerNuevoCoaching } from "./hacer-coac
 import { ImpactoVista, ResultadoChip } from "./impacto";
 import { MedidorScore, ScoreCelda } from "./scoring";
 import {
-  ALERTA, METRICA, SEGUIMIENTO, SUP_API, TIPO_COACHING, TIPO_NOTA, dm, fechaHoraPy, num,
+  ALERTA, METRICA, SEGUIMIENTO, SUP_API, TIPO_COACHING, TIPO_NOTA, diasEntre, dm, fechaHoraPy, metricasDe, nombreMetricas, num,
   type AlertaFoco, type Coaching, type CoachingDetalle, type Componente, type EventoCoaching, type MiembroCoaching,
   type NotaBitacora, type ReglasCoaching, type VistaCoachingData,
 } from "./tipos";
@@ -106,7 +106,7 @@ function AlertasCard({ alertas, diasFoco, onCoaching }: { alertas: AlertaFoco[];
                 <Chip label={e.label} chip={e.chip} ayuda={e.ayuda}
                   icono={a.estado === "cubierta" ? <CircleCheck size={11} aria-hidden /> : a.estado === "vencida" ? <TriangleAlert size={11} aria-hidden /> : undefined} />
                 {onCoaching && (a.estado === "en_plazo" || a.estado === "vencida") && (
-                  <button type="button" onClick={() => onCoaching({ operador_id: a.operador_id, metrica: "uso" })} className="btn-coaching-sm">
+                  <button type="button" onClick={() => onCoaching({ operador_id: a.operador_id, metricas: ["uso"] })} className="btn-coaching-sm">
                     <MessageSquareText size={14} aria-hidden /> Hacer coaching
                   </button>
                 )}
@@ -120,27 +120,53 @@ function AlertasCard({ alertas, diasFoco, onCoaching }: { alertas: AlertaFoco[];
 }
 
 // ------------------------------------------------------------------ seguimientos pendientes
-function SeguimientosCard({ pendientes, onSeguimiento, onAbrir }: {
-  pendientes: Coaching[]; onSeguimiento?: (c: Coaching) => void; onAbrir: (c: Coaching) => void;
+const DIAS_AVISO = 7; // «en N días»: los de la próxima semana
+
+/** Cuándo toca el seguimiento, para el chip: «Hoy», «Último día», «Mañana», «En 3 días»… (en azul los próximos). */
+export function cuandoSeguimiento(c: Coaching, hoy: string, proximosHasta?: string): { label: string; chip: string; ayuda: string } | null {
+  if (!c.seguimiento) return null;
+  const s = SEGUIMIENTO[c.seguimiento];
+  if (c.seguimiento === "hoy") {
+    return c.seguimiento_fecha < hoy
+      ? { label: "Último día", chip: s.chip, ayuda: "Era ayer: registrándolo hoy todavía está a tiempo" }
+      : { label: "Hoy", chip: s.chip, ayuda: s.ayuda };
+  }
+  if (c.seguimiento === "proximo") {
+    const dias = diasEntre(hoy, c.seguimiento_fecha);
+    if (dias <= DIAS_AVISO) {
+      const pronto = proximosHasta ? c.seguimiento_fecha <= proximosHasta : dias <= 2;
+      return { label: dias === 1 ? "Mañana" : `En ${dias} días`, chip: pronto ? SEGUIMIENTO.hoy.chip : s.chip, ayuda: `Acordado para el ${dm(c.seguimiento_fecha)}` };
+    }
+  }
+  return { label: s.corto, chip: s.chip, ayuda: s.ayuda };
+}
+
+function SeguimientosCard({ pendientes, hoy, proximosHasta, onSeguimiento, onAbrir }: {
+  pendientes: Coaching[]; hoy: string; proximosHasta?: string; onSeguimiento?: (c: Coaching) => void; onAbrir: (c: Coaching) => void;
 }) {
   const vencidos = pendientes.filter((c) => c.seguimiento === "vencido").length;
+  const deHoy = pendientes.filter((c) => c.seguimiento === "hoy").length;
+  const proximos = proximosHasta ? pendientes.filter((c) => c.seguimiento === "proximo" && c.seguimiento_fecha <= proximosHasta).length : 0;
   return (
     <section className="card min-w-0 flex flex-col">
       <Cabecera titulo="Seguimientos"
-        sub={<>Los compromisos que esperan su seguimiento. A tiempo: en la fecha acordada o al día siguiente.{vencidos > 0 && <b className="text-brand-primary-dark"> {plural(vencidos, "vencido", "vencidos")}.</b>}</>} />
+        sub={<>Los compromisos que esperan su seguimiento. A tiempo: en la fecha acordada o al día siguiente.
+          {vencidos > 0 && <b className="text-brand-primary-dark"> {plural(vencidos, "vencido", "vencidos")}.</b>}
+          {deHoy > 0 && <b className="text-[#1D5BA6]"> {plural(deHoy, "para hoy", "para hoy")}.</b>}
+          {proximos > 0 && <span className="text-[#1D5BA6]"> {plural(proximos, "próximo", "próximos")} (hasta el {fechaCorta(proximosHasta)}).</span>}</>} />
       {!pendientes.length ? <Vacio>No hay compromisos esperando seguimiento.</Vacio> : (
         <ul className="divide-y divide-brand-border border-t border-brand-border">
           {pendientes.map((c) => {
-            const s = c.seguimiento ? SEGUIMIENTO[c.seguimiento] : null;
+            const s = cuandoSeguimiento(c, hoy, proximosHasta);
             return (
               <li key={c.id} className="px-5 py-3 flex items-center gap-x-3 gap-y-2 flex-wrap">
                 <button type="button" onClick={() => onAbrir(c)} className="min-w-0 flex-1 basis-48 text-left group">
                   <div className="font-semibold text-sm text-brand-ink truncate group-hover:text-brand-primary">{c.operador}</div>
                   <div className="text-[11px] text-brand-slate truncate">
-                    {METRICA[c.metrica].label} · acordado para el <b className="text-brand-ink">{fechaCorta(c.seguimiento_fecha)}</b> · {c.compromiso}
+                    {nombreMetricas(c)} · acordado para el <b className="text-brand-ink">{fechaCorta(c.seguimiento_fecha)}</b> · {c.compromiso}
                   </div>
                 </button>
-                {s && <Chip label={s.corto} chip={s.chip} ayuda={s.ayuda} />}
+                {s && <Chip label={s.label} chip={s.chip} ayuda={s.ayuda} icono={c.seguimiento === "vencido" ? <TriangleAlert size={11} aria-hidden /> : <CalendarClock size={11} aria-hidden />} />}
                 {onSeguimiento && (
                   <button type="button" onClick={() => onSeguimiento(c)}
                     className="text-xs font-semibold text-brand-primary hover:underline inline-flex items-center gap-1">
@@ -242,7 +268,7 @@ function ListaCoachings({ items, nombreMes, onAbrir }: { items: Coaching[]; nomb
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-x-2 gap-y-1 flex-wrap">
                       <span className={`font-semibold text-sm text-brand-ink ${anulado ? "line-through" : ""}`}>{c.operador}</span>
-                      <span className="text-[11px] text-brand-slate">{TIPO_COACHING[c.tipo].label} · {METRICA[c.metrica].label}</span>
+                      <span className="text-[11px] text-brand-slate">{TIPO_COACHING[c.tipo].label} · {nombreMetricas(c)}</span>
                     </div>
                     <p className="text-xs text-brand-graphite mt-0.5 line-clamp-2">{c.compromiso}</p>
                     <div className="flex flex-wrap gap-1 mt-1.5">
@@ -335,11 +361,16 @@ const EVENTO: Record<EventoCoaching["tipo"], { label: string; icono: typeof Plus
   seguimiento: { label: "Registró el seguimiento", icono: ClipboardCheck },
   aclaracion: { label: "Agregó una aclaración", icono: MessageSquarePlus },
 };
-const CAMPO: Record<string, string> = { tipo: "tipo", metrica: "métrica", diagnostico: "diagnóstico", compromiso: "compromiso", seguimiento_fecha: "fecha de seguimiento" };
+const CAMPO: Record<string, string> = {
+  tipo: "tipo", metrica: "métrica", metricas: "métricas", diagnostico: "diagnóstico", compromiso: "compromiso", seguimiento_fecha: "fecha de seguimiento",
+};
 
 function textoEvento(e: EventoCoaching): ReactNode {
   const d = e.datos;
-  if (e.tipo === "editado") return `Cambió ${Object.keys(d.despues ?? {}).map((k) => CAMPO[k] ?? k).join(", ")}.`;
+  if (e.tipo === "editado") {
+    const ms = d.despues?.metricas && d.antes?.metricas ? ` (métricas: ${nombreMetricas(d.antes.metricas)} → ${nombreMetricas(d.despues.metricas)})` : "";
+    return `Cambió ${Object.keys(d.despues ?? {}).map((k) => CAMPO[k] ?? k).join(", ")}${ms}.`;
+  }
   if (e.tipo === "anulado") return d.motivo;
   if (e.tipo === "aclaracion") return d.texto;
   if (e.tipo === "seguimiento") return <>{d.comentario}{d.a_tiempo === false && <span className="text-[#8A5200]"> · fuera de la fecha acordada</span>}</>;
@@ -386,8 +417,8 @@ function FotoBase({ base }: { base: Coaching["base"] }) {
   );
 }
 
-function DetalleDialog({ id, portal, onClose, onAccion, onAbrir }: {
-  id: string; portal: boolean; onClose: () => void; onAccion: (d: Dialogo) => void; onAbrir: (id: string) => void;
+function DetalleDialog({ id, portal, soloLectura, onClose, onAccion, onAbrir }: {
+  id: string; portal: boolean; soloLectura?: boolean; onClose: () => void; onAccion: (d: Dialogo) => void; onAbrir: (id: string) => void;
 }) {
   const [c, setC] = useState<CoachingDetalle | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -395,7 +426,7 @@ function DetalleDialog({ id, portal, onClose, onAccion, onAbrir }: {
     setC(null);
     apiFetch<CoachingDetalle>(`${SUP_API}/${portal ? "portal/" : ""}coaching/${id}`).then(setC).catch((e) => setError(e.message));
   }, [id, portal]);
-  const acciones = c && portal && c.estado !== "anulado";
+  const acciones = c && portal && !soloLectura && c.estado !== "anulado";
   return (
     <Modal onClose={onClose} ancho="max-w-3xl" sobre={c ? `${TIPO_COACHING[c.tipo].label} · ${fechaLarga(c.fecha)}` : "Coaching"}
       titulo={c?.operador ?? "…"} acento={c?.estado === "anulado" ? "bg-brand-mist" : "bg-brand-cyan"}
@@ -410,7 +441,7 @@ function DetalleDialog({ id, portal, onClose, onAccion, onAbrir }: {
       {c && (
         <div className="space-y-5">
           <div className="flex flex-wrap items-center gap-1.5">
-            <Chip label={METRICA[c.metrica].label} chip="bg-brand-ink text-white border-brand-ink" />
+            {metricasDe(c).map((m) => <Chip key={m} label={METRICA[m].label} chip="bg-brand-ink text-white border-brand-ink" />)}
             <EstadoCoaching c={c} />
             {c.fuera_de_termino && <Chip label="Fuera de término" chip="bg-brand-orange/10 text-[#8A5200] border-brand-orange/40" ayuda="Se registró con más de 48 h de atraso: cuenta igual" />}
             <span className="text-[11px] text-brand-slate">Registrado por {c.supervisor} el {fechaHoraPy(c.created_at)}</span>
@@ -475,10 +506,14 @@ function DetalleDialog({ id, portal, onClose, onAccion, onAbrir }: {
   );
 }
 
-/** El detalle de un coaching en solo lectura (jefes), para abrirlo desde el centro de comandos o la ficha del asesor. */
-export function VerCoachingDialog({ id, onClose }: { id: string; onClose: () => void }) {
+/**
+ * El detalle de un coaching en solo lectura: los jefes (desde el centro de comandos, la ficha del asesor o el registro) y
+ * el supervisor desde su historial (`portal`: lo pide por el portal, que solo le da los suyos).
+ */
+export function VerCoachingDialog({ id, portal = false, onClose }: { id: string; portal?: boolean; onClose: () => void }) {
   const [actual, setActual] = useState(id);
-  return <DetalleDialog id={actual} portal={false} onClose={onClose} onAccion={() => undefined} onAbrir={setActual} />;
+  useEffect(() => setActual(id), [id]);
+  return <DetalleDialog id={actual} portal={portal} soloLectura onClose={onClose} onAccion={() => undefined} onAbrir={setActual} />;
 }
 
 // ------------------------------------------------------------------ la vista completa
@@ -564,7 +599,7 @@ export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; p
 
       <div className="grid lg:grid-cols-2 gap-5">
         <AlertasCard alertas={d.alertas} diasFoco={d.reglas.dias_foco} onCoaching={puede ? nuevo : undefined} />
-        <SeguimientosCard pendientes={d.pendientes} onAbrir={abrir}
+        <SeguimientosCard pendientes={d.pendientes} hoy={d.hoy} proximosHasta={d.proximos_hasta} onAbrir={abrir}
           onSeguimiento={portal && d.puede_registrar ? (c) => setDialogo({ tipo: "seguimiento", c }) : undefined} />
       </div>
       <EquipoCoaching equipo={d.equipo} nombreMes={d.nombre_mes} onCoaching={puede ? nuevo : undefined} />
@@ -585,7 +620,7 @@ export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; p
       {dialogo?.tipo === "seguimiento" && (
         <SeguimientoDialog c={dialogo.c} vista={d} onClose={() => { setDialogo(null); onCambio(); }}
           onGuardado={() => onCambio()}
-          onNuevo={(c) => setDialogo({ tipo: "nuevo", inicial: { operador_id: c.operador_id, metrica: c.metrica, anterior_id: c.id } })} />
+          onNuevo={(c, metricas) => setDialogo({ tipo: "nuevo", inicial: { operador_id: c.operador_id, metricas, anterior_id: c.id } })} />
       )}
       {dialogo?.tipo === "anular" && (
         <TextoDialog titulo={dialogo.c.operador} sobre={`Anular el coaching del ${dm(dialogo.c.fecha)}`} label="Motivo"
