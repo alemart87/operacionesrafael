@@ -26,6 +26,7 @@ from .supervision import api as supervision_api
 from .supervision import coaching_api as supervision_coaching_api
 from .supervision import comando_api as supervision_comando_api
 from .supervision import tickets_api as supervision_tickets_api
+from .facturacion.migraciones import MIGRACIONES as facturacion_migraciones
 from .supervision.migraciones import MIGRACIONES as supervision_migraciones
 from .ventas_netas import api as ventas_netas_api
 from .ventas_netas.jobs import actualizar_desactualizados as ventas_netas_actualizar
@@ -42,4 +43,4 @@ WORKERS = {"ventas_netas": ventas_netas_queue.worker, "facturacion": facturacion
 AL_ARRANCAR = {"ventas_netas_actualizar": ventas_netas_actualizar}
 
 # Migraciones de datos de una sola vez (id, coroutine(db)): main.py las corre al arrancar y las anota.
-MIGRACIONES_DATOS = [*supervision_migraciones]
+MIGRACIONES_DATOS = [*supervision_migraciones, *facturacion_migraciones]

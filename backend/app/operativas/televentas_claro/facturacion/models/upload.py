@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, date
 from typing import Optional
 
-from sqlalchemy import DateTime, Date, Integer, String, Text, func
+from sqlalchemy import DateTime, Date, Integer, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .....core.database import Base
@@ -26,6 +26,8 @@ class FacturacionUpload(Base):
     filename: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     file_path: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     file_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Copia de la liquidación (gzip) en la base: se procesa y reprocesa aunque el archivo del disco ya no esté.
+    contenido_gz: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True, deferred=True)
 
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -118,6 +118,57 @@ h3,
   animation: vc-pop 0.15s ease-out;
 }
 
+/* ===== «Hacer coaching»: la acción principal del supervisor. Brilla con un pulso para que se encuentre
+   siempre. Quien pidió menos movimiento en su sistema la ve fija, con el mismo halo. ===== */
+@keyframes vc-pulso {
+  0% { box-shadow: 0 0 0 0 rgba(230, 51, 42, 0.55), 0 8px 22px -8px rgba(230, 51, 42, 0.7); }
+  70% { box-shadow: 0 0 0 16px rgba(230, 51, 42, 0), 0 8px 22px -8px rgba(230, 51, 42, 0.7); }
+  100% { box-shadow: 0 0 0 0 rgba(230, 51, 42, 0), 0 8px 22px -8px rgba(230, 51, 42, 0.7); }
+}
+@keyframes vc-brillo {
+  0%, 55% { transform: translateX(-160%) skewX(-20deg); }
+  100% { transform: translateX(320%) skewX(-20deg); }
+}
+@layer components {
+  .btn-coaching {
+    @apply btn px-6 py-3 text-lg bg-brand-primary text-white hover:bg-brand-primary-dark active:scale-[0.98];
+    @apply font-display uppercase tracking-wide;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    animation: vc-pulso 2s ease-out infinite;
+  }
+  .btn-coaching::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 35%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+    transform: translateX(-160%) skewX(-20deg);
+    animation: vc-brillo 3.4s ease-in-out infinite;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .btn-coaching:hover { animation-play-state: paused; }
+  /* Por asesor: sin animación (el pulso queda para la acción principal); con halo si le falta coaching. */
+  .btn-coaching-sm {
+    @apply btn px-3 py-1.5 text-xs bg-brand-primary text-white hover:bg-brand-primary-dark active:scale-[0.98];
+    box-shadow: 0 0 0 3px rgba(230, 51, 42, 0.18), 0 4px 12px -6px rgba(230, 51, 42, 0.8);
+  }
+  .btn-coaching-sm-outline {
+    @apply btn px-3 py-1.5 text-xs bg-white text-brand-primary border border-brand-primary/50 hover:bg-brand-primary hover:text-white;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-coaching {
+    animation: none;
+    box-shadow: 0 0 0 5px rgba(230, 51, 42, 0.22), 0 8px 22px -8px rgba(230, 51, 42, 0.7);
+  }
+  .btn-coaching::after { display: none; }
+}
+
 /* Shimmer (loader del agente mientras razona) */
 @keyframes vc-shimmer {
   0% { background-position: -180% 0; }

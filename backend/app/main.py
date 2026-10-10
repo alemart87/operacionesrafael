@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
@@ -12,7 +11,7 @@ from sqlalchemy import text
 
 from . import models  # noqa: F401  (registra los modelos en Base.metadata)
 from . import operativas as modulos_operativas  # routers, workers y modelos de cada operativa
-from .api.v1 import audit, auth, operativas, perfiles, seguridad, users
+from .api.v1 import audit, auth, operativas, perfiles, seguridad, sistema, users
 from .core.config import APP_NAME, settings
 from .core.database import AsyncSessionLocal, Base, engine
 from .core.logging import configure_logging, logger
@@ -20,6 +19,7 @@ from .core.operativas import filter_permissions
 from .core.perfiles import DEFAULT_PERMISSIONS, PERFILES
 from .models.migracion import MigracionDatos
 from .models.profile import Profile
+from .services.almacenamiento import resolver_upload_dir
 
 
 # Migraciones idempotentes (DDL/DML) que corren en cada boot, DESPUÉS de create_all.
@@ -55,6 +55,8 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     # v0.7 · SPH con las ventas del día de la hoja de productividad (no las netas)
     "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS version INTEGER",
     "ALTER TABLE sph_informes ADD COLUMN IF NOT EXISTS ventas INTEGER",
+    # v0.8 · Facturación: copia de cada liquidación en la base (reprocesar sin depender del disco)
+    "ALTER TABLE facturacion_uploads ADD COLUMN IF NOT EXISTS contenido_gz BYTEA",
 ]
 
 
@@ -130,57 +132,10 @@ async def _run_data_migrations() -> list[str]:
     return hechas
 
 
-def _check_upload_dir() -> None:
-    """Deja en los logs dónde se guardan los archivos y avisa si en producción no parece un disco persistente.
-
-    En Render el disco se monta en la ruta elegida al crearlo (p. ej. /var/data): UPLOAD_DIR
-    tiene que estar DENTRO de esa ruta o los archivos se pierden en cada despliegue.
-    """
-    path = settings.upload_path.resolve()
-    try:
-        probe = path / ".write-test"
-        probe.write_text("ok")
-        probe.unlink()
-        escribible = True
-    except OSError:
-        escribible = False
-    logger.info(f"Boot: UPLOAD_DIR={path} escribible={escribible}")
-    if not escribible:
-        logger.error(f"UPLOAD_DIR={path} no es escribible: las cargas van a fallar.")
-    elif settings.env == "production" and not _en_disco_montado(path):
-        logger.error(
-            f"UPLOAD_DIR={path} NO está dentro de un disco montado: los archivos se pierden en cada despliegue. "
-            f"Discos montados detectados: {', '.join(_discos_montados()) or 'ninguno'}. "
-            "Configurá la variable UPLOAD_DIR dentro del mount path del disco (p. ej. <mount path>/uploads)."
-        )
-
-
-def _discos_montados() -> list[str]:
-    """Puntos de montaje de discos de datos (excluye el raíz y los del sistema)."""
-    ignorar = ("/proc", "/sys", "/dev", "/run", "/etc", "/boot", "/snap")
-    puntos: list[str] = []
-    try:
-        for linea in Path("/proc/mounts").read_text().splitlines():
-            partes = linea.split()
-            if len(partes) < 3:
-                continue
-            punto, tipo = partes[1], partes[2]
-            if punto == "/" or punto.startswith(ignorar) or tipo in ("proc", "sysfs", "tmpfs", "devpts", "cgroup", "cgroup2", "overlay", "squashfs", "mqueue"):
-                continue
-            puntos.append(punto)
-    except OSError:
-        pass
-    return puntos
-
-
-def _en_disco_montado(path: Path) -> bool:
-    # El raíz siempre es un punto de montaje: no cuenta. Solo vale un disco real por encima de la ruta.
-    return any(p.is_mount() for p in [path, *path.parents] if str(p) != "/")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
+    resolver_upload_dir()  # primero: dónde quedan los archivos (en el disco persistente)
     logger.info("Boot: ensuring DB schema (create_all)")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -188,7 +143,6 @@ async def lifespan(app: FastAPI):
     logger.info(f"Boot: migrations ok={len(result['ok'])} skipped={len(result['skipped'])}")
     logger.info(f"Boot: perfiles sembrados={await _seed_profiles()}")
     logger.info(f"Boot: migraciones de datos aplicadas={await _run_data_migrations()}")
-    _check_upload_dir()
     if settings.env == "production" and settings.secret_key in ("change-me", ""):
         logger.error("SECRET_KEY no configurada en producción: los tokens son inseguros.")
 
@@ -259,6 +213,7 @@ app.include_router(audit.router, prefix="/api/v1")
 app.include_router(perfiles.router, prefix="/api/v1")
 app.include_router(operativas.router, prefix="/api/v1")
 app.include_router(seguridad.router, prefix="/api/v1")
+app.include_router(sistema.router, prefix="/api/v1")
 
 # --- Operativas (módulos independientes, ver app/operativas/) ---
 for r in modulos_operativas.ROUTERS:
