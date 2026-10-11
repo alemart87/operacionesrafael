@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Senales } from "@/components/ventas-netas/ui";
 import { apiFetch } from "@/lib/api";
+import { guardado } from "./Autoguardado";
 import { TablaEvidencia } from "./RiesgosView";
 import {
   AUD_API, CATEGORIA_LABEL, HALLAZGO_ESTADO_LABEL, SEVERIDAD_CLS, SEVERIDAD_LABEL, fechaCorta, n,
@@ -37,7 +38,7 @@ export function Hallazgos({ a, onChange }: { a: AuditoriaDetalle; onChange: () =
   const run = async (fn: () => Promise<unknown>) => {
     setOcupado(true);
     setError(null);
-    try { await fn(); await onChange(); } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
+    try { await guardado.con(fn); await onChange(); } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
   };
   const empezarEdicion = (h: Hallazgo) => {
     setForm({ titulo: h.titulo, descripcion: h.descripcion ?? "", severidad: h.severidad, categoria: h.categoria, vendedor: h.vendedor ?? "", recomendacion: h.recomendacion ?? "", responsable: h.responsable ?? "", fecha_compromiso: h.fecha_compromiso ?? "" });

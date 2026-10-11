@@ -426,6 +426,65 @@ async def _auditorias(ctx: Ctx, a: dict[str, Any]) -> Any:
     return {**d, "pantalla": "/televentas-claro/auditoria"}
 
 
+async def _alertas_corte(ctx: Ctx, a: dict[str, Any]) -> Any:
+    """Un solo llamado con lo que el auditor mira primero: netas y cargas del último corte publicado de Ventas Netas,
+    con los vendedores críticos, los datos llamativos y los hallazgos automáticos, ya resumidos."""
+    from ...operativas.televentas_claro.auditoria.schemas import RiesgosRequest
+    from ...operativas.televentas_claro.auditoria.snapshot import hallazgos_automaticos
+
+    lista = (await llamar(vn_api.list_reports, user=ctx.user, db=ctx.db)).items
+    publicados = [r for r in lista if r.status == "published"]
+    if a.get("mes"):
+        per = periodo(a.get("mes"), hoy().strftime("%Y-%m"))
+        publicados = [r for r in publicados if r.periodo == per]
+    if not publicados:
+        raise ErrorHerramienta("No hay un corte publicado de Ventas Netas" + (f" de {a['mes']}" if a.get("mes") else "") +
+                               ": pedí que lo publiquen desde Ventas Netas.")
+    elegido = publicados[0]                      # la lista viene del más nuevo al más viejo
+    snap = await llamar(aud_api.riesgos, payload=RiesgosRequest(report_ids=[elegido.id]), request=ctx.request(),
+                        user=ctx.user, db=ctx.db)
+    k = snap.get("kpis") or {}
+    ranking = snap.get("ranking") or []
+    criticos = sorted((v for v in ranking if v.get("nivel") == "critico"), key=lambda v: -(v.get("pct_sin_uso") or 0))
+    atencion = sorted((v for v in ranking if v.get("nivel") == "atencion"), key=lambda v: -(v.get("puntaje") or 0))
+    vendedor = lambda v: {  # noqa: E731
+        "vendedor": v.get("vendedor"), "netas": v.get("netas"), "pospago": v.get("pospago"), "sin_uso": v.get("sin_uso"),
+        "pct_sin_uso": v.get("pct_sin_uso"), "sali_sin_uso": v.get("sali_sin_uso"), "suspendidas": v.get("suspendidas"),
+        "en_espera": v.get("en_espera"), "senales": [x.get("texto") for x in (v.get("senales") or [])][:4]}
+    hallazgos = [{"titulo": h.get("titulo"), "severidad": h.get("severidad"), "categoria": h.get("categoria"),
+                  "vendedor": h.get("vendedor")} for h in hallazgos_automaticos(snap)]
+    llamativos = sorted(snap.get("llamativos") or [], key=lambda x: {"alta": 0, "media": 1}.get(x.get("gravedad"), 2))
+    return compactar({
+        "corte": {"mes": elegido.periodo, "fecha_dato": str(elegido.fecha_dato) if elegido.fecha_dato else None,
+                  "report_id": elegido.id, "pantalla": f"/televentas-claro/ventas-netas/reports/{elegido.id}"},
+        "netas": seleccionar(k, ("netas", "pospago", "gpon", "iptv", "portadas", "pospago_sin_uso", "pct_sin_uso",
+                                 "en_espera", "suspendidas", "sali_total", "sali_sin_uso", "sali_pct_sin_uso",
+                                 "total_sin_uso")),
+        "cargas": seleccionar(k, ("cargas", "cargas_finalizadas", "pct_finalizacion", "cargas_a_confirmar",
+                                  "cargas_rechazadas", "pendientes", "finalizadas_sin_activar", "riesgo_alto",
+                                  "sin_uso_riesgo_alto")),
+        "vendedores": {"total": k.get("vendedores"), "criticos": k.get("vendedores_criticos"),
+                       "alerta_media": k.get("vendedores_atencion"), "umbral_critico_pct": (snap.get("parametros") or {}).get("umbral_sin_uso_critico")},
+        "criticos": [vendedor(v) for v in criticos[:8]],
+        "alerta_media": [vendedor(v) for v in atencion[:5]],
+        "datos_llamativos": [seleccionar(x, ("gravedad", "titulo", "cifra", "detalle")) for x in llamativos[:8]],
+        "hallazgos_automaticos": hallazgos[:12],
+        "advertencias": snap.get("advertencias") or None,
+        "indicaciones": ("Respondé en pocas líneas: las 3 a 5 alertas más graves con su cifra y vendedor. Para profundizar "
+                         "(líneas, cargas por día, un vendedor) usá ventas_del_mes o el lienzo; el centro de comandos y los "
+                         "tickets, solo si el usuario quiere seguir investigando."),
+    }, max_lista=12)
+
+
+registrar(Herramienta(
+    nombre="alertas_del_corte", etiqueta="Revisando las alertas del último corte de Ventas Netas",
+    descripcion=("EL PRIMER PASO de cualquier investigación de auditoría, en un solo llamado: netas y cargas del último "
+                 "corte publicado de Ventas Netas (o del mes pedido) con los vendedores críticos y en alerta media, los "
+                 "datos llamativos y los hallazgos automáticos, ya resumidos. Usala antes que ventas_del_mes, el centro "
+                 "de comandos o los tickets: con esto alcanza para decir qué no cierra; lo demás es para profundizar."),
+    esquema=esquema({"mes": _MES}), fn=_alertas_corte, permisos=(P_AUD,), modos=TODOS))
+
+
 registrar(Herramienta(
     nombre="auditorias_de_ventas", etiqueta="Consultando las auditorías de ventas",
     descripcion=("Informes de auditoría de ventas: estado, período, riesgos, hallazgos y seguimientos. Sin «id» lista "

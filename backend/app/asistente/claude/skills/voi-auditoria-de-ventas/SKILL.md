@@ -36,8 +36,10 @@ que en su perfil Voi está acotado a auditoría y alertas.
 ## Investigación (modo auditor)
 1. **Activá el modo** con modo_auditor y el informe destino (en borrador o en revisión). Si no hay, preguntá a cuál va
    o preparalo con preparar_auditoria (queda como destino solo).
-2. **Consultá** lo que la investigación necesita: ventas_del_mes (vendedores en alerta, líneas sin uso), el detalle del
-   informe (auditorias_de_ventas con id), el centro de comandos y los tickets.
+2. **Empezá por Ventas Netas con alertas_del_corte** (un solo llamado: netas y cargas del último corte publicado,
+   críticos, datos llamativos, hallazgos automáticos) y respondé con eso en pocas líneas. Solo si el auditor quiere
+   profundizar: ventas_del_mes (líneas sin uso, cargas por día, un vendedor), el detalle del informe
+   (auditorias_de_ventas con id) y, al final, el centro de comandos y los tickets.
 3. **Mostrá cada lectura en el lienzo** como una figura de informe:
    - vendedores críticos → barras ordenadas con `meta: 35` (umbral de crítico, en %) y `destacar` el más grave;
    - evolución de líneas sin uso o de ventas por día → líneas;

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { guardado } from "./Autoguardado";
 import { AUD_API, fechaHora, type AuditoriaDetalle } from "./tipos";
 
 const TIPO_CLS: Record<string, string> = { nota: "bg-brand-cyan", estado: "bg-brand-ink", hallazgo: "bg-brand-orange", evidencia: "bg-brand-purple" };
@@ -20,7 +21,7 @@ export function Seguimiento({ a, onChange }: { a: AuditoriaDetalle; onChange: ()
     setOcupado(true);
     setError(null);
     try {
-      await apiFetch(`${AUD_API}/informes/${a.id}/seguimientos`, { method: "POST", body: JSON.stringify({ texto, hallazgo_id: hallazgoId || null }) });
+      await guardado.con(() => apiFetch(`${AUD_API}/informes/${a.id}/seguimientos`, { method: "POST", body: JSON.stringify({ texto, hallazgo_id: hallazgoId || null }) }));
       setTexto("");
       setHallazgoId("");
       await onChange();

@@ -9,7 +9,7 @@
  * - FiguraInforme: la figura tal como sale en el informe ejecutivo y en el extenso (y en el PDF).
  */
 import {
-  ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, ClipboardPaste, Expand, FileImage, GripVertical, ImageOff, ImagePlus,
+  ArrowLeft, ArrowRight, Camera, ChevronLeft, ChevronRight, ClipboardPaste, Expand, FileImage, GripVertical, ImageOff, ImagePlus,
   Loader2, Pencil, ShieldCheck, Trash2, UploadCloud, X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { ICONO_TIPO, NOMBRE_TIPO } from "@/components/voi/lienzo/iconos";
 import { VoiIsotipo } from "@/components/voi/VoiIsotipo";
 import { useVoi } from "@/components/voi/VoiProvider";
 import { apiFetch, getToken, refreshSession } from "@/lib/api";
+import { guardado } from "./Autoguardado";
 import { AUD_API, ORIGEN_EVIDENCIA, fechaHora, type AuditoriaDetalle, type Evidencia, type Hallazgo } from "./tipos";
 
 const MAX_MB = 15;
@@ -28,8 +29,62 @@ const MAX_MB = 15;
    equipo). Las demás cargas de la plataforma (.xlsx, .txt) ya filtran así. */
 const EXTENSIONES = [".png", ".jpg", ".jpeg", ".webp", ".gif"];
 const TIPOS_IMAGEN = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const ACEPTA_PICKER: Record<string, string[]> = { "image/png": [".png"], "image/jpeg": [".jpg", ".jpeg"], "image/webp": [".webp"], "image/gif": [".gif"] };
 const esImagen = (f: File) =>
   TIPOS_IMAGEN.includes(f.type) || EXTENSIONES.some((x) => f.name.toLowerCase().endsWith(x));
+const marcaDeTiempo = () => new Date().toLocaleString("es-PY", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+/**
+ * Abre el selector de archivos. Donde existe (Chrome y Edge), usa `showOpenFilePicker` arrancando en el Escritorio y
+ * recordando la última carpeta de esta pantalla: la ventana clásica de Windows abre en la última carpeta que usó el
+ * navegador (a veces Imágenes en OneDrive o una carpeta de red con miles de fotos) y tarda minutos en listarla. Si no
+ * existe o falla, el `<input type=file>` de siempre (devuelve null: los archivos llegan por su onChange). Devuelve []
+ * si la persona cancela.
+ */
+async function elegirImagenes(respaldo: HTMLInputElement | null): Promise<File[] | null> {
+  const w = window as any;
+  if (typeof w.showOpenFilePicker === "function") {
+    try {
+      const manejadores: any[] = await w.showOpenFilePicker({
+        multiple: true, id: "evidencia-auditoria", startIn: "desktop",
+        types: [{ description: "Imágenes (PNG, JPG, WebP, GIF)", accept: ACEPTA_PICKER }],
+      });
+      return await Promise.all(manejadores.map((h) => h.getFile()));
+    } catch (e: any) {
+      if (e?.name === "AbortError") return [];          // canceló
+      // Otro error (p. ej. la carpeta de inicio no existe): el selector clásico.
+    }
+  }
+  respaldo?.click();
+  return null;
+}
+
+/** Captura una pantalla o ventana (p. ej. el CRM) sin pasar por ningún selector de archivos: el navegador pregunta qué
+ * compartir, se toma un solo cuadro y se corta la transmisión. Devuelve null si la persona cancela. */
+async function capturarPantalla(): Promise<File | null> {
+  const md = navigator.mediaDevices as any;
+  if (!md?.getDisplayMedia) return null;
+  let stream: MediaStream | null = null;
+  try {
+    stream = await md.getDisplayMedia({ video: { displaySurface: "window" }, audio: false, selfBrowserSurface: "exclude", preferCurrentTab: false });
+    const video = document.createElement("video");
+    video.srcObject = stream;
+    video.muted = true;
+    await video.play();
+    await new Promise((r) => setTimeout(r, 350));       // que el primer cuadro esté dibujado
+    const lienzo = document.createElement("canvas");
+    lienzo.width = video.videoWidth;
+    lienzo.height = video.videoHeight;
+    lienzo.getContext("2d")!.drawImage(video, 0, 0);
+    const blob = await new Promise<Blob | null>((r) => lienzo.toBlob(r, "image/png"));
+    return blob ? new File([blob], `Captura de pantalla ${marcaDeTiempo()}.png`, { type: "image/png" }) : null;
+  } catch (e: any) {
+    if (e?.name === "NotAllowedError" || e?.name === "AbortError") return null;
+    throw e;
+  } finally {
+    stream?.getTracks().forEach((t) => t.stop());
+  }
+}
 
 // ------------------------------------------------------------------ imágenes con la sesión
 const cache = new Map<string, Promise<string>>();
@@ -372,7 +427,7 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
       const titulo = titulos?.[archivos.indexOf(f)];
       setSubidas((s) => [...s, { id, nombre: titulo || f.name || "Captura pegada", progreso: 0, error: null }]);
       try {
-        const e = await subir(a.id, f, (p) => setSubidas((s) => s.map((x) => (x.id === id ? { ...x, progreso: p } : x))), titulo);
+        const e = await guardado.con(() => subir(a.id, f, (p) => setSubidas((s) => s.map((x) => (x.id === id ? { ...x, progreso: p } : x))), titulo));
         setLista((l) => [...l, e]);
         setSubidas((s) => s.filter((x) => x.id !== id));
         alguna = true;
@@ -392,7 +447,7 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
       const archivos = Array.from(ev.clipboardData?.files ?? []).filter((x) => x.type.startsWith("image/"));
       if (!archivos.length) return;
       ev.preventDefault();
-      const ahora = new Date().toLocaleString("es-PY", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      const ahora = marcaDeTiempo();
       subirArchivos(archivos, archivos.map((x, i) => (x.name && x.name !== "image.png" ? "" : `Captura pegada el ${ahora}${archivos.length > 1 ? ` (${i + 1})` : ""}`)));
     };
     window.addEventListener("paste", f);
@@ -403,7 +458,7 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
     const previa = lista;
     setLista(nueva);
     try {
-      setLista(await apiFetch<Evidencia[]>(`${AUD_API}/informes/${a.id}/evidencias/orden`, { method: "POST", body: JSON.stringify({ ids: nueva.map((e) => e.id) }) }));
+      setLista(await guardado.con(() => apiFetch<Evidencia[]>(`${AUD_API}/informes/${a.id}/evidencias/orden`, { method: "POST", body: JSON.stringify({ ids: nueva.map((e) => e.id) }) })));
       onChange();
     } catch (err: any) { setLista(previa); setError(err.message); }
   };
@@ -424,9 +479,9 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
     ordenar(l);
   };
   const guardar = async (e: Evidencia, cambios: { titulo: string; nota: string; hallazgo_id: string }) => {
-    const r = await apiFetch<Evidencia>(`${AUD_API}/informes/${a.id}/evidencias/${e.id}`, {
+    const r = await guardado.con(() => apiFetch<Evidencia>(`${AUD_API}/informes/${a.id}/evidencias/${e.id}`, {
       method: "PATCH", body: JSON.stringify({ titulo: cambios.titulo.trim(), nota: cambios.nota, hallazgo_id: cambios.hallazgo_id }),
-    });
+    }));
     setLista((l) => l.map((x) => (x.id === e.id ? r : x)));
     onChange();
   };
@@ -434,7 +489,7 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
     if (!quitar) return;
     setOcupado(true);
     try {
-      await apiFetch(`${AUD_API}/informes/${a.id}/evidencias/${quitar.id}`, { method: "DELETE" });
+      await guardado.con(() => apiFetch(`${AUD_API}/informes/${a.id}/evidencias/${quitar.id}`, { method: "DELETE" }));
       olvidarImagen(quitar.id);
       setLista((l) => l.filter((x) => x.id !== quitar.id));
       setQuitar(null);
@@ -443,6 +498,21 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
   };
 
   const puedeVoi = !!voi?.habilitado && editable;
+  const [puedeCapturar, setPuedeCapturar] = useState(false);
+  const [capturando, setCapturando] = useState(false);
+  useEffect(() => { setPuedeCapturar(!!(navigator.mediaDevices as any)?.getDisplayMedia && window.matchMedia("(min-width: 768px)").matches); }, []);
+  const elegir = async () => {
+    const archivos = await elegirImagenes(input.current);
+    if (archivos?.length) subirArchivos(archivos);
+  };
+  const capturar = async () => {
+    setCapturando(true);
+    setError(null);
+    try {
+      const f = await capturarPantalla();
+      if (f) await subirArchivos([f], [f.name.replace(/\.png$/, "")]);
+    } catch (err: any) { setError(`No se pudo capturar la pantalla: ${err.message}`); } finally { setCapturando(false); }
+  };
 
   return (
     <div className="space-y-5"
@@ -475,8 +545,13 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
               <VoiIsotipo size={16} /> Investigar con Voi
             </button>
           )}
+          {editable && puedeCapturar && (
+            <button type="button" onClick={capturar} disabled={capturando} className="btn-secondary" title="Captura una ventana (p. ej. el CRM) y la suma como figura, sin buscar archivos">
+              {capturando ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />} Capturar pantalla
+            </button>
+          )}
           {editable && (
-            <button type="button" onClick={() => input.current?.click()} className="btn-primary">
+            <button type="button" onClick={elegir} className="btn-primary">
               <ImagePlus size={16} /> Subir imágenes
             </button>
           )}
@@ -507,7 +582,7 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
 
       {/* Zona para soltar / pegar */}
       {editable && (
-        <button type="button" onClick={() => input.current?.click()}
+        <button type="button" onClick={elegir}
           className={`w-full rounded-lg border-2 border-dashed px-6 py-6 text-center transition-colors ${sobreZona ? "border-brand-cyan bg-brand-cyan/5" : "border-brand-border bg-white hover:border-brand-slate/50"}`}>
           <UploadCloud size={26} className={`mx-auto ${sobreZona ? "text-brand-cyan" : "text-brand-mist"}`} />
           <div className="mt-2 text-sm font-semibold text-brand-ink">{sobreZona ? "Soltá las imágenes para sumarlas" : "Arrastrá capturas o fotos, o hacé clic para elegirlas"}</div>
@@ -515,7 +590,7 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
             PNG, JPG, WebP o GIF de hasta {MAX_MB} MB. Se guardan sin metadatos (ubicación, dispositivo) en el almacenamiento persistente.
           </div>
           <div className="mt-1 inline-flex items-center gap-1.5 text-xs text-brand-slate">
-            <ClipboardPaste size={13} /> También podés pegar una captura con Ctrl + V.
+            <ClipboardPaste size={13} /> También podés pegar una captura con Ctrl + V{puedeCapturar ? " o usar «Capturar pantalla»" : ""}.
           </div>
         </button>
       )}
