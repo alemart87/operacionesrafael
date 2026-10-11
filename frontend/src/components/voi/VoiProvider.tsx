@@ -7,15 +7,16 @@
  * La conversación activa se escucha en vivo (SSE): primero llega la transcripción completa y después cada novedad
  * (texto mientras se escribe, pasos, tarjetas de acción, estado y avisos).
  */
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { ApiError, CurrentUserInfo, getToken } from "@/lib/api";
 import { OPERATIVA_ROUTES, isNavActive, operativaFromPath, submoduloFromPath } from "@/lib/operativas";
 import {
-  AccionVoi, AjustesEvidencia, ConexionVoi, ConversacionVoi, EstadoVoi, EventoVoi, InvestigacionVoi, ItemVoi, Pantalla,
-  escucharConversacion, voiApi,
+  AccionVoi, AjustesEvidencia, ConexionVoi, ConversacionVoi, EstadoVoi, EventoVoi, GuiaVoi, InvestigacionVoi, ItemVoi,
+  OpcionVoi, Pantalla, PantallaVoi, avisarHash, escucharConversacion, pantallaDeRuta, voiApi,
 } from "@/lib/voi";
 import { SelectorAuditor } from "./VoiAuditor";
+import { AvisoVoi, GuiaFlotante, Resalte } from "./VoiGuia";
 import { VoiPanel } from "./VoiPanel";
 import type { ArtefactoVoi } from "./lienzo/tipos";
 import { VoiLienzo } from "./lienzo/VoiLienzo";
@@ -121,7 +122,8 @@ function aplicar(s: ChatVoi, ev: EventoVoi): ChatVoi {
       return { ...s, trabajando: true };
     case "paso": {
       const previo = s.items.find((i) => i.id === ev.id);
-      if (previo && (previo.tipo === "accion" || previo.tipo === "lienzo")) return s;   // se muestran como tarjeta
+      // Se muestran como tarjeta (acción, lienzo, botones, guía o pantalla abierta): el paso no las pisa.
+      if (previo && previo.tipo !== "paso") return s;
       return {
         ...s,
         items: upsert(s.items, { tipo: "paso", id: ev.id, herramienta: ev.herramienta, etiqueta: ev.etiqueta, estado: ev.estado, detalle: ev.detalle }),
@@ -147,6 +149,12 @@ function aplicar(s: ChatVoi, ev: EventoVoi): ChatVoi {
       return { ...s, items: [...s.items, { tipo: "aviso", id: `av-${Date.now()}`, texto: ev.texto, nivel: "info" }] };
     case "uso":
       return { ...s, costo: ev.costo_usd };
+    case "opciones":
+      return { ...s, items: upsert(s.items, { tipo: "opciones", id: ev.id ?? `op-${Date.now()}`, pregunta: ev.pregunta, opciones: ev.opciones }) };
+    case "guia":
+      return { ...s, items: upsert(s.items, { tipo: "guia", id: ev.id ?? `guia-${Date.now()}`, guia: ev.guia }) };
+    case "navegar":
+      return { ...s, items: upsert(s.items, { tipo: "pantalla", id: ev.id ?? `nav-${Date.now()}`, ruta: ev.ruta, titulo: ev.titulo ?? null }) };
     case "investigacion": {
       // Un separador en el chat cuando el modo se prende, cambia de informe o se apaga (en un chat vacío lo explica la
       // bienvenida).
@@ -179,6 +187,11 @@ export function etiquetaPantalla(pathname: string | null): string {
   if (pathname.startsWith("/inicio")) return "Inicio";
   return OPERATIVA_ROUTES.length ? "Plataforma" : "";
 }
+
+/** La guía paso a paso en curso: la guía y en qué paso va. */
+export interface GuiaActiva extends GuiaVoi { paso: number }
+/** El aviso breve de que Voi abrió una pantalla. */
+export interface AvisoNav { texto: string; volver?: boolean }
 
 interface VoiCtx {
   usuario: CurrentUserInfo | null;
@@ -231,6 +244,24 @@ interface VoiCtx {
   /** El selector del informe destino (se abre desde el panel, el lienzo o la bienvenida). */
   selectorAuditor: boolean;
   setSelectorAuditor: (v: boolean) => void;
+  /** Las pantallas que el usuario puede abrir (el catálogo de Voi) y la que está viendo. */
+  pantallas: PantallaVoi[];
+  pantallaActual: PantallaVoi | null;
+  /** Abre una pantalla por el usuario (como lo hace Voi), avisa con «Volver» y resalta un elemento si se pide. */
+  navegarA: (ruta: string, titulo?: string | null, resaltar?: string | null) => void;
+  /** La guía paso a paso en curso. */
+  guia: GuiaActiva | null;
+  abrirGuia: (g: GuiaVoi) => void;
+  cerrarGuia: () => void;
+  irAPaso: (n: number) => void;
+  /** El resaltado pedido al abrir una pantalla (dura unos segundos). */
+  resalte: { ancla: string; hasta: number } | null;
+  aviso: AvisoNav | null;
+  setAviso: (a: AvisoNav | null) => void;
+  /** Cuándo Voi llevó al usuario a una pantalla por última vez (ms); la burbuja espera un rato después. */
+  navegadoAt: number;
+  /** Elegir una de las opciones que Voi ofreció: manda su mensaje (y abre su pantalla, si trae). */
+  elegirOpcion: (op: OpcionVoi) => Promise<void>;
 }
 
 const Ctx = createContext<VoiCtx | null>(null);
@@ -251,6 +282,7 @@ function guardarSesion(clave: string, valor: string | null) {
 
 export function VoiProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [usuario, setUsuarioState] = useState<CurrentUserInfo | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [acoplado, setAcoplado] = useState(false);
@@ -265,6 +297,14 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
   const [borrador, setBorrador] = useState("");
   const [lienzo, setLienzo] = useState<{ abierto: boolean; foco: string | null; locales: ArtefactoVoi[] }>({ abierto: false, foco: null, locales: [] });
   const [selectorAuditor, setSelectorAuditor] = useState(false);
+  const [pantallas, setPantallas] = useState<PantallaVoi[]>([]);
+  const [guia, setGuia] = useState<GuiaActiva | null>(null);
+  const [resalte, setResalte] = useState<{ ancla: string; hasta: number } | null>(null);
+  const [aviso, setAviso] = useState<AvisoNav | null>(null);
+  const [navegadoAt, setNavegadoAt] = useState(0);
+  // Lo que la escucha en vivo necesita llamar (se definen más abajo; la escucha no se vuelve a crear).
+  const navegarRef = useRef<(ruta: string, titulo?: string | null, resaltar?: string | null) => void>(() => undefined);
+  const abrirGuiaRef = useRef<(g: GuiaVoi) => void>(() => undefined);
   const dejarDeEscuchar = useRef<(() => void) | null>(null);
   const abiertoRef = useRef(abierto);
   const tmp = useRef(0);
@@ -308,6 +348,9 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
         if (ev.tipo === "lienzo" && window.matchMedia("(min-width: 1024px)").matches) {
           setLienzo((l) => ({ ...l, abierto: true, foco: ev.artefacto.id }));
         }
+        // Voi abre una pantalla o arranca una guía: el navegador lo sigue.
+        if (ev.tipo === "navegar") navegarRef.current(ev.ruta, ev.titulo, ev.resaltar);
+        if (ev.tipo === "guia") abrirGuiaRef.current(ev.guia);
       },
       (c) => despachar({ t: "conexion", valor: c }),
     );
@@ -362,6 +405,14 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [habilitado, abierto]);
+
+  // El catálogo de pantallas de esta persona (pistas de la burbuja, sugerencias y guías); cambia con sus permisos.
+  const permisosClave = (usuario?.permissions ?? []).join();
+  useEffect(() => {
+    if (!habilitado) { setPantallas([]); return; }
+    voiApi.pantallas().then((r) => setPantallas(r.items)).catch(() => undefined);
+  }, [habilitado, usuario?.email, permisosClave]);
+  const pantallaActual = useMemo(() => pantallaDeRuta(pantallas, pathname), [pantallas, pathname]);
 
   useEffect(() => guardarSesion("voi_abierto", abierto ? "1" : null), [abierto]);
   useEffect(() => guardarSesion("voi_conv", conv?.id ?? null), [conv?.id]);
@@ -471,6 +522,35 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // ---------------------------------------------------------------- Voi como guía: abrir pantallas, guiar, elegir
+  const navegarA = useCallback((ruta: string, titulo?: string | null, resaltar?: string | null) => {
+    const camino = ruta.split("#")[0].split("?")[0];
+    if (window.location.pathname !== camino) router.push(ruta);
+    else if (ruta.includes("#")) window.location.hash = ruta.split("#")[1];
+    avisarHash(ruta);
+    // En el teléfono el panel tapa la pantalla: se cierra para que se vea adónde lo llevó.
+    if (!acoplado && window.matchMedia("(max-width: 767px)").matches) setAbierto(false);
+    setAviso({ texto: `Voi abrió ${titulo ?? ruta}`, volver: true });
+    setNavegadoAt(Date.now());
+    setResalte(resaltar ? { ancla: resaltar, hasta: Date.now() + 9000 } : null);
+  }, [router, acoplado]);
+  navegarRef.current = navegarA;
+
+  const abrirGuia = useCallback((g: GuiaVoi) => {
+    setGuia({ ...g, paso: 0 });
+    // El aviso nombra la pantalla (la guía tiene su propio título en la tarjeta flotante).
+    if (window.location.pathname !== g.ruta.split("#")[0]) navegarA(g.ruta, pantallaDeRuta(pantallas, g.ruta)?.titulo ?? g.titulo);
+    else if (!acoplado && window.matchMedia("(max-width: 767px)").matches) setAbierto(false);
+  }, [navegarA, acoplado, pantallas]);
+  abrirGuiaRef.current = abrirGuia;
+  const cerrarGuia = useCallback(() => setGuia(null), []);
+  const irAPaso = useCallback((n: number) => setGuia((g) => (g ? { ...g, paso: Math.max(0, Math.min(g.pasos.length - 1, n)) } : g)), []);
+
+  const elegirOpcion = useCallback(async (op: OpcionVoi) => {
+    if (op.ruta) navegarA(op.ruta, op.titulo);
+    await enviar(op.mensaje || op.texto);
+  }, [navegarA, enviar]);
+
   const esperaConfirmacion = chat.items.some((i) => i.tipo === "accion" && i.accion.estado === "pendiente");
   const abrirLienzo = useCallback((id?: string) => setLienzo((l) => ({ ...l, abierto: true, foco: id ?? l.foco })), []);
   const cerrarLienzo = useCallback(() => setLienzo((l) => ({ ...l, abierto: false })), []);
@@ -523,6 +603,8 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     pantalla, usarPantalla, setUsarPantalla, noLeidos, esperaConfirmacion, lienzo, abrirLienzo, cerrarLienzo,
     mostrarEnLienzo, borrador, setBorrador, confirmarCon: (a, ajustes) => resolver(a, true, ajustes),
     investigacion, activarAuditor, desactivarAuditor, investigarInforme, selectorAuditor, setSelectorAuditor,
+    pantallas, pantallaActual, navegarA, guia, abrirGuia, cerrarGuia, irAPaso, resalte, aviso, setAviso, navegadoAt,
+    elegirOpcion,
   };
 
   return (
@@ -531,6 +613,9 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
       {habilitado && abierto && <VoiPanel />}
       {habilitado && abierto && lienzo.abierto && <VoiLienzo />}
       {habilitado && selectorAuditor && <SelectorAuditor />}
+      {habilitado && <GuiaFlotante />}
+      {habilitado && <Resalte />}
+      {habilitado && <AvisoVoi />}
     </Ctx.Provider>
   );
 }

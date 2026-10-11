@@ -109,8 +109,39 @@ export interface ResultadoEvidencia {
   repetidas: FiguraSumada[];
 }
 
+/** Un botón que Voi ofrece en el chat: al tocarlo se manda `mensaje` (y, si trae `ruta`, se abre esa pantalla). */
+export interface OpcionVoi { texto: string; mensaje: string; ruta?: string; titulo?: string }
+export interface PasoGuia { n: number; texto: string; ancla?: string | null }
+/** Una guía paso a paso de la plataforma: la pantalla donde se hace y los pasos, cada uno con el elemento que resalta. */
+export interface GuiaVoi {
+  clave: string;
+  titulo: string;
+  ruta: string;
+  nota?: string | null;
+  voi?: string | null;
+  pasos: PasoGuia[];
+}
+export interface PistaVoi { texto: string; boton: string; mensaje: string }
+/** Una pantalla del catálogo que el usuario puede abrir, con la pista de la burbuja y las sugerencias de bienvenida. */
+export interface PantallaVoi {
+  ruta: string;
+  titulo: string;
+  modulo: string;
+  que_hace: string;
+  pista: PistaVoi | null;
+  sugerencias: string[];
+  guias: { clave: string; titulo: string }[];
+  anclas: string[];
+}
+
 export type ItemVoi =
   | { tipo: "usuario"; id: string; texto: string; at?: string | null; pendiente?: boolean; error?: string | null }
+  /** Una pregunta con botones para elegir con un toque. */
+  | { tipo: "opciones"; id: string; pregunta: string; opciones: OpcionVoi[]; at?: string | null }
+  /** La guía paso a paso que Voi mostró. */
+  | { tipo: "guia"; id: string; guia: GuiaVoi; at?: string | null }
+  /** La pantalla que Voi abrió. */
+  | { tipo: "pantalla"; id: string; ruta: string; titulo?: string | null; at?: string | null }
   | { tipo: "voi"; id: string; texto: string; at?: string | null }
   | { tipo: "paso"; id: string; herramienta?: string | null; etiqueta?: string | null; estado: "corriendo" | "ok" | "error"; detalle?: string | null; at?: string | null; entrada?: unknown; resultado?: string }
   | { tipo: "accion"; id: string; accion: AccionVoi; at?: string | null }
@@ -141,6 +172,9 @@ export type EventoVoi =
   | { tipo: "accion"; accion: AccionVoi }
   | { tipo: "lienzo"; artefacto: ArtefactoVoi }
   | { tipo: "investigacion"; investigacion: InvestigacionVoi | null }
+  | { tipo: "navegar"; id?: string | null; ruta: string; titulo?: string | null; resaltar?: string | null; motivo?: string | null }
+  | { tipo: "guia"; id?: string | null; guia: GuiaVoi }
+  | { tipo: "opciones"; id?: string | null; pregunta: string; opciones: OpcionVoi[] }
   | { tipo: "estado"; estado: string; motivo?: string; aviso?: string | null }
   | { tipo: "error"; mensaje: string; reintenta?: boolean }
   | { tipo: "aviso"; texto: string }
@@ -186,6 +220,8 @@ export const voiApi = {
     apiFetch<ResultadoEvidencia>(`${VOI_API}/evidencias`, {
       method: "POST", body: JSON.stringify({ auditoria_id, conversacion_id, piezas }),
     }),
+  /** Las pantallas que esta persona puede abrir, con la pista de Voi y las guías de cada una. */
+  pantallas: () => apiFetch<{ items: PantallaVoi[] }>(`${VOI_API}/pantallas`),
   memoria: () => apiFetch<{ items: MemoriaVoi[] }>(`${VOI_API}/memoria`),
   borrarMemoria: (id: string) => apiFetch(`${VOI_API}/memoria/${id}`, { method: "DELETE" }),
 };
@@ -304,4 +340,15 @@ export function cuando(iso: string | null | undefined): string {
   const ayer = new Date(hoy.getTime() - 86400000);
   if (d.toDateString() === ayer.toDateString()) return `ayer ${hh}`;
   return d.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit" });
+}
+
+/** La pantalla del catálogo a la que pertenece una ruta (la de prefijo más largo), como lo resuelve el backend. */
+export function pantallaDeRuta(items: PantallaVoi[], pathname: string | null): PantallaVoi | null {
+  if (!pathname) return null;
+  const camino = pathname.split("#")[0].split("?")[0].replace(/\/+$/, "") || "/";
+  let mejor: PantallaVoi | null = null;
+  for (const p of items) {
+    if ((camino === p.ruta || camino.startsWith(`${p.ruta}/`)) && (!mejor || p.ruta.length > mejor.ruta.length)) mejor = p;
+  }
+  return mejor;
 }

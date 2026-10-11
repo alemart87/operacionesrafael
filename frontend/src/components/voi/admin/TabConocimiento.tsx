@@ -415,7 +415,7 @@ export function TabConocimiento() {
             </p>
             <p className="text-[11px] text-brand-mist mt-1">{num(lista.items.length)} documentos · {num(totales.activos)} activos · {num(totales.fragmentos)} fragmentos</p>
           </div>
-          {!subiendo && <button className="btn-primary text-sm shrink-0" onClick={() => setSubiendo(true)}><Upload size={15} /> Subir documento</button>}
+          {!subiendo && <button data-voi="documento" className="btn-primary text-sm shrink-0" onClick={() => setSubiendo(true)}><Upload size={15} /> Subir documento</button>}
         </div>
       </section>
 

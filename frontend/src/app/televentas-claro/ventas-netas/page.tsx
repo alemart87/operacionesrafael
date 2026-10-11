@@ -138,7 +138,7 @@ function Informes() {
                       <td className="px-5 py-2.5 text-right whitespace-nowrap text-xs font-semibold">
                         <Link href={`${VN_HREF}/reports/${r.id}`} className="text-brand-primary mr-3">Ver</Link>
                         {gestion && r.status !== "published" && (
-                          <button disabled={ocupado} onClick={() => publicar(r)} className="text-emerald-700 mr-3">
+                          <button data-voi="publicar" disabled={ocupado} onClick={() => publicar(r)} className="text-emerald-700 mr-3">
                             {r.status === "replaced" ? "Volver a publicar" : "Publicar"}
                           </button>
                         )}

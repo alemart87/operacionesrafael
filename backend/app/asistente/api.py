@@ -24,7 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..api.deps import CurrentUser, bearer, get_current_user
 from ..core.config import settings
 from ..core.database import get_db, session_scope
-from . import config, consumidor, consumo, difusion, investigacion, memoria, publicacion, sesiones, transcripcion
+from . import (config, consumidor, consumo, difusion, investigacion, memoria, pantallas, publicacion, sesiones,
+               transcripcion)
 from .cliente import NoConfigurado
 from .herramientas.base import TC
 from .models import AsistenteAccion, AsistenteConversacion
@@ -95,6 +96,12 @@ async def estado(user: CurrentUser = Depends(usuario_voi), db: AsyncSession = De
         "confirma_borradores": not cfg.get("autonomia", {}).get("borradores_sin_confirmar", True),
         "modo_auditor": investigacion.puede_investigar(user),
     }
+
+
+@router.get("/pantallas")
+async def pantallas_del_usuario(user: CurrentUser = Depends(usuario_voi)) -> dict:
+    """Las pantallas que esta persona puede abrir, con la pista de Voi, las sugerencias y las guías de cada una."""
+    return {"items": pantallas.catalogo(user)}
 
 
 # ------------------------------------------------------------------ conversaciones

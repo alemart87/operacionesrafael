@@ -199,7 +199,7 @@ function Tablero() {
               <input type="date" className="input py-1.5 w-40" min={data.primero} max={data.ultimo} value={desde}
                 onChange={(e) => setDesde(e.target.value)} aria-label="Fecha efectiva" />
             </label>
-            <button type="button" className="btn-primary" onClick={asignar} disabled={!destino || !desde || ocupado}>
+            <button type="button" data-voi="asignar" className="btn-primary" onClick={asignar} disabled={!destino || !desde || ocupado}>
               {ocupado ? "Asignando…" : "Asignar"} <ArrowRight size={15} />
             </button>
             <button type="button" className="btn-ghost" onClick={() => setSel(new Set())}><X size={15} /> Quitar selección</button>

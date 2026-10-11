@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  AlertTriangle, ArrowUpRight, BarChart3, BookOpen, Check, CheckCircle2, Copy, Info, Loader2, Maximize2, RotateCcw,
-  ShieldCheck, XCircle, Zap,
+  AlertTriangle, ArrowUpRight, BarChart3, BookOpen, Check, CheckCircle2, Copy, ExternalLink, Info, Loader2, Maximize2,
+  MousePointerClick, RotateCcw, ShieldCheck, XCircle, Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -10,11 +10,14 @@ import { createPortal } from "react-dom";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { apiFetch } from "@/lib/api";
-import { VOI_API, avisarHash, type AccionVoi, type AjustesEvidencia, type DetalleEvidencia, type ItemVoi } from "@/lib/voi";
+import {
+  VOI_API, avisarHash, type AccionVoi, type AjustesEvidencia, type DetalleEvidencia, type GuiaVoi, type ItemVoi, type OpcionVoi,
+} from "@/lib/voi";
 import { pareceNumero } from "@/lib/voiFormato";
 import { ICONO_TIPO, NOMBRE_TIPO } from "./lienzo/iconos";
 import type { ArtefactoVoi } from "./lienzo/tipos";
 import { TarjetaEvidencia, TarjetaModoAuditor } from "./VoiAuditor";
+import { TarjetaGuia } from "./VoiGuia";
 import { VoiIsotipo } from "./VoiIsotipo";
 
 // ------------------------------------------------------------------ tablas del chat
@@ -296,7 +299,7 @@ function Paso({ p }: { p: Extract<ItemVoi, { tipo: "paso" }> }) {
 }
 
 const ESTADO_ACCION: Record<AccionVoi["estado"], { texto: string; clase: string; borde: string }> = {
-  pendiente: { texto: "Necesita tu confirmación", clase: "text-brand-orange", borde: "border-brand-orange/50 bg-brand-orange/[0.05]" },
+  pendiente: { texto: "Necesita tu aprobación", clase: "text-brand-orange", borde: "border-brand-orange/50 bg-brand-orange/[0.05]" },
   ejecutando: { texto: "Haciéndolo…", clase: "text-brand-cyan", borde: "border-brand-cyan/40 bg-brand-cyan/[0.04]" },
   ejecutada: { texto: "Hecho", clase: "text-emerald-700", borde: "border-emerald-200 bg-emerald-50/60" },
   cancelada: { texto: "Cancelada", clase: "text-brand-slate", borde: "border-brand-border bg-brand-bg/60" },
@@ -325,7 +328,7 @@ export function TarjetaAccion({ a, onConfirmar, onCancelar, onNavegar }: {
       {a.estado === "pendiente" && (
         <div className="mt-3 flex items-center gap-2">
           <button type="button" onClick={() => onConfirmar(a)} className="btn-primary px-4 py-1.5 text-xs">
-            <Check size={14} /> Confirmar
+            <Check size={14} /> Aprobar
           </button>
           <button type="button" onClick={() => onCancelar(a)} className="btn-ghost px-3 py-1.5 text-xs">Cancelar</button>
           <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-brand-mist" title="Voi no hace nada que afecte a otros sin tu confirmación">
@@ -337,6 +340,59 @@ export function TarjetaAccion({ a, onConfirmar, onCancelar, onNavegar }: {
         <Link href={a.pantalla} onClick={() => { onNavegar?.(); avisarHash(a.pantalla ?? ""); }} className="mt-2.5 inline-flex items-center gap-1 text-xs font-semibold text-brand-primary hover:underline">
           Abrir <ArrowUpRight size={13} />
         </Link>
+      )}
+    </div>
+  );
+}
+
+/** Una pregunta con botones: elegir es mandar el mensaje de la opción. Después de responder quedan apagados, con la
+ * elegida marcada. */
+function TarjetaOpciones({ b, respondida, elegida, onElegir }: {
+  b: Extract<ItemVoi, { tipo: "opciones" }>;
+  respondida: boolean;
+  elegida?: OpcionVoi;
+  onElegir?: (op: OpcionVoi) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-brand-border bg-white p-3.5 animate-pop">
+      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider2 text-brand-cyan">
+        <MousePointerClick size={12} /> Elegí con un toque
+      </div>
+      <p className="mt-1.5 text-sm font-semibold text-brand-ink leading-snug">{b.pregunta}</p>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        {b.opciones.map((o) => {
+          const esElegida = elegida?.texto === o.texto;
+          return (
+            <button
+              key={o.texto}
+              type="button"
+              disabled={respondida || !onElegir}
+              onClick={() => onElegir?.(o)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                esElegida ? "border-brand-ink bg-brand-ink text-white"
+                  : respondida ? "border-brand-border text-brand-mist"
+                    : "border-brand-border bg-white text-brand-ink hover:border-brand-primary hover:text-brand-primary"}`}
+            >
+              {esElegida && <Check size={14} />}
+              {o.texto}
+              {o.ruta && !esElegida && <ArrowUpRight size={13} className={respondida ? "" : "text-brand-mist"} />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TarjetaPantalla({ ruta, titulo, onAbrir }: { ruta: string; titulo?: string | null; onAbrir?: (ruta: string, titulo?: string | null) => void }) {
+  return (
+    <div className="rounded-xl border border-brand-border bg-white px-3.5 py-2.5 flex items-center gap-2.5 text-sm animate-pop">
+      <ExternalLink size={15} className="text-brand-cyan flex-shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-brand-graphite">Abrí <span className="font-semibold text-brand-ink">{titulo ?? ruta}</span></span>
+      {onAbrir && (
+        <button type="button" onClick={() => onAbrir(ruta, titulo)} className="text-xs font-semibold text-brand-primary hover:underline whitespace-nowrap">
+          Abrir de nuevo
+        </button>
       )}
     </div>
   );
@@ -364,7 +420,7 @@ const esEvidencia = (a: AccionVoi): a is AccionVoi & { detalle: DetalleEvidencia
 /** La conversación: mensajes del usuario y de Voi, pasos (agrupados), tarjetas de acción y avisos. */
 export function VoiMensajes({
   items, parciales, onConfirmar, onConfirmarCon, onCancelar, onReintentar, onNavegar, onAbrirLienzo, onAmpliar, artefactos = [],
-  codigoInforme,
+  codigoInforme, onElegir, onVerGuia, onAbrirRuta,
 }: {
   items: ItemVoi[];
   parciales: Record<string, string>;
@@ -380,7 +436,14 @@ export function VoiMensajes({
   artefactos?: ArtefactoVoi[];
   /** Código del informe destino del modo auditor (AUD-…). */
   codigoInforme?: string | null;
+  /** Elegir una de las opciones que ofreció Voi (botones). */
+  onElegir?: (op: OpcionVoi) => void;
+  /** Volver a abrir una guía paso a paso que Voi mostró. */
+  onVerGuia?: (g: GuiaVoi) => void;
+  /** Volver a abrir una pantalla que Voi abrió. */
+  onAbrirRuta?: (ruta: string, titulo?: string | null) => void;
 }) {
+  const indice = new Map(items.map((it, i) => [it.id, i]));
   // Pasos seguidos se muestran juntos, como un recorrido de lo que hizo Voi.
   const bloques: (ItemVoi | { tipo: "pasos"; id: string; pasos: Extract<ItemVoi, { tipo: "paso" }>[] })[] = [];
   for (const it of items) {
@@ -448,6 +511,31 @@ export function VoiMensajes({
               ) : (
                 <TarjetaAccion a={a} onConfirmar={onConfirmar} onCancelar={onCancelar} onNavegar={onNavegar} />
               )}
+            </div>
+          );
+        }
+        if (b.tipo === "opciones") {
+          // Respondida si después hay un mensaje del usuario; la elegida, si coincide con una opción.
+          const despues = items.slice((indice.get(b.id) ?? -1) + 1);
+          const respuesta = despues.find((i) => i.tipo === "usuario") as Extract<ItemVoi, { tipo: "usuario" }> | undefined;
+          const elegida = respuesta ? b.opciones.find((o) => (o.mensaje || o.texto).trim() === respuesta.texto.trim()) : undefined;
+          return (
+            <div key={b.id} className="ml-7">
+              <TarjetaOpciones b={b} respondida={!!respuesta} elegida={elegida} onElegir={onElegir} />
+            </div>
+          );
+        }
+        if (b.tipo === "guia") {
+          return (
+            <div key={b.id} className="ml-7">
+              <TarjetaGuia guia={b.guia} onVer={() => onVerGuia?.(b.guia)} onNavegar={onNavegar} />
+            </div>
+          );
+        }
+        if (b.tipo === "pantalla") {
+          return (
+            <div key={b.id} className="ml-7">
+              <TarjetaPantalla ruta={b.ruta} titulo={b.titulo} onAbrir={onAbrirRuta ? (r, t) => { onAbrirRuta(r, t); onNavegar?.(); } : undefined} />
             </div>
           );
         }

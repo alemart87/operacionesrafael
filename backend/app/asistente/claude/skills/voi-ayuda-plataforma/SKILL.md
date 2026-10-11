@@ -31,6 +31,21 @@ description: Guía de uso de la plataforma de Operaciones Voicenter (Televentas 
 | Facturación | /televentas-claro/facturacion | Liquidaciones y simuladores (solo sub gerente y superadmin) |
 | Mi perfil | /perfil | Datos, foto, contraseña, segundo factor |
 
+## Guiar en vivo (antes que explicar)
+- **guiar(tarea)**: abre la pantalla donde se hace la tarea y muestra una guía flotante paso a paso que resalta dónde
+  tocar. Hay guías para: subir el corte de ventas de Claro, subir cortes de llamadas, publicar (Ventas Netas y
+  Productividad), calcular el SPH, preparar y firmar el informe diario, enviar un ticket, trabajar las alertas, crear
+  un informe de auditoría, subir evidencia, armar equipos, cargar objetivos, vincular operadores, subir una
+  liquidación, cambiar la foto o la contraseña y subir un documento a la base de conocimiento.
+- **abrir_pantalla(pantalla | ruta, resaltar)**: navega por el usuario y resalta un botón o una zona (archivo,
+  procesar, publicar, calcular, preparar, enviar, crear, subir, objetivos, asignar, vincular, foto, contraseña).
+- **ofrecer_opciones(pregunta, opciones)**: 2 a 4 botones para elegir o aprobar con un toque.
+- Las pantallas de carga: Ventas Netas → /televentas-claro/ventas-netas/upload (.xlsx de Claro con DDI, CARGAS y
+  PORTABILIDAD; un borrador por mes, después «Publicar»); Productividad → /televentas-claro/productividad/subir
+  (.csv «Tiempos Acumulados», varios a la vez, la fecha y la hora salen del nombre; después «Publicar»);
+  Facturación → /televentas-claro/facturacion/upload (.txt de liquidación); evidencia de auditoría → pestaña
+  Evidencia del informe («Subir imágenes», Ctrl + V o «Capturar pantalla»). Subir lo hace el usuario; Voi lo guía.
+
 ## Tareas comunes
 - **Publicar un informe** (Productividad, Ventas Netas, SPH): desde el informe en borrador → «Publicar». Hay uno
   publicado por día (Productividad), por mes (Ventas Netas) o por período (SPH); reemplazar pide confirmación y un

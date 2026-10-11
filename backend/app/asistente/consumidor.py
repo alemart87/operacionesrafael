@@ -468,7 +468,7 @@ async def _ejecutar_y_responder(db: AsyncSession, accion_id: str, h: Herramienta
         texto, es_error = await ejecutar(h, entrada, ctx, modo_de(user))
         a = await db.get(AsistenteAccion, accion_id)          # recargada (la herramienta pudo deshacer cambios)
         a.estado, a.resuelta_at, a.respuesta = (FALLIDA if es_error else EJECUTADA), _ahora(), texto
-        if h.nivel > 1:
+        if h.nivel > 1 or h.guardar_resultado:
             a.resultado = _json(texto)
         await consumo.contar(db, a.user_id, perfil, herramientas=1, acciones=1 if h.nivel > 1 else 0)
         await db.commit()

@@ -590,7 +590,7 @@ export function BandejaJefes({ periodo, supervisorFijo }: { periodo: string; sup
             {cargando && <span className="text-[11px] text-brand-mist">Actualizando…</span>}
           </div>
           {d.puede_enviar && (
-            <button type="button" className="btn-primary" onClick={() => setNuevo(true)}><Send size={15} /> Enviar ticket</button>
+            <button type="button" data-voi="enviar" className="btn-primary" onClick={() => setNuevo(true)}><Send size={15} /> Enviar ticket</button>
           )}
         </div>
         <ListaTickets items={d.items} dia={dia} conSupervisor={!supervisorFijo} onAbrir={(t) => setAbierto(t.id)}

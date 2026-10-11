@@ -495,7 +495,7 @@ class ClienteSimulado:
         if "MODO AUDITOR ACTIVO" in s.contexto and "alertas_del_corte" in h and "lienzo" not in n and "grafic" not in n \
                 and "tablero" not in n and (RE_INVESTIGA.search(n) or re.search(r"barrido|alerta|critic|que (esta|hay)|por donde", n)):
             return [("herramienta", "alertas_del_corte", {}), ("mensaje", _final)]
-        plan = self._plan_fase2(texto, n, h, "MODO AUDITOR ACTIVO" in s.contexto)
+        plan = self._plan_guia(texto, n, h) or self._plan_fase2(texto, n, h, "MODO AUDITOR ACTIVO" in s.contexto)
         if plan:
             return plan
         if "ticket" in n and re.search(r"\b(envi|mand|cre|abr|gener|deriv)", n) and \
@@ -521,6 +521,22 @@ class ClienteSimulado:
                 return [("herramienta", nombre, entrada), ("mensaje", _final)]
         return [("mensaje", _ayuda(h))]
 
+
+    def _plan_guia(self, texto: str, n: str, h: set[str]) -> Optional[list[tuple]]:
+        """Voi como guía: qué puedo hacer (botones), cómo se hace algo (guía paso a paso) y llevame a (abrir pantalla)."""
+        if "ofrecer_opciones" in h and (re.fullmatch(r"\s*(hola|buenas|buen dia|hola voi|buenos dias)[!. ]*", n) or re.search(
+                r"que (puedo|podes|puede|sabes) hacer|no se (que|por donde)|por donde empiezo|^ayuda\b|ayudame$|que hago\b", n)):
+            return [("mensaje", _ayuda(h)), ("herramienta", "ofrecer_opciones", _opciones_inicio(h))]
+        if "guiar" in h and re.search(
+                r"como (se )?(subo|cargo|hago|sube|carga|hace|publico|publica|calculo|calcula|envio|envia|preparo|creo|armo|"
+                r"vinculo|firmo|cambio)\b|no se como|guiame|guia(me)? para|ayudame a|ensename|explicame como|paso a paso", n):
+            return [("herramienta", "guiar", {"tarea": texto.strip()[:300]}), ("mensaje", _final_guia)]
+        if "abrir_pantalla" in h and not any(k in n for k in ("grafic", "lienzo", "tablero", "visualiz", "dashboard")) \
+                and not ("ticket" in n and re.search(r"\b(envi|mand|cre|gener|deriv)|\b(un|nuevo) ticket", n)) and re.search(
+                r"\b(llevame|abrime|abri|abrir|entra(r)? a|anda a|donde (esta|queda|veo|encuentro|se sube|se carga|se publica))\b"
+                r"|mostrame la (pantalla|seccion)|ir a (la|el|los|las)?\s*(pantalla|modulo|seccion)", n):
+            return [("herramienta", "abrir_pantalla", {"pantalla": texto.strip()[:200]}), ("mensaje", _final_pantalla)]
+        return None
 
     def _plan_fase2(self, texto: str, n: str, h: set[str], auditor: bool = False) -> Optional[list[tuple]]:
         """Modo auditor, lienzo, documentos con citas, facturación y las acciones de seguimiento."""
@@ -781,6 +797,42 @@ def _final_modo(rs: list[dict[str, Any]]) -> str:
             "del informe. ¿Empiezo por los vendedores críticos, las líneas sin uso o Sali Hablando?")
 
 
+def _opciones_inicio(h: set[str]) -> dict[str, Any]:
+    """Las tres o cuatro cosas más útiles para empezar, como botones."""
+    ops: list[dict[str, Any]] = []
+    if "guiar" in h:
+        ops.append({"texto": "Guiame para subir un corte", "mensaje": "¿Cómo subo el corte de ventas de Claro?"})
+    if "alertas_del_corte" in h or "centro_de_comandos" in h:
+        ops.append({"texto": "Ver las alertas de hoy", "mensaje": "¿Qué alertas hay hoy?"})
+    if "preparar_informe_diario" in h:
+        ops.append({"texto": "Preparar el informe diario", "mensaje": "Prepará el borrador del informe diario de hoy"})
+    if "abrir_pantalla" in h:
+        ops.append({"texto": "Abrir Ventas Netas", "mensaje": "Llevame a Ventas Netas", "ruta": "/televentas-claro/ventas-netas"})
+    return {"pregunta": "¿Por dónde empezamos?", "opciones": ops[:4]}
+
+
+def _final_guia(rs: list[dict[str, Any]]) -> str:
+    r = rs[-1] if rs else None
+    if not r or r["error"]:
+        return _final(rs)
+    g = (_datos(r) or {}).get("guia") or {}
+    pasos = g.get("pasos") or []
+    primero = f" Primero: {pasos[0]['texto']}" if pasos else ""
+    nota = f"\n\n{g['nota']}" if g.get("nota") else ""
+    return (f"Te abrí **{g.get('titulo')}** y te dejé la guía en la pantalla: son {len(pasos)} pasos y te marco dónde "
+            f"tocar.{primero} Cuando termines, decime y seguimos.{nota}")
+
+
+def _final_pantalla(rs: list[dict[str, Any]]) -> str:
+    r = rs[-1] if rs else None
+    if not r or r["error"]:
+        return _final(rs)
+    d = _datos(r) or {}
+    guias = d.get("guias_de_esta_pantalla") or []
+    extra = f" Si querés, te guío paso a paso para: {guias[0].lower()}." if guias else ""
+    return f"Listo, te abrí **{d.get('titulo')}**. {d.get('que_hace', '')}{extra}"
+
+
 def _final_lienzo(rs: list[dict[str, Any]]) -> str:
     r = rs[-1] if rs else None
     if not r or r["error"]:
@@ -851,11 +903,11 @@ def _final(rs: list[dict[str, Any]]) -> str:
 
 def _ayuda(h: set[str]) -> str:
     from .herramientas import obtener
-    puedo = [obtener(n).etiqueta.lower() for n in sorted(h) if obtener(n)]
+    puedo = [obtener(n).etiqueta.lower() for n in sorted(h) if obtener(n) and n not in ("abrir_pantalla", "guiar", "ofrecer_opciones")]
     lista = "\n".join(f"- {p}" for p in puedo[:10]) or "- (en tu perfil no hay herramientas habilitadas)"
-    return ("¡Hola! Soy **Voi**, el agente de la plataforma. Con tus permisos puedo ayudarte con:\n\n" + lista +
-            "\n\nTambién te explico cómo usar cada pantalla y recuerdo tus preferencias. Probá, por ejemplo: "
-            "«¿Cómo vino la productividad ayer?».")
+    return ("¡Hola! Soy **Voi**, el agente de la plataforma. Te abro las pantallas, te guío paso a paso y hago cosas por "
+            "vos (vos aprobás con un botón). Con tus permisos puedo ayudarte con:\n\n" + lista +
+            "\n\nProbá, por ejemplo: «¿Cómo vino la productividad ayer?» o «Llevame a subir el corte».")
 
 
 __all__ = ["ClienteSimulado", "ErrorSimulado"]

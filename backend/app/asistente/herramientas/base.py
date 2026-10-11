@@ -55,6 +55,8 @@ class Herramienta:
     # …y cómo se aplica lo que el usuario eligió en ella al confirmar (devuelve la entrada final, o None si no eligió
     # nada). Solo puede achicar o retocar lo propuesto; ErrorHerramienta si lo elegido no es válido.
     ajustar: Optional[Callable[[dict[str, Any], dict[str, Any]], Optional[dict[str, Any]]]] = None
+    # Consultas cuyo resultado la conversación necesita después (p. ej. la guía que se mostró): se guarda en la acción.
+    guardar_resultado: bool = False
 
     def disponible(self, user: CurrentUser, modo: str) -> bool:
         return (modo in self.modos

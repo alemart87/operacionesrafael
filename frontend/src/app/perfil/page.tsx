@@ -152,6 +152,7 @@ export default function PerfilPage() {
               </div>
               {canEdit && (
                 <button
+                  data-voi="foto"
                   onClick={() => fileRef.current?.click()}
                   disabled={uploadingPhoto}
                   className="mt-2 text-xs px-2.5 py-1 rounded border border-brand-border hover:border-brand-primary hover:text-brand-primary disabled:opacity-50"
@@ -188,7 +189,7 @@ export default function PerfilPage() {
         </section>
 
         <section className="card p-6">
-          <h2 className="font-display text-xl text-brand-ink uppercase mb-4">Cambiar contraseña</h2>
+          <h2 data-voi="contrasena" className="font-display text-xl text-brand-ink uppercase mb-4">Cambiar contraseña</h2>
           {!canEdit ? (
             <Banner kind="error">La contraseña del superadmin se gestiona desde la configuración del servidor (.env).</Banner>
           ) : (

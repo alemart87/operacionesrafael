@@ -87,7 +87,7 @@ export default function VentasNetasUploadPage() {
       </div>
 
       <form onSubmit={onSubmit} className="card p-7 max-w-3xl space-y-5">
-        <div>
+        <div data-voi="archivo" className="rounded-lg">
           <label className="label">Archivo de ventas (.xlsx)</label>
           <input
             type="file"
@@ -108,7 +108,7 @@ export default function VentasNetasUploadPage() {
           <div className="bg-brand-primary-light border border-brand-primary/30 text-brand-primary-dark text-sm rounded-md p-3">{error}</div>
         )}
 
-        <button type="submit" disabled={submitting || !!uploadId} className="btn-primary text-base">
+        <button type="submit" data-voi="procesar" disabled={submitting || !!uploadId} className="btn-primary text-base">
           {submitting ? "Subiendo…" : "Procesar corte"}
         </button>
       </form>

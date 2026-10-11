@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..api.deps import CurrentUser
 from ..core.operativas import OPERATIVAS
 from ..core.perfiles import perfil_name
-from . import config, consumidor, consumo, definicion, memoria, publicacion
+from . import config, consumidor, consumo, definicion, memoria, pantallas, publicacion
 from . import investigacion as investigacion_svc
 from .cliente import cliente
 from .herramientas import para_usuario
@@ -68,7 +68,9 @@ def contexto_texto(user: CurrentUser, modo: str, pantalla: dict[str, Any] | None
     ]
     if pantalla and pantalla.get("ruta"):
         titulo = f" — {str(pantalla['titulo'])[:200]}" if pantalla.get("titulo") else ""
-        lineas.append(f"- Está viendo la pantalla {str(pantalla['ruta'])[:200]}{titulo}.")
+        p = pantallas.pantalla_de_ruta(str(pantalla["ruta"]))
+        que = f" Es: {p.que_hace}" if p is not None else ""
+        lineas.append(f"- Está viendo la pantalla {str(pantalla['ruta'])[:200]}{titulo}.{que}")
     lineas.extend(investigacion_svc.contexto_lineas(investigacion, puede=investigacion_svc.puede_investigar(user)))
     return "\n".join(lineas)
 
