@@ -156,7 +156,9 @@ class _Memorias:
     def __init__(self, sim: "ClienteSimulado"):
         self.sim = sim
 
-    def list(self, memory_store_id: str, **_: Any) -> _Iter:
+    def list(self, memory_store_id: str, *, view: str = "basic", limit: int = 20, **_: Any) -> _Iter:
+        if view == "full" and limit > 20:          # como la API: con view=full el máximo por página es 20
+            raise ErrorSimulado(400, "limit must be at most 20 when view=full")
         return _Iter(list(self.sim.memorias.get(memory_store_id, {}).values()))
 
     async def delete(self, memory_id: str, *, memory_store_id: str, **_: Any) -> SimpleNamespace:
@@ -265,7 +267,11 @@ class _Sesiones:
         self.events = _Eventos(sim)
 
     async def create(self, *, agent: Any, environment_id: str, resources: Any = None, budget: Any = None,
-                     metadata: Any = None, title: Any = None, **_: Any) -> SimpleNamespace:
+                     metadata: Any = None, title: Any = None, betas: Any = None, **_: Any) -> SimpleNamespace:
+        if betas and any(str(b).startswith("agent-memory-") for b in betas):
+            # Como la API: el SDK ya manda «managed-agents-…» y no se puede combinar con el de memoria.
+            raise ErrorSimulado(400, "anthropic-beta header cannot combine 'agent-memory-2026-07-22' with "
+                                     "'managed-agents-*' values. Use only one.")
         if environment_id not in self.sim.entornos:
             raise ErrorSimulado(404, "environment not found")
         ag = agent if isinstance(agent, dict) else {"id": agent}
