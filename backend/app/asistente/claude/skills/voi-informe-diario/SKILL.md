@@ -1,6 +1,6 @@
 ---
 name: voi-informe-diario
-description: Cómo preparar un buen informe diario de la operación con datos reales - resultados de Pospago y GPON, resumen, métricas críticas con indicador, comentario y compromiso, datos importados y seguimiento de compromisos. Usala cuando pidan armar, completar o revisar el informe diario.
+description: Cómo preparar un buen informe diario de la operación con datos reales - resultados de Pospago y GPON, resumen, métricas críticas con indicador, comentario y compromiso, datos importados, seguimiento de compromisos y, para el superadmin, revisar y comentar los informes del equipo. Usala cuando pidan armar, completar, revisar o comentar el informe diario.
 ---
 
 # Informe diario
@@ -23,6 +23,14 @@ días atrás). Es un borrador hasta que la persona lo **firma** (Voi nunca firma
 - Compromisos con verbo, responsable y fecha: «Coaching de conversación a los 5 agentes en rojo — Lucía — mañana».
 - Evitá métricas sin dato o repetidas.
 
-## Seguimiento
-Los compromisos de informes firmados anteriores aparecen para marcarlos cumplido, en curso o no cumplido. Si el usuario
-lo pide, recordáselos (informes_diarios trae los abiertos y vencidos).
+## Seguimiento de compromisos
+Los compromisos de informes firmados anteriores quedan abiertos hasta que se marcan cumplido, en curso o no cumplido.
+informes_diarios trae los abiertos y vencidos con su id. Si el usuario cuenta cómo le fue con uno, cargalo en el
+borrador con preparar_informe_diario (`seguimiento`: compromiso_id, estado y una nota corta); se aplica al firmar.
+
+## Para el superadmin: revisar el equipo
+1. seguimiento_informes_diarios: quién no informó, cumplimiento por autor, métricas críticas, compromisos vencidos y
+   alertas por palabras clave. Mostralo en el lienzo si son varios autores (barras de cumplimiento con meta 100 %).
+2. Para devolver algo al autor, comentar_informe_diario (pide confirmación): breve, concreto y con el dato que lo
+   motiva. Comentar lo deja revisado; también se puede solo marcar como revisado.
+3. No se comenta un borrador: solo informes firmados.

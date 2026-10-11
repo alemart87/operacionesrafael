@@ -9,7 +9,7 @@ import json
 import logging
 from typing import Any
 
-from . import acciones, datos  # noqa: F401  (registran sus herramientas)
+from . import acciones, datos, documentos, facturacion, lienzo  # noqa: F401  (registran sus herramientas)
 from .base import (CONFIRMAR, CONSULTAR, PROPIO, REGISTRO, Ctx, ErrorHerramienta, Herramienta, para_usuario)
 
 log = logging.getLogger("asistente.herramientas")

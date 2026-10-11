@@ -212,7 +212,12 @@ export async function downloadFile(path: string, fallbackName = "descarga"): Pro
   }
   if (!res.ok) throw new Error(`No se pudo descargar (error ${res.status})`);
   const cd = res.headers.get("content-disposition") ?? "";
-  const name = /filename="?([^";]+)"?/.exec(cd)?.[1] ?? fallbackName;
+  // filename* (RFC 5987) trae el nombre con tildes; si no está, el filename común.
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(cd)?.[1];
+  let name = /filename="?([^";]+)"?/.exec(cd)?.[1] ?? fallbackName;
+  if (utf8) {
+    try { name = decodeURIComponent(utf8); } catch { /* se queda con el común */ }
+  }
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement("a");
   a.href = url;

@@ -481,6 +481,9 @@ class ClienteSimulado:
             return [("memoria", "/mnt/memory/voi/preferencias.md", f"- {nota[:300]}"),
                     ("mensaje", f"Listo, lo anoté en mi memoria: «{nota[:200]}». Lo voy a tener en cuenta en las "
                                 "próximas conversaciones.")]
+        plan = self._plan_fase2(texto, n, h)
+        if plan:
+            return plan
         if "ticket" in n and re.search(r"\b(envi|mand|cre|abr|gener|deriv)", n) and \
                 {"buscar_personas", "enviar_ticket_revision"} <= h:
             quien = _nombre_propio(texto) or "a"
@@ -503,6 +506,67 @@ class ClienteSimulado:
                     entrada = {**entrada, "fecha": (hoy - timedelta(days=1) if "ayer" in n else hoy).isoformat()}
                 return [("herramienta", nombre, entrada), ("mensaje", _final)]
         return [("mensaje", _ayuda(h))]
+
+
+    def _plan_fase2(self, texto: str, n: str, h: set[str]) -> Optional[list[tuple]]:
+        """Lienzo, documentos con citas, facturación y las acciones de seguimiento."""
+        numero = re.search(r"\b(\d{1,6})\b", n)
+        # Seguimiento de un ticket ya enviado (antes que «enviar ticket»: «reabrí» contiene «abr»).
+        if "ticket" in n and numero and "seguimiento_ticket" in h and re.search(r"\b(coment|reabr|cancel|reasign)", n):
+            accion = next(a for k, a in (("reabr", "reabrir"), ("cancel", "cancelar"), ("reasign", "reasignar"),
+                                         ("coment", "comentar")) if re.search(rf"\b{k}", n))
+            return [("herramienta", "seguimiento_ticket", {"ticket": numero.group(1), "accion": accion,
+                                                           "texto": f"Desde Voi: {texto.strip()[:300]}".ljust(12, ".")}),
+                    ("mensaje", _final)]
+        if "informe" in n and re.search(r"\bcoment", n) and "comentar_informe_diario" in h:
+            consulta = "seguimiento_informes_diarios" if "seguimiento_informes_diarios" in h else "informes_diarios"
+            if consulta in h:
+                return [("herramienta", consulta, {}),
+                        ("herramienta", "comentar_informe_diario", lambda rs: _entrada_comentario(rs, texto)),
+                        ("mensaje", _final)]
+        if "auditor" in n and re.search(r"\b(prepar|cre|arm|nuev|gener)", n) and "preparar_auditoria" in h:
+            meses = re.findall(r"\b(20\d\d-\d\d)\b", n) or [ahora_local().strftime("%Y-%m")]
+            return [("herramienta", "preparar_auditoria", {"titulo": f"Auditoría de ventas {', '.join(meses)}",
+                                                           "meses": meses}), ("mensaje", _final)]
+        if "hallazgo" in n and re.search(r"\b(agreg|sum|carg|anot)", n) and {"auditorias_de_ventas", "agregar_hallazgo"} <= h:
+            return [("herramienta", "auditorias_de_ventas", {}),
+                    ("herramienta", "agregar_hallazgo", lambda rs: _entrada_hallazgo(rs, texto)), ("mensaje", _final)]
+        # Documentos de la base de conocimiento, con citas.
+        if "buscar_en_documentos" in h and any(k in n for k in ("documento", "manual", "politica", "procedimiento",
+                                                                  "segun", "que dice", "norma", "reglamento")):
+            return [("herramienta", "buscar_en_documentos", {"consulta": texto.strip()[:300]}),
+                    ("mensaje", _final_documentos)]
+        # Facturación (solo si la sesión tiene esas herramientas).
+        if "facturacion_liquidacion" in h and any(k in n for k in ("factur", "liquidac", "comision", "simul", "chargeback",
+                                                                   "bono")):
+            negocio = "gpon" if "gpon" in n else "pospago"
+            if "simul" in n:
+                cambios = {"ventas": int(numero.group(1))} if numero else {}
+                return [("herramienta", "facturacion_simular", {"negocio": negocio, "cambios": cambios}),
+                        ("mensaje", _final)]
+            if any(k in n for k in ("criterio", "regla", "chargeback", "como se paga", "cuota")):
+                return [("herramienta", "facturacion_criterios", {"negocio": negocio}), ("mensaje", _final)]
+            if any(k in n for k in ("compar", "variac", "cambio", "evolucion")):
+                return [("herramienta", "facturacion_comparar", {}), ("mensaje", _final)]
+            if "calidad" in n:
+                return [("herramienta", "facturacion_calidad_por_fecha", {}), ("mensaje", _final)]
+            if any(k in n for k in ("liquidaciones", "que meses", "cargad")):
+                return [("herramienta", "facturacion_liquidaciones", {}), ("mensaje", _final)]
+            return [("herramienta", "facturacion_liquidacion", {"referencia": "ultimo"}), ("mensaje", _final)]
+        # Lienzo: consulta los datos y los muestra.
+        if "mostrar_en_lienzo" in h and any(k in n for k in ("grafic", "lienzo", "tablero", "visualiz", "dashboard")):
+            fuente = next(((nombre, entrada) for claves, nombre, entrada in REGLAS
+                           if nombre in h and any(k in n for k in claves)), None)
+            fuente = fuente or next(((nombre, {}) for nombre in ("ventas_del_mes", "supervision_del_mes",
+                                                                 "productividad_del_dia") if nombre in h), None)
+            if fuente:
+                nombre, entrada = fuente
+                if nombre in HERRAMIENTAS_CON_FECHA:
+                    entrada = {**entrada, "fecha": ahora_local().date().isoformat()}
+                return [("herramienta", nombre, entrada),
+                        ("herramienta", "mostrar_en_lienzo", lambda rs: _spec_lienzo(rs)),
+                        ("mensaje", _final_lienzo)]
+        return None
 
 
 HERRAMIENTAS_CON_FECHA = {"productividad_del_dia", "ventas_del_dia", "coaching_del_dia"}
@@ -556,6 +620,106 @@ def _entrada_alerta(rs: list[dict[str, Any]], accion: str, texto: str) -> Option
     if accion == "derivar":
         entrada["prioridad"] = "media"
     return entrada
+
+
+def _entrada_comentario(rs: list[dict[str, Any]], texto: str) -> Optional[dict[str, Any]]:
+    d = _datos(rs[-1]) if rs else None
+    informes = [i for i in (d or {}).get("informes") or [] if isinstance(i, dict) and i.get("id")
+                and i.get("estado") == "firmado"]
+    if not informes:
+        return None
+    return {"informe_id": informes[0]["id"], "texto": f"Desde Voi: {texto.strip()[:300]}"}
+
+
+def _entrada_hallazgo(rs: list[dict[str, Any]], texto: str) -> Optional[dict[str, Any]]:
+    d = _datos(rs[-1]) if rs else None
+    items = (d or {}).get("items") or []
+    editables = [a for a in items if isinstance(a, dict) and a.get("id") and a.get("status") in ("borrador", "en_revision")]
+    if not editables:
+        return None
+    return {"auditoria": editables[0]["id"], "titulo": "Hallazgo agregado desde Voi", "severidad": "media",
+            "categoria": "otro", "descripcion": texto.strip()[:500]}
+
+
+def _numero(v: Any) -> Optional[float]:
+    from .herramientas.lienzo import _num
+    return _num(v)
+
+
+def _buscar(d: Any, prueba, prof: int = 0) -> Any:
+    """Lo primero (en profundidad, hasta 3 niveles) que cumple la prueba."""
+    if prueba(d):
+        return d
+    if prof >= 3:
+        return None
+    hijos = d.values() if isinstance(d, dict) else d if isinstance(d, list) else []
+    for v in hijos:
+        if isinstance(v, (dict, list)):
+            r = _buscar(v, prueba, prof + 1)
+            if r is not None:
+                return r
+    return None
+
+
+def _es_tabla(v: Any) -> bool:
+    if not (isinstance(v, list) and v and all(isinstance(f, dict) for f in v[:5])):
+        return False
+    f = v[0]
+    return any(isinstance(x, str) and _numero(x) is None for x in f.values()) and \
+        any(_numero(x) is not None and not isinstance(x, bool) for x in f.values())
+
+
+def _spec_lienzo(rs: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Arma una pieza simple con lo que trajo la consulta: barras con la primera tabla, o indicadores."""
+    d = _datos(rs[-1]) if rs else None
+    if not isinstance(d, (dict, list)):
+        return None
+    tabla = _buscar(d, _es_tabla)
+    if tabla:
+        fila = tabla[0]
+        x = next(k for k, v in fila.items() if isinstance(v, str) and _numero(v) is None)
+        campos = [k for k, v in fila.items() if k != x and _numero(v) is not None and not isinstance(v, bool)][:2]
+        if campos:
+            datos = [{x: f.get(x), **{c: _numero(f.get(c)) for c in campos}} for f in tabla[:31] if isinstance(f, dict)]
+            series = [{"campo": c, "nombre": c.replace("_", " ").capitalize()} for c in campos]
+            if all(re.match(r"^(\d{4}-\d{2}(-\d{2})?|\d{1,2}/\d{1,2})", str(f.get(x) or "")) for f in datos):
+                return {"tipo": "lineas", "titulo": "Así viene la evolución", "x": x, "x_nombre": "Fecha", "series": series,
+                        "datos": sorted(datos, key=lambda f: str(f.get(x))), "nota": "Datos de la plataforma (simulador)"}
+            return {"tipo": "barras", "titulo": "Lo que encontré, en un gráfico", "x": x, "orden": "desc",
+                    "series": series[:1], "datos": datos[:20], "nota": "Datos de la plataforma (simulador)"}
+    indicadores = _buscar(d, lambda v: isinstance(v, list) and v and all(
+        isinstance(k, dict) and (k.get("label") or k.get("titulo")) and _numero(k.get("valor")) is not None for k in v[:4]))
+    if indicadores:
+        kpis = [{"titulo": str(k.get("label") or k.get("titulo"))[:60], "valor": _numero(k.get("valor"))}
+                for k in indicadores[:4]]
+    else:
+        plano = _buscar(d, lambda v: isinstance(v, dict) and sum(
+            isinstance(x, (int, float)) and not isinstance(x, bool) for x in v.values()) >= 2)
+        kpis = [{"titulo": k.replace("_", " ").capitalize(), "valor": v} for k, v in (plano or {}).items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)][:4]
+    if not kpis:
+        return None
+    return {"tipo": "kpis", "titulo": "Indicadores principales", "kpis": kpis}
+
+
+def _final_lienzo(rs: list[dict[str, Any]]) -> str:
+    r = rs[-1] if rs else None
+    if not r or r["error"]:
+        return _final(rs)
+    return ("Listo: te lo dejé en el **lienzo**, al lado del chat (en el celular, tocá «Ver en el lienzo»). Ahí podés ver "
+            "la tabla de datos y descargarlo.")
+
+
+def _final_documentos(rs: list[dict[str, Any]]) -> str:
+    d = _datos(rs[-1]) if rs else None
+    resultados = (d or {}).get("resultados") or []
+    if not resultados:
+        return "No lo encontré en los documentos de la base de conocimiento. Si querés, lo busco con otras palabras."
+    partes = ["Esto es lo que dicen los documentos:", ""]
+    for r in resultados[:2]:
+        extracto = re.sub(r"\s+", " ", r.get("texto") or "")[:260].rstrip()
+        partes.append(f"- {extracto}… {r.get('cita', '')}")
+    return "\n".join(partes)
 
 
 def _valor(v: Any) -> str:

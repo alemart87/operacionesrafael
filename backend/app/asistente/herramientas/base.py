@@ -47,6 +47,9 @@ class Herramienta:
     modos: frozenset[str] = MODOS
     # Para la tarjeta de confirmación: qué va a hacer, en palabras del usuario (puede leer nombres de la base).
     resumen: Optional[Callable[["Ctx", dict[str, Any]], Awaitable[str]]] = None
+    # Al crear la sesión: la descripción para esta persona (p. ej. con los documentos que puede consultar) o None para
+    # no darle la herramienta (no hay nada que consultar).
+    preparar: Optional[Callable[[AsyncSession, CurrentUser], Awaitable[Optional[str]]]] = None
 
     def disponible(self, user: CurrentUser, modo: str) -> bool:
         return (modo in self.modos

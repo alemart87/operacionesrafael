@@ -16,7 +16,8 @@ description: Método para analizar y explicar datos de la operación - mirar ant
 5. **Calidad del dato**: borradores, cortes del mismo día, cruce de nombres incompleto, proyección provisoria, líneas
    en espera. Si afecta la conclusión, aclaralo.
 6. **Presentá**: primero la conclusión en una o dos frases, después una tabla corta (máximo 8 filas) y al final qué
-   haría el usuario (una o dos acciones concretas). Terminá con el enlace a la pantalla.
+   haría el usuario (una o dos acciones concretas). Terminá con el enlace a la pantalla. Si hay más de 8 filas, una
+   evolución o un ranking, mostralo en el lienzo (habilidad *Visualización*) y en el chat dejá la lectura.
 7. Si podés ayudar con una acción (ticket, alerta, informe diario), ofrecela; nunca la ejecutes sin que el usuario la
    pida o la confirme.
 

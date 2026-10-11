@@ -1,11 +1,12 @@
 "use client";
 
-import { Bot, LayoutDashboard, ListChecks, MessagesSquare, Wrench } from "lucide-react";
+import { BookOpen, Bot, LayoutDashboard, ListChecks, MessagesSquare, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { VoiIsotipo } from "@/components/voi/VoiIsotipo";
 import { TabAcciones, TabAgente } from "@/components/voi/admin/TabAgente";
+import { TabConocimiento } from "@/components/voi/admin/TabConocimiento";
 import { TabConversaciones } from "@/components/voi/admin/TabConversaciones";
 import { TabResumen } from "@/components/voi/admin/TabResumen";
 import { EstadoAdminVoi } from "@/components/voi/admin/tipos";
@@ -16,11 +17,13 @@ const TABS = [
   { k: "resumen", label: "Resumen y consumo", icono: LayoutDashboard },
   { k: "conversaciones", label: "Conversaciones", icono: MessagesSquare },
   { k: "acciones", label: "Acciones", icono: ListChecks },
+  { k: "conocimiento", label: "Conocimiento", icono: BookOpen },
   { k: "agente", label: "Herramientas y habilidades", icono: Wrench },
 ] as const;
 type Tab = (typeof TABS)[number]["k"];
 
-/** Consola de Voi (solo superadmin): conexión, publicación del agente, topes, consumo, conversaciones y acciones. */
+/** Consola de Voi (solo superadmin): conexión, publicación del agente, topes, consumo, conversaciones, acciones y la
+ * base de conocimiento. */
 export default function AsistenteAdminPage() {
   return (
     <AppShell>
@@ -38,9 +41,14 @@ function Consola() {
     apiFetch<EstadoAdminVoi>(`${VOI_API}/admin/estado`).then((e) => { setEstado(e); setError(null); }).catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
-    const h = window.location.hash.slice(1) as Tab;
-    if (TABS.some((t) => t.k === h)) setTab(h);
+    const desdeHash = () => {
+      const h = window.location.hash.slice(1) as Tab;
+      if (TABS.some((t) => t.k === h)) setTab(h);
+    };
+    desdeHash();
     cargar();
+    window.addEventListener("hashchange", desdeHash);     // enlaces a /admin/asistente#conocimiento desde la misma página
+    return () => window.removeEventListener("hashchange", desdeHash);
   }, [cargar]);
 
   const cambiar = (k: Tab) => {
@@ -97,6 +105,7 @@ function Consola() {
       {estado && tab === "resumen" && <TabResumen estado={estado} onCambio={cargar} />}
       {tab === "conversaciones" && <TabConversaciones />}
       {tab === "acciones" && <TabAcciones />}
+      {tab === "conocimiento" && <TabConocimiento />}
       {estado && tab === "agente" && <TabAgente estado={estado} />}
     </>
   );

@@ -42,6 +42,20 @@ description: Guía de uso de la plataforma de Operaciones Voicenter (Televentas 
   «Pedir revisión»). Llega al supervisor que tenía al asesor ese día.
 - **Sesión**: se cierra sola por inactividad; el horario de acceso del perfil lo define el superadmin en Seguridad.
 
+## Voi (este asistente)
+- **Panel**: se abre con el botón Voi de la barra o con Ctrl+K (⌘K). Historial, conversaciones fijadas y «Nueva».
+- **Lienzo**: los gráficos, tablas y tableros que arma Voi se abren al lado del chat (en el celular, con la tarjeta
+  «Ver en el lienzo»). Cada pieza tiene «Datos» (la tabla), descarga en CSV y en imagen. Las tablas largas del chat se
+  pueden «Ampliar en el lienzo».
+- **Citas**: cuando Voi responde con un documento de la base de conocimiento, la cita es un chip que abre el pasaje
+  exacto y permite descargar el documento (si la persona tiene alcance).
+- **Memoria** («Lo que recuerdo»): preferencias y contexto que Voi guarda para trabajar mejor con cada persona. Se llena
+  sola cuando Voi aprende algo útil o cuando le pedís «recordá que…»; es privada (solo esa persona y sus
+  conversaciones) y se puede borrar cada nota.
+- **Acciones**: lo que afecta a otros (tickets, alertas, comentarios) aparece como una tarjeta para confirmar o
+  cancelar. Los borradores propios se preparan solos y la persona los revisa y firma.
+- Documentos de la base de conocimiento y configuración de Voi: Administración → Asistente IA (solo superadmin).
+
 ## Qué decir cuando falta algo
 Si una herramienta dice que no hay datos, explicá qué falta (por ejemplo, que el corte del día no está publicado) y
 quién lo resuelve (quien tiene Gestión del módulo), con el enlace a la pantalla.

@@ -78,6 +78,27 @@ def herramientas_y_habilidades(user: CurrentUser, rec: dict[str, Any]) -> tuple[
     return modo, herramientas, skills
 
 
+async def _definiciones(db: AsyncSession, user: CurrentUser, herramientas: list) -> tuple[list, list[dict[str, Any]]]:
+    """Las definiciones para esta sesión: algunas herramientas se describen según la persona (p. ej. con los documentos
+    que puede consultar) y quedan afuera si no tienen nada para ella."""
+    usadas, definiciones = [], []
+    for h in herramientas:
+        d = h.definicion()
+        if h.preparar is not None:
+            try:
+                descripcion = await h.preparar(db, user)
+            except Exception as exc:  # noqa: BLE001 — sin esa herramienta igual se puede conversar
+                log.warning("No se pudo preparar %s para %s: %s", h.nombre, user.id, exc)
+                await db.rollback()
+                continue
+            if descripcion is None:
+                continue
+            d = {**d, "description": descripcion}
+        usadas.append(h)
+        definiciones.append(d)
+    return usadas, definiciones
+
+
 async def crear(db: AsyncSession, user: CurrentUser, *, tipo: str = "chat") -> AsistenteConversacion:
     try:
         return await _crear(db, user, tipo)
@@ -102,7 +123,8 @@ async def _crear(db: AsyncSession, user: CurrentUser, tipo: str) -> AsistenteCon
     if not user.is_superadmin and not cfg.get("habilitado", True):
         raise NoDisponible("Voi está pausado por el administrador.")
     modo, herramientas, skills = herramientas_y_habilidades(user, rec)
-    tools = [*definicion.toolset(), *[h.definicion() for h in herramientas]]
+    herramientas, definiciones = await _definiciones(db, user, herramientas)
+    tools = [*definicion.toolset(), *definiciones]
     recursos: list[dict[str, Any]] = []
     try:
         recursos.append(memoria.recurso(await memoria.asegurar(db, user)))
@@ -110,16 +132,20 @@ async def _crear(db: AsyncSession, user: CurrentUser, tipo: str) -> AsistenteCon
         log.warning("Memoria de %s no disponible: %s", user.id, exc)
         await db.rollback()
     tope = config.centavos(cfg["topes"].get("conversacion_usd"))
+    esfuerzo = (cfg.get("modelo") or {}).get("esfuerzo")
+    esfuerzo = esfuerzo if esfuerzo in config.ESFUERZOS else "medium"
     agente = rec["agente"]
     conv = AsistenteConversacion(user_id=user.id, user_nombre=user.full_name, perfil=user.role, tipo=tipo,
                                  contexto={"modo": modo, "herramientas": [h.nombre for h in herramientas],
-                                           "habilidades": [s["skill_id"] for s in skills], "memoria": bool(recursos)},
+                                           "habilidades": [s["skill_id"] for s in skills], "memoria": bool(recursos),
+                                           "esfuerzo": esfuerzo},
                                  tope_centavos=tope, agente_version=agente.get("version"))
     db.add(conv)
     await db.flush()
     kw: dict[str, Any] = {
         "agent": {"type": "agent_with_overrides", "id": agente["id"],
-                  **({"version": agente["version"]} if agente.get("version") else {}), "tools": tools, "skills": skills},
+                  **({"version": agente["version"]} if agente.get("version") else {}), "tools": tools, "skills": skills,
+                  "model": {"id": definicion.modelo()["id"], "effort": esfuerzo}},
         "environment_id": rec["entorno"]["id"],
         "title": f"Voi · {user.full_name} · {config.ahora_local():%d/%m %H:%M}"[:200],
         "metadata": {"usuario": user.id, "perfil": user.role, "modo": modo, "conversacion": conv.id,

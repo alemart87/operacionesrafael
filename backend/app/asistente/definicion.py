@@ -31,17 +31,18 @@ PERMISO_HABILIDAD: dict[str, tuple[str, ...]] = {
     "voi-productividad-y-sph": (f"{TC}.productividad", f"{TC}.sph"),
     "voi-ventas-netas": (f"{TC}.ventas_netas",),
     "voi-supervision-y-alertas": (f"{TC}.supervision", f"{TC}.tickets"),
+    "voi-facturacion": (f"{TC}.facturacion",),        # restringida: superadmin y Sub gerente
 }
 # Cómo se muestran (consola y Anthropic); el `name` del SKILL.md queda en minúsculas y guiones, como pide el formato.
 TITULOS_HABILIDAD = {
     "voi-analisis-de-datos": "Análisis de datos", "voi-auditoria-de-ventas": "Auditoría de ventas",
     "voi-ayuda-plataforma": "Ayuda de la plataforma", "voi-informe-diario": "Informe diario",
     "voi-productividad-y-sph": "Productividad y SPH", "voi-supervision-y-alertas": "Supervisión y alertas",
-    "voi-ventas-netas": "Ventas netas",
+    "voi-ventas-netas": "Ventas netas", "voi-facturacion": "Facturación", "voi-visualizacion": "Visualización",
 }
 # En modo auditoría Voi se acota a auditoría de ventas y alertas.
 HABILIDADES_AUDITOR = {"voi-ayuda-plataforma", "voi-auditoria-de-ventas", "voi-ventas-netas", "voi-supervision-y-alertas",
-                       "voi-analisis-de-datos"}
+                       "voi-analisis-de-datos", "voi-visualizacion"}
 
 
 def huella(obj: Any) -> str:

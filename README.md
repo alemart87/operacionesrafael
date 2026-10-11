@@ -60,7 +60,7 @@ operacionesrafaelmartinez/
 │   │   ├── schemas/             # Pydantic (plataforma)
 │   │   ├── jobs/                # queue.py (cola genérica) · isolated.py (subproceso aislado)
 │   │   ├── services/            # audit · agent (motor del agente IA, compartido)
-│   │   ├── asistente/           # Voi (Claude Managed Agents): claude/ (agente, entorno, habilidades) · herramientas/
+│   │   ├── asistente/           # Voi (Claude Managed Agents): claude/ (agente, entorno, habilidades) · herramientas/ · conocimiento
 │   │   │                        #   publicacion · sesiones · consumidor · memoria · consumo · api · admin_api · simulador
 │   │   └── operativas/          # código de cada operativa (ROUTERS + WORKERS)
 │   │       └── televentas_claro/
@@ -618,18 +618,20 @@ Todo el código vive en `backend/app/operativas/televentas_claro/facturacion/`.
 ## Voi · el agente de la plataforma (Claude Managed Agents)
 
 **Voi · Powered by Claude** es el agente de IA de la plataforma, en un panel lateral disponible en todas las pantallas
-(botón **Voi** en la cabecera o **Ctrl/⌘ + K**). Consulta y explica los datos de los módulos que el usuario ya ve,
-prepara borradores y propone acciones que el usuario confirma. Corre sobre **Claude Managed Agents** (Anthropic) con el
-modelo **Claude Sonnet 5.5**: Anthropic aloja el bucle del agente y su contenedor; la plataforma le da las herramientas,
-los permisos, la memoria y los topes.
+(botón **Voi** en la cabecera o **Ctrl/⌘ + K**). Consulta y explica los datos de los módulos que el usuario ya ve, los
+muestra en un **lienzo** (gráficos, tablas y tableros), responde con lo que dicen los **documentos** que sube el
+superadmin (con citas), prepara borradores y propone acciones que el usuario confirma. Corre sobre **Claude Managed
+Agents** (Anthropic) con el modelo **Claude Sonnet 5.5**: Anthropic aloja el bucle del agente y su contenedor; la
+plataforma le da las herramientas, los permisos, la memoria y los topes.
 
 ### Quién lo usa
 
 | Perfil | Voi | Alcance |
 |---|---|---|
-| Superadmin | Siempre | Toda la plataforma |
-| Sub gerente, Coordinador | Por defecto (utilidad «Asistente IA») | Los módulos de su perfil |
-| Auditor | Por defecto | **Modo auditoría**: auditoría de ventas, vendedores en alerta, alertas del centro de comandos y tickets |
+| Superadmin | Siempre | Toda la plataforma (incluida Facturación) |
+| Sub gerente | Por defecto (utilidad «Asistente IA») | Los módulos de su perfil, incluida **Facturación** |
+| Coordinador | Por defecto | Los módulos de su perfil |
+| Auditor | Por defecto | **Modo auditoría**: auditoría de ventas (preparar informes y hallazgos), vendedores en alerta, alertas del centro de comandos y tickets |
 | Controller, Analista, Cliente | Se les puede asignar | Los módulos de su perfil |
 | Supervisor | No (solo entra a su portal) | — |
 
@@ -642,27 +644,36 @@ existían recibieron la utilidad con la migración de datos `2026-10-asistente-p
 
 ```
 Navegador ─► panel de Voi (SSE) ─► FastAPI /api/v1/asistente ─► Claude Managed Agents (Anthropic)
-                                   ├ consumidor por sesión       agente «Voi» (versionado) + entorno sin internet
+   + lienzo                        ├ consumidor por sesión       agente «Voi» (versionado) + entorno sin internet
                                    ├ ejecuta las herramientas    habilidades (Agent Skills) + memoria por usuario
-                                   └ guarda eventos, acciones y consumo en PostgreSQL
+                                   ├ base de conocimiento (búsqueda y citas)
+                                   └ guarda eventos, acciones, piezas del lienzo y consumo en PostgreSQL
 ```
 
 - **Definición en archivos** (`backend/app/asistente/claude/`): `agents/voi.md` (modelo, instrucciones y herramientas
-  del espacio de trabajo), `environments/voi.yaml` (contenedor **sin acceso a internet**) y `skills/*/SKILL.md` (7
+  del espacio de trabajo), `environments/voi.yaml` (contenedor **sin acceso a internet**) y `skills/*/SKILL.md` (9
   habilidades: ayuda de la plataforma, productividad y SPH, ventas netas, supervisión y alertas, informe diario,
-  auditoría de ventas y análisis de datos). Se publican **solas al arrancar** si cambiaron (por huella) o desde la
-  consola. Cada cambio del agente es una **versión nueva**; las conversaciones en curso siguen con la suya. Si se cambia
-  la clave por la de otra cuenta, o algo se borra en la consola de Anthropic, se vuelve a crear solo.
+  auditoría de ventas, análisis de datos, **visualización** y **facturación**). Se publican **solas al arrancar** si
+  cambiaron (por huella) o desde la consola. Cada cambio del agente es una **versión nueva**; las conversaciones en
+  curso siguen con la suya. Si se cambia la clave por la de otra cuenta, o algo se borra en la consola de Anthropic, se
+  vuelve a crear solo.
 - **Una conversación = una sesión** de Managed Agents, creada con el agente publicado y, solo para ese usuario, las
-  herramientas de su perfil, las habilidades de sus módulos, su memoria y un **tope de gasto** que aplica Anthropic.
+  herramientas de su perfil, las habilidades de sus módulos, su memoria, el **razonamiento** elegido en la consola y un
+  **tope de gasto** que aplica Anthropic.
 - **Herramientas de la plataforma** (`herramientas/`): son *custom tools*; la sesión se pausa, el backend las ejecuta y
   le devuelve el resultado. Tres niveles de autonomía:
   1. **Consultar** (corre sola): estado de los datos, productividad del día y por rango, ventas del día y del mes, SPH,
-     objetivos y proyección, centro de comandos, tickets, coaching, buscar personas, informes diarios y auditorías.
+     objetivos y proyección, centro de comandos, tickets, coaching, buscar personas, informes diarios (propios) y, para
+     el superadmin, el **seguimiento de los informes de todo el equipo**, auditorías, **buscar en los documentos**,
+     **mostrar en el lienzo** y, solo con Facturación, **liquidaciones, comparativos, calidad por fecha, criterios y
+     simulador** Pospago/GPON.
   2. **Lo propio** (corre sola y queda registrada; el superadmin puede pedir confirmación): preparar el **borrador** del
-     informe diario con datos importados. Voi nunca firma.
-  3. **Afecta a otros** (tarjeta con **Confirmar / Cancelar**): enviar un ticket de revisión; tomar, descartar o derivar
-     una alerta del centro de comandos.
+     informe diario con datos importados y el **seguimiento de sus compromisos**; preparar un **informe de auditoría**
+     en borrador (con los cortes de Ventas Netas de los meses pedidos) y **agregarle hallazgos**. Voi nunca firma ni
+     cierra.
+  3. **Afecta a otros** (tarjeta con **Confirmar / Cancelar**): enviar un ticket de revisión y darle **seguimiento**
+     (comentar, reabrir, cancelar, reasignar); tomar, descartar o derivar una alerta del centro de comandos; **comentar
+     un informe diario** (el superadmin, que además lo deja revisado).
   Todo lo que Voi hace queda en la auditoría general (`asistente_accion`, «vía Voi»).
 - **Una sola vez:** cada pedido del agente queda en `asistente_acciones`. Si se corta la conexión o se reinicia el
   servidor, al volver se completa lo que quedó sin responder; una acción de nivel 3 cortada a mitad nunca se repite
@@ -670,10 +681,59 @@ Navegador ─► panel de Voi (SSE) ─► FastAPI /api/v1/asistente ─► Clau
   sin confirmar, la acción pendiente se cancela.
 - **En vivo:** `consumidor.py` escucha el stream de la sesión (con vista previa del texto), repasa la lista de eventos
   para no perder nada, guarda cada evento una sola vez y lo reparte al navegador por SSE. El panel se reconecta solo.
-- **Memoria por usuario** (memory store montado en cada sesión): preferencias y contexto de trabajo. El usuario la ve y
-  la borra desde el panel («Lo que recuerdo»).
 - **Contexto:** cada mensaje lleva quién es el usuario, la fecha y la pantalla en la que está (el chip de la pantalla se
   puede apagar).
+
+### El lienzo
+
+Cuando una imagen explica mejor que un párrafo (un ranking, una evolución, una composición, varios indicadores o más
+de 8 filas), Voi usa **mostrar_en_lienzo** y la pieza aparece en el **lienzo**: en pantallas anchas se abre solo al lado
+del chat; en el celular queda una tarjeta **«Ver en el lienzo»** que lo abre a pantalla completa. También se abre con el
+botón del panel (con la cantidad de piezas) o `/lienzo`.
+
+- Formas: indicadores, barras (ranking), columnas, líneas, área, apiladas, dona (hasta 6 partes) y tablas largas, o un
+  **tablero** con varias piezas. La plataforma valida y normaliza lo que manda Voi (si algo no cierra, se lo devuelve
+  para corregir) y lo guarda en la conversación (`asistente_artefactos`).
+- Diseño con el método de visualización: paleta categórica de marca **validada** (lectura y daltonismo), marcas finas,
+  leyenda solo con 2 o más series, una sola escala por gráfico, «destacar» con el resto en gris, línea de meta y
+  tooltips con todas las series. Cada pieza trae **Datos** (la tabla, ordenable), descarga en **CSV** y en **PNG**.
+- Las tablas del chat se ven ordenadas (números a la derecha) y se pueden **ampliar en el lienzo**.
+
+### Base de conocimiento con citas
+
+El superadmin sube **manuales, políticas, procedimientos y criterios** (PDF con texto, Word .docx, .txt o .md, hasta
+20 MB) en **Administración → Asistente IA → Conocimiento** y elige **quién los puede consultar**: todos los que usan Voi,
+solo quienes tienen ciertos **permisos** (por ejemplo, los criterios de comisiones solo para **Facturación**) o solo el
+superadmin.
+
+- El texto se extrae en un **subproceso aislado** (tiempo y memoria acotados: un archivo dañado no tumba el servidor),
+  con `pypdf` para los PDF y lectura directa del XML para Word (se rechazan entidades XML y «zip bombs»). Se descartan
+  encabezados y pies repetidos, se detectan títulos de sección y se parte en **fragmentos** de ~1.100 caracteres con su
+  **página** y **sección**. Se guarda el original comprimido.
+- Voi busca con **BM25** (sin tildes, sin palabras vacías y con recorte de plurales) **solo en los documentos activos que
+  esa persona puede ver**; la herramienta se describe por sesión con la lista de sus documentos y, si no tiene ninguno,
+  no la recibe.
+- Cada dato que sale de un documento va con su **cita** (`[Manual de comisiones, p. 4](cita:frag_…)`): en el panel es un
+  chip que abre el **pasaje exacto** y permite **descargar** el documento. Fuera de su alcance, la cita y la descarga
+  responden como si no existieran.
+- En la consola: subir, ver **el texto que lee Voi**, editar título, descripción y alcance, activar o desactivar,
+  **reemplazar** el archivo, borrar y **probar la búsqueda**. Todo queda en la auditoría.
+
+### Facturación en Voi (confidencial)
+
+Las herramientas y la habilidad de Facturación existen solo en las sesiones de quien tiene la utilidad **Facturación**
+(superadmin y Sub gerente: es restringida) y nunca en modo auditoría; el permiso se vuelve a leer en cada uso. Voi
+analiza **liquidaciones** (drivers, cohortes, PFI, documentación faltante), **compara meses** con la descomposición del
+cambio, cruza la **calidad por fecha de venta**, explica los **criterios** de Pospago y GPON (cuotas 1 y 2, bonos,
+recálculo, residual, legajos, chargeback de 180 días, mora, recupero) leídos de la misma fuente que los simuladores, y
+corre el **simulador** de la plataforma con escenarios («¿qué pasa si…?»). Los montos no se anotan en la memoria.
+
+### La memoria («Lo que recuerdo»)
+
+Cada conversación empieza de cero: la memoria es **lo único que Voi se lleva de una conversación a otra**. Guarda
+preferencias (cómo le gusta ver los datos, qué métricas sigue), su equipo y objetivos y en qué quedó un trabajo. Se
+llena cuando el usuario dice «Recordá que…» o cuando Voi aprende algo útil (y lo avisa: «Lo anoto para la próxima»). Es
+**privada** (solo esa persona y sus conversaciones) y cada nota se puede borrar desde el panel.
 
 ### El panel
 
@@ -681,20 +741,23 @@ Navegador ─► panel de Voi (SSE) ─► FastAPI /api/v1/asistente ─► Clau
   cabecera se compacta); en el teléfono ocupa toda la pantalla. Vive en la raíz de la app: sigue abierto al navegar.
 - El **isotipo de Voicenter redibujado en SVG** (los mismos 25 puntos): quieto, **pensando** (una onda recorre los
   puntos) o **hablando** (más rápida). Quien pidió menos movimiento lo ve quieto.
-- Respuesta en vivo, pasos de lo que consultó, tarjetas de acción, enlaces que navegan dentro de la plataforma,
-  historial (fijar, renombrar, quitar), memoria, sugerencias según el perfil y comandos con `/` (`/nueva`, `/historial`,
-  `/memoria`, `/ayuda`). El botón avisa si llegó una respuesta o si una acción espera confirmación.
+- Respuesta en vivo, pasos de lo que consultó, tarjetas de acción, piezas del lienzo, citas, enlaces que navegan dentro
+  de la plataforma, historial (fijar, renombrar, quitar), memoria, sugerencias según el perfil y comandos con `/`
+  (`/nueva`, `/historial`, `/lienzo`, `/memoria`, `/ayuda`). El botón avisa si llegó una respuesta o si una acción
+  espera confirmación.
 
 ### Consola del superadmin (`/admin/asistente`)
 
 - **Resumen y consumo:** conexión, versión publicada (publicar, forzar versión nueva, probar conexión), gasto del mes
   contra el presupuesto, gasto por día, por usuario y «de qué se habla» (herramientas usadas).
-- **Configuración y topes:** encendido general; presupuesto del mes (US$ 150, aviso al 80 %; al llegar al tope Voi se
-  pausa para todos menos el superadmin), por conversación (US$ 1, tope duro que aplica Anthropic), por usuario y día
-  (US$ 5; el superadmin no tiene) y mensajes por minuto; confirmar también los borradores propios.
-- **Conversaciones** de todos con la transcripción completa (contexto, pedido y respuesta de cada herramienta, costo y
-  tokens). Cada lectura de una conversación ajena queda en la auditoría.
-- **Acciones** recientes y **Herramientas y habilidades** (qué puede hacer Voi, con qué nivel y qué permiso exige).
+- **Configuración y topes:** encendido general; **razonamiento de Voi** (Rápido · **Equilibrado** · Profundo: cuánto
+  piensa antes de responder; vale para las conversaciones nuevas); presupuesto del mes (US$ 150, aviso al 80 %; al llegar
+  al tope Voi se pausa para todos menos el superadmin), por conversación (US$ 1, tope duro que aplica Anthropic), por
+  usuario y día (US$ 5; el superadmin no tiene) y mensajes por minuto; confirmar también los borradores propios.
+- **Conversaciones** de todos con la transcripción completa (contexto, pedido y respuesta de cada herramienta, piezas
+  del lienzo, costo y tokens). Cada lectura de una conversación ajena queda en la auditoría.
+- **Acciones** recientes, **Conocimiento** (la base de documentos) y **Herramientas y habilidades** (qué puede hacer
+  Voi, con qué nivel y qué permiso exige).
 
 El costo es el **precio de lista** que informa Anthropic para cada sesión (tokens + US$ 0,08 por hora de ejecución),
 sumado por usuario y día.
@@ -704,21 +767,27 @@ sumado por usuario y día.
 1. En la consola de Anthropic (platform.claude.com) crear una **API key** de la organización.
 2. Render → el servicio → **Environment** → `ANTHROPIC_API_KEY` = la clave → guardar (el servicio se reinicia).
 3. Al arrancar, Voi se publica solo (entorno, habilidades y agente). Verificarlo en **Administración → Asistente IA**
-   («Agente publicado · versión 1») y con **Probar conexión**.
+   («Agente publicado · versión N») y con **Probar conexión**. Cada despliegue que cambia el agente o sus habilidades
+   publica una versión nueva sola.
 4. Opcional: registrar un webhook en la consola de Anthropic hacia `https://<dominio>/api/v1/asistente/webhooks/anthropic`
    y cargar su secreto en `ANTHROPIC_WEBHOOK_SIGNING_KEY` (la firma se verifica con el estándar Standard Webhooks).
 
-Sin la clave, Voi se ve pero avisa que no está conectado. **Datos:** las conversaciones y lo que devuelven las
-herramientas viajan a Anthropic (Managed Agents no es elegible para *Zero Data Retention*); la plataforma guarda su
-propia copia para la consola.
+Sin la clave, Voi se ve pero avisa que no está conectado. **Datos:** las conversaciones, lo que devuelven las
+herramientas y los pasajes de documentos que Voi consulta viajan a Anthropic (Managed Agents no es elegible para *Zero
+Data Retention*); la plataforma guarda su propia copia para la consola.
 
 ### Desarrollo y pruebas
 
 - `ASISTENTE_SIMULADOR=true` usa un motor que imita a Managed Agents (mismos eventos y formas de datos, reglas simples
-  por palabras clave) sin llamar a Anthropic; en producción se ignora. `ASISTENTE_SIMULADOR_DEMORA` regula la velocidad.
+  por palabras clave: consultas, lienzo, documentos con citas, facturación y acciones) sin llamar a Anthropic; en
+  producción se ignora. `ASISTENTE_SIMULADOR_DEMORA` regula la velocidad.
 - `tests/test_asistente.py`: permisos y modo auditoría, publicación con versiones, ciclo completo de una conversación,
   confirmación (doble clic, cancelar, seguir escribiendo), memoria, topes, stream en vivo, recuperación después de un
   corte, webhook firmado, simulador apagado en producción y consola.
+- `tests/test_asistente_fase2.py`: validación del lienzo, extracción de PDF/Word/texto (encabezados repetidos,
+  secciones, archivos rotos y entidades XML), búsqueda y citas con alcance por permisos (subir, desactivar, reemplazar,
+  borrar, descargar), Facturación solo para superadmin y Sub gerente, lienzo en una conversación y las acciones nuevas
+  (seguimiento de tickets, comentar el informe diario, preparar auditorías y agregar hallazgos).
 
 ### API
 
@@ -726,20 +795,21 @@ propia copia para la consola.
 |---|---|
 | `GET /estado` | Disponibilidad, modo, herramientas y sugerencias del usuario |
 | `GET/POST /conversaciones` | Lista / nueva (con el primer mensaje) |
-| `GET/PATCH/DELETE /conversaciones/{id}` | Transcripción / renombrar o fijar / quitar de la lista |
+| `GET/PATCH/DELETE /conversaciones/{id}` | Transcripción (con las piezas del lienzo) / renombrar o fijar / quitar de la lista |
 | `POST /conversaciones/{id}/mensajes` · `/detener` | Mensaje (con la pantalla) / detener la respuesta |
 | `GET /conversaciones/{id}/eventos` | Eventos en vivo (SSE) |
 | `POST /acciones/{id}/confirmar` · `/cancelar` | Resolver una acción pendiente |
 | `GET /memoria` · `DELETE /memoria/{id}` | Memoria del usuario |
+| `GET /citas/{fragmento}` · `GET /documentos/{id}/archivo` | Pasaje de una cita / descarga del documento (si está a su alcance) |
 | `POST /webhooks/anthropic` | Webhook firmado de Anthropic (opcional) |
-| `GET /admin/estado` · `PUT /admin/config` · `POST /admin/publicar` · `POST /admin/probar` | Consola: estado, topes, publicación y prueba |
+| `GET /admin/estado` · `PUT /admin/config` · `POST /admin/publicar` · `POST /admin/probar` | Consola: estado, configuración (topes y razonamiento), publicación y prueba |
 | `GET /admin/consumo` · `/admin/conversaciones` · `/admin/conversaciones/{id}` · `/admin/acciones` | Consola: consumo, conversaciones (lectura auditada) y acciones |
+| `GET/POST /admin/documentos` · `PATCH/DELETE /admin/documentos/{id}` | Base de conocimiento: listar, subir, editar (alcance, activo), borrar |
+| `POST /admin/documentos/{id}/archivo` · `GET /admin/documentos/{id}/fragmentos` · `POST /admin/documentos/buscar` | Reemplazar el archivo, ver el texto extraído y probar la búsqueda |
 
 ### Próximas etapas
 
-2. Base de conocimiento del superadmin (documentos con citas), criterios de facturación Pospago/GPON (solo para quien
-   tiene Facturación), modo auditor ampliado y más acciones.
-3. Lienzo con tableros y gráficos, archivos del espacio de trabajo, subagentes y misiones con resultado esperado.
+3. Archivos del espacio de trabajo (Excel y PDF generados por Voi), subagentes y misiones con resultado esperado.
 4. Misiones programadas con avisos y la consola completa (temas, brechas, versiones).
 5. Evaluaciones, conciliación de costos, migración del agente de Facturación a Voi y retención/borrado automático.
 

@@ -15,11 +15,15 @@ import {
   AccionVoi, ConexionVoi, ConversacionVoi, EstadoVoi, EventoVoi, ItemVoi, Pantalla, escucharConversacion, voiApi,
 } from "@/lib/voi";
 import { VoiPanel } from "./VoiPanel";
+import type { ArtefactoVoi } from "./lienzo/tipos";
+import { VoiLienzo } from "./lienzo/VoiLienzo";
 
 export type VistaVoi = "chat" | "historial" | "memoria";
 
 export interface ChatVoi {
   items: ItemVoi[];
+  /** Lo que Voi mostró en el lienzo en esta conversación (en orden). */
+  artefactos: ArtefactoVoi[];
   parciales: Record<string, string>;
   trabajando: boolean;
   estado: string | null;
@@ -39,7 +43,7 @@ type Accion =
   | { t: "conexion"; valor: ConexionVoi }
   | { t: "error"; valor: string | null };
 
-const VACIO: ChatVoi = { items: [], parciales: {}, trabajando: false, estado: null, costo: null, conexion: "cerrado", error: null };
+const VACIO: ChatVoi = { items: [], artefactos: [], parciales: {}, trabajando: false, estado: null, costo: null, conexion: "cerrado", error: null };
 
 function upsert(items: ItemVoi[], item: ItemVoi): ItemVoi[] {
   const i = items.findIndex((x) => x.id === item.id);
@@ -85,7 +89,7 @@ function aplicar(s: ChatVoi, ev: EventoVoi): ChatVoi {
       let conAcciones = items;
       for (const p of ev.pendientes) conAcciones = upsert(conAcciones, { tipo: "accion", id: p.evento_id, accion: p });
       return {
-        ...s, items: conAcciones, parciales: {}, estado: ev.conversacion.estado,
+        ...s, items: conAcciones, artefactos: ev.artefactos ?? [], parciales: {}, estado: ev.conversacion.estado,
         trabajando: ev.conversacion.estado === "running" || optimistas.length > 0, error: null,
       };
     }
@@ -115,7 +119,7 @@ function aplicar(s: ChatVoi, ev: EventoVoi): ChatVoi {
       return { ...s, trabajando: true };
     case "paso": {
       const previo = s.items.find((i) => i.id === ev.id);
-      if (previo && previo.tipo === "accion") return s;        // las acciones se muestran como tarjeta
+      if (previo && (previo.tipo === "accion" || previo.tipo === "lienzo")) return s;   // se muestran como tarjeta
       return {
         ...s,
         items: upsert(s.items, { tipo: "paso", id: ev.id, herramienta: ev.herramienta, etiqueta: ev.etiqueta, estado: ev.estado, detalle: ev.detalle }),
@@ -123,6 +127,11 @@ function aplicar(s: ChatVoi, ev: EventoVoi): ChatVoi {
     }
     case "accion":
       return { ...s, items: upsert(s.items, { tipo: "accion", id: ev.accion.evento_id, accion: ev.accion }) };
+    case "lienzo": {
+      const a = ev.artefacto;
+      const artefactos = s.artefactos.some((x) => x.id === a.id) ? s.artefactos : [...s.artefactos, a];
+      return { ...s, artefactos, items: upsert(s.items, { tipo: "lienzo", id: a.evento_id ?? a.id, artefacto: a }) };
+    }
     case "estado": {
       const sigue = ev.estado === "running";
       const items = ev.aviso ? [...s.items, { tipo: "aviso" as const, id: `aviso-${Date.now()}`, texto: ev.aviso, nivel: "alerta" as const }] : s.items;
@@ -189,6 +198,14 @@ interface VoiCtx {
   setUsarPantalla: (v: boolean) => void;
   noLeidos: number;
   esperaConfirmacion: boolean;
+  lienzo: { abierto: boolean; foco: string | null; locales: ArtefactoVoi[] };
+  /** Texto para dejar escrito en el compositor (sin mandar). */
+  borrador: string;
+  setBorrador: (t: string) => void;
+  abrirLienzo: (id?: string) => void;
+  cerrarLienzo: () => void;
+  /** Muestra en el lienzo algo armado en el navegador (p. ej. una tabla de una respuesta). */
+  mostrarEnLienzo: (a: ArtefactoVoi) => void;
 }
 
 const Ctx = createContext<VoiCtx | null>(null);
@@ -220,6 +237,8 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
   const [chat, despachar] = useReducer(reducir, VACIO);
   const [usarPantalla, setUsarPantalla] = useState(true);
   const [noLeidos, setNoLeidos] = useState(0);
+  const [borrador, setBorrador] = useState("");
+  const [lienzo, setLienzo] = useState<{ abierto: boolean; foco: string | null; locales: ArtefactoVoi[] }>({ abierto: false, foco: null, locales: [] });
   const dejarDeEscuchar = useRef<(() => void) | null>(null);
   const abiertoRef = useRef(abierto);
   const tmp = useRef(0);
@@ -254,9 +273,14 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
         if (ev.tipo === "transcripcion") setConv(ev.conversacion);
         if (ev.tipo === "estado") setConv((c) => (c ? { ...c, estado: ev.estado } : c));
         if (ev.tipo === "mensaje" && !abiertoRef.current) setNoLeidos((n) => n + 1);
+        // Lo nuevo del lienzo se abre solo en pantallas anchas (al lado del chat); en el teléfono queda la tarjeta.
+        if (ev.tipo === "lienzo" && window.matchMedia("(min-width: 1024px)").matches) {
+          setLienzo((l) => ({ ...l, abierto: true, foco: ev.artefacto.id }));
+        }
       },
       (c) => despachar({ t: "conexion", valor: c }),
     );
+    if (limpiar) setLienzo({ abierto: false, foco: null, locales: [] });
   }, []);
 
   // Fuera de la app (login) o sin sesión: Voi se apaga y olvida todo.
@@ -270,6 +294,7 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
       setEstado(null);
       setAbierto(false);
       setConversaciones([]);
+      setLienzo({ abierto: false, foco: null, locales: [] });
     }
   }, [pathname]);
 
@@ -414,18 +439,25 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const esperaConfirmacion = chat.items.some((i) => i.tipo === "accion" && i.accion.estado === "pendiente");
+  const abrirLienzo = useCallback((id?: string) => setLienzo((l) => ({ ...l, abierto: true, foco: id ?? l.foco })), []);
+  const cerrarLienzo = useCallback(() => setLienzo((l) => ({ ...l, abierto: false })), []);
+  const mostrarEnLienzo = useCallback((a: ArtefactoVoi) => {
+    setLienzo((l) => ({ abierto: true, foco: a.id, locales: [...l.locales.filter((x) => x.id !== a.id), a] }));
+  }, []);
 
   const valor: VoiCtx = {
     usuario, habilitado, setUsuario, abierto, acoplado, abrir, cerrar, alternar, vista, setVista, estado, errorEstado,
     conv, chat, conversaciones, recargarConversaciones, enviar, reintentar, nueva, abrirConversacion, quitarConversacion,
     editarConversacion, detener, confirmar: (a) => resolver(a, true), cancelar: (a) => resolver(a, false),
-    pantalla, usarPantalla, setUsarPantalla, noLeidos, esperaConfirmacion,
+    pantalla, usarPantalla, setUsarPantalla, noLeidos, esperaConfirmacion, lienzo, abrirLienzo, cerrarLienzo,
+    mostrarEnLienzo, borrador, setBorrador,
   };
 
   return (
     <Ctx.Provider value={valor}>
       {children}
       {habilitado && abierto && <VoiPanel />}
+      {habilitado && abierto && lienzo.abierto && <VoiLienzo />}
     </Ctx.Provider>
   );
 }

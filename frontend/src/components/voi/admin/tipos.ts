@@ -3,7 +3,15 @@ export interface ConfigVoi {
   topes: { mensual_usd: number; alerta_pct: number; conversacion_usd: number; usuario_dia_usd: number; mensajes_minuto: number };
   retencion: { sesion_dias: number; copia_meses: number };
   autonomia: { borradores_sin_confirmar: boolean };
+  modelo?: { esfuerzo: EsfuerzoVoi };
 }
+
+export type EsfuerzoVoi = "low" | "medium" | "high";
+export const ESFUERZOS: { k: EsfuerzoVoi; nombre: string; detalle: string }[] = [
+  { k: "low", nombre: "Rápido", detalle: "Respuestas ágiles para consultas simples. El más económico." },
+  { k: "medium", nombre: "Equilibrado", detalle: "Piensa lo necesario para analizar y explicar. Recomendado." },
+  { k: "high", nombre: "Profundo", detalle: "Análisis más cuidadosos (facturación, auditorías). Más lento y más costoso." },
+];
 
 export interface EstadoAdminVoi {
   clave: boolean;
