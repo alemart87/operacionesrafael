@@ -33,6 +33,10 @@ services:
         sync: false
       - key: OPENAI_API_KEY        # Agente de Facturación (opcional)
         sync: false
+      - key: ANTHROPIC_API_KEY     # Voi, el agente de la plataforma (Claude Managed Agents)
+        sync: false
+      - key: ANTHROPIC_WEBHOOK_SIGNING_KEY   # Voi: secreto del webhook de Anthropic (opcional)
+        sync: false
       # Valores fijos
       - key: SUPERADMIN_NAME
         value: Administrador Voicenter

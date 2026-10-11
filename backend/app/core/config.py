@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     def agent_enabled(self) -> bool:
         return bool(self.openai_api_key)
 
+    # --- Voi, el agente de la plataforma (Claude Managed Agents). Sin API key se ve, pero avisa. ---
+    anthropic_api_key: str = ""
+    # Secreto `whsec_…` del webhook registrado en la consola de Anthropic (Manage → Webhooks).
+    anthropic_webhook_signing_key: str = ""
+    asistente_modelo: str = "claude-sonnet-5-5"
+    # Solo pruebas y demostración: un motor simulado que no llama a Anthropic (nunca en producción).
+    asistente_simulador: bool = False
+
     log_level: str = "INFO"
     audit_retention_days: int = 365
     # Política de seguridad inicial (JSON parcial) hasta que el superadmin la cambie desde Seguridad.

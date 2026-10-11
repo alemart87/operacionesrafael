@@ -7,6 +7,8 @@ import { Avatar } from "./Avatar";
 import { Brand } from "./Brand";
 import { CurrentUserInfo, ROLE_LABELS, apiFetch, can, getToken, getUser, logout, saveUser } from "@/lib/api";
 import { ControlSesion, type EstadoSeguridad } from "./seguridad/ControlSesion";
+import { VoiBoton } from "./voi/VoiBoton";
+import { useVoi } from "./voi/VoiProvider";
 import { OperativaNavItem, isNavActive, operativaFromPath, requiredUtilidades, submoduloFromPath } from "@/lib/operativas";
 
 const ADMIN_NAV = [
@@ -15,6 +17,7 @@ const ADMIN_NAV = [
   { href: "/admin/audit", label: "Auditoría" },
   { href: "/admin/seguridad", label: "Seguridad" },
   { href: "/admin/sistema", label: "Sistema" },
+  { href: "/admin/asistente", label: "Asistente IA" },
 ];
 
 interface Session {
@@ -48,6 +51,7 @@ export function AppShell({ children, workspace = false }: {
   const [user, setUser] = useState<CurrentUserInfo | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [seguridad, setSeguridad] = useState<EstadoSeguridad | null>(null);
+  const voi = useVoi();
 
   useEffect(() => {
     if (!getToken()) {
@@ -85,6 +89,12 @@ export function AppShell({ children, workspace = false }: {
 
   useEffect(() => setMobileOpen(false), [pathname]);
 
+  // Voi (en la raíz de la app) sabe quién es el usuario y si tiene la utilidad «Asistente IA».
+  const registrarEnVoi = voi?.setUsuario;
+  useEffect(() => {
+    if (user && registrarEnVoi) registrarEnVoi(user);
+  }, [user, registrarEnVoi]);
+
   const operativa = operativaFromPath(pathname);
   const submodulo = operativa ? submoduloFromPath(operativa, pathname) : undefined;
   const blocked =
@@ -103,6 +113,8 @@ export function AppShell({ children, workspace = false }: {
   if (!user || blocked || adminOnly) return null;
 
   const isAdmin = user.role === "superadmin";
+  // Con Voi acoplado la página pierde 440 px: la cabecera se compacta (sin rótulo de marca ni nombre).
+  const compacta = !!(voi?.abierto && voi.acoplado && voi.habilitado);
   const session: Session = { user, can: (p) => can(user, p), isSuperadmin: isAdmin };
   // Barra de la operativa en dos niveles:
   //  - En la operativa: Inicio + un acceso por submódulo habilitado.
@@ -141,11 +153,15 @@ export function AppShell({ children, workspace = false }: {
 
   return (
     <SessionContext.Provider value={session}>
-      <div className={`${workspace ? "h-screen overflow-hidden" : "min-h-screen"} flex flex-col bg-brand-bg`}>
+      <div
+        className={`${workspace ? "h-screen overflow-hidden" : "min-h-screen"} flex flex-col bg-brand-bg transition-[padding] duration-300 print:!pr-0`}
+        // Con Voi abierto en una pantalla ancha, el panel se acopla a la derecha y la página se corre.
+        style={{ paddingRight: voi?.abierto && voi.acoplado && voi.habilitado ? 440 : 0 }}
+      >
         <header className="bg-white border-b border-brand-border shadow-soft sticky top-0 z-30">
           <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
             <Link href="/inicio" className="hover:opacity-90 transition-opacity flex-shrink-0">
-              <Brand logoHeight={40} compactOnPhone />
+              <Brand logoHeight={40} compactOnPhone withTagline={!compacta} />
             </Link>
 
             {isAdmin && (
@@ -162,9 +178,10 @@ export function AppShell({ children, workspace = false }: {
               </nav>
             )}
 
-            <div className="flex items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-2.5 sm:gap-4">
+              <VoiBoton />
               <Link href="/perfil" className="flex items-center gap-3 group" title="Mi perfil">
-                <div className={`text-right leading-tight hidden ${isAdmin ? "lg:block" : "sm:block"}`}>
+                <div className={`text-right leading-tight hidden ${compacta ? "" : isAdmin ? "lg:block" : "sm:block"}`}>
                   <div className="text-sm font-semibold text-brand-ink group-hover:text-brand-primary transition-colors">
                     {user.full_name}
                   </div>

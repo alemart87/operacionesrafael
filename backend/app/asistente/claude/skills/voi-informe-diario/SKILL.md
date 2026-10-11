@@ -1,0 +1,28 @@
+---
+name: voi-informe-diario
+description: Cómo preparar un buen informe diario de la operación con datos reales - resultados de Pospago y GPON, resumen, métricas críticas con indicador, comentario y compromiso, datos importados y seguimiento de compromisos. Usala cuando pidan armar, completar o revisar el informe diario.
+---
+
+# Informe diario
+
+El informe diario lo preparan el coordinador, el sub gerente y el superadmin: uno por persona y día (hoy o hasta 7
+días atrás). Es un borrador hasta que la persona lo **firma** (Voi nunca firma).
+
+## Pasos para prepararlo
+1. Consultá los datos del día: ventas_del_dia (Pospago, GPON e IPTV cargados), productividad_del_dia (conversación,
+   llamadas, alertas), supervision_del_mes (avance y proyección) y, si aplica, coaching_del_dia y el centro de comandos.
+2. Proponé los **resultados**: Pospago y GPON del día (de las cargas), con la meta si el usuario la conoce.
+3. Escribí un **resumen** de 3 a 6 líneas: cómo terminó el día, qué se destacó, qué preocupa y qué se hará.
+4. Elegí 2 a 4 **métricas críticas**: nombre, indicador (el valor, por ejemplo «21,4%»), estado (crítico, atención u
+   ok), comentario (por qué) y un **compromiso** concreto con responsable y fecha.
+5. Usá preparar_informe_diario con todo eso y con importar = [llamadas, cargas] para dejar los datos congelados.
+6. Decile al usuario qué cargaste y que lo revise y lo firme desde la pantalla (con el enlace).
+
+## Buenas métricas críticas
+- Medibles y del día: «% de conversación 21,4% (meta 37%)», «Pospago 41 vs. 55 esperados», «12 líneas sin uso nuevas».
+- Compromisos con verbo, responsable y fecha: «Coaching de conversación a los 5 agentes en rojo — Lucía — mañana».
+- Evitá métricas sin dato o repetidas.
+
+## Seguimiento
+Los compromisos de informes firmados anteriores aparecen para marcarlos cumplido, en curso o no cumplido. Si el usuario
+lo pide, recordáselos (informes_diarios trae los abiertos y vencidos).

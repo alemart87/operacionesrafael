@@ -1,0 +1,11 @@
+# Entorno de Voi en Claude Managed Agents: un contenedor aislado en Anthropic donde corren las herramientas del espacio
+# de trabajo (leer la memoria y las habilidades, calcular con Python). Sin internet: no puede sacar datos afuera.
+name: voi-operaciones-voicenter
+description: Espacio de trabajo aislado de Voi (sin internet ni credenciales).
+config:
+  type: cloud
+  networking:
+    type: limited
+    allow_package_managers: false
+    allow_mcp_servers: false
+    allowed_hosts: []

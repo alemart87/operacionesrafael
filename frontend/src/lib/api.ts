@@ -177,6 +177,11 @@ async function tryRefresh(): Promise<boolean> {
   return refreshing;
 }
 
+/** Renueva el token de acceso con el refresh token (un solo pedido aunque lo llamen varios a la vez). */
+export function refreshSession(): Promise<boolean> {
+  return tryRefresh();
+}
+
 function redirectToLogin(motivo?: string | null) {
   clearSession();
   guardarMotivo(motivo ?? null);

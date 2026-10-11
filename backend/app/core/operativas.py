@@ -112,6 +112,11 @@ OPERATIVAS: list[dict] = [
                 "description": "Liquidaciones de comisiones de Claro: reportes, comparativos, simuladores (móvil y GPON), criterios y agente IA.",
                 "solo_perfiles": ["sub_gerente"],
             },
+            {
+                "key": "asistente",
+                "name": "Asistente IA (Voi)",
+                "description": "Voi, el agente de la plataforma: consulta y explica los datos de los módulos que el usuario ya ve, prepara borradores y propone acciones que el usuario confirma, con memoria y conversaciones guardadas. Nunca ve más que el usuario. El superadmin sigue el consumo y las conversaciones.",
+            },
         ],
     },
 ]

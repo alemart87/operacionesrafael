@@ -94,7 +94,7 @@ h3,
   }
 
   .nav-link {
-    @apply px-3 py-2 rounded-md text-sm font-semibold tracking-wide transition-colors;
+    @apply px-3 py-2 rounded-md text-sm font-semibold tracking-wide transition-colors whitespace-nowrap;
     @apply text-brand-slate hover:bg-brand-bg hover:text-brand-ink;
   }
   .nav-link-active {
@@ -302,4 +302,60 @@ h3,
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #b6bcc8;
+}
+
+/* ===== Voi, el agente de la plataforma ===== */
+/* Isotipo vivo: una onda recorre los puntos (pensando) o va más rápido (hablando). */
+@keyframes voi-onda {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.55); opacity: 0.35; }
+}
+.voi-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.voi-pensando .voi-dot { animation: voi-onda 1.3s ease-in-out infinite; }
+.voi-hablando .voi-dot { animation: voi-onda 0.7s ease-in-out infinite; }
+/* Línea de colores de la marca bajo la cabecera del panel mientras Voi trabaja. */
+@keyframes voi-barrido {
+  from { background-position: 0% 50%; }
+  to { background-position: 200% 50%; }
+}
+.voi-linea {
+  background: linear-gradient(90deg, #e6332a, #f39200, #00b2bf, #662483, #e6332a);
+  background-size: 200% 100%;
+  animation: voi-barrido 1.6s linear infinite;
+}
+/* El panel entra desde la derecha (en el teléfono, desde abajo). */
+@keyframes voi-entra-lado {
+  from { transform: translateX(28px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes voi-entra-abajo {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.voi-panel { animation: voi-entra-abajo 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@media (min-width: 768px) {
+  .voi-panel { animation-name: voi-entra-lado; }
+}
+/* Cursor mientras Voi escribe. */
+@keyframes voi-cursor { 50% { opacity: 0; } }
+.voi-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  border-radius: 2px;
+  background: #e6332a;
+  vertical-align: -2px;
+  animation: voi-cursor 1s steps(1) infinite;
+}
+/* El isotipo grande del inicio flota suave. */
+@keyframes voi-flota {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.voi-flota { animation: voi-flota 3.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .voi-dot, .voi-linea, .voi-panel, .voi-cursor, .voi-flota { animation: none !important; }
 }
