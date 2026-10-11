@@ -499,12 +499,16 @@ Perfiles). Código en `backend/app/operativas/televentas_claro/informe_diario/`.
   4. **Métricas críticas** (con +): nombre, indicador, estado (crítica, atención o en orden), comentario y
      **compromiso o anotación**, con responsable y fecha. «Traer las del informe anterior» copia las métricas
      del último informe, con su valor como «antes».
-  5. **Figuras**: gráficos, indicadores, tablas o tableros del **lienzo de Voi** que el autor suma al informe (con
-     **Armar con Voi**, desde la tarjeta que Voi propone en el chat o directo desde el lienzo; ver [Modo informe
-     diario](#modo-informe-diario-armar-el-informe-con-voi)). Cada figura queda numerada, con título y lectura
-     editables y su especificación congelada: en la pantalla se vuelve a dibujar igual aunque los datos cambien. El
-     navegador captura cada gráfico como imagen para el PDF («Imagen lista para el PDF»; indicadores, tablas y
-     tableros van con sus datos). Hasta 12 por informe; se quitan con un toque.
+  5. **Figuras**: gráficos, indicadores, tablas o tableros del **lienzo de Voi, el agente**, que el autor suma al
+     informe (con **Armar con Voi**, desde la tarjeta que Voi propone en el chat o directo desde el lienzo; ver [Modo
+     informe diario](#modo-informe-diario-armar-el-informe-con-voi)), y **capturas o fotos que sube el autor**
+     («Subir imagen», arrastrar o soltar; PNG, JPG, WebP o GIF de hasta 15 MB), como la evidencia del informe de
+     auditoría. Cada figura queda numerada, con título y lectura editables; un gráfico guarda su especificación
+     congelada (en la pantalla se vuelve a dibujar igual aunque los datos cambien) y el navegador lo captura como
+     imagen para el PDF («Imagen lista para el PDF»; indicadores, tablas y tableros van con sus datos); una imagen se
+     procesa sin metadatos y su huella entra en el código de verificación. Hasta **20** por informe; se quitan con un
+     toque. Mientras Voi está en modo informe diario con ese informe, la sección lo dice («Voi, el agente, está en modo
+     informe diario con este informe») y se actualiza sola.
   6. **Seguimiento de compromisos**: los compromisos abiertos de informes anteriores; en cada informe se marcan
      cumplido, en curso o no cumplido, con una nota. Cumplido y no cumplido los cierran.
   7. **Firma**: nombre y cargo (editable; se recuerda) y, si se quiere, la **firma manuscrita** dibujada con el
@@ -515,8 +519,8 @@ Perfiles). Código en `backend/app/operativas/televentas_claro/informe_diario/`.
   modificara en la base, el código deja de coincidir y el superadmin lo ve. Después solo se agregan comentarios.
 - **PDF** (`reportlab`, A4, con el logo y las tipografías de la marca, Manrope y Barlow Condensed, licencia
   OFL, en `backend/app/assets/fonts`): encabezado, resultados con su cumplimiento y el día anterior, datos
-  importados, resumen, métricas críticas, **figuras** (la captura del gráfico o, si no la hay, sus datos en una
-  tabla), seguimiento de compromisos y la firma con el código. Un borrador sale
+  importados, resumen, métricas críticas, **figuras** (la imagen subida o la captura del gráfico; si no la hay, sus
+  datos en una tabla), seguimiento de compromisos y la firma con el código. Un borrador sale
   con la marca de agua «BORRADOR». El texto del usuario se escapa y lo que la tipografía no puede dibujar
   (emojis) se quita.
 - **Palabras clave** (`palabras.py`, explicable y sin servicios externos): normaliza el texto (minúsculas, sin
@@ -782,9 +786,10 @@ en una **investigación** con un **informe destino**:
   contexto (una evolución o una concentración que una imagen explica mejor que una cifra); si alcanza con las cifras,
   no lo hace. Solo si el auditor quiere «urgar más» sigue con `ventas_del_mes` (líneas, cargas por
   día, un vendedor), el centro de comandos y los tickets. Se lo recuerda la plataforma en cada mensaje.
-- **Se ve:** el panel, el lienzo y el botón de Voi **brillan**: un borde que late y pasa por los colores de Voicenter de
-  a uno, con resplandor; en el chat, un separador «Modo auditor activado · AUD-…»; arriba, una franja con el informe
-  destino, **Cambiar** y **Salir**. Botones, modales y tarjetas mantienen la paleta neutra de la plataforma. Quien pidió
+- **Se ve, y se ve que es el agente:** el panel, el lienzo y el botón de Voi **brillan**: un borde que late y pasa por
+  los colores de Voicenter de a uno, con resplandor; el botón dice «AI VOI · Modo auditor»; en el chat, un separador
+  «Voi entró en modo auditor · AUD-…»; arriba, una franja «**Voi en modo auditor** · El agente investiga con vos ·
+  AUD-…» con el informe destino, **Cambiar** y **Salir**. Botones, modales y tarjetas mantienen la paleta neutra de la plataforma. Quien pidió
   menos movimiento ve el borde fijo.
 - **Voi pregunta siempre:** cada mensaje le recuerda el modo y el destino; cada vez que muestra algo en el lienzo llama
   a `proponer_evidencia` y aparece una **tarjeta con una casilla por pieza** (todas, algunas o ninguna), con el título
@@ -819,10 +824,12 @@ que pasa a **modo informe diario** con el borrador del día como destino de las 
   «Informe diario · dd/mm» y la lectura «para quien recibe el informe»). **Nunca firma**: al final abre el informe para
   que el usuario lo revise y lo firme. Después de responder un dato, ofrece con botones **Armar un tablero**, **Ver un
   gráfico**, **Sumar al informe diario** y **Ver en la pantalla**.
-- **Se ve:** el panel, el lienzo y el botón de Voi llevan un borde más sobrio que el del modo auditor: late despacio
-  entre el púrpura y el cyan de la marca (no es una alerta, es un trabajo en curso); la franja dice «Modo informe diario
-  · Informe del dd/mm · borrador», con **Salir** y el acceso al informe; en el chat, el separador «Modo informe diario
-  activado · informe del dd/mm».
+- **Se ve, y se ve que es el agente:** el panel, el lienzo y el botón de Voi llevan un borde más sobrio que el del modo
+  auditor: late despacio entre el púrpura y el cyan de la marca (no es una alerta, es un trabajo en curso); el botón
+  dice «AI VOI · Modo informe diario»; la franja dice «**Voi en modo informe diario** · El agente arma con vos el informe
+  del dd/mm (borrador)», con **Salir** y el acceso al informe; en el chat, el separador «Voi entró en modo informe
+  diario · informe del dd/mm» (y «Voi salió…» al terminar); en el informe, la sección Figuras avisa que Voi, el agente,
+  está trabajando en él.
 - **Desde el lienzo, directo:** **Al informe** en cada pieza o parte de un tablero y **Sumar al informe** abren la misma
   hoja que en modo auditor, sin hallazgo. **Ir al informe** cierra el lienzo y lleva a la sección Figuras del informe
   (con el aviso «Voi abrió Informe diario · dd/mm · Figuras»), que se actualiza sola cada vez que Voi suma algo.
@@ -831,6 +838,9 @@ que pasa a **modo informe diario** con el borrador del día como destino de las 
   el PDF**: el navegador convierte cada gráfico (barras, columnas, líneas, área, apiladas) en PNG y lo sube; el servidor
   lo procesa sin metadatos y lo guarda en el disco persistente. Al firmar, las figuras quedan fijas y dentro del código
   de verificación; en la lectura y en el PDF salen como «Figura N · título».
+- **Imágenes del autor:** además de lo que suma Voi, el autor sube capturas o fotos como figuras desde la misma sección
+  (`POST …/figuras/imagen`): se procesan en un subproceso aislado, sin metadatos, en el disco persistente, y su huella
+  entra en el código de verificación al firmar. Voi nunca sube archivos: eso lo hace siempre la persona.
 - **Confidencialidad:** nunca se suma una pieza de otra persona ni una de una conversación que usó Facturación. Solo el
   autor del informe suma, edita o quita figuras, y solo mientras es borrador; el superadmin ve las figuras pero no las
   cambia.
@@ -1066,7 +1076,7 @@ que un cambio rige al instante, también para las sesiones abiertas.
 | * | `/api/v1/televentas-claro/auditoria/*` (fuentes, parametros, riesgos, informes, hallazgos, seguimientos, estado) | `televentas_claro.auditoria` |
 | * | `/api/v1/televentas-claro/supervision/*` (resumen, tablero, coaching, gestion, **registro**, comando, tickets…) | `televentas_claro.supervision` (lo que cambia algo, además `supervision_gestion`, `tickets` u `operadores`) |
 | * | `/api/v1/televentas-claro/supervision/portal/*` (portal, coaching, **registro**, bitácora, tickets) | `televentas_claro.portal_supervisor` (solo lo del supervisor que entra) |
-| * | `/api/v1/televentas-claro/informe-diario/*` (preparar, guardar, importar, firmar, PDF, comentar, firma; `figuras/{id}` editar y quitar, `figuras/{id}/imagen` subir y ver la captura) | `televentas_claro.informe_diario` (cada informe: su autor y el superadmin; las figuras las cambia solo el autor del borrador) |
+| * | `/api/v1/televentas-claro/informe-diario/*` (preparar, guardar, importar, firmar, PDF, comentar, firma; `figuras/imagen` subir una captura o foto, `figuras/{id}` editar y quitar, `figuras/{id}/imagen` subir la captura de un gráfico y ver la imagen) | `televentas_claro.informe_diario` (cada informe: su autor y el superadmin; las figuras las cambia solo el autor del borrador) |
 | GET · PUT | `/api/v1/televentas-claro/informe-diario/seguimiento` · `/palabras` | Superadmin |
 | * | `/api/v1/televentas-claro/facturacion/*` · `/facturacion-agent/*` | Solo superadmin |
 | GET | `/health` · `/api/v1/health` | Público |

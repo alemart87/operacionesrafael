@@ -78,7 +78,7 @@ def test_reglas_de_las_figuras():
     assert fig_srv.editar(inf, f["id"], "u1", titulo="  ", nota="Lectura")["titulo"] == "Turnos"   # el título vacío no pisa
     assert fig_srv.buscar(inf, f["id"])["nota"] == "Lectura"
     assert [x["figura"] for x in fig_srv.para_dict(inf)] == list(range(1, fig_srv.MAX_FIGURAS + 1))
-    assert set(fig_srv.para_hash(inf)[0]) == {"id", "titulo", "nota", "spec", "artefacto_id"}
+    assert set(fig_srv.para_hash(inf)[0]) == {"id", "tipo", "titulo", "nota", "spec", "artefacto_id", "imagen_sha256"}
     inf.estado = "firmado"
     with pytest.raises(fig_srv.FiguraError, match="firmado"):
         fig_srv.quitar(inf, f["id"], "u1")
@@ -240,15 +240,36 @@ async def test_modo_informe_diario_y_figuras_del_lienzo(simulador, tmp_path, mon
         assert not (carpeta / f"{f2}.webp").exists() and (carpeta / f"{f1}.webp").exists()
         assert (await ac.delete(f"{INF}/{iid}/figuras/{f2}", headers=coord)).status_code == 404
 
+        # Una captura o foto del autor como figura (como la evidencia del informe de auditoría): procesada sin metadatos.
+        subir_figura = lambda datos, nombre="captura.png", quien=coord, **campos: ac.post(  # noqa: E731
+            f"{INF}/{iid}/figuras/imagen", headers=quien, files={"archivo": (nombre, datos, "application/octet-stream")}, data=campos)
+        assert (await subir_figura(b"no es una imagen")).status_code == 400
+        assert (await subir_figura(b"")).status_code == 400
+        assert (await subir_figura(_png(), quien=otra)).status_code == 404
+        assert (await subir_figura(_png(), quien=admin)).status_code == 403
+        r = await subir_figura(_png((118, 53, 148), (900, 500)), "Pantalla del CRM.png", nota="Caso del día")
+        assert r.status_code == 201, r.text
+        fi = r.json()
+        assert fi["tipo"] == "imagen" and fi["titulo"] == "Pantalla del CRM" and fi["nota"] == "Caso del día" and fi["imagen"] is True
+        assert fi["spec"] is None and (fi["ancho"], fi["alto"]) == (900, 500) and fi["archivo_nombre"] == "Pantalla del CRM.png" and fi["figura"] == 2
+        img = await ac.get(f"{INF}/{iid}/figuras/{fi['id']}/imagen", headers=coord)
+        assert img.status_code == 200 and img.content[8:12] == b"WEBP" and dict(Image.open(io.BytesIO(img.content)).getexif()) == {}
+        assert (carpeta / f"{fi['id']}.webp").exists()
+        d = (await ac.get(f"{INF}/{iid}", headers=coord)).json()
+        assert [f["tipo"] for f in d["figuras"]] == ["grafico", "imagen"]
+        texto = _texto_pdf((await ac.get(f"{INF}/{iid}/pdf", headers=coord)).content)
+        if texto:
+            assert "Figura 2 · Pantalla del CRM" in texto and "Imagen aportada por el autor" in texto
+
         # Firmar con figuras: quedan fijas y dentro del código de verificación.
         cuerpo = {"resultados": {"pospago": {"valor": 44, "meta": 50}, "gpon": {"valor": 15, "meta": 15}},
                   "resumen": "Día con buena conversación a la mañana y caída en el turno tarde.", "cargo": "Coordinadora de Televentas"}
         assert (await ac.put(f"{INF}/{iid}", headers=coord, json=cuerpo)).status_code == 200
         r = await ac.post(f"{INF}/{iid}/firmar", headers=coord, json={"cargo": "Coordinadora de Televentas"})
         assert r.status_code == 200, r.text
-        assert r.json()["estado"] == "firmado" and r.json()["verificacion"] is True and len(r.json()["figuras"]) == 1
+        assert r.json()["estado"] == "firmado" and r.json()["verificacion"] is True and len(r.json()["figuras"]) == 2
         for peticion in (ac.patch(f"{INF}/{iid}/figuras/{f1}", headers=coord, json={"titulo": "tarde"}),
-                         ac.delete(f"{INF}/{iid}/figuras/{f1}", headers=coord), subir(f1, _png()),
+                         ac.delete(f"{INF}/{iid}/figuras/{f1}", headers=coord), subir(f1, _png()), subir_figura(_png()),
                          ac.post(f"{BASE}/evidencias", headers=coord,
                                  json={"informe_diario_id": iid, "conversacion_id": cid, "piezas": [{"spec": tabla}]}),
                          ac.post(f"{BASE}/conversaciones/{cid}/investigacion", headers=coord,
@@ -261,8 +282,12 @@ async def test_modo_informe_diario_y_figuras_del_lienzo(simulador, tmp_path, mon
         async with AsyncSessionLocal() as db:
             inf = await db.get(InformeDiario, iid)
             assert inf_srv.verificar(inf) is True
-            inf.figuras = [{**inf.figuras[0], "titulo": "Otra cosa"}]              # si alguien la tocara, el código no verifica
+            orig = list(inf.figuras)
+            inf.figuras = [{**orig[0], "titulo": "Otra cosa"}, orig[1]]              # si alguien la tocara, el código no verifica
             assert inf_srv.verificar(inf) is False
+            inf.figuras = [orig[0], {**orig[1], "imagen_sha256": "0" * 64}]          # la imagen subida también entra
+            assert inf_srv.verificar(inf) is False
+            inf.figuras = orig
         # Apagar el modo desde el panel.
         r = await ac.post(f"{BASE}/conversaciones/{cid}/investigacion", headers=coord, json={"activo": False})
         assert r.status_code == 200 and r.json()["investigacion"] is None
@@ -289,4 +314,5 @@ async def test_modo_informe_diario_y_figuras_del_lienzo(simulador, tmp_path, mon
         async with AsyncSessionLocal() as db:
             assert (await db.get(AsistenteConversacion, cid3)).investigacion is None
             acciones = {a for (a,) in (await db.execute(select(AuditLog.action))).all()}
-            assert {"asistente_modo_informe_diario", "asistente_figura_informe_diario", "informe_diario_figura_quitada"} <= acciones
+            assert {"asistente_modo_informe_diario", "asistente_figura_informe_diario", "informe_diario_figura_quitada",
+                    "informe_diario_figura_imagen"} <= acciones

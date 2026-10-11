@@ -35,7 +35,7 @@ export function VoiBoton() {
   const diario = esInformeDiario(investigacion);
   const modo = investigacion ? (diario ? "modo informe diario" : "modo auditor") : null;
   const destino = etiquetaDestino(investigacion);
-  const subtitulo = investigacion ? (diario ? "Informe diario" : "Modo auditor") : chat.trabajando ? "Trabajando…" : esperaConfirmacion ? "Esperá tu OK" : "Asistente";
+  const subtitulo = investigacion ? (diario ? "Modo informe diario" : "Modo auditor") : chat.trabajando ? "Trabajando…" : esperaConfirmacion ? "Esperá tu OK" : "Asistente";
   const latido = abierto || investigacion ? "" : esperaConfirmacion ? "voi-late-aprobar" : "voi-late";
   return (
     <div className="relative no-print">
@@ -55,7 +55,7 @@ export function VoiBoton() {
         </span>
         <span className="flex flex-col items-start leading-none">
           <span className={`font-display text-[17px] tracking-wide ${abierto ? "text-white" : "text-brand-ink"}`}>AI VOI</span>
-          <span className={`hidden sm:block mt-0.5 text-[9px] uppercase tracking-[0.14em] font-semibold ${abierto ? "text-white/70" : esperaConfirmacion ? "text-brand-orange" : "text-brand-slate"}`}>
+          <span className={`hidden sm:block mt-0.5 text-[9px] uppercase tracking-[0.14em] font-semibold whitespace-nowrap ${abierto ? "text-white/70" : esperaConfirmacion ? "text-brand-orange" : "text-brand-slate"}`}>
             {subtitulo}
           </span>
         </span>

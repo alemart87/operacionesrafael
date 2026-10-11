@@ -5,7 +5,8 @@ export const ID_API = "/api/v1/televentas-claro/informe-diario";
 export const ID_HREF = "/televentas-claro/informe-diario";
 /** La sección Figuras de un informe (donde quedan las piezas del lienzo de Voi). */
 export const figurasHref = (id: string) => `${ID_HREF}/${id}#figuras`;
-export const MAX_FIGURAS = 12;
+export const MAX_FIGURAS = 20;
+export const MAX_IMAGEN_MB = 15;
 
 export type EstadoInforme = "borrador" | "firmado";
 export type EstadoMetrica = "critico" | "atencion" | "ok";
@@ -80,18 +81,23 @@ export interface Compromiso {
 
 export interface Comentario { id: string; autor: string; autor_id: string; rol: "superadmin" | "autor"; texto: string; at: string | null }
 
-/** Una figura del lienzo de Voi sumada al informe (gráfico, indicadores, tabla o tablero), con la especificación
- * congelada: en la pantalla se vuelve a dibujar igual; en el PDF va la captura que manda el navegador. */
+/** Una figura del informe: un gráfico del lienzo de Voi (gráfico, indicadores, tabla o tablero) con la especificación
+ * congelada (en la pantalla se vuelve a dibujar igual; en el PDF va la captura que manda el navegador), o una imagen
+ * que subió el autor (captura, foto), como la evidencia del informe de auditoría. */
 export interface FiguraInforme {
   id: string;
   figura: number;
+  tipo: "grafico" | "imagen";
   titulo: string | null;
   nota: string | null;
-  spec: PiezaVoi;
-  origen: "voi" | "lienzo" | null;
+  spec: PiezaVoi | null;
+  origen: "voi" | "lienzo" | "subida" | null;
   artefacto_id: string | null;
+  archivo_nombre?: string | null;
+  ancho?: number | null;
+  alto?: number | null;
   created_at: string | null;
-  /** El navegador ya mandó la captura (PNG) para el PDF; si no, el PDF lleva los datos de la figura. */
+  /** Hay imagen para el PDF (la captura del gráfico ya subida, o la imagen del autor). */
   imagen: boolean;
 }
 export interface Firma { nombre: string; cargo: string; imagen: string | null; firmado_at: string; codigo: string }
