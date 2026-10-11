@@ -508,9 +508,9 @@ async def test_auditor_prepara_auditoria_y_agrega_hallazgo(simulador, tmp_path, 
 
 def test_config_del_esfuerzo_y_habilidades_nuevas():
     assert voi_config.ESFUERZOS == ("low", "medium", "high")
-    assert voi_config.DEFECTO["modelo"]["esfuerzo"] == "medium"
+    assert voi_config.DEFECTO["modelo"]["esfuerzo"] == "low"
     nombres = {h.nombre for h in definicion.habilidades()}
     assert {"voi-visualizacion", "voi-facturacion"} <= nombres
     assert "voi-visualizacion" in definicion.HABILIDADES_AUDITOR and "voi-facturacion" not in definicion.HABILIDADES_AUDITOR
     assert definicion.PERMISO_HABILIDAD["voi-facturacion"] == (f"{TC}.facturacion",)
-    assert definicion.modelo()["effort"] == "medium"
+    assert definicion.modelo()["effort"] == "low"

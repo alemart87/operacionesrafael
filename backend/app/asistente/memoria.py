@@ -16,9 +16,29 @@ from .cliente import cliente
 from .models import AsistenteUsuario
 
 INSTRUCCIONES = ("Memoria de esta persona con Voi: preferencias de trabajo, contexto recurrente y avance de tareas. "
-                 "Revisala al empezar. Guardá solo lo útil para próximas conversaciones, ordenado y breve, en archivos "
-                 "de Markdown chicos. Nunca guardes contraseñas, claves ni datos personales sensibles, ni cifras que "
-                 "cambian (se consultan).")
+                 "La plataforma ya te la pone en el contexto del primer mensaje: no la leas con las herramientas de "
+                 "archivos. Escribí acá solo lo nuevo que sirva para próximas conversaciones, ordenado y breve, en "
+                 "archivos de Markdown chicos. Nunca guardes contraseñas, claves ni datos personales sensibles, ni "
+                 "cifras que cambian (se consultan).")
+# Lo que entra de la memoria en el contexto del primer mensaje (el resto queda en el archivo).
+MAX_CONTEXTO = 3000
+
+
+async def para_contexto(db: AsyncSession, user_id: str) -> str:
+    """La memoria del usuario resumida para el contexto del primer mensaje (vacío si no hay nada)."""
+    items = await listar(db, user_id)
+    partes, largo = [], 0
+    for m in items:
+        contenido = (m.get("contenido") or "").strip()
+        if not contenido:
+            continue
+        linea = f"  · {m.get('ruta')}: {contenido[:900]}"
+        if largo + len(linea) > MAX_CONTEXTO:
+            partes.append("  · (hay más en los archivos de la memoria)")
+            break
+        partes.append(linea)
+        largo += len(linea)
+    return "\n".join(partes)
 
 
 async def asegurar(db: AsyncSession, user: CurrentUser) -> str:

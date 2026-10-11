@@ -11,7 +11,7 @@ const P = "#662483";
 const O = "#F39200";
 
 // [columna, fila, color] — tomado del logo oficial (public/logo-voicenter-color.png).
-const PUNTOS: [number, number, string][] = [
+export const PUNTOS: [number, number, string][] = [
   [0, 4, R],
   [1, 3, C], [1, 4, C], [1, 5, C],
   [2, 1, P], [2, 2, P], [2, 3, P], [2, 4, P], [2, 5, P],

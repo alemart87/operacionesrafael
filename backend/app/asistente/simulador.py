@@ -544,11 +544,8 @@ class ClienteSimulado:
                     hoy = ahora_local().date()
                     entrada = {**entrada, "fecha": (hoy - timedelta(days=1) if "ayer" in n else hoy).isoformat()}
                 s.ultima = (nombre, entrada)
-                pasos: list[tuple] = [("herramienta", nombre, entrada), ("mensaje", _final)]
-                if "ofrecer_opciones" in h and "mostrar_en_lienzo" in h:
-                    informe = "MODO INFORME DIARIO ACTIVO" in s.contexto
-                    pasos.append(("herramienta", "ofrecer_opciones", lambda rs, inf=informe: _opciones_datos(rs, inf)))
-                return pasos
+                # Los botones «Armar un tablero / Ver en la pantalla» los pone la plataforma al terminar el turno.
+                return [("herramienta", nombre, entrada), ("mensaje", _final)]
         return [("mensaje", _ayuda(h))]
 
 
@@ -638,7 +635,8 @@ class ClienteSimulado:
                 pasos = [("herramienta", nombre, entrada),
                          ("herramienta", "mostrar_en_lienzo", lambda rs: armar(rs))]
                 informe = s is not None and "MODO INFORME DIARIO ACTIVO" in s.contexto
-                if (auditor or informe) and "proponer_evidencia" in h:
+                # «sin tarjeta»: simula un modelo que se olvida de proponer (la plataforma ofrece la tarjeta igual).
+                if (auditor or informe) and "proponer_evidencia" in h and "sin tarjeta" not in n:
                     # En modo auditor: después de mostrar, pregunta qué sumar al informe (la tarjeta con casillas).
                     pasos.append(("herramienta", "proponer_evidencia", lambda rs: _entrada_evidencia(rs)))
                     return [*pasos, ("mensaje", _final_evidencia)]
@@ -863,18 +861,6 @@ def _opciones_inicio(h: set[str]) -> dict[str, Any]:
     if "abrir_pantalla" in h:
         ops.append({"texto": "Abrir Ventas Netas", "mensaje": "Llevame a Ventas Netas", "ruta": "/televentas-claro/ventas-netas"})
     return {"pregunta": "¿Por dónde empezamos?", "opciones": ops[:4]}
-
-
-def _opciones_datos(rs: list[dict[str, Any]], informe_diario: bool = False) -> dict[str, Any]:
-    """Después de una consulta con datos: armar un tablero, verlo en la pantalla o llevarlo al informe diario."""
-    d = _datos(rs[-1]) if rs else None
-    ops: list[dict[str, Any]] = [{"texto": "Armar un tablero", "mensaje": "Armá un tablero con estos datos"},
-                                 {"texto": "Ver un gráfico", "mensaje": "Mostrame esto en un gráfico"}]
-    if informe_diario:
-        ops.append({"texto": "Sumar al informe diario", "mensaje": "Armá un tablero con estos datos y sumalo al informe diario"})
-    if isinstance(d, dict) and d.get("pantalla"):
-        ops.append({"texto": "Ver en la pantalla", "mensaje": f"Llevame a {d['pantalla']}", "ruta": str(d["pantalla"])})
-    return {"pregunta": "¿Seguimos con estos datos?", "opciones": ops}
 
 
 def _final_guia(rs: list[dict[str, Any]]) -> str:

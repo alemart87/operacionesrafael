@@ -141,7 +141,7 @@ function aplicar(s: ChatVoi, ev: EventoVoi): ChatVoi {
       if (previo && previo.tipo !== "paso") return s;
       return {
         ...s,
-        items: upsert(s.items, { tipo: "paso", id: ev.id, herramienta: ev.herramienta, etiqueta: ev.etiqueta, estado: ev.estado, detalle: ev.detalle }),
+        items: upsert(s.items, { tipo: "paso", id: ev.id, herramienta: ev.herramienta, etiqueta: ev.etiqueta, estado: ev.estado, detalle: ev.detalle, ms: ev.ms }),
       };
     }
     case "accion":

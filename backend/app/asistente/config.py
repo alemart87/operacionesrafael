@@ -31,7 +31,7 @@ DEFECTO: dict[str, Any] = {
     "retencion": {"sesion_dias": 30, "copia_meses": 12},
     "autonomia": {"borradores_sin_confirmar": True},
     # Cuánto razona Claude antes de responder (por conversación): low = rápido, medium = equilibrado, high = profundo.
-    "modelo": {"esfuerzo": "medium"},
+    "modelo": {"esfuerzo": "low"},
 }
 ESFUERZOS = ("low", "medium", "high")
 

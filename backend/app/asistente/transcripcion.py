@@ -70,7 +70,7 @@ async def construir(db: AsyncSession, conv: AsistenteConversacion, *, completo: 
             items.append({"tipo": "usuario", "id": e.evento_id, "texto": texto_de(d.get("content")), "at": at})
         elif t == "agent.message":
             items.append({"tipo": "voi", "id": e.evento_id, "texto": texto_de(d.get("content")), "at": at})
-        elif t == "agent.custom_tool_use":
+        elif t in ("agent.custom_tool_use", "plataforma.custom_tool_use"):
             a = acciones.get(e.evento_id)
             nombre = d.get("name") or ""
             h = obtener(nombre)
@@ -113,6 +113,9 @@ async def construir(db: AsyncSession, conv: AsistenteConversacion, *, completo: 
                     p["estado"] = "error" if d.get("is_error") else "ok"
                 if completo:
                     p["resultado"] = _recortar(texto_de(d.get("content")))
+        elif t == "plataforma.opciones":                 # los botones que ofreció la plataforma al terminar el turno
+            items.append({"tipo": "opciones", "id": e.evento_id, "at": at, "pregunta": d.get("pregunta"),
+                          "opciones": d.get("opciones") or []})
         elif t == "session.status_idle":
             stop = (d.get("stop_reason") or {}).get("type")
             if stop in AVISOS_FIN:

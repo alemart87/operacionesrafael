@@ -248,20 +248,20 @@ async def test_conversacion_consulta_y_respuesta(simulador):
         assert paso["herramienta"] == "productividad_del_dia" and paso["estado"] == "ok"
         voi_txt = [i for i in t["items"] if i["tipo"] == "voi"][-1]["texto"]
         assert "31,5" in voi_txt or "5.200" in voi_txt
-        # Después de los datos, Voi ofrece armar un tablero (botones).
+        # Después de los datos, la plataforma ofrece armar un tablero (botones), sin gastar una vuelta del modelo.
         assert t["items"][-1]["tipo"] == "opciones", json.dumps(t["items"][-1], ensure_ascii=False)
         assert "Armar un tablero" in [o["texto"] for o in t["items"][-1]["opciones"]]
         assert "contexto" not in tipos                                   # el contexto lo ve solo el superadmin
 
         async with AsyncSessionLocal() as db:
             accs = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid))).scalars().all()
-            assert len(accs) == 2 and all(a.estado == "ejecutada" and a.respondida_at and a.respuesta is None for a in accs)
+            assert len(accs) == 1 and all(a.estado == "ejecutada" and a.respondida_at and a.respuesta is None for a in accs)
             # El contexto de la plataforma llegó como system.message (con la pantalla).
             ctx = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == cid,
                                                                   AsistenteEvento.tipo == "system.message"))).scalar_one()
             assert "Paola Coordinadora" in json.dumps(ctx.datos, ensure_ascii=False) and "/inicio" in json.dumps(ctx.datos)
             uso = (await db.execute(select(AsistenteUsoDiario).where(AsistenteUsoDiario.user_id == coord_id))).scalar_one()
-            assert uso.mensajes == 1 and uso.herramientas == 2 and uso.costo_centavos >= 1 and uso.input_tokens > 0
+            assert uso.mensajes == 1 and uso.herramientas == 1 and uso.costo_centavos >= 1 and uso.input_tokens > 0
             c = await db.get(AsistenteConversacion, cid)
             assert c.costo_centavos == uso.costo_centavos and set(c.contexto["herramientas"]) >= {"productividad_del_dia"}
             # Ningún evento repetido.
@@ -290,7 +290,7 @@ async def test_conversacion_consulta_y_respuesta(simulador):
         assert (await ac.get(f"{BASE}/conversaciones", headers=coord)).json()["items"] == []
         adm = (await ac.get(f"{BASE}/admin/conversaciones", headers=admin, params={"usuario": coord_id})).json()
         # Tres consultas: la productividad, los botones que siguen a los datos y los de «qué podés hacer».
-        assert adm["total"] == 1 and adm["items"][0]["oculta"] and adm["items"][0]["consultas"] == 3
+        assert adm["total"] == 1 and adm["items"][0]["oculta"] and adm["items"][0]["consultas"] == 2
 
         # El superadmin lee la conversación completa (con el contexto) y queda auditado.
         full = (await ac.get(f"{BASE}/admin/conversaciones/{cid}", headers=admin)).json()
@@ -525,8 +525,8 @@ async def test_se_recupera_despues_de_un_corte(simulador, monkeypatch):
         conv = await _esperar(cid, hasta=("idle",))
         async with AsyncSessionLocal() as db:
             accs = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid))).scalars().all()
-            # La consulta cortada se completó una sola vez; después siguieron los botones de opciones.
-            assert [a.herramienta for a in accs] == ["productividad_del_dia", "ofrecer_opciones"]
+            # La consulta cortada se completó una sola vez (los botones de opciones los pone la plataforma).
+            assert [a.herramienta for a in accs] == ["productividad_del_dia"]
             assert all(a.estado == "ejecutada" and a.respondida_at for a in accs)
         t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=sg)).json()
         assert [i["tipo"] for i in t["items"]][-2:] == ["voi", "opciones"] and conv.estado == "idle"
