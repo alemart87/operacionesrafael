@@ -24,7 +24,6 @@ from .permisos import modo as modo_de
 
 log = logging.getLogger("asistente.sesiones")
 
-BETA_MEMORIA = "agent-memory-2026-07-22"
 DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 MODO_TEXTO = {
     "superadmin": "superadmin: ve y puede todo en la plataforma.",
@@ -127,7 +126,8 @@ async def _crear(db: AsyncSession, user: CurrentUser, tipo: str) -> AsistenteCon
                      "plataforma": "operaciones-voicenter"},
     }
     if recursos:
-        kw["resources"], kw["betas"] = recursos, [BETA_MEMORIA]
+        # Solo el encabezado de Managed Agents (lo pone el SDK): Anthropic rechaza combinarlo con el de memoria.
+        kw["resources"] = recursos
     if tope:
         kw["budget"] = {"type": "limit", "max_list_cost": {"amount": str(tope), "currency": "USD"}}
     try:

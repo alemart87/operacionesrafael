@@ -63,7 +63,8 @@ async def listar(db: AsyncSession, user_id: str) -> list[dict[str, Any]]:
     if not row or not row.memoria_id:
         return []
     out: list[dict[str, Any]] = []
-    async for m in cliente().beta.memory_stores.memories.list(row.memoria_id, view="full", limit=100):
+    # Con view="full" Anthropic devuelve como máximo 20 por página (el iterador pide las que siguen).
+    async for m in cliente().beta.memory_stores.memories.list(row.memoria_id, view="full", limit=20):
         if getattr(m, "type", "memory") != "memory":
             continue
         out.append({"id": m.id, "ruta": m.path, "contenido": getattr(m, "content", None) or "",
