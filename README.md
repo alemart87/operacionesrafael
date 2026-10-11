@@ -744,6 +744,15 @@ Navegador ─► panel de Voi (SSE) ─► FastAPI /api/v1/asistente ─► Clau
   sin confirmar, la acción pendiente se cancela.
 - **En vivo:** `consumidor.py` escucha el stream de la sesión (con vista previa del texto), repasa la lista de eventos
   para no perder nada, guarda cada evento una sola vez y lo reparte al navegador por SSE. El panel se reconecta solo.
+- **Rapidez (menos vueltas por turno):** cada llamada a una herramienta o a un archivo es una vuelta completa al
+  modelo (segundos para el usuario). Para acortarlas: el **esfuerzo de razonamiento** arranca en *Rápido* (`low`; el
+  superadmin lo sube en la consola); la **memoria del usuario va dentro del contexto del primer mensaje** (el agente
+  no la lee con archivos); las instrucciones le piden **no leer habilidades** para una consulta directa de datos; los
+  botones **«Armar un tablero · Ver un gráfico · Ver en la pantalla»** que siguen a una consulta los pone **la
+  plataforma al terminar el turno** (`plataforma.opciones`, sin llamada del agente); y si en modo auditor o informe
+  diario el agente muestra algo en el lienzo y se olvida de ofrecerlo como figura, **la plataforma crea la tarjeta
+  igual** (`plataforma.custom_tool_use`, que no se responde a la sesión). Cada paso del chat muestra cuánto tardó la
+  herramienta («Consultando la productividad del día · 0,8 s») y el log del servidor lo registra (`Voi · … · ms`).
 - **La sesión nunca queda trabada:** Managed Agents no acepta un mensaje nuevo mientras una herramienta sigue sin
   respuesta. Si una herramienta falla o el consumidor se corta antes de responderla, antes de mandar el próximo mensaje
   la plataforma **completa lo que quedó sin responder** (y, si la API igual reclama un evento, se lo contesta y
@@ -830,17 +839,23 @@ que pasa a **modo informe diario** con el borrador del día como destino de las 
   del dd/mm (borrador)», con **Salir** y el acceso al informe; en el chat, el separador «Voi entró en modo informe
   diario · informe del dd/mm» (y «Voi salió…» al terminar); en el informe, la sección Figuras avisa que Voi, el agente,
   está trabajando en él.
-- **Desde el lienzo, directo:** **Al informe** en cada pieza o parte de un tablero y **Sumar al informe** abren la misma
-  hoja que en modo auditor, sin hallazgo. **Ir al informe** cierra el lienzo y lleva a la sección Figuras del informe
-  (con el aviso «Voi abrió Informe diario · dd/mm · Figuras»), que se actualiza sola cada vez que Voi suma algo.
+- **Agregar con un toque:** el botón dice siempre **«Agregar al informe diario»**: en la tarjeta que propone Voi, en la
+  tarjeta de cada pieza del chat (la agrega directo, sin abrir el lienzo), en cada pieza o parte de un tablero del
+  lienzo y en la hoja de abajo. **Ir al informe** cierra el lienzo y lleva a la sección Figuras del informe (con el
+  aviso «Voi abrió Informe diario · dd/mm · Figuras»), que se actualiza sola cada vez que Voi suma algo.
 - **En el informe:** la sección **5. Figuras** del editor muestra cada figura numerada con el gráfico dibujado igual que
   en el lienzo, título y lectura editables (se guardan al salir del campo), **Quitar** y el estado de la **captura para
   el PDF**: el navegador convierte cada gráfico (barras, columnas, líneas, área, apiladas) en PNG y lo sube; el servidor
   lo procesa sin metadatos y lo guarda en el disco persistente. Al firmar, las figuras quedan fijas y dentro del código
   de verificación; en la lectura y en el PDF salen como «Figura N · título».
-- **Imágenes del autor:** además de lo que suma Voi, el autor sube capturas o fotos como figuras desde la misma sección
-  (`POST …/figuras/imagen`): se procesan en un subproceso aislado, sin metadatos, en el disco persistente, y su huella
-  entra en el código de verificación al firmar. Voi nunca sube archivos: eso lo hace siempre la persona.
+- **Imágenes del autor:** además de lo que suma Voi, el autor agrega capturas o fotos como figuras desde la misma
+  sección con **«Agregar imagen al informe»** (el selector rápido del navegador, que abre en el Escritorio y recuerda
+  la carpeta, con el clásico de respaldo), **«Capturar pantalla»**, arrastrar o **Ctrl + V** (`POST
+  …/figuras/imagen`): se procesan en un subproceso aislado, sin metadatos, en el disco persistente, y su huella entra
+  en el código de verificación al firmar. Voi nunca sube archivos: eso lo hace siempre la persona.
+- **Tableros e indicadores en el PDF:** cada figura se captura en el navegador como imagen (gráficos por su SVG;
+  indicadores, tablas, donas y tableros completos se dibujan en un canvas desde su especificación), así el PDF muestra
+  lo mismo que la pantalla; si no hay captura, van sus datos en tabla.
 - **Confidencialidad:** nunca se suma una pieza de otra persona ni una de una conversación que usó Facturación. Solo el
   autor del informe suma, edita o quita figuras, y solo mientras es borrador; el superadmin ve las figuras pero no las
   cambia.
@@ -1012,6 +1027,12 @@ Data Retention*); la plataforma guarda su propia copia para la consola.
 5. Evaluaciones, conciliación de costos, migración del agente de Facturación a Voi y retención/borrado automático.
 
 ## Sistema de login y seguridad de acceso
+
+La pantalla de ingreso lleva el **logo de Voicenter en movimiento** (`components/LogoAnimado.tsx`): los 25 puntos del
+isotipo se arman uno a uno, laten como un ecualizador de voz y se desarman en un ciclo continuo, con la marca, sobre
+el mural de puntos de la fachada que respira despacio. Es SVG con animaciones CSS (solo `transform` y `opacity`, en la
+GPU): no es un video, pesa unos pocos KB, no descarga nada y quien pidió menos movimiento en su sistema lo ve quieto.
+En el teléfono aparece en chico sobre el formulario.
 
 Todo lo configura el superadmin en **Seguridad** (`/admin/seguridad`) y se hace
 cumplir en el servidor en **cada pedido** (`api/deps.py::get_current_user`), así

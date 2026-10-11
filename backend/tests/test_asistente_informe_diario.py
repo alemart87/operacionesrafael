@@ -137,7 +137,7 @@ async def test_modo_informe_diario_y_figuras_del_lienzo(simulador, tmp_path, mon
         t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=coord)).json()
         assert t["conversacion"]["investigacion"]["tipo"] == "informe_diario"
         assert t["items"][-1]["tipo"] == "opciones", json.dumps(t["items"][-1], ensure_ascii=False)
-        assert "Sumar al informe diario" in [o["texto"] for o in t["items"][-1]["opciones"]]
+        assert "Agregar al informe diario" in [o["texto"] for o in t["items"][-1]["opciones"]]
         async with AsyncSessionLocal() as db:
             ctx = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == cid,
                                                                   AsistenteEvento.tipo == "system.message"))).scalars().all()
@@ -316,3 +316,48 @@ async def test_modo_informe_diario_y_figuras_del_lienzo(simulador, tmp_path, mon
             acciones = {a for (a,) in (await db.execute(select(AuditLog.action))).all()}
             assert {"asistente_modo_informe_diario", "asistente_figura_informe_diario", "informe_diario_figura_quitada",
                     "informe_diario_figura_imagen"} <= acciones
+
+
+@pytest.mark.asyncio
+async def test_la_plataforma_ofrece_la_tarjeta_si_voi_no_lo_hace(simulador, tmp_path, monkeypatch):
+    """Si el modelo muestra algo en el lienzo y se olvida de proponerlo como figura, al terminar el turno la plataforma
+    crea la tarjeta igual (sin otra vuelta del modelo); confirmarla suma la figura y la conversación sigue normal."""
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path / "disco"))
+    await _prod_hoy()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        await _publicado(ac, admin)
+        _, coord = await _nuevo(ac, admin, "coordinador", "Carla Coordinadora")
+        cid = (await ac.post(f"{BASE}/conversaciones", headers=coord, json={})).json()["id"]
+        r = await ac.post(f"{BASE}/conversaciones/{cid}/investigacion", headers=coord, json={"activo": True, "tipo": "informe_diario"})
+        iid = r.json()["investigacion"]["informe_id"]
+        r = await ac.post(f"{BASE}/conversaciones/{cid}/mensajes", headers=coord,
+                          json={"texto": "Mostrame en un gráfico la productividad de llamadas de hoy sin tarjeta"})
+        assert r.status_code == 200, r.text
+        await _esperar(cid, hasta=("idle",))
+        t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=coord)).json()
+        card = t["pendientes"][0]
+        assert card["herramienta"] == "proponer_evidencia" and card["evento_id"].startswith("plat_")
+        assert t["items"][-1]["tipo"] == "accion" and t["items"][-1]["accion"]["id"] == card["id"]
+        clave = card["detalle"]["piezas"][0]["clave"]
+        r = await ac.post(f"{BASE}/acciones/{card['id']}/confirmar", headers=coord, json={"ajustes": {"seleccion": [clave]}})
+        assert r.status_code == 200, r.text
+        await _esperar(cid, hasta=("idle",))
+        d = (await ac.get(f"{INF}/{iid}", headers=coord)).json()
+        assert len(d["figuras"]) == 1 and d["figuras"][0]["origen"] == "voi"
+        hecha = next(x for x in (await ac.get(f"{BASE}/conversaciones/{cid}", headers=coord)).json()["items"]
+                     if x["tipo"] == "accion")["accion"]
+        assert hecha["estado"] == "ejecutada" and "Fig. 1" in hecha["mensaje"]
+        # La conversación sigue (la tarjeta de la plataforma no se responde a la sesión) y, tras un dato, los botones.
+        await asyncio.sleep(0.05)
+        r = await ac.post(f"{BASE}/conversaciones/{cid}/mensajes", headers=coord, json={"texto": "¿Cómo vino la productividad de llamadas hoy?"})
+        assert r.status_code == 200, r.text
+        await _esperar(cid, hasta=("idle",))
+        t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=coord)).json()
+        assert t["items"][-1]["tipo"] == "opciones" and t["items"][-1]["id"].startswith("plat_")
+        assert "Agregar al informe diario" in [o["texto"] for o in t["items"][-1]["opciones"]]
+        # La memoria va en el contexto del primer mensaje (vacía: el agente no la lee).
+        async with AsyncSessionLocal() as db:
+            ctx = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == cid,
+                                                                  AsistenteEvento.tipo == "system.message"))).scalars().all()
+            assert any("memoria de esta persona" in json.dumps(e.datos, ensure_ascii=False) for e in ctx)

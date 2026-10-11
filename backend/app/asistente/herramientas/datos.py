@@ -492,3 +492,8 @@ registrar(Herramienta(
                  "para preguntas de auditoría, riesgos de vendedores o hallazgos pendientes."),
     esquema=esquema({"id": {"type": "string", "description": "Id del informe de auditoría (opcional)."}}),
     fn=_auditorias, permisos=(P_AUD,), modos=TODOS))
+
+
+# Después de responder con una de estas consultas, la plataforma ofrece sola los botones «Armar un tablero» y
+# «Ver en la pantalla» (consumidor.py): el agente no gasta una vuelta en ofrecer_opciones para eso.
+CONSULTAS = frozenset(['alertas_del_corte', 'auditorias_de_ventas', 'centro_de_comandos', 'coaching_del_dia', 'informes_diarios', 'productividad_del_dia', 'productividad_por_rango', 'seguimiento_informes_diarios', 'sph', 'supervision_del_mes', 'tickets_de_revision', 'ventas_del_dia', 'ventas_del_mes'])

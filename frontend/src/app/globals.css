@@ -467,3 +467,44 @@ h3,
   .voi-late-aprobar { box-shadow: 0 0 0 4px rgba(243, 146, 0, 0.3); }
   .voi-resaltado { box-shadow: 0 0 0 6px rgba(0, 178, 191, 0.35); }
 }
+
+/* ===== Logo animado del login =====
+   Los 25 puntos del isotipo se arman uno a uno, laten como un ecualizador de voz y se desarman, en un ciclo de 7 s;
+   la marca entra y sale con ellos. Detrás, el mural de puntos de la fachada respira despacio. Solo transform y
+   opacity (GPU), sin video ni descargas. Quien pidió menos movimiento lo ve quieto. */
+@keyframes logo-animado-dot {
+  0% { transform: scale(0); opacity: 0; }
+  9% { transform: scale(1.22); opacity: 1; }
+  14% { transform: scale(1); opacity: 1; }
+  40% { transform: scale(1); opacity: 1; }
+  46% { transform: scale(0.58); opacity: 0.55; }
+  52% { transform: scale(1.06); opacity: 1; }
+  58% { transform: scale(0.62); opacity: 0.6; }
+  64% { transform: scale(1); opacity: 1; }
+  86% { transform: scale(1); opacity: 1; }
+  96%, 100% { transform: scale(0); opacity: 0; }
+}
+.logo-animado-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: logo-animado-dot 7s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  will-change: transform, opacity;
+}
+@keyframes logo-animado-marca {
+  0%, 12% { opacity: 0; transform: translateY(10px); }
+  22%, 84% { opacity: 1; transform: none; }
+  94%, 100% { opacity: 0; transform: translateY(-8px); }
+}
+.logo-animado-marca { animation: logo-animado-marca 7s ease-in-out infinite; }
+@keyframes logo-mural-col {
+  0%, 100% { transform: translateY(0); opacity: 0.55; }
+  50% { transform: translateY(-9px); opacity: 1; }
+}
+.logo-mural-col {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: logo-mural-col 5.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-animado-dot, .logo-animado-marca, .logo-mural-col { animation: none !important; opacity: 1; transform: none; }
+}

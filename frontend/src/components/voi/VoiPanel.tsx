@@ -6,7 +6,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ConversacionVoi, MemoriaVoi, cuando, ddmm, esInformeDiario, etiquetaDestino, voiApi } from "@/lib/voi";
+import { ConversacionVoi, MemoriaVoi, cuando, ddmm, esInformeDiario, etiquetaDestino, tieneDestino, voiApi } from "@/lib/voi";
+import type { ArtefactoVoi } from "./lienzo/tipos";
 import {
   ChipModoAuditor, ChipModoInforme, FranjaAuditor, InvitacionAuditor, InvitacionInforme, SUGERENCIAS_AUDITOR, SUGERENCIAS_INFORME,
 } from "./VoiAuditor";
@@ -145,6 +146,17 @@ function Chat() {
     if (el) setAlFinal(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
   };
 
+  /** Una pieza del lienzo al informe destino con un toque (tarjeta del chat). */
+  const agregarAlInforme = async (a: ArtefactoVoi) => {
+    const inv = voi.investigacion;
+    const destino = esInformeDiario(inv) ? (inv?.informe_id ? { informe_diario_id: inv.informe_id } : null)
+      : (inv?.auditoria_id ? { auditoria_id: inv.auditoria_id } : null);
+    if (!destino) throw new Error("Elegí primero el informe destino.");
+    const r = await voiApi.sumarEvidencia(destino, conv?.id ?? null, [{ artefacto_id: a.id }]);
+    window.dispatchEvent(new CustomEvent("voi:figuras"));
+    const f = r.agregadas[0] ?? r.repetidas[0];
+    return { figura: f?.figura ?? null, repetida: r.agregadas.length === 0 };
+  };
   const ultimo = chat.items[chat.items.length - 1];
   const mostrarTrabajando = chat.trabajando && !Object.keys(chat.parciales).length &&
     !(ultimo && ultimo.tipo === "paso" && ultimo.estado === "corriendo") && !voi.esperaConfirmacion;
@@ -191,6 +203,7 @@ function Chat() {
             artefactos={chat.artefactos}
             codigoInforme={etiquetaDestino(voi.investigacion)}
             diario={esInformeDiario(voi.investigacion)}
+            onAgregarAlInforme={tieneDestino(voi.investigacion) ? agregarAlInforme : undefined}
             onElegir={voi.elegirOpcion}
             onVerGuia={voi.abrirGuia}
             onAbrirRuta={voi.navegarA}

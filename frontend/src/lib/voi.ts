@@ -176,7 +176,7 @@ export type ItemVoi =
   /** La pantalla que Voi abrió. */
   | { tipo: "pantalla"; id: string; ruta: string; titulo?: string | null; at?: string | null }
   | { tipo: "voi"; id: string; texto: string; at?: string | null }
-  | { tipo: "paso"; id: string; herramienta?: string | null; etiqueta?: string | null; estado: "corriendo" | "ok" | "error"; detalle?: string | null; at?: string | null; entrada?: unknown; resultado?: string }
+  | { tipo: "paso"; id: string; herramienta?: string | null; etiqueta?: string | null; estado: "corriendo" | "ok" | "error"; detalle?: string | null; ms?: number | null; at?: string | null; entrada?: unknown; resultado?: string }
   | { tipo: "accion"; id: string; accion: AccionVoi; at?: string | null }
   | { tipo: "aviso"; id: string; texto: string; nivel?: "info" | "alerta" | "error"; at?: string | null }
   | { tipo: "lienzo"; id: string; artefacto: ArtefactoVoi; at?: string | null; entrada?: unknown; resultado?: string }
@@ -201,7 +201,7 @@ export type EventoVoi =
   | { tipo: "parcial"; id: string; texto: string }
   | { tipo: "fin_parcial" }
   | { tipo: "pensando" }
-  | { tipo: "paso"; id: string; herramienta?: string; etiqueta?: string; estado: "corriendo" | "ok" | "error"; detalle?: string | null }
+  | { tipo: "paso"; id: string; herramienta?: string; etiqueta?: string; estado: "corriendo" | "ok" | "error"; detalle?: string | null; ms?: number | null }
   | { tipo: "accion"; accion: AccionVoi }
   | { tipo: "lienzo"; artefacto: ArtefactoVoi }
   | { tipo: "investigacion"; investigacion: InvestigacionVoi | null }

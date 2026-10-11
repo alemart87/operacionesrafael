@@ -7,6 +7,8 @@ de gasto. Cada mensaje del usuario va como `user.message`; el contexto (quién e
 """
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import re
 from datetime import datetime, timezone
@@ -228,8 +230,16 @@ async def enviar(db: AsyncSession, conv: AsistenteConversacion, user: CurrentUse
     siguió la conversación sin confirmarlas."""
     previos, canceladas = await consumidor.cancelar_pendientes(db, conv, "el usuario siguió la conversación sin confirmarla")
     await consumidor.completar_sin_responder(db, conv)
-    await _enviar_destrabando(db, conv, previos, texto,
-                              contexto_texto(user, modo_de(user), pantalla, investigacion_svc.estado(conv)))
+    contexto = contexto_texto(user, modo_de(user), pantalla, investigacion_svc.estado(conv))
+    if conv.mensajes == 0 and (conv.contexto or {}).get("memoria"):
+        # La memoria va en el contexto del primer mensaje: el agente no gasta una vuelta en leer sus archivos.
+        try:
+            mem = await asyncio.wait_for(memoria.para_contexto(db, user.id), 4)
+            contexto += ("\n- Tu memoria de esta persona (ya leída; no la releas con archivos, solo escribí lo nuevo):\n" + mem
+                         if mem else "\n- Tu memoria de esta persona está vacía: no la leas; guardá ahí lo nuevo que sirva.")
+        except Exception as exc:  # noqa: BLE001 — sin la memoria igual se conversa (el agente la puede leer)
+            log.warning("No se pudo leer la memoria de %s para el contexto: %s", user.id, exc)
+    await _enviar_destrabando(db, conv, previos, texto, contexto)
     await consumidor.marcar_respondidas(db, canceladas)
     conv = await db.get(AsistenteConversacion, conv.id)
     if conv.mensajes == 0 and conv.titulo == "Nueva conversación":

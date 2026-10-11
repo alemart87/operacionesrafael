@@ -17,6 +17,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -28,8 +30,11 @@ from ..core.database import session_scope
 from ..services.audit_service import record_action
 from . import config, consumo, difusion
 from .cliente import cliente
+from . import investigacion as investigacion_svc
 from .herramientas import CONFIRMAR, Ctx, ErrorHerramienta, Herramienta, ejecutar, obtener
-from .models import (CANCELADA, EJECUTADA, EJECUTANDO, FALLIDA, PENDIENTE, AsistenteAccion, AsistenteConversacion,
+from .herramientas.datos import CONSULTAS
+from .herramientas.guia import normalizar_opciones
+from .models import (CANCELADA, EJECUTADA, EJECUTANDO, FALLIDA, PENDIENTE, AsistenteAccion, AsistenteConversacion, AsistenteArtefacto,
                      AsistenteEvento)
 from .permisos import modo as modo_de
 from .permisos import puede_usar, usuario
@@ -65,6 +70,17 @@ NO_PROCESADA_TEXTO = ("La plataforma no pudo procesar este pedido (se reinició 
 
 class Ocupado(RuntimeError):
     """Una acción de esta conversación se está ejecutando ahora mismo: hay que esperar a que termine."""
+
+
+# Lo que creó la plataforma (no el agente): una tarjeta o unos botones que no se responden a la sesión.
+PLATAFORMA = "plat_"
+# Lo que pasó en el turno en curso de cada conversación: la última consulta de datos (para ofrecer botones al terminar)
+# y las piezas que mostró en el lienzo sin ofrecerlas como figura (para que la tarjeta aparezca igual).
+_turno: dict[str, dict[str, Any]] = {}
+
+
+def _estado_turno(cid: str) -> dict[str, Any]:
+    return _turno.setdefault(cid, {"dato": None, "lienzo": [], "cerrado": False})
 
 
 def _es_corte(exc: BaseException) -> bool:
@@ -334,6 +350,8 @@ async def _aplicar(db: AsyncSession, conv: AsistenteConversacion, ev: dict[str, 
             conv.stop_reason = stop
             pub("estado", estado=conv.estado, motivo=stop, aviso=AVISOS_FIN.get(stop),
                 categoria=(ev.get("stop_details") or {}).get("category"))
+            if conv.estado == "idle":
+                await _cerrar_turno(db, conv, ev["id"], salida)
         if stop == "requires_action":
             return await _solo_espera_al_usuario(db, conv.id, (ev.get("stop_reason") or {}).get("event_ids") or [])
         return True
@@ -355,6 +373,7 @@ async def _aplicar(db: AsyncSession, conv: AsistenteConversacion, ev: dict[str, 
     if tipo == "agent.message":
         pub("mensaje", id=ev["id"], texto=texto_de(ev.get("content")))
     elif tipo == "user.message":
+        _turno.pop(conv.id, None)
         pub("usuario", id=ev["id"], texto=texto_de(ev.get("content")))
     elif tipo == "agent.thinking":
         pub("pensando")
@@ -396,7 +415,8 @@ async def _resultado(session_id: str, evento_id: str, texto: str, es_error: bool
 
 
 async def _responder(db: AsyncSession, a: AsistenteAccion, session_id: str) -> None:
-    await _resultado(session_id, a.evento_id, a.respuesta or "", a.estado != EJECUTADA)
+    if not str(a.evento_id).startswith(PLATAFORMA):      # lo que creó la plataforma no existe en la sesión
+        await _resultado(session_id, a.evento_id, a.respuesta or "", a.estado != EJECUTADA)
     a.respondida_at = _ahora()
     if a.nivel <= 1:
         a.respuesta = None          # la copia queda en el evento de la sesión
@@ -480,6 +500,92 @@ async def _herramienta_interna(db: AsyncSession, conv: AsistenteConversacion, ev
     await _ejecutar_y_responder(db, a.id, h, user, cid, sid, perfil, salida)
 
 
+def _anotar_turno(cid: str, h: Herramienta, texto: str, es_error: bool) -> None:
+    """Qué pasó en el turno: una consulta de datos (se ofrecen botones al terminar), una pieza en el lienzo (se ofrece
+    como figura si el agente no lo hace) o algo que ya cierra el turno por su cuenta (botones, tarjeta, una acción)."""
+    t = _estado_turno(cid)
+    if es_error:
+        return
+    if h.nombre in CONSULTAS:
+        d = _json(texto)
+        t["dato"] = {"pantalla": d.get("pantalla") if isinstance(d.get("pantalla"), str) else None}
+    elif h.nombre == "mostrar_en_lienzo":
+        aid = _json(texto).get("artefacto_id")
+        if aid:
+            t["lienzo"].append(str(aid))
+        t["dato"] = None
+    elif h.nombre in ("ofrecer_opciones", "proponer_evidencia", "guiar") or h.nivel > 1:
+        t["cerrado"] = True
+
+
+async def _cerrar_turno(db: AsyncSession, conv: AsistenteConversacion, evento_id: str, salida: list[dict[str, Any]]) -> None:
+    """Al terminar un turno la plataforma completa lo que el agente puede haber omitido: la tarjeta para sumar al
+    informe lo que mostró en el lienzo (en modo auditor o informe diario) o, tras una consulta de datos, los botones
+    «Armar un tablero» y «Ver en la pantalla». No cuesta una vuelta del modelo."""
+    t = _turno.pop(conv.id, None)
+    if not t or t.get("cerrado"):
+        return
+    try:
+        user = await usuario(db, conv.user_id)
+        if user is None or not puede_usar(user):
+            return
+        if t["lienzo"] and "proponer_evidencia" in ((conv.contexto or {}).get("herramientas") or []):
+            inv = investigacion_svc.estado(conv) or {}
+            if inv and (investigacion_svc.tipo(inv) == "informe_diario" or inv.get("auditoria_id")):
+                await _proponer_desde_plataforma(db, conv, user, t["lienzo"], evento_id, salida)
+                return
+        if t["dato"] is not None:
+            await _opciones_desde_plataforma(db, conv, user, t["dato"], evento_id, salida)
+    except Exception as exc:  # noqa: BLE001 — es un extra: nunca rompe el cierre del turno
+        log.warning("No se pudo cerrar el turno de %s: %s", conv.id, exc)
+        await db.rollback()
+
+
+async def _proponer_desde_plataforma(db: AsyncSession, conv: AsistenteConversacion, user: Any, artefactos: list[str],
+                                     evento_id: str, salida: list[dict[str, Any]]) -> None:
+    h = obtener("proponer_evidencia")
+    piezas = []
+    for aid in artefactos[:8]:
+        art = await db.get(AsistenteArtefacto, aid)
+        if art is not None and art.conversacion_id == conv.id and not art.confidencial:
+            piezas.append({"artefacto_id": art.id, "titulo": art.titulo})
+    if h is None or not piezas:
+        return
+    entrada = {"piezas": piezas}
+    eid = f"{PLATAFORMA}{uuid.uuid5(uuid.NAMESPACE_URL, evento_id).hex[:24]}"
+    try:
+        resumen = await h.resumen(Ctx(db=db, user=user, conversacion_id=conv.id), entrada) if h.resumen else h.etiqueta
+    except Exception:  # noqa: BLE001
+        resumen = h.etiqueta
+    a = AsistenteAccion(conversacion_id=conv.id, user_id=user.id, herramienta=h.nombre, nivel=h.nivel, entrada=entrada,
+                        resumen=resumen, evento_id=eid, estado=PENDIENTE)
+    db.add(AsistenteEvento(conversacion_id=conv.id, evento_id=eid, tipo="plataforma.custom_tool_use",
+                           datos={"name": h.nombre, "input": entrada, "processed_at": _ahora().isoformat()}))
+    if await _alta(db, a):
+        salida.append({"tipo": "accion", "accion": accion_dict(a, h.etiqueta)})
+
+
+async def _opciones_desde_plataforma(db: AsyncSession, conv: AsistenteConversacion, user: Any, dato: dict[str, Any],
+                                     evento_id: str, salida: list[dict[str, Any]]) -> None:
+    inv = investigacion_svc.estado(conv) or {}
+    ops: list[dict[str, Any]] = [{"texto": "Armar un tablero", "mensaje": "Armá un tablero con estos datos"},
+                                 {"texto": "Ver un gráfico", "mensaje": "Mostrame esto en un gráfico"}]
+    if inv and investigacion_svc.tipo(inv) == "informe_diario":
+        ops.append({"texto": "Agregar al informe diario", "mensaje": "Armá un tablero con estos datos y agregalo al informe diario"})
+    if dato.get("pantalla"):
+        ops.append({"texto": "Ver en la pantalla", "mensaje": f"Llevame a {dato['pantalla']}", "ruta": dato["pantalla"]})
+    op = normalizar_opciones({"pregunta": "¿Seguimos con estos datos?", "opciones": ops}, user)
+    eid = f"{PLATAFORMA}opc_{uuid.uuid5(uuid.NAMESPACE_URL, evento_id).hex[:20]}"
+    db.add(AsistenteEvento(conversacion_id=conv.id, evento_id=eid, tipo="plataforma.opciones",
+                           datos={**op, "processed_at": _ahora().isoformat()}))
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return
+    salida.append({"tipo": "opciones", "id": eid, **op})
+
+
 async def _alta(db: AsyncSession, a: AsistenteAccion) -> bool:
     """Registra la llamada. False si otro ya la había registrado (nunca se ejecuta dos veces)."""
     db.add(a)
@@ -498,7 +604,11 @@ async def _ejecutar_y_responder(db: AsyncSession, accion_id: str, h: Herramienta
         a = await db.get(AsistenteAccion, accion_id)
         entrada = dict(a.entrada or {})
         ctx = Ctx(db=db, user=user, conversacion_id=cid, extra={"evento_id": a.evento_id})
+        t0 = time.monotonic()
         texto, es_error = await ejecutar(h, entrada, ctx, modo_de(user))
+        ms = int((time.monotonic() - t0) * 1000)
+        log.info("Voi · %s · %s: %d ms%s", cid[:8], h.nombre, ms, " (error)" if es_error else "")
+        _anotar_turno(cid, h, texto, es_error)
         a = await db.get(AsistenteAccion, accion_id)          # recargada (la herramienta pudo deshacer cambios)
         a.estado, a.resuelta_at, a.respuesta = (FALLIDA if es_error else EJECUTADA), _ahora(), texto
         if h.nivel > 1 or h.guardar_resultado:
@@ -514,7 +624,7 @@ async def _ejecutar_y_responder(db: AsyncSession, accion_id: str, h: Herramienta
             salida.append({"tipo": "accion", "accion": accion_dict(a, h.etiqueta)})
         await _responder(db, a, sid)
         salida.append({"tipo": "paso", "id": a.evento_id, "herramienta": h.nombre, "etiqueta": h.etiqueta,
-                       "estado": "error" if es_error else "ok", "detalle": texto[:300] if es_error else None})
+                       "estado": "error" if es_error else "ok", "detalle": texto[:300] if es_error else None, "ms": ms})
         if not es_error:
             salida.extend(ctx.extra.get("publicar") or [])     # p. ej. lo que se mostró en el lienzo
     finally:
@@ -638,9 +748,12 @@ async def cancelar_pendientes(db: AsyncSession, conv: AsistenteConversacion, mot
         a.resuelta_at = _ahora()
         a.resultado = {"motivo": motivo[:1].upper() + motivo[1:] + "."}
         a.respuesta = f"Acción no realizada: {motivo}. No la repitas salvo que el usuario la vuelva a pedir."
-        eventos.append({"type": "user.custom_tool_result", "custom_tool_use_id": a.evento_id, "is_error": True,
-                        "content": [{"type": "text", "text": a.respuesta}]})
-        tomadas.append(aid)
+        if str(a.evento_id).startswith(PLATAFORMA):
+            a.respondida_at = _ahora()
+        else:
+            eventos.append({"type": "user.custom_tool_result", "custom_tool_use_id": a.evento_id, "is_error": True,
+                            "content": [{"type": "text", "text": a.respuesta}]})
+            tomadas.append(aid)
         difusion.publicar(conv.id, {"tipo": "accion", "accion": accion_dict(a)})
     await db.commit()
     return eventos, tomadas

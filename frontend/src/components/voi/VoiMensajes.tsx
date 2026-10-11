@@ -2,7 +2,7 @@
 
 import {
   AlertTriangle, ArrowUpRight, BarChart3, BookOpen, Check, CheckCircle2, Copy, ExternalLink, Info, Loader2, Maximize2,
-  ClipboardPenLine, MousePointerClick, RotateCcw, ShieldCheck, XCircle, Zap,
+  ClipboardPenLine, MousePointerClick, Plus, RotateCcw, ShieldCheck, XCircle, Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -248,18 +248,46 @@ export function VoiMarkdown({ texto, onNavegar, onAmpliar }: { texto: string; on
 }
 
 /** Tarjeta de algo que Voi mostró en el lienzo. */
-function TarjetaLienzo({ a, onAbrir }: { a: ArtefactoVoi; onAbrir?: (id: string) => void }) {
+/** Lo que Voi mostró en el lienzo. Con un informe destino (modo auditor o informe diario), un botón lo agrega directo. */
+function TarjetaLienzo({ a, onAbrir, destino, onAgregar }: {
+  a: ArtefactoVoi;
+  onAbrir?: (id: string) => void;
+  /** Cómo se llama el informe destino («Informe diario · 11/10» o «AUD-…») y si es el informe diario. */
+  destino?: { etiqueta: string; diario: boolean } | null;
+  onAgregar?: (a: ArtefactoVoi) => Promise<{ figura: number | null; repetida: boolean }>;
+}) {
   const Icono = ICONO_TIPO[a.tipo] ?? BarChart3;
+  const [estado, setEstado] = useState<{ t: "nada" } | { t: "agregando" } | { t: "lista"; figura: number | null; repetida: boolean } | { t: "error"; msg: string }>({ t: "nada" });
+  const agregar = async () => {
+    if (!onAgregar) return;
+    setEstado({ t: "agregando" });
+    try { setEstado({ t: "lista", ...(await onAgregar(a)) }); } catch (e: any) { setEstado({ t: "error", msg: e.message }); }
+  };
   return (
-    <button type="button" onClick={() => onAbrir?.(a.id)}
-      className="group w-full text-left rounded-xl border border-brand-border bg-white hover:border-brand-cyan/60 hover:shadow-soft p-3 flex items-center gap-3 transition-all animate-pop">
-      <span className="w-10 h-10 rounded-lg bg-brand-cyan/10 text-brand-cyan grid place-items-center flex-shrink-0"><Icono size={18} /></span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-brand-ink truncate">{a.titulo}</span>
-        <span className="block text-xs text-brand-slate">{NOMBRE_TIPO[a.tipo] ?? "Visualización"} · <span className="text-brand-cyan font-semibold group-hover:underline">Ver en el lienzo</span></span>
-      </span>
-      <ArrowUpRight size={16} className="text-brand-mist group-hover:text-brand-cyan flex-shrink-0" />
-    </button>
+    <div className="rounded-xl border border-brand-border bg-white p-3 animate-pop">
+      <button type="button" onClick={() => onAbrir?.(a.id)} className="group w-full text-left flex items-center gap-3">
+        <span className="w-10 h-10 rounded-lg bg-brand-cyan/10 text-brand-cyan grid place-items-center flex-shrink-0"><Icono size={18} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-brand-ink truncate">{a.titulo}</span>
+          <span className="block text-xs text-brand-slate">{NOMBRE_TIPO[a.tipo] ?? "Visualización"} · <span className="text-brand-cyan font-semibold group-hover:underline">Ver en el lienzo</span></span>
+        </span>
+        <ArrowUpRight size={16} className="text-brand-mist group-hover:text-brand-cyan flex-shrink-0" />
+      </button>
+      {destino && onAgregar && !a.confidencial && (
+        <div className="mt-2.5 pt-2.5 border-t border-brand-border/70 flex items-center gap-2 flex-wrap">
+          {estado.t === "lista" ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+              <CheckCircle2 size={14} /> {estado.repetida ? "Ya estaba en el informe" : "Agregada"}{estado.figura ? ` · Figura ${estado.figura}` : ""} · {destino.etiqueta}
+            </span>
+          ) : (
+            <button type="button" onClick={agregar} disabled={estado.t === "agregando"} className="btn-primary px-3 py-1.5 text-xs whitespace-nowrap">
+              {estado.t === "agregando" ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Agregar al {destino.diario ? "informe diario" : "informe"}
+            </button>
+          )}
+          {estado.t === "error" && <span className="text-xs text-brand-primary">{estado.msg}</span>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -292,6 +320,7 @@ function Paso({ p }: { p: Extract<ItemVoi, { tipo: "paso" }> }) {
       )}
       <span className={p.estado === "corriendo" ? "text-brand-graphite font-medium" : "text-brand-slate"}>
         {p.etiqueta || p.herramienta || "Trabajando"}
+        {p.ms != null && p.estado !== "corriendo" && <span className="text-brand-mist"> · {(p.ms / 1000).toFixed(1).replace(".", ",")} s</span>}
         {p.detalle && p.estado === "error" && <span className="block text-brand-mist">{p.detalle}</span>}
       </span>
     </li>
@@ -420,7 +449,7 @@ const esEvidencia = (a: AccionVoi): a is AccionVoi & { detalle: DetalleEvidencia
 /** La conversación: mensajes del usuario y de Voi, pasos (agrupados), tarjetas de acción y avisos. */
 export function VoiMensajes({
   items, parciales, onConfirmar, onConfirmarCon, onCancelar, onReintentar, onNavegar, onAbrirLienzo, onAmpliar, artefactos = [],
-  codigoInforme, diario = false, onElegir, onVerGuia, onAbrirRuta,
+  codigoInforme, diario = false, onAgregarAlInforme, onElegir, onVerGuia, onAbrirRuta,
 }: {
   items: ItemVoi[];
   parciales: Record<string, string>;
@@ -438,6 +467,8 @@ export function VoiMensajes({
   codigoInforme?: string | null;
   /** El modo activo es el informe diario (cambia los textos de la tarjeta de figuras). */
   diario?: boolean;
+  /** Con un informe destino: agrega una pieza del lienzo al informe con un toque (desde su tarjeta en el chat). */
+  onAgregarAlInforme?: (a: ArtefactoVoi) => Promise<{ figura: number | null; repetida: boolean }>;
   /** Elegir una de las opciones que ofreció Voi (botones). */
   onElegir?: (op: OpcionVoi) => void;
   /** Volver a abrir una guía paso a paso que Voi mostró. */
@@ -445,6 +476,7 @@ export function VoiMensajes({
   /** Volver a abrir una pantalla que Voi abrió. */
   onAbrirRuta?: (ruta: string, titulo?: string | null) => void;
 }) {
+  const destinoLienzo = codigoInforme && onAgregarAlInforme ? { etiqueta: codigoInforme, diario } : null;
   const indice = new Map(items.map((it, i) => [it.id, i]));
   // Pasos seguidos se muestran juntos, como un recorrido de lo que hizo Voi.
   const bloques: (ItemVoi | { tipo: "pasos"; id: string; pasos: Extract<ItemVoi, { tipo: "paso" }>[] })[] = [];
@@ -497,7 +529,7 @@ export function VoiMensajes({
         if (b.tipo === "lienzo") {
           return (
             <div key={b.id} className="ml-7">
-              <TarjetaLienzo a={b.artefacto} onAbrir={onAbrirLienzo} />
+              <TarjetaLienzo a={b.artefacto} onAbrir={onAbrirLienzo} destino={destinoLienzo} onAgregar={onAgregarAlInforme} />
             </div>
           );
         }

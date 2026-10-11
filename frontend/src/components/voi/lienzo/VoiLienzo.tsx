@@ -18,10 +18,12 @@ import { aNumero } from "@/lib/voiFormato";
 import { FranjaAuditor, HojaSumar, type PiezaElegida, useIndiceDestino } from "../VoiAuditor";
 import { useVoi } from "../VoiProvider";
 import { ICONO_TIPO, NOMBRE_TIPO } from "./iconos";
-import { ArtefactoVoi, PiezaVoi, SERIES, TINTA, nombreX } from "./tipos";
+import { pngPiezaDe } from "./captura";
+import { ArtefactoVoi, PiezaVoi, nombreX } from "./tipos";
 import { CuerpoPieza } from "./VoiGrafico";
 
 export { ICONO_TIPO, NOMBRE_TIPO };
+export { pngBlobDe, pngPiezaDe } from "./captura";
 
 /** Elegir una pieza para sumarla al informe (modo auditor). */
 export interface EleccionPieza {
@@ -31,14 +33,17 @@ export interface EleccionPieza {
   bloqueo?: string | null;
   /** Ya está en el informe destino con este número de figura. */
   figura?: number | null;
+  /** El destino es el informe diario (el botón lo dice). */
+  diario?: boolean;
 }
 
 const CONFIDENCIAL = "Sale de una conversación que usó datos de Facturación (confidenciales): no puede ir a un informe.";
 
-/** «Al informe» (elegir la pieza), «Elegida», «Figura N» (ya está en el informe) o «Confidencial». Misma altura que
- * los botones de la barra (Datos, CSV, PNG). */
+/** «Agregar al informe diario» (elegir la pieza), «Elegida», «Figura N» (ya está en el informe) o «Confidencial».
+ * Misma altura que los botones de la barra (Datos, CSV, PNG). */
 function BotonEleccion({ e }: { e: EleccionPieza }) {
   const base = "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-[5px] text-xs font-semibold";
+  const destino = e.diario ? "informe diario" : "informe";
   if (e.bloqueo) {
     return <span title={e.bloqueo} className={`${base} border-brand-border bg-brand-bg text-brand-slate`}><Lock size={12} /> Confidencial</span>;
   }
@@ -51,11 +56,11 @@ function BotonEleccion({ e }: { e: EleccionPieza }) {
   }
   return (
     <button type="button" onClick={e.alternar} aria-pressed={e.elegida}
-      title={e.elegida ? "Quitar de lo que va al informe" : "Elegir para sumar al informe"}
+      title={e.elegida ? `Quitar de lo que va al ${destino}` : `Elegir para agregar al ${destino}`}
       className={`${base} transition-colors ${e.elegida
         ? "border-brand-ink bg-brand-ink text-white hover:bg-brand-graphite"
-        : "border-brand-border bg-white text-brand-graphite hover:border-brand-slate/60 hover:text-brand-ink"}`}>
-      {e.elegida ? <Check size={13} /> : <Plus size={13} />} {e.elegida ? "Elegida" : "Al informe"}
+        : "border-brand-primary/40 bg-brand-primary-light/40 text-brand-primary-dark hover:border-brand-primary hover:bg-brand-primary-light"}`}>
+      {e.elegida ? <Check size={13} /> : <Plus size={13} />} {e.elegida ? "Elegida" : `Agregar al ${destino}`}
     </button>
   );
 }
@@ -80,66 +85,9 @@ function csvDe(spec: PiezaVoi) {
     })));
 }
 
-/** PNG del gráfico como imagen (Blob): título, leyenda y el SVG dibujado sobre fondo blanco al doble de resolución.
- * Con un gráfico de ancho fijo (informes) usa ese ancho, no el que se ve en pantalla. Null si no hay gráfico.
- * `titulo` y `pie` en false: solo la leyenda y el gráfico (para el PDF, que ya imprime el título y la fuente). */
-export async function pngBlobDe(contenedor: HTMLElement | null, spec: PiezaVoi, { titulo = true, pie = true } = {}): Promise<Blob | null> {
-  const svg = contenedor?.querySelector("svg.recharts-surface") as SVGSVGElement | null;
-  if (!svg) return null;
-  const rect = svg.getBoundingClientRect();
-  const width = Number(svg.getAttribute("width")) || rect.width;
-  const height = Number(svg.getAttribute("height")) || rect.height;
-  if (!width || !height) return null;
-  const series = (spec.series ?? []).length > 1 ? spec.series ?? [] : [];
-  const leyendaY = titulo ? 44 : 12;
-  const arriba = leyendaY + (series.length ? 24 : (titulo ? 0 : 4));
-  const abajo = pie ? 28 : 12;
-  const escala = 2;
-  const lienzo = document.createElement("canvas");
-  lienzo.width = (width + 32) * escala;
-  lienzo.height = (height + arriba + abajo) * escala;
-  const g = lienzo.getContext("2d")!;
-  g.scale(escala, escala);
-  g.fillStyle = "#FFFFFF";
-  g.fillRect(0, 0, width + 32, height + arriba + abajo);
-  if (titulo) {
-    g.fillStyle = TINTA;
-    g.font = "600 16px Manrope, system-ui, sans-serif";
-    g.fillText(spec.titulo, 16, 28);
-  }
-  let xl = 16;
-  g.font = "12px Manrope, system-ui, sans-serif";
-  series.forEach((s, i) => {
-    g.fillStyle = SERIES[i % SERIES.length];
-    g.fillRect(xl, leyendaY, 10, 10);
-    g.fillStyle = "#2A2F3A";
-    g.fillText(s.nombre, xl + 14, leyendaY + 9);
-    xl += g.measureText(s.nombre).width + 30;
-  });
-  const copia = svg.cloneNode(true) as SVGSVGElement;
-  copia.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-  copia.setAttribute("width", String(width));
-  copia.setAttribute("height", String(height));
-  copia.setAttribute("font-family", "Manrope, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif");
-  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copia)], { type: "image/svg+xml" }));
-  await new Promise<void>((ok) => {
-    const img = new Image();
-    img.onload = () => { g.drawImage(img, 16, arriba, width, height); ok(); };
-    img.onerror = () => ok();
-    img.src = url;
-  });
-  URL.revokeObjectURL(url);
-  if (pie) {
-    g.fillStyle = "#9CA3AF";
-    g.font = "11px Manrope, system-ui, sans-serif";
-    g.fillText(`Voi · Operaciones Voicenter${spec.nota ? ` · ${spec.nota}` : ""}`, 16, height + arriba + 18);
-  }
-  return new Promise<Blob | null>((ok) => lienzo.toBlob(ok, "image/png"));
-}
-
-/** Descargar el gráfico como PNG. */
+/** Descargar la pieza como PNG (el tablero completo, el gráfico, los indicadores, la tabla o la dona). */
 async function pngDe(contenedor: HTMLElement | null, spec: PiezaVoi) {
-  const blob = await pngBlobDe(contenedor, spec);
+  const blob = await pngPiezaDe(contenedor, spec);
   if (!blob) return;
   const url = URL.createObjectURL(blob);
   Object.assign(document.createElement("a"), { href: url, download: `${nombreArchivo(spec.titulo)}.png` }).click();
@@ -184,7 +132,7 @@ export function PiezaLienzo({ spec, compacto = false, eleccion, eleccionDe }: {
             </BotonChico>
           )}
           {spec.tipo !== "tablero" && <BotonChico titulo="Descargar CSV (Excel)" onClick={() => csvDe(spec)}><Download size={13} /> CSV</BotonChico>}
-          {grafico && !verDatos && spec.tipo !== "dona" && (
+          {!verDatos && (
             <BotonChico titulo="Descargar imagen PNG" onClick={() => pngDe(caja.current, spec)}><FileImage size={13} /> PNG</BotonChico>
           )}
         </div>
@@ -201,7 +149,7 @@ function Tablero({ spec, eleccionDe }: { spec: PiezaVoi; eleccionDe?: (i: number
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
       {(spec.widgets ?? []).map((w, i) => (
-        <div key={i} className={w.tipo === "kpis" || w.tipo === "tabla" || (spec.widgets ?? []).length === 1 ? "xl:col-span-2" : ""}>
+        <div key={i} data-widget={i} className={w.tipo === "kpis" || w.tipo === "tabla" || (spec.widgets ?? []).length === 1 ? "xl:col-span-2" : ""}>
           <PiezaLienzo spec={w} compacto eleccion={eleccionDe?.(i)} />
         </div>
       ))}
@@ -247,7 +195,7 @@ export function VoiLienzo() {
     const clave = widget === undefined ? a.id : `${a.id}#${widget}`;
     return {
       elegida: elegidas.includes(clave), alternar: () => alternar(clave),
-      bloqueo: a.confidencial ? CONFIDENCIAL : null, figura: a.local ? null : figuras.get(clave) ?? null,
+      bloqueo: a.confidencial ? CONFIDENCIAL : null, figura: a.local ? null : figuras.get(clave) ?? null, diario,
     };
   };
   const piezasElegidas: PiezaElegida[] = elegidas.flatMap((clave) => {
@@ -325,7 +273,7 @@ export function VoiLienzo() {
               </>
             ) : (
               <div className="text-xs text-brand-slate">
-                Marcá <span className="font-semibold text-brand-ink">Al informe</span> en lo que quieras sumar
+                Tocá <span className="font-semibold text-brand-ink">Agregar al {diario ? "informe diario" : "informe"}</span> en lo que quieras sumar
                 {etiqueta ? <> a <span className="whitespace-nowrap">{etiqueta}</span></> : ""}.
               </div>
             )}
@@ -334,7 +282,7 @@ export function VoiLienzo() {
           {tieneDestino(inv) ? (
             <button type="button" onClick={() => setHoja(true)} disabled={!elegidas.length || indice?.informe.editable === false}
               title={indice?.informe.editable === false ? (diario ? "El informe ya está firmado: sus figuras quedaron fijas" : "El informe está cerrado: su evidencia quedó fija") : undefined}
-              className="btn-primary px-4 py-2 whitespace-nowrap">Sumar al informe</button>
+              className="btn-primary px-4 py-2 whitespace-nowrap">{diario ? "Agregar al informe diario" : "Agregar al informe"}</button>
           ) : (
             <button type="button" onClick={() => voi.setSelectorAuditor(true)} className="btn-primary px-4 py-2 whitespace-nowrap">Elegir informe</button>
           )}

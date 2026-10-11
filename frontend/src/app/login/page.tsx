@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { LogoAnimado, MuralPuntos } from "@/components/LogoAnimado";
 import { getToken, login, login2fa, motivoSalida, type LoginResult } from "@/lib/api";
 
 const PILLARS = [
@@ -58,10 +59,13 @@ export default function LoginPage() {
         className="hidden lg:flex flex-col justify-between p-12 text-white relative overflow-hidden"
         style={{ background: "linear-gradient(135deg, #B81F18 0%, #E6332A 55%, #F39200 100%)" }}
       >
-        <div className="flex items-center gap-4">
+        {/* El mural de puntos de la fachada, tenue, y el logo en movimiento. */}
+        <MuralPuntos className="absolute inset-0 w-full h-full opacity-[0.16] pointer-events-none" />
+        <div className="flex items-start justify-between gap-6 relative z-10">
           <div className="bg-white rounded-lg px-4 py-2.5 shadow-elevated">
             <img src="/logo-voicenter-color.png" alt="Voicenter" className="h-9 w-auto block" />
           </div>
+          <LogoAnimado size={230} sobreRojo className="xl:w-[300px] xl:h-auto drop-shadow-[0_8px_24px_rgba(0,0,0,0.25)]" />
         </div>
 
         <div className="space-y-6 max-w-md relative z-10">
@@ -88,17 +92,14 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="text-[11px] text-white/70 uppercase tracking-wider2">Operado por Voicenter S.A.</div>
-
-        <div className="absolute -right-32 -bottom-32 w-96 h-96 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute -right-20 top-20 w-48 h-48 rounded-full bg-white/5 blur-2xl" />
+        <div className="text-[11px] text-white/70 uppercase tracking-wider2 relative z-10">Operado por Voicenter S.A.</div>
       </div>
 
       {/* Formulario */}
       <div className="flex items-center justify-center px-6 py-12 bg-brand-bg-soft">
         <div className="w-full max-w-md">
-          <div className="lg:hidden flex flex-col items-center gap-3 mb-8">
-            <img src="/logo-voicenter-color.png" alt="Voicenter" className="h-12 w-auto" />
+          <div className="lg:hidden flex flex-col items-center gap-2 mb-8">
+            <LogoAnimado size={150} />
             <div className="font-display text-sm uppercase tracking-wider2 text-brand-slate">Gerencia Expansión RM</div>
           </div>
 

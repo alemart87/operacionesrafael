@@ -447,8 +447,8 @@ export function SelectorAuditor() {
 // ------------------------------------------------------------------ tarjeta: qué piezas propuestas van al informe
 const ESTADO_TARJETA: Record<AccionVoi["estado"], { texto: string; clase: string; Icono: any }> = {
   pendiente: { texto: "Elegí qué va al informe", clase: "text-brand-orange", Icono: ShieldCheck },
-  ejecutando: { texto: "Sumando al informe…", clase: "text-brand-cyan", Icono: Loader2 },
-  ejecutada: { texto: "Sumado al informe", clase: "text-emerald-700", Icono: CheckCircle2 },
+  ejecutando: { texto: "Agregando al informe…", clase: "text-brand-cyan", Icono: Loader2 },
+  ejecutada: { texto: "Agregado al informe", clase: "text-emerald-700", Icono: CheckCircle2 },
   cancelada: { texto: "No se sumó nada", clase: "text-brand-slate", Icono: XCircle },
   fallida: { texto: "No se pudo sumar", clase: "text-brand-primary", Icono: XCircle },
 };
@@ -550,7 +550,7 @@ export function TarjetaEvidencia({ a, artefactos, codigo, diario = false, onConf
       {pendiente && (
         <div className="mt-3 flex items-center gap-2">
           <button type="button" onClick={confirmar} disabled={!sel.length} className="btn-primary px-4 py-1.5 text-xs whitespace-nowrap">
-            <Check size={14} /> Sumar {sel.length > 1 ? `${sel.length} ` : ""}al informe
+            <Check size={14} /> Agregar {sel.length > 1 ? `${sel.length} ` : ""}al {diario ? "informe diario" : "informe"}
           </button>
           <button type="button" onClick={() => onCancelar(a)} className="btn-ghost px-3 py-1.5 text-xs whitespace-nowrap">No sumar nada</button>
         </div>
@@ -712,7 +712,7 @@ export function HojaSumar({ piezas, inv, indice, conversacionId, onCerrar, onLis
             <div className="border-t border-brand-border px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center justify-end gap-2">
               <button type="button" onClick={onCerrar} disabled={ocupado} className="btn-secondary whitespace-nowrap">Cancelar</button>
               <button type="button" onClick={sumar} disabled={ocupado || !piezas.length} className="btn-primary whitespace-nowrap">
-                {ocupado && <Loader2 size={15} className="animate-spin" />} Sumar al informe
+                {ocupado && <Loader2 size={15} className="animate-spin" />} {diario ? "Agregar al informe diario" : "Agregar al informe"}
               </button>
             </div>
           </>

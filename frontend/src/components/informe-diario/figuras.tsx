@@ -6,22 +6,21 @@
  * se retocan (título y lectura), se quitan, se suben imágenes y cada gráfico se captura como imagen para el PDF; en la
  * lectura se ven como salen en el informe.
  */
-import { ImageIcon, ImageOff, ImagePlus, Loader2, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import { Camera, ClipboardPaste, ImageIcon, ImageOff, ImagePlus, Loader2, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { pngPiezaDe } from "@/components/voi/lienzo/captura";
 import { NOMBRE_TIPO } from "@/components/voi/lienzo/iconos";
 import { CuerpoPieza } from "@/components/voi/lienzo/VoiGrafico";
-import { pngBlobDe } from "@/components/voi/lienzo/VoiLienzo";
 import { VoiIsotipo } from "@/components/voi/VoiIsotipo";
 import { useVoi } from "@/components/voi/VoiProvider";
 import { apiFetch, getToken, refreshSession } from "@/lib/api";
+import { EXTENSIONES_IMAGEN, capturarPantalla, elegirImagenes, esImagen, marcaDeTiempo, puedeCapturarPantalla } from "@/lib/imagenes";
 import { Seccion } from "./campos";
 import { ID_API, MAX_FIGURAS, MAX_IMAGEN_MB, type FiguraInforme } from "./tipos";
 
 /** Ancho con el que se dibuja cada gráfico (como en el informe de auditoría): la captura para el PDF sale siempre igual. */
 const ANCHO = 960;
-/** Los tipos que se capturan como imagen; el resto (indicadores, tablas, tableros, dona) va al PDF con sus datos. */
-const CAPTURABLES = new Set(["barras", "columnas", "lineas", "area", "apiladas"]);
-const EXTENSIONES = [".png", ".jpg", ".jpeg", ".webp", ".gif"];
+const EXTENSIONES = EXTENSIONES_IMAGEN;
 
 const nombreTipo = (f: FiguraInforme) => (f.tipo === "imagen" ? "Imagen" : NOMBRE_TIPO[f.spec?.tipo ?? ""] ?? "Figura");
 const origen = (f: FiguraInforme) =>
@@ -89,9 +88,22 @@ function ImagenFigura({ informeId, figuraId, titulo }: { informeId: string; figu
   );
 }
 
-/** El cuerpo de una figura como va en el informe: el gráfico (ancho fijo, sin interacción) o la imagen. */
+/** El cuerpo de una figura como va en el informe: el gráfico (ancho fijo, sin interacción), el tablero con sus partes
+ * o la imagen. Cada parte de un tablero va en un `[data-widget]`: así se compone la captura para el PDF. */
 function CuerpoFigura({ informeId, f, caja }: { informeId: string; f: FiguraInforme; caja?: RefObject<HTMLDivElement> }) {
   if (f.tipo === "imagen" || !f.spec) return <ImagenFigura informeId={informeId} figuraId={f.id} titulo={f.titulo} />;
+  if (f.spec.tipo === "tablero") {
+    return (
+      <div ref={caja} className="mt-3 grid grid-cols-1 xl:grid-cols-2 gap-3">
+        {(f.spec.widgets ?? []).map((w, i) => (
+          <div key={i} data-widget={i} className={`rounded-lg border border-brand-border bg-white p-3 ${w.tipo === "kpis" || w.tipo === "tabla" || (f.spec!.widgets ?? []).length === 1 ? "xl:col-span-2" : ""}`}>
+            <h4 className="text-sm font-semibold text-brand-ink mb-2">{w.titulo}</h4>
+            <CuerpoPieza spec={w} fijo={ANCHO} compacto />
+          </div>
+        ))}
+      </div>
+    );
+  }
   return <div ref={caja} className="mt-3"><CuerpoPieza spec={f.spec} fijo={ANCHO} compacto /></div>;
 }
 
@@ -155,7 +167,7 @@ function TarjetaFigura({ f, informeId, ocupado, onEditar, onQuitar, onCapturada,
   const [titulo, setTitulo] = useState(f.titulo ?? "");
   const [nota, setNota] = useState(f.nota ?? "");
   const caja = useRef<HTMLDivElement>(null);
-  const capturable = f.tipo !== "imagen" && CAPTURABLES.has(f.spec?.tipo ?? "");
+  const capturable = f.tipo !== "imagen" && !!f.spec;
   const [captura, setCaptura] = useState<"no" | "preparando" | "lista" | "error">(f.imagen ? "lista" : capturable ? "preparando" : "no");
   useEffect(() => { setTitulo(f.titulo ?? ""); setNota(f.nota ?? ""); }, [f.titulo, f.nota]);
   useEffect(() => { if (f.imagen) setCaptura("lista"); }, [f.imagen]);
@@ -171,7 +183,7 @@ function TarjetaFigura({ f, informeId, ocupado, onEditar, onQuitar, onCapturada,
       if (intentada.current || !spec.current) return;
       intentada.current = true;
       try {
-        const blob = await pngBlobDe(caja.current, spec.current, { titulo: false, pie: false });   // el PDF imprime el título y la fuente
+        const blob = await pngPiezaDe(caja.current, spec.current, { titulo: false, pie: false, ancho: ANCHO });   // el PDF imprime el título y la fuente
         if (!blob) { setCaptura("no"); return; }
         const fd = new FormData();
         fd.append("archivo", blob, "figura.png");
@@ -230,8 +242,11 @@ export function SeccionFiguras({ n, informeId, figuras, setFiguras, onError, onA
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [subiendo, setSubiendo] = useState<{ n: number; total: number } | null>(null);
   const [sobreZona, setSobreZona] = useState(false);
+  const [capturando, setCapturando] = useState(false);
+  const [puedeCapturar, setPuedeCapturar] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const lleno = figuras.length >= MAX_FIGURAS;
+  useEffect(() => { setPuedeCapturar(puedeCapturarPantalla()); }, []);
 
   const recargar = useCallback(async () => {
     try {
@@ -264,9 +279,9 @@ export function SeccionFiguras({ n, informeId, figuras, setFiguras, onError, onA
   const capturada = useCallback((id: string) => setFiguras((l) => l.map((x) => (x.id === id ? { ...x, imagen: true } : x))), [setFiguras]);
 
   /** Capturas o fotos del autor: cada una queda como una figura más (procesada sin metadatos en el servidor). */
-  const subirArchivos = async (archivos: File[]) => {
+  const subirArchivos = useCallback(async (archivos: File[]) => {
     if (!archivos.length) return;
-    const lista = archivos.filter((a) => a.size > 0).slice(0, Math.max(0, MAX_FIGURAS - figuras.length));
+    const lista = archivos.filter((a) => a.size > 0 && esImagen(a)).slice(0, Math.max(0, MAX_FIGURAS - figuras.length));
     if (!lista.length) { onError(`El informe admite hasta ${MAX_FIGURAS} figuras: quitá alguna para sumar otra.`); return; }
     let ok = 0;
     for (let i = 0; i < lista.length; i++) {
@@ -280,20 +295,53 @@ export function SeccionFiguras({ n, informeId, figuras, setFiguras, onError, onA
       } catch (e: any) { onError(`No se pudo subir «${a.name}»: ${e.message}`); }
     }
     setSubiendo(null);
-    if (ok) onAviso?.(ok === 1 ? "Imagen sumada como figura del informe." : `${ok} imágenes sumadas como figuras del informe.`);
+    if (ok) onAviso?.(ok === 1 ? "Imagen agregada como figura del informe." : `${ok} imágenes agregadas como figuras del informe.`);
+  }, [figuras.length, informeId, setFiguras, onError, onAviso]);
+  /** El selector rápido del navegador (abre en el Escritorio y recuerda la carpeta); si no existe, el clásico. */
+  const elegir = async () => {
+    const archivos = await elegirImagenes(input.current, "figuras-informe-diario");
+    if (archivos?.length) subirArchivos(archivos);
   };
+  const capturar = async () => {
+    setCapturando(true);
+    try {
+      const f = await capturarPantalla();
+      if (f) await subirArchivos([f]);
+    } catch (e: any) { onError(`No se pudo capturar la pantalla: ${e.message}`); } finally { setCapturando(false); }
+  };
+  // Pegar una captura con Ctrl + V (fuera de un campo de texto): va directo como figura.
+  useEffect(() => {
+    const f = (ev: ClipboardEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const archivos = Array.from(ev.clipboardData?.files ?? []).filter((x) => x.type.startsWith("image/"));
+      if (!archivos.length) return;
+      ev.preventDefault();
+      const ahora = marcaDeTiempo();
+      subirArchivos(archivos.map((x, i) => (x.name && x.name !== "image.png" ? x
+        : new File([x], `Captura pegada el ${ahora}${archivos.length > 1 ? ` (${i + 1})` : ""}.png`, { type: x.type || "image/png" }))));
+    };
+    window.addEventListener("paste", f);
+    return () => window.removeEventListener("paste", f);
+  }, [subirArchivos]);
 
   return (
     <Seccion n={n} titulo="Figuras" id="figuras"
       sub="Gráficos que suma Voi, el agente, desde su lienzo, y capturas o fotos que subís vos. Van en el informe y en el PDF; acá retocás el título y la lectura."
       accion={(
         <div className="flex items-center gap-2 flex-wrap">
-          <button type="button" data-voi="subir-figura" className="btn-secondary !py-2 !px-3 text-xs" onClick={() => input.current?.click()}
-            disabled={!!subiendo || lleno} title={lleno ? `El informe admite hasta ${MAX_FIGURAS} figuras` : "Subir una captura o una foto como figura"}>
-            {subiendo ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <ImagePlus size={15} aria-hidden />}
-            {subiendo ? ` Subiendo ${subiendo.n} de ${subiendo.total}…` : " Subir imagen"}
-          </button>
           <BotonArmarConVoi informeId={informeId} onError={onError} />
+          {puedeCapturar && (
+            <button type="button" data-voi="capturar-figura" className="btn-secondary !py-2 !px-3 text-xs" onClick={capturar} disabled={capturando || !!subiendo || lleno}
+              title="Captura una ventana (p. ej. el CRM) y la agrega como figura, sin buscar archivos">
+              {capturando ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Camera size={15} aria-hidden />} Capturar pantalla
+            </button>
+          )}
+          <button type="button" data-voi="subir-figura" className="btn-primary !py-2 !px-3.5 text-xs" onClick={elegir}
+            disabled={!!subiendo || lleno} title={lleno ? `El informe admite hasta ${MAX_FIGURAS} figuras` : "Elegí una captura o una foto de tu computadora: queda como figura del informe"}>
+            {subiendo ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <ImagePlus size={15} aria-hidden />}
+            {subiendo ? ` Subiendo ${subiendo.n} de ${subiendo.total}…` : " Agregar imagen al informe"}
+          </button>
         </div>
       )}>
       <input ref={input} type="file" multiple accept={EXTENSIONES.join(",")} className="hidden"
@@ -305,13 +353,13 @@ export function SeccionFiguras({ n, informeId, figuras, setFiguras, onError, onA
         onDrop={(ev) => { if (!ev.dataTransfer.files.length) return; ev.preventDefault(); setSobreZona(false); subirArchivos(Array.from(ev.dataTransfer.files)); }}
         className={sobreZona ? "rounded-lg ring-2 ring-brand-cyan/60" : ""}>
         {!figuras.length ? (
-          <button type="button" onClick={() => input.current?.click()}
+          <button type="button" onClick={elegir}
             className="w-full rounded-md border-2 border-dashed border-brand-border px-5 py-6 text-center hover:border-brand-primary transition-colors">
             <UploadCloud size={24} className="mx-auto text-brand-mist" aria-hidden />
             <span className="mt-2 block text-sm font-semibold text-brand-ink">Todavía no hay figuras</span>
             <span className="mt-1 block text-sm text-brand-slate">
-              Pedile a Voi un gráfico del día («Mostrame en un gráfico la productividad de hoy») y sumalo con un toque, o subí una captura o una foto:
-              arrastrala acá o hacé clic para elegirla.
+              Pedile a Voi un gráfico del día («Mostrame en un gráfico la productividad de hoy») y tocá «Agregar al informe diario», o agregá una
+              captura o una foto: hacé clic acá para elegirla, arrastrala o pegala con Ctrl + V.
             </span>
           </button>
         ) : (
@@ -323,9 +371,12 @@ export function SeccionFiguras({ n, informeId, figuras, setFiguras, onError, onA
           </ul>
         )}
       </div>
-      <p className="mt-2 text-[11px] text-brand-slate">
-        {lleno ? `El informe admite hasta ${MAX_FIGURAS} figuras: quitá alguna para sumar otra.`
-          : `Hasta ${MAX_FIGURAS} figuras por informe · PNG, JPG, WebP o GIF de hasta ${MAX_IMAGEN_MB} MB, guardados sin metadatos en el almacenamiento persistente.`}
+      <p className="mt-2 text-[11px] text-brand-slate inline-flex items-start gap-1.5">
+        <ClipboardPaste size={13} className="shrink-0 mt-px" aria-hidden />
+        <span>
+          {lleno ? `El informe admite hasta ${MAX_FIGURAS} figuras: quitá alguna para sumar otra.`
+            : `También podés pegar una captura con Ctrl + V o arrastrarla acá. Hasta ${MAX_FIGURAS} figuras por informe · PNG, JPG, WebP o GIF de hasta ${MAX_IMAGEN_MB} MB, guardados sin metadatos.`}
+        </span>
       </p>
     </Seccion>
   );
