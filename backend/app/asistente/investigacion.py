@@ -28,12 +28,23 @@ from . import difusion
 from .models import AsistenteAccion, AsistenteArtefacto, AsistenteConversacion
 
 P_AUD = "televentas_claro.auditoria"
+P_INF = "televentas_claro.informe_diario"
 ESTADO_TEXTO = {"borrador": "borrador", "en_revision": "en revisión", "cerrado": "cerrado", "archivado": "archivado"}
 CONFIDENCIAL = ("Esta pieza sale de una conversación que usó datos de Facturación (confidenciales): no se puede sumar a "
                 "un informe de auditoría, que ven perfiles sin Facturación. Armala en una conversación nueva.")
 
 def puede_investigar(user: CurrentUser) -> bool:
     return user.has_perm(P_AUD)
+
+
+def puede_informe(user: CurrentUser) -> bool:
+    """El modo informe diario es para quien prepara el informe diario (coordinador, sub gerente, superadmin…)."""
+    return user.has_perm(P_INF)
+
+
+def tipo(inv: Optional[dict[str, Any]]) -> str:
+    """«auditor» (investigación de auditoría) o «informe_diario»; las conversaciones viejas no traen el tipo."""
+    return str((inv or {}).get("tipo") or "auditor")
 
 
 # ------------------------------------------------------------------ estado de la conversación
@@ -83,6 +94,42 @@ def desactivar(conv: AsistenteConversacion) -> None:
     conv.investigacion = None
 
 
+async def activar_informe(db: AsyncSession, conv: AsistenteConversacion, user: CurrentUser, informe: Any = None,
+                          fecha: Any = None, *, por: str = "usuario") -> dict[str, Any]:
+    """Activa el modo informe diario con el borrador del usuario de ese día (hoy si no se indica; se crea si no existe)
+    o con un informe suyo por id. ValueError con el motivo si no se puede."""
+    from datetime import date
+
+    from ..operativas.televentas_claro.informe_diario import api as inf_api
+    from ..operativas.televentas_claro.informe_diario import informe as inf_srv
+    from ..operativas.televentas_claro.informe_diario.models import BORRADOR, InformeDiario
+    if not puede_informe(user):
+        raise ValueError("El modo informe diario es para quien prepara el informe diario.")
+    if informe:
+        inf = await db.get(InformeDiario, str(informe)[:36])
+        if inf is None or inf.autor_id != user.id:
+            raise ValueError("No encontré ese informe diario (tiene que ser tuyo).")
+    else:
+        dia = inf_srv.hoy()
+        try:
+            f = date.fromisoformat(str(fecha)[:10]) if fecha else dia
+        except ValueError as exc:
+            raise ValueError("La fecha va como AAAA-MM-DD.") from exc
+        try:
+            inf_srv.validar_fecha(f, dia)
+        except inf_srv.ReglaInvalida as exc:
+            raise ValueError(str(exc)) from exc
+        inf, _ = await inf_api.abrir_borrador(db, user, f)
+    if inf.estado != BORRADOR:
+        raise ValueError(f"El informe del {inf.fecha:%d/%m} ya está firmado: elegí otro día (hoy o hasta 7 días atrás).")
+    previo = estado(conv) or {}
+    desde = previo.get("desde") if tipo(previo) == "informe_diario" else None
+    nuevo = {"activo": True, "tipo": "informe_diario", "informe_id": inf.id, "fecha": inf.fecha.isoformat(),
+             "estado": inf.estado, "desde": desde or datetime.now(timezone.utc).isoformat(), "por": por}
+    conv.investigacion = nuevo
+    return nuevo
+
+
 POSTURA = (
     "  Postura de auditor: escéptico, incisivo y RÁPIDO. Lo primero son las netas y las cargas de Ventas Netas: empezá "
     "con alertas_del_corte (un solo llamado: último corte publicado con críticos, datos llamativos y hallazgos "
@@ -101,12 +148,33 @@ SUGERIR = (
     "proponer_modo_auditor (le aparece una tarjeta para aceptar). Si dice que no, seguí normal y no insistas en la "
     "misma conversación."
 )
+SUGERIR_INFORME = (
+    "- Modo informe diario: disponible pero apagado. Si el usuario quiere armar, preparar o completar su informe diario "
+    "con vos, activalo con modo_informe_diario (con la fecha si la dice) y trabajá en ese modo."
+)
+POSTURA_INFORME = (
+    "  Modo informe diario: armás el informe CON el usuario, un paso por vez y en pocas líneas. 1) Consultá los datos "
+    "del día del informe (productividad_del_dia, ventas_del_dia, supervision_del_mes para la proyección, "
+    "coaching_del_dia) y contale lo relevante en 3 a 5 líneas. 2) Proponé los resultados de Pospago y GPON, un resumen "
+    "de 3 a 5 líneas y las métricas críticas con compromiso; cuando él diga, cargalos con preparar_informe_diario "
+    "(importá llamadas, cargas, proyección y coaching). 3) Cada gráfico o tablero que muestres en el lienzo ofrecelo "
+    "como figura del informe con proponer_evidencia (elige en una tarjeta; nunca sumes sin preguntar); el título es "
+    "la conclusión y la nota, la lectura para quien recibe el informe. 4) Nunca firmás: al final abrile el informe "
+    "con abrir_pantalla para que lo revise y lo firme. Usá ofrecer_opciones para que apruebe cada paso con un botón."
+)
 
 
-def contexto_lineas(inv: Optional[dict[str, Any]], *, puede: bool = False) -> list[str]:
+def contexto_lineas(inv: Optional[dict[str, Any]], *, puede: bool = False, puede_informe: bool = False) -> list[str]:
     """Lo que Voi recibe en cada mensaje: la postura y el destino con el modo activo, o la sugerencia de activarlo."""
     if not inv:
-        return [SUGERIR] if puede else []
+        return ([SUGERIR] if puede else []) + ([SUGERIR_INFORME] if puede_informe else [])
+    if tipo(inv) == "informe_diario":
+        try:
+            dia = datetime.fromisoformat(str(inv.get("fecha"))).strftime("%d/%m")
+        except ValueError:
+            dia = str(inv.get("fecha") or "")
+        return [f"- MODO INFORME DIARIO ACTIVO. Informe destino: el informe diario del {dia} (borrador), ruta "
+                f"/televentas-claro/informe-diario/{inv.get('informe_id')}.", POSTURA_INFORME]
     if inv.get("auditoria_id"):
         destino = (f"Informe destino: {inv.get('codigo')} «{inv.get('titulo')}» "
                    f"({ESTADO_TEXTO.get(inv.get('estado') or '', inv.get('estado') or '')}).")

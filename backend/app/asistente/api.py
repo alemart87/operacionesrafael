@@ -95,6 +95,7 @@ async def estado(user: CurrentUser = Depends(usuario_voi), db: AsyncSession = De
         "sugerencias": sugerencias(user, modo), "privacidad": PRIVACIDAD,
         "confirma_borradores": not cfg.get("autonomia", {}).get("borradores_sin_confirmar", True),
         "modo_auditor": investigacion.puede_investigar(user),
+        "modo_informe_diario": investigacion.puede_informe(user),
     }
 
 
@@ -159,6 +160,10 @@ async def _enviar(db: AsyncSession, conv: AsistenteConversacion, user: CurrentUs
         await sesiones.enviar(db, conv, user, texto.strip(), pantalla.model_dump() if pantalla else None)
     except HTTPException:
         raise
+    except consumidor.Ocupado:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Voi todavía está terminando una acción de esta conversación. "
+                                                      "Esperá unos segundos y volvé a mandar el mensaje.")
     except Exception as exc:  # noqa: BLE001
         log.warning("No se pudo enviar el mensaje de %s a %s: %s", user.id, conv.id, exc)
         await db.rollback()

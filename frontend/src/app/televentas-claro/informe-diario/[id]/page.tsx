@@ -29,6 +29,17 @@ function Informe() {
     setD(null);
     apiFetch<InformeDetalle>(`${ID_API}/${id}`).then(setD).catch((e) => setError(e.message));
   }, [id]);
+  // Un enlace a …#figuras (p. ej. desde Voi) lleva a esa sección cuando el informe ya está dibujado.
+  useEffect(() => {
+    if (!d) return;
+    const ir = () => {
+      const el = window.location.hash.length > 1 ? document.getElementById(window.location.hash.slice(1)) : null;
+      if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
+    };
+    const t = setTimeout(ir, 150);
+    window.addEventListener("hashchange", ir);
+    return () => { clearTimeout(t); window.removeEventListener("hashchange", ir); };
+  }, [d]);
 
   const volver = isSuperadmin && d && !d.es_autor
     ? { href: `${ID_HREF}/seguimiento`, label: "Seguimiento de los informes" }

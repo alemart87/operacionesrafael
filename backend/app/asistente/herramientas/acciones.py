@@ -414,7 +414,8 @@ async def _preparar_auditoria(ctx: Ctx, a: dict[str, Any]) -> Any:
     # En modo auditor sin informe destino, el que se acaba de crear pasa a serlo.
     conv = await ctx.db.get(AsistenteConversacion, ctx.conversacion_id)
     destino = None
-    if conv is not None and (inv := investigacion.estado(conv)) is not None and not inv.get("auditoria_id"):
+    if (conv is not None and (inv := investigacion.estado(conv)) is not None and investigacion.tipo(inv) == "auditor"
+            and not inv.get("auditoria_id")):
         nuevo = await investigacion.activar(ctx.db, conv, ctx.user, d.get("id"), por="voi")
         ctx.extra.setdefault("publicar", []).append({"tipo": "investigacion", "investigacion": nuevo})
         destino = "Quedó como informe destino del modo auditor: ya podés proponer evidencia."

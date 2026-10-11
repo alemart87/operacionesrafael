@@ -28,6 +28,7 @@ from .models import (
     InformeParametros,
 )
 from .palabras import TEMAS_DEFECTO, Diccionario, analizar
+from . import figuras as figuras_srv
 
 ZONA = ZoneInfo("America/Asuncion")
 DIAS_ATRAS_MAX = 7
@@ -99,6 +100,8 @@ def _contenido(inf: InformeDiario) -> dict[str, Any]:
         "cargo": firma.get("cargo"), "firmado_at": firma.get("firmado_at"), "resultados": inf.resultados or {},
         "resumen": inf.resumen or "", "metricas": inf.metricas or [], "importados": inf.importados or [],
         "seguimiento": inf.seguimiento or [], "imagen": hashlib.sha256(imagen.encode()).hexdigest() if imagen else None,
+        # Solo si hay figuras: los informes firmados antes de que existieran conservan su código.
+        **({"figuras": figuras_srv.para_hash(inf)} if figuras_srv.listar(inf) else {}),
     }
 
 
@@ -261,7 +264,8 @@ def resumen_dict(inf: InformeDiario, coms: list[InformeComentario]) -> dict[str,
         "cargo": inf.autor_cargo, "resumen": (inf.resumen or "")[:220],
         "pospago": (r.get("pospago") or {}).get("valor"), "gpon": (r.get("gpon") or {}).get("valor"),
         "metricas": len(ms), "criticas": sum(1 for m in ms if m.get("estado") == "critico"),
-        "importados": len(inf.importados or []), "comentarios": len(coms), "nuevos": nuevos_para_autor(inf, coms),
+        "importados": len(inf.importados or []), "figuras": len(figuras_srv.listar(inf)), "comentarios": len(coms),
+        "nuevos": nuevos_para_autor(inf, coms),
         "firmado_at": iso(inf.firmado_at), "updated_at": iso(inf.updated_at or inf.created_at),
         "revisado_at": iso(inf.revisado_at), "codigo": (inf.firma or {}).get("codigo"),
     }
@@ -272,6 +276,7 @@ def a_dict(inf: InformeDiario) -> dict[str, Any]:
         "id": inf.id, "fecha": inf.fecha.isoformat(), "estado": inf.estado, "autor_id": inf.autor_id, "autor": inf.autor_nombre,
         "cargo": inf.autor_cargo, "resultados": inf.resultados or {}, "resumen": inf.resumen or "",
         "metricas": inf.metricas or [], "importados": inf.importados or [], "seguimiento": inf.seguimiento or [],
+        "figuras": figuras_srv.para_dict(inf),
         "firma": inf.firma, "firmado_at": iso(inf.firmado_at), "created_at": iso(inf.created_at),
         "updated_at": iso(inf.updated_at or inf.created_at), "revisado_at": iso(inf.revisado_at),
     }

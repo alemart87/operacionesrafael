@@ -6,8 +6,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ConversacionVoi, MemoriaVoi, cuando, voiApi } from "@/lib/voi";
-import { ChipModoAuditor, FranjaAuditor, InvitacionAuditor, SUGERENCIAS_AUDITOR } from "./VoiAuditor";
+import { ConversacionVoi, MemoriaVoi, cuando, ddmm, esInformeDiario, etiquetaDestino, voiApi } from "@/lib/voi";
+import {
+  ChipModoAuditor, ChipModoInforme, FranjaAuditor, InvitacionAuditor, InvitacionInforme, SUGERENCIAS_AUDITOR, SUGERENCIAS_INFORME,
+} from "./VoiAuditor";
 import { VoiIsotipo } from "./VoiIsotipo";
 import { Trabajando, VoiMarkdown, VoiMensajes } from "./VoiMensajes";
 import { useVoi } from "./VoiProvider";
@@ -55,13 +57,14 @@ export function VoiPanel() {
   };
 
   const inv = voi.investigacion;
+  const diario = esInformeDiario(inv);
   const navegar = () => { if (!voi.acoplado && window.matchMedia("(max-width: 767px)").matches) voi.cerrar(); };
 
   return (
     <aside
-      className={`voi-panel no-print fixed z-40 inset-0 md:inset-auto md:top-0 md:right-0 md:bottom-0 md:w-[440px] bg-white md:border-l border-brand-border md:shadow-[-12px_0_32px_-12px_rgba(15,17,22,0.18)] flex flex-col ${inv ? "voi-auditor" : ""}`}
+      className={`voi-panel no-print fixed z-40 inset-0 md:inset-auto md:top-0 md:right-0 md:bottom-0 md:w-[440px] bg-white md:border-l border-brand-border md:shadow-[-12px_0_32px_-12px_rgba(15,17,22,0.18)] flex flex-col ${inv ? (diario ? "voi-informe" : "voi-auditor") : ""}`}
       role="dialog"
-      aria-label={inv ? "Voi en modo auditor" : "Voi, el asistente de la plataforma"}
+      aria-label={inv ? (diario ? "Voi en modo informe diario" : "Voi en modo auditor") : "Voi, el asistente de la plataforma"}
       onKeyDown={onKeyDown}
     >
       {/* Cabecera */}
@@ -114,7 +117,7 @@ export function VoiPanel() {
       <div className={`h-0.5 flex-shrink-0 ${chat.trabajando ? "voi-linea" : ""}`} />
       {inv && vista === "chat" && (
         <FranjaAuditor inv={inv} onCambiar={() => voi.setSelectorAuditor(true)} onNavegar={navegar}
-          onSalir={() => voi.desactivarAuditor().catch(() => undefined)} />
+          onSalir={() => voi.desactivarModo().catch(() => undefined)} />
       )}
 
       {vista === "historial" ? <Historial /> : vista === "memoria" ? <Memoria /> : <Chat />}
@@ -186,7 +189,8 @@ function Chat() {
             onAmpliar={voi.mostrarEnLienzo}
             onNavegar={navegar}
             artefactos={chat.artefactos}
-            codigoInforme={voi.investigacion?.codigo ?? null}
+            codigoInforme={etiquetaDestino(voi.investigacion)}
+            diario={esInformeDiario(voi.investigacion)}
             onElegir={voi.elegirOpcion}
             onVerGuia={voi.abrirGuia}
             onAbrirRuta={voi.navegarA}
@@ -219,8 +223,9 @@ function Bienvenida() {
   const voi = useVoi()!;
   const { estado, usuario, investigacion: inv } = voi;
   const nombre = (usuario?.full_name ?? "").split(" ")[0];
+  const diario = esInformeDiario(inv);
   // Primero lo que conviene en la pantalla en la que está; después las sugerencias generales de su perfil.
-  const sugerencias = inv ? SUGERENCIAS_AUDITOR
+  const sugerencias = inv ? (diario ? SUGERENCIAS_INFORME : SUGERENCIAS_AUDITOR)
     : Array.from(new Set([...(voi.pantallaActual?.sugerencias ?? []), ...(estado?.sugerencias ?? [])])).slice(0, 4);
   return (
     <div className="h-full flex flex-col items-center text-center pt-6 pb-2">
@@ -228,9 +233,12 @@ function Bienvenida() {
       <h2 className="mt-5 font-display text-3xl text-brand-ink">Hola{nombre ? `, ${nombre}` : ""}</h2>
       <p className="mt-1.5 text-sm text-brand-slate max-w-[320px] leading-snug">
         {inv
-          ? `Estás en modo auditor${inv.codigo ? ` con el informe ${inv.codigo}` : ""}. Cada gráfico que te muestre en el lienzo te lo ofrezco como figura; vos elegís cuáles van.`
+          ? diario
+            ? `Estás en modo informe diario con el informe del ${ddmm(inv.fecha)}. Miro los datos del día, te propongo el contenido y cada gráfico te lo ofrezco como figura; vos revisás y firmás.`
+            : `Estás en modo auditor${inv.codigo ? ` con el informe ${inv.codigo}` : ""}. Cada gráfico que te muestre en el lienzo te lo ofrezco como figura; vos elegís cuáles van.`
           : estado ? MODO_TEXTO[estado.modo] : "Soy Voi, el asistente de la plataforma."}
       </p>
+      {estado?.modo_informe_diario && !inv && <InvitacionInforme />}
       {estado?.modo_auditor && !inv && <InvitacionAuditor />}
       {estado && sugerencias.length > 0 && (
         <div className="mt-6 w-full grid gap-2">
@@ -331,6 +339,7 @@ function Compositor() {
           <span className="truncate">{pantalla.titulo}</span>
         </button>
       )}
+      {voi.estado?.modo_informe_diario && !voi.investigacion && <ChipModoInforme />}
       {voi.estado?.modo_auditor && !voi.investigacion && <ChipModoAuditor />}
       </div>
       <div className="relative" data-voi-menu={comandos.length ? "" : undefined}>
@@ -417,7 +426,7 @@ function FilaConversacion({ c }: { c: ConversacionVoi }) {
           {badge && <span className={badge.k}>{badge.t}</span>}
           {c.investigacion?.activo && (
             <span className="rounded border border-brand-border bg-brand-bg px-1.5 py-px text-[10px] font-semibold text-brand-graphite whitespace-nowrap">
-              Modo auditor{c.investigacion.codigo ? ` · ${c.investigacion.codigo}` : ""}
+              {esInformeDiario(c.investigacion) ? `Informe diario · ${ddmm(c.investigacion.fecha)}` : `Modo auditor${c.investigacion.codigo ? ` · ${c.investigacion.codigo}` : ""}`}
             </span>
           )}
         </div>

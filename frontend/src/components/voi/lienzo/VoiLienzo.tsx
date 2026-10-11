@@ -5,16 +5,17 @@
  * del chat. En pantallas anchas ocupa el espacio de la página; en tablet y teléfono, la pantalla completa. Cada pieza se
  * puede ver como gráfico o como tabla de datos y descargar en CSV o PNG.
  *
- * En modo auditor el lienzo lleva el borde del modo y cada pieza (o cada parte de un tablero) se puede elegir para
- * sumarla como figura al informe de auditoría destino; las que ya están en el informe muestran su número.
+ * En modo auditor o informe diario el lienzo lleva el borde del modo y cada pieza (o cada parte de un tablero) se puede
+ * elegir para sumarla como figura al informe destino; las que ya están en el informe muestran su número.
  */
 import {
   ArrowLeft, BarChart3, Check, CheckCircle2, Download, FileImage, LayoutDashboard, Lock, Plus, Sparkles, Table2, X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { descargarCsv } from "@/lib/csv";
+import { esInformeDiario, etiquetaDestino, tieneDestino } from "@/lib/voi";
 import { aNumero } from "@/lib/voiFormato";
-import { FranjaAuditor, HojaSumar, type PiezaElegida, useIndiceInforme } from "../VoiAuditor";
+import { FranjaAuditor, HojaSumar, type PiezaElegida, useIndiceDestino } from "../VoiAuditor";
 import { useVoi } from "../VoiProvider";
 import { ICONO_TIPO, NOMBRE_TIPO } from "./iconos";
 import { ArtefactoVoi, PiezaVoi, SERIES, TINTA, nombreX } from "./tipos";
@@ -32,7 +33,7 @@ export interface EleccionPieza {
   figura?: number | null;
 }
 
-const CONFIDENCIAL = "Sale de una conversación que usó datos de Facturación (confidenciales): no puede ir a un informe de auditoría.";
+const CONFIDENCIAL = "Sale de una conversación que usó datos de Facturación (confidenciales): no puede ir a un informe.";
 
 /** «Al informe» (elegir la pieza), «Elegida», «Figura N» (ya está en el informe) o «Confidencial». Misma altura que
  * los botones de la barra (Datos, CSV, PNG). */
@@ -79,37 +80,47 @@ function csvDe(spec: PiezaVoi) {
     })));
 }
 
-/** PNG del gráfico: título, leyenda y el SVG dibujado sobre fondo blanco al doble de resolución. */
-async function pngDe(contenedor: HTMLElement | null, spec: PiezaVoi) {
+/** PNG del gráfico como imagen (Blob): título, leyenda y el SVG dibujado sobre fondo blanco al doble de resolución.
+ * Con un gráfico de ancho fijo (informes) usa ese ancho, no el que se ve en pantalla. Null si no hay gráfico.
+ * `titulo` y `pie` en false: solo la leyenda y el gráfico (para el PDF, que ya imprime el título y la fuente). */
+export async function pngBlobDe(contenedor: HTMLElement | null, spec: PiezaVoi, { titulo = true, pie = true } = {}): Promise<Blob | null> {
   const svg = contenedor?.querySelector("svg.recharts-surface") as SVGSVGElement | null;
-  if (!svg) return;
-  const { width, height } = svg.getBoundingClientRect();
+  if (!svg) return null;
+  const rect = svg.getBoundingClientRect();
+  const width = Number(svg.getAttribute("width")) || rect.width;
+  const height = Number(svg.getAttribute("height")) || rect.height;
+  if (!width || !height) return null;
   const series = (spec.series ?? []).length > 1 ? spec.series ?? [] : [];
-  const arriba = 44 + (series.length ? 24 : 0);
+  const leyendaY = titulo ? 44 : 12;
+  const arriba = leyendaY + (series.length ? 24 : (titulo ? 0 : 4));
+  const abajo = pie ? 28 : 12;
   const escala = 2;
   const lienzo = document.createElement("canvas");
   lienzo.width = (width + 32) * escala;
-  lienzo.height = (height + arriba + 28) * escala;
+  lienzo.height = (height + arriba + abajo) * escala;
   const g = lienzo.getContext("2d")!;
   g.scale(escala, escala);
   g.fillStyle = "#FFFFFF";
-  g.fillRect(0, 0, width + 32, height + arriba + 28);
-  g.fillStyle = TINTA;
-  g.font = "600 16px Manrope, system-ui, sans-serif";
-  g.fillText(spec.titulo, 16, 28);
+  g.fillRect(0, 0, width + 32, height + arriba + abajo);
+  if (titulo) {
+    g.fillStyle = TINTA;
+    g.font = "600 16px Manrope, system-ui, sans-serif";
+    g.fillText(spec.titulo, 16, 28);
+  }
   let xl = 16;
   g.font = "12px Manrope, system-ui, sans-serif";
   series.forEach((s, i) => {
     g.fillStyle = SERIES[i % SERIES.length];
-    g.fillRect(xl, 44, 10, 10);
+    g.fillRect(xl, leyendaY, 10, 10);
     g.fillStyle = "#2A2F3A";
-    g.fillText(s.nombre, xl + 14, 53);
+    g.fillText(s.nombre, xl + 14, leyendaY + 9);
     xl += g.measureText(s.nombre).width + 30;
   });
   const copia = svg.cloneNode(true) as SVGSVGElement;
   copia.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   copia.setAttribute("width", String(width));
   copia.setAttribute("height", String(height));
+  copia.setAttribute("font-family", "Manrope, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif");
   const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copia)], { type: "image/svg+xml" }));
   await new Promise<void>((ok) => {
     const img = new Image();
@@ -118,11 +129,21 @@ async function pngDe(contenedor: HTMLElement | null, spec: PiezaVoi) {
     img.src = url;
   });
   URL.revokeObjectURL(url);
-  g.fillStyle = "#9CA3AF";
-  g.font = "11px Manrope, system-ui, sans-serif";
-  g.fillText(`Voi · Operaciones Voicenter${spec.nota ? ` · ${spec.nota}` : ""}`, 16, height + arriba + 18);
-  const a = Object.assign(document.createElement("a"), { href: lienzo.toDataURL("image/png"), download: `${nombreArchivo(spec.titulo)}.png` });
-  a.click();
+  if (pie) {
+    g.fillStyle = "#9CA3AF";
+    g.font = "11px Manrope, system-ui, sans-serif";
+    g.fillText(`Voi · Operaciones Voicenter${spec.nota ? ` · ${spec.nota}` : ""}`, 16, height + arriba + 18);
+  }
+  return new Promise<Blob | null>((ok) => lienzo.toBlob(ok, "image/png"));
+}
+
+/** Descargar el gráfico como PNG. */
+async function pngDe(contenedor: HTMLElement | null, spec: PiezaVoi) {
+  const blob = await pngBlobDe(contenedor, spec);
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  Object.assign(document.createElement("a"), { href: url, download: `${nombreArchivo(spec.titulo)}.png` }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function BotonChico({ onClick, titulo, children, activo }: { onClick: () => void; titulo: string; children: React.ReactNode; activo?: boolean }) {
@@ -194,12 +215,14 @@ export function VoiLienzo() {
   const sel = artefactos.find((a) => a.id === voi.lienzo.foco) ?? artefactos[artefactos.length - 1];
   const chips = useRef<HTMLDivElement>(null);
   const inv = voi.investigacion;
-  const { indice, recargar } = useIndiceInforme(inv?.auditoria_id);
+  const diario = esInformeDiario(inv);
+  const etiqueta = etiquetaDestino(inv);
+  const { indice, recargar } = useIndiceDestino(inv);
   // Claves elegidas para el informe («id» o «id#n» para una parte de un tablero), en el orden en que se eligieron.
   const [elegidas, setElegidas] = useState<string[]>([]);
   const [hoja, setHoja] = useState(false);
 
-  useEffect(() => { setElegidas([]); }, [voi.conv?.id, inv?.auditoria_id, inv?.activo]);
+  useEffect(() => { setElegidas([]); }, [voi.conv?.id, inv?.auditoria_id, inv?.informe_id, inv?.activo]);
   // Lo que Voi suma al informe con su tarjeta también se marca acá (se vuelve a pedir el índice).
   const sumadasPorVoi = voi.chat.items.filter((i) => i.tipo === "accion" && i.accion.herramienta === "proponer_evidencia" && i.accion.estado === "ejecutada").length;
   const previas = useRef(sumadasPorVoi);
@@ -239,7 +262,7 @@ export function VoiLienzo() {
 
   return (
     <section
-      className={`voi-panel no-print fixed z-[45] inset-0 lg:right-[440px] bg-brand-bg flex flex-col lg:border-r border-brand-border ${inv ? "voi-auditor" : ""}`}
+      className={`voi-panel no-print fixed z-[45] inset-0 lg:right-[440px] bg-brand-bg flex flex-col lg:border-r border-brand-border ${inv ? (diario ? "voi-informe" : "voi-auditor") : ""}`}
       role="dialog"
       aria-label="Lienzo de Voi"
     >
@@ -297,27 +320,27 @@ export function VoiLienzo() {
               <>
                 <div className="text-sm font-semibold text-brand-ink">{elegidas.length === 1 ? "1 pieza elegida" : `${elegidas.length} piezas elegidas`}</div>
                 <div className="text-xs text-brand-slate truncate">
-                  Para <span className="whitespace-nowrap">{inv.codigo ?? "el informe"}</span>{indice ? ` · tiene ${indice.figuras.length} figura${indice.figuras.length === 1 ? "" : "s"}` : ""}
+                  Para <span className="whitespace-nowrap">{etiqueta ?? "el informe"}</span>{indice ? ` · tiene ${indice.figuras.length} figura${indice.figuras.length === 1 ? "" : "s"}` : ""}
                 </div>
               </>
             ) : (
               <div className="text-xs text-brand-slate">
                 Marcá <span className="font-semibold text-brand-ink">Al informe</span> en lo que quieras sumar
-                {inv.codigo ? <> a <span className="whitespace-nowrap">{inv.codigo}</span></> : ""}.
+                {etiqueta ? <> a <span className="whitespace-nowrap">{etiqueta}</span></> : ""}.
               </div>
             )}
           </div>
           {elegidas.length > 0 && <button type="button" onClick={() => setElegidas([])} className="btn-ghost px-3 py-2 text-xs">Limpiar</button>}
-          {inv.auditoria_id ? (
+          {tieneDestino(inv) ? (
             <button type="button" onClick={() => setHoja(true)} disabled={!elegidas.length || indice?.informe.editable === false}
-              title={indice?.informe.editable === false ? "El informe está cerrado: su evidencia quedó fija" : undefined}
+              title={indice?.informe.editable === false ? (diario ? "El informe ya está firmado: sus figuras quedaron fijas" : "El informe está cerrado: su evidencia quedó fija") : undefined}
               className="btn-primary px-4 py-2 whitespace-nowrap">Sumar al informe</button>
           ) : (
             <button type="button" onClick={() => voi.setSelectorAuditor(true)} className="btn-primary px-4 py-2 whitespace-nowrap">Elegir informe</button>
           )}
         </div>
       )}
-      {hoja && inv?.auditoria_id && (
+      {hoja && inv && tieneDestino(inv) && (
         <HojaSumar piezas={piezasElegidas} inv={inv} indice={indice} conversacionId={voi.conv?.id ?? null}
           onCerrar={() => setHoja(false)} onListo={() => { setElegidas([]); recargar(); }} />
       )}

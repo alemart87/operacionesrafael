@@ -10,11 +10,16 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ...operativas.televentas_claro.auditoria import evidencias
+from ...operativas.televentas_claro.informe_diario import figuras as fig_srv
+from ...operativas.televentas_claro.informe_diario import informe as inf_srv
+from ...operativas.televentas_claro.informe_diario.models import InformeDiario
 from .. import investigacion
 from ..models import AsistenteConversacion
 from .base import CONFIRMAR, CONSULTAR, TC, Ctx, ErrorHerramienta, Herramienta, esquema, registrar
 
 P_AUD = f"{TC}.auditoria"
+P_INF = f"{TC}.informe_diario"
+GESTION = frozenset({"superadmin", "gestion"})
 MAX_PIEZAS = 8
 
 
@@ -106,6 +111,44 @@ registrar(Herramienta(
     fn=_sugerir, resumen=_resumen_sugerir, tarjeta=_tarjeta_sugerir, permisos=(P_AUD,)))
 
 
+# ------------------------------------------------------------------ modo informe diario
+async def _modo_informe(ctx: Ctx, e: dict[str, Any]) -> Any:
+    conv = await _conv(ctx)
+    if e.get("accion") == "desactivar":
+        investigacion.desactivar(conv)
+        _publicar(ctx, None)
+        return {"modo_informe_diario": "inactivo", "mensaje": "Saliste del modo informe diario."}
+    try:
+        inv = await investigacion.activar_informe(ctx.db, conv, ctx.user, e.get("informe"), e.get("fecha"), por="voi")
+    except ValueError as exc:
+        raise ErrorHerramienta(str(exc)) from exc
+    _publicar(ctx, inv)
+    dia = inv["fecha"]
+    return {
+        "modo_informe_diario": "activo",
+        "informe": {"id": inv["informe_id"], "fecha": dia, "estado": inv["estado"],
+                    "pantalla": f"/televentas-claro/informe-diario/{inv['informe_id']}"},
+        "indicaciones": ("El panel ya muestra el modo. Armá el informe con el usuario paso a paso: primero los datos del "
+                         "día, después resultados, resumen y métricas (preparar_informe_diario), y cada gráfico del "
+                         "lienzo ofrecelo como figura con proponer_evidencia. Nunca firmás."),
+    }
+
+
+registrar(Herramienta(
+    nombre="modo_informe_diario", etiqueta="Cambiando el modo informe diario", nivel=CONSULTAR, modos=GESTION,
+    descripcion=("Entra (o sale) del MODO INFORME DIARIO: la conversación pasa a armar el informe diario del usuario "
+                 "(hoy, o la fecha que diga, hasta 7 días atrás; el borrador se crea si no existe). El panel y el lienzo "
+                 "lo muestran y la plataforma te recuerda el informe destino en cada mensaje. Usala cuando el usuario "
+                 "quiera preparar, armar o completar su informe diario con vos. Después consultás los datos del día, "
+                 "proponés resultados, resumen y métricas (preparar_informe_diario) y ofrecés cada gráfico del lienzo "
+                 "como figura del informe (proponer_evidencia). Nunca firmás."),
+    esquema=esquema({"accion": {"type": "string", "enum": ["activar", "desactivar"]},
+                     "fecha": {"type": "string", "description": "AAAA-MM-DD del informe (por defecto, hoy)."},
+                     "informe": {"type": "string", "description": "Id de un informe diario propio (opcional)."}},
+                    ["accion"]),
+    fn=_modo_informe, permisos=(P_INF,)))
+
+
 # ------------------------------------------------------------------ proponer evidencia
 def _piezas(e: dict[str, Any]) -> list[dict[str, Any]]:
     piezas = e.get("piezas")
@@ -137,7 +180,47 @@ async def _informe_destino(ctx: Ctx, e: dict[str, Any]):
     return a
 
 
+async def _destino_informe_diario(ctx: Ctx, inv: dict[str, Any]) -> InformeDiario:
+    inf = await ctx.db.get(InformeDiario, str(inv.get("informe_id") or "")[:36])
+    if inf is None or inf.autor_id != ctx.user.id:
+        raise ErrorHerramienta("No encontré el informe diario destino: activá de nuevo el modo informe diario.")
+    return inf
+
+
+async def _proponer_informe_diario(ctx: Ctx, inv: dict[str, Any], e: dict[str, Any]) -> Any:
+    inf = await _destino_informe_diario(ctx, inv)
+    agregadas, repetidas = [], []
+    try:
+        for p in _piezas(e):
+            v = await investigacion.pieza(ctx.db, ctx.user, artefacto_id=p["artefacto_id"], widget=p["widget"])
+            f, nueva = fig_srv.sumar(inf, v["spec"], user_id=ctx.user.id, titulo=p["titulo"], nota=p["nota"], origen="voi",
+                                     conversacion_id=v["conversacion_id"], artefacto_id=v["artefacto_id"])
+            (agregadas if nueva else repetidas).append(f)
+    except (ValueError, fig_srv.FiguraError) as exc:
+        raise ErrorHerramienta(str(exc)) from exc
+    inf.updated_at = inf_srv.ahora()
+    await ctx.db.flush()
+    numero = {f["id"]: i + 1 for i, f in enumerate(fig_srv.listar(inf))}
+    dia = f"{inf.fecha:%d/%m}"
+    figuras = " y ".join(", ".join(f"Fig. {numero.get(f['id'])}" for f in agregadas).rsplit(", ", 1))
+    n = len(agregadas)
+    mensaje = (f"{'Se sumó' if n == 1 else f'Se sumaron {n}'} al informe diario del {dia} como {figuras}." if n else
+               f"Ya estaban en el informe diario del {dia}: no se duplicaron.")
+    return {
+        "mensaje": mensaje, "informe": f"Informe diario del {dia}",
+        "agregadas": [{"id": f["id"], "figura": numero.get(f["id"]), "titulo": f["titulo"]} for f in agregadas],
+        "ya_estaban": [{"figura": numero.get(f["id"]), "titulo": f["titulo"]} for f in repetidas] or None,
+        "total_figuras": len(numero), "pantalla": f"/televentas-claro/informe-diario/{inf.id}#figuras",
+        "importante": "Sumá solo lo que el usuario eligió en la tarjeta. Contale qué figuras quedaron y con qué número; "
+                      "el usuario revisa y firma el informe desde la pantalla.",
+    }
+
+
 async def _proponer(ctx: Ctx, e: dict[str, Any]) -> Any:
+    conv = await _conv(ctx)
+    inv = investigacion.estado(conv) or {}
+    if inv and investigacion.tipo(inv) == "informe_diario":
+        return await _proponer_informe_diario(ctx, inv, e)
     a = await _informe_destino(ctx, e)
     hallazgo_id = None
     if e.get("hallazgo"):
@@ -178,11 +261,20 @@ async def _proponer(ctx: Ctx, e: dict[str, Any]) -> Any:
 
 
 async def _resumen(ctx: Ctx, e: dict[str, Any]) -> str:
-    try:
-        a = await _informe_destino(ctx, e)
-        destino = f" al informe {a.codigo}"
-    except ErrorHerramienta:
-        destino = " al informe de auditoría"
+    conv = await _conv(ctx)
+    inv = investigacion.estado(conv) or {}
+    if inv and investigacion.tipo(inv) == "informe_diario":
+        try:
+            inf = await _destino_informe_diario(ctx, inv)
+            destino = f" al informe diario del {inf.fecha:%d/%m}"
+        except ErrorHerramienta:
+            destino = " al informe diario"
+    else:
+        try:
+            a = await _informe_destino(ctx, e)
+            destino = f" al informe {a.codigo}"
+        except ErrorHerramienta:
+            destino = " al informe de auditoría"
     try:
         piezas = _piezas(e)
     except ErrorHerramienta:
@@ -227,11 +319,12 @@ def _ajustar(entrada: dict[str, Any], ajustes: dict[str, Any]) -> Optional[dict[
 registrar(Herramienta(
     nombre="proponer_evidencia", etiqueta="Proponiendo evidencia para el informe", nivel=CONFIRMAR,
     descripcion=("Propone sumar piezas del lienzo (las que mostraste con mostrar_en_lienzo, por su artefacto_id; de un "
-                 "tablero podés proponer partes con `widget`) como figuras del informe de auditoría destino. El usuario "
-                 "ve una tarjeta con cada pieza, elige cuáles van, puede retocar título y nota, y confirma: se suman "
-                 "solo las elegidas, numeradas. En modo auditor, usala cada vez que muestres algo en el lienzo. Sugerí "
-                 "un título que sea la conclusión y una nota con la lectura del auditor; si la pieza respalda un "
-                 "hallazgo, indicá su código en `hallazgo` (H-01…)."),
+                 "tablero podés proponer partes con `widget`) como figuras del informe destino: el informe de auditoría "
+                 "en modo auditor, o el informe diario en modo informe diario. El usuario ve una tarjeta con cada "
+                 "pieza, elige cuáles van, puede retocar título y nota, y confirma: se suman solo las elegidas, "
+                 "numeradas. En esos modos, usala cada vez que muestres algo en el lienzo. Sugerí un título que sea la "
+                 "conclusión y una nota con la lectura para quien recibe el informe; si la pieza respalda un hallazgo de "
+                 "auditoría, indicá su código en `hallazgo` (H-01…)."),
     esquema=esquema({
         "piezas": {"type": "array", "minItems": 1, "maxItems": MAX_PIEZAS, "items": {
             "type": "object", "additionalProperties": False,
@@ -243,4 +336,4 @@ registrar(Herramienta(
         "auditoria": {"type": "string", "description": "Opcional: otro informe (id o código). Por defecto, el destino."},
         "hallazgo": {"type": "string", "description": "Opcional: código del hallazgo que respaldan (H-02)."},
     }, ["piezas"]),
-    fn=_proponer, resumen=_resumen, tarjeta=_tarjeta, ajustar=_ajustar, permisos=(P_AUD,)))
+    fn=_proponer, resumen=_resumen, tarjeta=_tarjeta, ajustar=_ajustar, permisos=(P_AUD, P_INF)))

@@ -63,6 +63,8 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     # v1.0 · Voi en modo auditor: informe destino por conversación y piezas del lienzo con datos confidenciales
     "ALTER TABLE asistente_conversaciones ADD COLUMN IF NOT EXISTS investigacion JSON",
     "ALTER TABLE asistente_artefactos ADD COLUMN IF NOT EXISTS confidencial BOOLEAN NOT NULL DEFAULT FALSE",
+    # v1.1 · Informe diario con figuras del lienzo de Voi (modo informe diario)
+    "ALTER TABLE informes_diarios ADD COLUMN IF NOT EXISTS figuras JSON",
 ]
 
 

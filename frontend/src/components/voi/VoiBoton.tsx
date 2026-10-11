@@ -3,7 +3,7 @@
 import { X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { PistaVoi } from "@/lib/voi";
+import { esInformeDiario, etiquetaDestino, type PistaVoi } from "@/lib/voi";
 import { VoiIsotipo } from "./VoiIsotipo";
 import { useVoi } from "./VoiProvider";
 
@@ -32,7 +32,10 @@ export function VoiBoton() {
   if (!voi?.habilitado) return null;
   const { chat, abierto, esperaConfirmacion, noLeidos, investigacion } = voi;
   const aviso = !abierto && (esperaConfirmacion || noLeidos > 0);
-  const subtitulo = investigacion ? "Modo auditor" : chat.trabajando ? "Trabajando…" : esperaConfirmacion ? "Esperá tu OK" : "Asistente";
+  const diario = esInformeDiario(investigacion);
+  const modo = investigacion ? (diario ? "modo informe diario" : "modo auditor") : null;
+  const destino = etiquetaDestino(investigacion);
+  const subtitulo = investigacion ? (diario ? "Informe diario" : "Modo auditor") : chat.trabajando ? "Trabajando…" : esperaConfirmacion ? "Esperá tu OK" : "Asistente";
   const latido = abierto || investigacion ? "" : esperaConfirmacion ? "voi-late-aprobar" : "voi-late";
   return (
     <div className="relative no-print">
@@ -41,11 +44,11 @@ export function VoiBoton() {
         data-voi="voi"
         onClick={voi.alternar}
         aria-pressed={abierto}
-        aria-label={investigacion ? "Voi, en modo auditor" : "AI VOI, el asistente de la plataforma"}
-        title={investigacion ? `Voi · modo auditor${investigacion.codigo ? ` · ${investigacion.codigo}` : ""} (${mac ? "⌘" : "Ctrl"}+K)` : `Voi, el asistente (${mac ? "⌘" : "Ctrl"}+K)`}
+        aria-label={modo ? `Voi, en ${modo}` : "AI VOI, el asistente de la plataforma"}
+        title={modo ? `Voi · ${modo}${destino ? ` · ${destino}` : ""} (${mac ? "⌘" : "Ctrl"}+K)` : `Voi, el asistente (${mac ? "⌘" : "Ctrl"}+K)`}
         className={`relative inline-flex items-center gap-2 h-11 pl-1.5 pr-3 rounded-full border-2 transition-colors ${
           abierto ? "border-brand-ink bg-brand-ink text-white" : "border-brand-border bg-white hover:border-brand-cyan"} ${
-          investigacion ? "voi-boton-auditor" : latido}`}
+          investigacion ? (diario ? "voi-boton-informe" : "voi-boton-auditor") : latido}`}
       >
         <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${abierto ? "bg-white" : "bg-brand-bg-soft border border-brand-border/70"}`}>
           <VoiIsotipo size={17} estado={chat.trabajando ? "pensando" : "quieto"} />

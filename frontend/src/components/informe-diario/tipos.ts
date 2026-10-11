@@ -1,7 +1,11 @@
 /** Informe diario de la operación: tipos y utilidades compartidas (el backend vive en `informe_diario/`). */
+import type { PiezaVoi } from "@/components/voi/lienzo/tipos";
 
 export const ID_API = "/api/v1/televentas-claro/informe-diario";
 export const ID_HREF = "/televentas-claro/informe-diario";
+/** La sección Figuras de un informe (donde quedan las piezas del lienzo de Voi). */
+export const figurasHref = (id: string) => `${ID_HREF}/${id}#figuras`;
+export const MAX_FIGURAS = 12;
 
 export type EstadoInforme = "borrador" | "firmado";
 export type EstadoMetrica = "critico" | "atencion" | "ok";
@@ -75,6 +79,21 @@ export interface Compromiso {
 }
 
 export interface Comentario { id: string; autor: string; autor_id: string; rol: "superadmin" | "autor"; texto: string; at: string | null }
+
+/** Una figura del lienzo de Voi sumada al informe (gráfico, indicadores, tabla o tablero), con la especificación
+ * congelada: en la pantalla se vuelve a dibujar igual; en el PDF va la captura que manda el navegador. */
+export interface FiguraInforme {
+  id: string;
+  figura: number;
+  titulo: string | null;
+  nota: string | null;
+  spec: PiezaVoi;
+  origen: "voi" | "lienzo" | null;
+  artefacto_id: string | null;
+  created_at: string | null;
+  /** El navegador ya mandó la captura (PNG) para el PDF; si no, el PDF lleva los datos de la figura. */
+  imagen: boolean;
+}
 export interface Firma { nombre: string; cargo: string; imagen: string | null; firmado_at: string; codigo: string }
 export type Marca = [number, number, string, boolean, boolean]; // inicio, fin, tema, crítico, negada
 
@@ -108,6 +127,7 @@ export interface InformeDetalle {
   es_autor: boolean;
   puede_editar: boolean;
   comentarios: Comentario[];
+  figuras?: FiguraInforme[];
   nuevos: number;
   verificacion: boolean | null;
   hoy: string;

@@ -24,19 +24,48 @@ export interface EstadoVoi {
   confirma_borradores: boolean;
   /** Tiene Auditoría de ventas: puede trabajar en modo auditor (investigación con informe destino). */
   modo_auditor?: boolean;
+  /** Prepara el informe diario: puede armarlo con Voi (modo informe diario, con figuras del lienzo). */
+  modo_informe_diario?: boolean;
 }
 
-/** Modo auditor de una conversación: es una investigación de auditoría con un informe destino. */
+/** Los modos de una conversación: investigación de auditoría (con un informe destino) o armado del informe diario. */
+export type TipoModo = "auditor" | "informe_diario";
+
+/** El modo activo de una conversación: el modo auditor (con su informe destino) o el modo informe diario (con el
+ * borrador del día). */
 export interface InvestigacionVoi {
   activo: boolean;
+  /** «auditor» (por defecto) o «informe_diario». */
+  tipo?: TipoModo | null;
   auditoria_id?: string | null;
   codigo?: string | null;
   titulo?: string | null;
   estado?: string | null;
+  /** Modo informe diario: el borrador destino y su fecha (AAAA-MM-DD). */
+  informe_id?: string | null;
+  fecha?: string | null;
   desde?: string | null;
   /** Quién lo activó: el usuario (desde el panel) o Voi (con su herramienta). */
   por?: string | null;
 }
+
+export const esInformeDiario = (inv: InvestigacionVoi | null | undefined): boolean => inv?.tipo === "informe_diario";
+/** '2026-10-11' → '11/10'. */
+export const ddmm = (iso: string | null | undefined): string => (iso && iso.length >= 10 ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
+/** Cómo se nombra el destino de las figuras: «AUD-2026-003» o «Informe diario · 11/10». */
+export function etiquetaDestino(inv: InvestigacionVoi | null | undefined): string | null {
+  if (!inv) return null;
+  if (esInformeDiario(inv)) return `Informe diario · ${ddmm(inv.fecha)}`;
+  return inv.codigo ?? null;
+}
+/** La pantalla del destino: la pestaña Evidencia del informe de auditoría o la sección Figuras del informe diario. */
+export function pantallaDestino(inv: InvestigacionVoi | null | undefined): string | null {
+  if (!inv) return null;
+  if (esInformeDiario(inv)) return inv.informe_id ? `/televentas-claro/informe-diario/${inv.informe_id}#figuras` : null;
+  return inv.auditoria_id ? `/televentas-claro/auditoria/informes/${inv.auditoria_id}#evidencia` : null;
+}
+/** Si el modo ya tiene a dónde sumar las figuras. */
+export const tieneDestino = (inv: InvestigacionVoi | null | undefined): boolean => !!pantallaDestino(inv);
 
 export interface ConversacionVoi {
   id: string;
@@ -104,10 +133,14 @@ export interface PiezaParaInforme {
 }
 export interface FiguraSumada { id: string; figura: number | null; titulo: string }
 export interface ResultadoEvidencia {
-  informe: { id: string; codigo: string; titulo: string };
+  informe: { id: string; codigo: string; titulo: string; tipo?: TipoModo; pantalla?: string | null };
   agregadas: FiguraSumada[];
   repetidas: FiguraSumada[];
 }
+/** A dónde van las piezas del lienzo: un informe de auditoría o el informe diario. */
+export type DestinoEvidencia = { auditoria_id: string } | { informe_diario_id: string };
+/** Con qué se activa un modo: el informe de auditoría destino, o el informe diario (por id o por fecha; hoy si no). */
+export interface DestinoModo { tipo?: TipoModo; auditoria_id?: string | null; informe_id?: string | null; fecha?: string | null }
 
 /** Un botón que Voi ofrece en el chat: al tocarlo se manda `mensaje` (y, si trae `ruta`, se abre esa pantalla). */
 export interface OpcionVoi { texto: string; mensaje: string; ruta?: string; titulo?: string }
@@ -148,8 +181,8 @@ export type ItemVoi =
   | { tipo: "aviso"; id: string; texto: string; nivel?: "info" | "alerta" | "error"; at?: string | null }
   | { tipo: "lienzo"; id: string; artefacto: ArtefactoVoi; at?: string | null; entrada?: unknown; resultado?: string }
   | { tipo: "contexto"; id: string; texto: string; at?: string | null }
-  /** El modo auditor se prendió o se apagó en esta conversación (separador en el chat). */
-  | { tipo: "modo"; id: string; activo: boolean; texto: string; at?: string | null }
+  /** Un modo (auditor o informe diario) se prendió o se apagó en esta conversación (separador en el chat). */
+  | { tipo: "modo"; id: string; activo: boolean; texto: string; modo?: TipoModo; at?: string | null }
   | { tipo: "pensando"; id: string; at?: string | null };
 
 export interface TranscripcionVoi {
@@ -210,15 +243,17 @@ export const voiApi = {
   confirmar: (id: string, ajustes?: AjustesEvidencia) =>
     apiFetch<AccionVoi>(`${VOI_API}/acciones/${id}/confirmar`, { method: "POST", body: JSON.stringify(ajustes ? { ajustes } : {}) }),
   cancelar: (id: string) => apiFetch<AccionVoi>(`${VOI_API}/acciones/${id}/cancelar`, { method: "POST" }),
-  /** Entra o sale del modo auditor (y elige el informe destino). */
-  investigacion: (id: string, activo: boolean, auditoria_id?: string | null) =>
+  /** Entra en un modo (auditor con su informe destino, o informe diario con el borrador del día) o sale del activo. */
+  investigacion: (id: string, activo: boolean, destino: DestinoModo = {}) =>
     apiFetch<ConversacionVoi>(`${VOI_API}/conversaciones/${id}/investigacion`, {
-      method: "POST", body: JSON.stringify({ activo, auditoria_id: auditoria_id ?? null }),
+      method: "POST",
+      body: JSON.stringify({ activo, tipo: destino.tipo ?? "auditor", auditoria_id: destino.auditoria_id ?? null,
+                             informe_id: destino.informe_id ?? null, fecha: destino.fecha ?? null }),
     }),
-  /** Suma piezas del lienzo (elegidas por el usuario) como figuras de un informe de auditoría. */
-  sumarEvidencia: (auditoria_id: string, conversacion_id: string | null, piezas: PiezaParaInforme[]) =>
+  /** Suma piezas del lienzo (elegidas por el usuario) como figuras de un informe de auditoría o del informe diario. */
+  sumarEvidencia: (destino: DestinoEvidencia, conversacion_id: string | null, piezas: PiezaParaInforme[]) =>
     apiFetch<ResultadoEvidencia>(`${VOI_API}/evidencias`, {
-      method: "POST", body: JSON.stringify({ auditoria_id, conversacion_id, piezas }),
+      method: "POST", body: JSON.stringify({ ...destino, conversacion_id, piezas }),
     }),
   /** Las pantallas que esta persona puede abrir, con la pista de Voi y las guías de cada una. */
   pantallas: () => apiFetch<{ items: PantallaVoi[] }>(`${VOI_API}/pantallas`),

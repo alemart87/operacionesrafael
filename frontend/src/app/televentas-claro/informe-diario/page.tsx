@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { PrepararInforme } from "@/components/informe-diario/boton";
+import { BotonArmarConVoi } from "@/components/informe-diario/figuras";
 import { Chip } from "@/components/informe-diario/campos";
 import {
   CHIP, ID_API, ID_HREF, diaCorto, diaLargo, horaPy, inicialDia, numero, type DiaRacha, type MisInformes,
@@ -111,9 +112,12 @@ function MisInformesVista() {
                     <Link href={`${ID_HREF}/${h.id}`} className="btn-primary !px-6 !py-3 text-base">Ver el informe <ArrowRight size={17} /></Link>
                   </>
                 ) : (
-                  <PrepararInforme className="btn-primary !px-6 !py-3.5 text-base shadow-elevated" onError={setError}>
-                    {h ? "Seguir con el informe de hoy" : "Preparar informe diario"}
-                  </PrepararInforme>
+                  <>
+                    <BotonArmarConVoi informeId={h?.id} className="btn-secondary !px-4 !py-3 text-sm" onError={setError} />
+                    <PrepararInforme className="btn-primary !px-6 !py-3.5 text-base shadow-elevated" onError={setError}>
+                      {h ? "Seguir con el informe de hoy" : "Preparar informe diario"}
+                    </PrepararInforme>
+                  </>
                 )}
               </div>
             </div>

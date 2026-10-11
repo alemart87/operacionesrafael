@@ -3,6 +3,7 @@ críticas con sus compromisos, seguimiento de los compromisos anteriores y la fi
 
 Las tipografías (Manrope y Barlow Condensed, licencia OFL) y el logo están en `app/assets`. Todo el texto que
 escribe el usuario se escapa (no se interpreta como marcado) y los caracteres que la tipografía no tiene se quitan.
+Las figuras del lienzo de Voi van con la captura que manda el navegador o, si no la hay, con sus datos en tabla.
 """
 from __future__ import annotations
 
@@ -277,6 +278,130 @@ def _importados(d: dict[str, Any], ancho: float) -> list[Any]:
     return out
 
 
+def _fmt(v: Any, formato: str = "numero") -> str:
+    """Un valor de una figura con el formato del lienzo: 1.234 · 1.234,5 · 12,4 % · Gs 1.234.567 · US$ 12,34."""
+    if v is None or v == "":
+        return "—"
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return _limpio(v)
+
+    def es(n: str) -> str:
+        return n.replace(",", "§").replace(".", ",").replace("§", ".")
+    if formato == "porcentaje":
+        return es(f"{x:,.1f}") + " %"
+    if formato == "guaranies":
+        return "Gs " + es(f"{x:,.0f}")
+    if formato == "dolares":
+        return "US$ " + es(f"{x:,.2f}")
+    if formato == "decimal":
+        return es(f"{x:,.1f}")
+    return es(f"{x:,.0f}" if x.is_integer() else f"{x:,.1f}")
+
+
+_GRILLA = TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                      ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                      ("BOX", (0, 0), (-1, -1), 0.6, BORDE), ("INNERGRID", (0, 0), (-1, -1), 0.4, BORDE),
+                      ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FCFCFE"))])
+MAX_FILAS_FIGURA = 40
+
+
+def _figura_tabla(spec: dict[str, Any], ancho: float) -> list[Any]:
+    """La figura como datos (cuando no hay captura): los indicadores, cada serie por categoría o la tabla."""
+    tipo = spec.get("tipo")
+    out: list[Any] = []
+    if tipo == "tablero":
+        for w in (spec.get("widgets") or [])[:8]:
+            out.append(Paragraph(f'<font name="{_F["semi"]}" size="8.5" color="#2A2F3A">{_limpio(w.get("titulo"))}</font>',
+                                 _e("wt", leading=12)))
+            out += _figura_tabla(w, ancho)
+            out.append(Spacer(1, 1.5 * mm))
+        return out
+    if tipo == "kpis":
+        celdas = []
+        for k in (spec.get("kpis") or [])[:8]:
+            celdas.append(Paragraph(
+                f'<font name="{_F["semi"]}" size="6.8" color="#5B6275">{escape(str(k.get("titulo") or "")).upper()}</font><br/>'
+                f'<font name="{_F["negrita"]}" size="12" color="#0F1116">{_fmt(k.get("valor"), k.get("formato") or spec.get("formato") or "numero")}</font>'
+                + (f'<br/><font size="7.2" color="#5B6275">{_limpio(k.get("detalle"))}</font>' if k.get("detalle") else ""),
+                _e("k", leading=13)))
+        por_fila = 4
+        grilla = [celdas[i:i + por_fila] + [""] * (por_fila - len(celdas[i:i + por_fila])) for i in range(0, len(celdas), por_fila)]
+        if grilla:
+            g = Table(grilla, colWidths=[ancho / por_fila] * por_fila)
+            g.setStyle(_GRILLA)
+            out.append(g)
+        return out
+    datos = spec.get("datos") or []
+    if tipo == "tabla":
+        cols = spec.get("columnas") or [{"campo": k, "nombre": k, "formato": "texto" if isinstance(v, str) else "numero"}
+                                        for k, v in (datos[0] if datos and isinstance(datos[0], dict) else {}).items()]
+        filas: list[list[Any]] = [[_cab(c.get("nombre") or c.get("campo") or "", i > 0) for i, c in enumerate(cols)]]
+        for fila in datos[:MAX_FILAS_FIGURA]:
+            celdas = []
+            for i, c in enumerate(cols):
+                v = fila.get(c.get("campo"))
+                texto = _limpio(v) if c.get("formato") == "texto" else _fmt(v, c.get("formato") or spec.get("formato") or "numero")
+                celdas.append(Paragraph(texto, _e("tf", fontSize=8, leading=10.5, alignment=TA_RIGHT if i else 0)))
+            filas.append(celdas)
+    else:
+        x = spec.get("x") or ""
+        series = spec.get("series") or []
+        filas = [[_cab(spec.get("x_nombre") or x, False), *[_cab(sr.get("nombre") or sr.get("campo") or "", True) for sr in series]]]
+        for fila in datos[:MAX_FILAS_FIGURA]:
+            filas.append([Paragraph(_limpio(fila.get(x)), _e("tf", fontSize=8, leading=10.5)),
+                          *[Paragraph(_fmt(fila.get(sr.get("campo")), spec.get("formato") or "numero"),
+                                      _e("tf", fontSize=8, leading=10.5, alignment=TA_RIGHT)) for sr in series]])
+    if len(filas) > 1 and filas[0]:
+        n = len(filas[0])
+        primera = ancho * (0.4 if n > 1 else 1)
+        resto = (ancho - primera) / max(n - 1, 1)
+        out.append(_tabla(filas, [primera] + [resto] * (n - 1), zebra=True))
+        if len(datos) > MAX_FILAS_FIGURA:
+            out.append(Paragraph(f"… y {len(datos) - MAX_FILAS_FIGURA} filas más (la tabla completa está en la pantalla).",
+                                 _e("mas", fontSize=7.5, leading=10, textColor=PIZARRA)))
+    return out
+
+
+def _imagen_figura(ruta: Any, ancho: float) -> Any:
+    """La captura de la figura (WebP en el disco), a lo ancho de la página y hasta 115 mm de alto."""
+    if not ruta or not Path(str(ruta)).exists():
+        return None
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(str(ruta)) as im:
+            buf = io.BytesIO()
+            im.convert("RGB").save(buf, "PNG")
+            w, h = im.size
+        buf.seek(0)
+        img = Image(buf)
+        escala = min(ancho / max(w, 1), 115 * mm / max(h, 1))
+        img.drawWidth, img.drawHeight = w * escala, h * escala
+        return img
+    except Exception:  # noqa: BLE001 — sin la captura se muestran los datos
+        return None
+
+
+def _figuras(d: dict[str, Any], ancho: float) -> list[Any]:
+    """Las figuras del lienzo de Voi: la captura si el navegador la mandó; si no, sus datos."""
+    figs = d.get("figuras") or []
+    if not figs:
+        return []
+    out: list[Any] = [Spacer(1, 6 * mm), _seccion("Figuras"), Spacer(1, 2.5 * mm)]
+    for i, f in enumerate(figs, 1):
+        bloque: list[Any] = [Paragraph(f'<font name="{_F["negrita"]}" size="10.5" color="#0F1116">Figura {i} · {_limpio(f.get("titulo"))}</font>',
+                                       _e("ft", leading=14))]
+        if f.get("nota"):
+            bloque.append(Paragraph(_limpio(f["nota"]), _e("fn", fontSize=8.5, leading=11.5, textColor=GRAFITO)))
+        bloque.append(Spacer(1, 1.5 * mm))
+        imagen = _imagen_figura(f.get("imagen_ruta"), ancho)
+        bloque += [imagen] if imagen is not None else _figura_tabla(f.get("spec") or {}, ancho)
+        bloque.append(Paragraph('<font size="7" color="#9CA3AF">Figura del lienzo de Voi · Operaciones Voicenter</font>', _e("fv", leading=10)))
+        out += [KeepTogether(bloque), Spacer(1, 4 * mm)]
+    return out
+
+
 def _resumen(d: dict[str, Any]) -> list[Any]:
     return [Spacer(1, 4 * mm), _seccion("Resumen del día"), Spacer(1, 2.5 * mm),
             Paragraph(_limpio(d.get("resumen")) or '<font color="#9CA3AF">Sin resumen.</font>', _e("r", fontSize=9.5, leading=14))]
@@ -380,7 +505,7 @@ def generar(d: dict[str, Any]) -> bytes:
                             subject="Informe diario · Televentas Claro", creator="Operaciones Voicenter")
     ancho = A4[0] - 2 * margen
     story: list[Any] = [*_encabezado(d, ancho), *_resultados(d, ancho), *_importados(d, ancho), *_resumen(d),
-                        *_metricas(d, ancho), *_seguimiento(d, ancho), *_firma(d, ancho)]
+                        *_metricas(d, ancho), *_figuras(d, ancho), *_seguimiento(d, ancho), *_firma(d, ancho)]
     pie = f"Operaciones Voicenter · Informe diario de {d['autor']} · {date.fromisoformat(d['fecha']):%d/%m/%Y}"
     doc.build(story, canvasmaker=functools.partial(_Lienzo, pie=pie, borrador=d["estado"] != "firmado"))
     return buf.getvalue()

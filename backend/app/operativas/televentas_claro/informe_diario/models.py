@@ -53,6 +53,8 @@ class InformeDiario(Base):
     importados: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     # Seguimiento de compromisos anteriores: [{"compromiso_id", "estado", "nota"}] (al firmar, con su texto).
     seguimiento: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # Figuras: piezas del lienzo de Voi con su especificación congelada (ver figuras.py). Nulo en informes viejos.
+    figuras: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     # Al firmar: {"nombre", "cargo", "imagen", "firmado_at", "codigo"}.
     firma: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

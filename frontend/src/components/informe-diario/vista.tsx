@@ -7,6 +7,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { ErrorMsg } from "@/components/supervision/dialogos";
 import { apiFetch, downloadFile, getToken } from "@/lib/api";
 import { Chip, Seccion } from "./campos";
+import { FigurasVista } from "./figuras";
 import { TarjetaImportado } from "./importados";
 import {
   CHIP, ESTADO_METRICA, ESTADO_SEG, ID_API, NIVEL, TONO_TEXTO, cumplimiento, diaCorto, diaLargo, fechaHoraPy, numero,
@@ -291,6 +292,8 @@ export function VistaInforme({ inicial, superadmin, recienFirmado }: { inicial: 
           </ul>
         </Seccion>
       )}
+
+      <FigurasVista figuras={d.figuras ?? []} />
 
       {d.seguimiento.length > 0 && (
         <Seccion titulo="Seguimiento de compromisos anteriores">

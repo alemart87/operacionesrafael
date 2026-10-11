@@ -1,28 +1,31 @@
 "use client";
 
 /**
- * Modo auditor de Voi (investigación de auditoría). Mientras está activo, el panel, el lienzo y el botón de Voi llevan
- * un borde fino que pasa despacio por los colores de Voicenter (globals.css: .voi-auditor); todo lo demás usa la paleta
- * neutra de la plataforma.
+ * Los modos de Voi con un informe destino: el modo auditor (investigación de auditoría) y el modo informe diario (armar
+ * el informe del día con Voi). Mientras uno está activo, el panel, el lienzo y el botón de Voi llevan un borde fino
+ * (globals.css: .voi-auditor pasa por los colores de Voicenter; .voi-informe late entre el púrpura y el cyan); todo lo
+ * demás usa la paleta neutra de la plataforma.
  *
- * - SelectorAuditor: entrar en el modo, elegir o cambiar el informe destino, salir.
- * - FranjaAuditor: la franja que muestra el modo y el informe destino (panel y lienzo).
+ * - SelectorAuditor: entrar en el modo auditor, elegir o cambiar el informe destino, salir.
+ * - InvitacionInforme / ChipModoInforme: entrar en el modo informe diario (Voi arranca solo).
+ * - FranjaAuditor: la franja que muestra el modo activo y su informe destino (panel y lienzo).
  * - TarjetaEvidencia: la tarjeta en la que el usuario elige qué piezas propuestas por Voi van al informe.
  * - HojaSumar: sumar al informe lo que el usuario eligió directo en el lienzo.
  */
 import {
-  ArrowUpRight, Check, CheckCircle2, ExternalLink, FileSearch, Layers, Loader2, LogOut, Maximize2, Search, ShieldCheck,
-  Sparkles, X, XCircle,
+  ArrowUpRight, Check, CheckCircle2, ClipboardPenLine, ExternalLink, FileSearch, Layers, Loader2, LogOut, Maximize2, Search,
+  ShieldCheck, Sparkles, X, XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AUD_API, ESTADO_AUD_LABEL, n, rangoPeriodos, type AuditoriaResumen, type EstadoAuditoria,
 } from "@/components/auditoria/tipos";
+import { ID_API, diaLargo, figurasHref, type InformeDetalle } from "@/components/informe-diario/tipos";
 import { apiFetch } from "@/lib/api";
 import {
-  avisarHash, voiApi, type AccionVoi, type AjustesEvidencia, type DetalleEvidencia, type DetalleModoAuditor, type InvestigacionVoi,
-  type ResultadoEvidencia,
+  avisarHash, ddmm, esInformeDiario, etiquetaDestino, pantallaDestino, voiApi, type AccionVoi, type AjustesEvidencia,
+  type DestinoEvidencia, type DetalleEvidencia, type DetalleModoAuditor, type InvestigacionVoi, type ResultadoEvidencia,
 } from "@/lib/voi";
 import { ICONO_TIPO, NOMBRE_TIPO } from "./lienzo/iconos";
 import type { ArtefactoVoi, PiezaVoi } from "./lienzo/tipos";
@@ -35,7 +38,7 @@ const ESTADO_CLS: Record<string, string> = { borrador: "badge-cyan", en_revision
 
 // ------------------------------------------------------------------ índice liviano del informe destino
 export interface IndiceInforme {
-  informe: { id: string; codigo: string; titulo: string; status: EstadoAuditoria; editable: boolean };
+  informe: { id: string; codigo: string; titulo: string; status: string; editable: boolean };
   hallazgos: { id: string; codigo: string; titulo: string; severidad: string; estado: string }[];
   figuras: { id: string; figura: number; titulo: string; tipo: string; origen: string; artefacto_id: string | null; hallazgo_id: string | null }[];
 }
@@ -47,6 +50,35 @@ export function useIndiceInforme(auditoriaId: string | null | undefined) {
     if (!auditoriaId) { setIndice(null); return; }
     try { setIndice(await apiFetch<IndiceInforme>(`${AUD_API}/informes/${auditoriaId}/evidencias/indice`)); } catch { setIndice(null); }
   }, [auditoriaId]);
+  useEffect(() => { recargar(); }, [recargar]);
+  return { indice, recargar };
+}
+
+/** El índice del destino del modo activo: el informe de auditoría (hallazgos y figuras) o el informe diario (sus
+ * figuras), con la misma forma, para marcar en el lienzo lo que ya está en el informe. */
+export function useIndiceDestino(inv: InvestigacionVoi | null) {
+  const [indice, setIndice] = useState<IndiceInforme | null>(null);
+  const diario = esInformeDiario(inv);
+  const id = diario ? inv?.informe_id ?? null : inv?.auditoria_id ?? null;
+  const recargar = useCallback(async () => {
+    if (!id) { setIndice(null); return; }
+    try {
+      if (diario) {
+        const d = await apiFetch<InformeDetalle>(`${ID_API}/${id}`);
+        setIndice({
+          informe: { id: d.id, codigo: `Informe diario · ${ddmm(d.fecha)}`, titulo: `Informe diario del ${diaLargo(d.fecha)}`,
+                     status: d.estado, editable: d.puede_editar },
+          hallazgos: [],
+          figuras: (d.figuras ?? []).map((f) => ({
+            id: f.id, figura: f.figura, titulo: f.titulo ?? "", tipo: f.spec?.tipo ?? "", origen: f.origen ?? "",
+            artefacto_id: f.artefacto_id ?? null, hallazgo_id: null,
+          })),
+        });
+      } else {
+        setIndice(await apiFetch<IndiceInforme>(`${AUD_API}/informes/${id}/evidencias/indice`));
+      }
+    } catch { setIndice(null); }
+  }, [id, diario]);
   useEffect(() => { recargar(); }, [recargar]);
   return { indice, recargar };
 }
@@ -81,35 +113,45 @@ function Radio({ activo }: { activo: boolean }) {
 }
 
 // ------------------------------------------------------------------ franja
-/** La franja del modo auditor: el informe destino, abrirlo, cambiarlo y salir. */
+/** La franja del modo activo: el informe destino (abrirlo, y en modo auditor cambiarlo) y salir. */
 export function FranjaAuditor({ inv, onCambiar, onSalir, onNavegar }: {
   inv: InvestigacionVoi;
   onCambiar: () => void;
   onSalir?: () => void;
   onNavegar?: () => void;
 }) {
+  const voi = useVoi()!;
+  const diario = esInformeDiario(inv);
+  const pantalla = pantallaDestino(inv);
+  const etiqueta = etiquetaDestino(inv);
+  const Icono = diario ? ClipboardPenLine : ShieldCheck;
+  const modo = diario ? "modo informe diario" : "modo auditor";
   return (
     <div className="flex items-center gap-3 pl-4 pr-2 py-2 border-b border-brand-border bg-brand-bg-soft flex-shrink-0" role="status" aria-live="polite">
-      <ShieldCheck size={16} className="text-brand-cyan flex-shrink-0" aria-hidden />
+      <Icono size={16} className={`flex-shrink-0 ${diario ? "text-brand-purple" : "text-brand-cyan"}`} aria-hidden />
       <div className="min-w-0 flex-1 leading-snug">
-        <div className="text-xs font-semibold text-brand-ink">Modo auditor</div>
+        <div className="text-xs font-semibold text-brand-ink">{diario ? "Modo informe diario" : "Modo auditor"}</div>
         <div className="text-xs text-brand-slate truncate">
-          {inv.auditoria_id ? <><span className="font-medium text-brand-graphite">{inv.codigo}</span> · {inv.titulo}</> : "Sin informe destino"}
+          {diario ? <>Informe del <span className="font-medium text-brand-graphite">{ddmm(inv.fecha)}</span> · borrador · las figuras del lienzo van a este informe</>
+            : inv.auditoria_id ? <><span className="font-medium text-brand-graphite">{inv.codigo}</span> · {inv.titulo}</> : "Sin informe destino"}
         </div>
       </div>
-      {inv.auditoria_id && (
-        <Link href={informeHref(inv.auditoria_id)} onClick={() => { onNavegar?.(); avisarHash("#"); }} title="Ver la evidencia del informe"
-          aria-label="Ver la evidencia del informe"
+      {pantalla && (
+        <button type="button" onClick={() => { onNavegar?.(); voi.navegarA(pantalla, `${etiqueta} · ${diario ? "Figuras" : "Evidencia"}`); }}
+          title={diario ? "Abrir el informe diario (cierra el lienzo)" : "Ir a la evidencia del informe (cierra el lienzo)"}
+          aria-label={diario ? "Abrir el informe diario" : "Ir a la evidencia del informe"}
           className="hidden sm:inline-flex w-8 h-8 items-center justify-center rounded-md text-brand-slate hover:bg-white hover:text-brand-ink">
           <ExternalLink size={14} />
-        </Link>
+        </button>
       )}
-      <button type="button" onClick={onCambiar}
-        className="rounded-md border border-brand-border bg-white px-2.5 py-1 text-xs font-semibold text-brand-graphite hover:border-brand-slate/60 hover:text-brand-ink whitespace-nowrap">
-        {inv.auditoria_id ? "Cambiar" : "Elegir informe"}
-      </button>
+      {!diario && (
+        <button type="button" onClick={onCambiar}
+          className="rounded-md border border-brand-border bg-white px-2.5 py-1 text-xs font-semibold text-brand-graphite hover:border-brand-slate/60 hover:text-brand-ink whitespace-nowrap">
+          {inv.auditoria_id ? "Cambiar" : "Elegir informe"}
+        </button>
+      )}
       {onSalir && (
-        <button type="button" onClick={onSalir} title="Salir del modo auditor" aria-label="Salir del modo auditor"
+        <button type="button" onClick={onSalir} title={`Salir del ${modo}`} aria-label={`Salir del ${modo}`}
           className="w-8 h-8 inline-flex items-center justify-center rounded-md text-brand-slate hover:bg-white hover:text-brand-primary">
           <LogOut size={15} />
         </button>
@@ -148,6 +190,56 @@ export function ChipModoAuditor() {
     </button>
   );
 }
+
+/** Entrar en modo informe diario desde la bienvenida: Voi arranca solo con el informe de hoy. */
+export function InvitacionInforme() {
+  const voi = useVoi()!;
+  const [ocupado, setOcupado] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const armar = async () => {
+    setOcupado(true);
+    setError(null);
+    try { await voi.activarInformeDiario(undefined, { arrancar: true }); } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
+  };
+  return (
+    <div className="mt-6 w-full rounded-xl border border-brand-border bg-white p-4 text-left">
+      <div className="flex items-start gap-3">
+        <span className="w-9 h-9 rounded-lg bg-brand-purple/10 text-brand-purple grid place-items-center flex-shrink-0"><ClipboardPenLine size={17} /></span>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-brand-ink">Informe diario con Voi</div>
+          <p className="mt-0.5 text-[13px] text-brand-slate leading-snug">
+            Miro los datos del día, te propongo resultados, resumen y métricas, y cada gráfico te lo ofrezco como figura del informe. Vos revisás y firmás.
+          </p>
+        </div>
+      </div>
+      <button type="button" onClick={armar} disabled={ocupado} className="btn-secondary mt-3 w-full py-2">
+        {ocupado ? <Loader2 size={15} className="animate-spin" /> : <ClipboardPenLine size={15} />} Armar el informe de hoy con Voi
+      </button>
+      {error && <p className="mt-2 text-xs text-brand-primary">{error}</p>}
+    </div>
+  );
+}
+
+export function ChipModoInforme() {
+  const voi = useVoi()!;
+  const [ocupado, setOcupado] = useState(false);
+  const armar = async () => {
+    setOcupado(true);
+    try { await voi.activarInformeDiario(undefined, { arrancar: true }); } catch { /* el panel lo cuenta */ } finally { setOcupado(false); }
+  };
+  return (
+    <button type="button" onClick={armar} disabled={ocupado} title="Armar el informe diario de hoy con Voi"
+      className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-dashed border-brand-border px-2.5 py-0.5 text-[11px] text-brand-slate hover:border-brand-slate/60 hover:text-brand-ink transition-colors disabled:opacity-60">
+      {ocupado ? <Loader2 size={11} className="animate-spin" /> : <ClipboardPenLine size={11} />} Informe diario
+    </button>
+  );
+}
+
+export const SUGERENCIAS_INFORME = [
+  "¿Cómo vino la productividad de llamadas hoy?",
+  "Mostrame en un gráfico las ventas del día",
+  "Prepará el borrador del informe con los datos de hoy",
+];
 
 export const SUGERENCIAS_AUDITOR = [
   "Hacé un barrido de alertas y decime qué no cierra",
@@ -361,15 +453,18 @@ const ESTADO_TARJETA: Record<AccionVoi["estado"], { texto: string; clase: string
 };
 
 /** La tarjeta de `proponer_evidencia`: cada pieza con su casilla, título y lectura editables. Solo va lo elegido. */
-export function TarjetaEvidencia({ a, artefactos, codigo, onConfirmarCon, onCancelar, onAbrirLienzo, onNavegar }: {
+export function TarjetaEvidencia({ a, artefactos, codigo, diario = false, onConfirmarCon, onCancelar, onAbrirLienzo, onNavegar }: {
   a: AccionVoi & { detalle: DetalleEvidencia };
   artefactos: ArtefactoVoi[];
   codigo?: string | null;
+  /** El destino es el informe diario (cambia los textos). */
+  diario?: boolean;
   onConfirmarCon: (a: AccionVoi, ajustes: AjustesEvidencia) => void;
   onCancelar: (a: AccionVoi) => void;
   onAbrirLienzo?: (id: string) => void;
   onNavegar?: () => void;
 }) {
+  const voi = useVoi()!;
   const piezas = a.detalle.piezas;
   const [sel, setSel] = useState<string[]>(() => piezas.map((p) => p.clave));
   const [ed, setEd] = useState<Record<string, { titulo: string; nota: string }>>(() =>
@@ -435,7 +530,8 @@ export function TarjetaEvidencia({ a, artefactos, codigo, onConfirmarCon, onCanc
                     maxLength={255} aria-label="Título de la figura" placeholder="Título de la figura"
                     className="mt-1 w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-semibold text-brand-ink outline-none hover:border-brand-border focus:border-brand-cyan focus:bg-white" />
                   <textarea value={e.nota} onChange={(ev) => setEd({ ...ed, [p.clave]: { ...e, nota: ev.target.value } })} disabled={!elegida}
-                    rows={e.nota ? 2 : 1} maxLength={4000} aria-label="Lectura del auditor" placeholder="Agregar la lectura del auditor (opcional)"
+                    rows={e.nota ? 2 : 1} maxLength={4000} aria-label={diario ? "Lectura de la figura" : "Lectura del auditor"}
+                    placeholder={diario ? "Lectura para quien recibe el informe (opcional)" : "Agregar la lectura del auditor (opcional)"}
                     className="w-full resize-none rounded-md border border-transparent bg-transparent px-1.5 py-1 text-xs leading-relaxed text-brand-graphite outline-none placeholder:text-brand-mist hover:border-brand-border focus:border-brand-cyan focus:bg-white" />
                 </div>
                 {onAbrirLienzo && artefactos.some((x) => x.id === p.artefacto_id) && (
@@ -459,10 +555,10 @@ export function TarjetaEvidencia({ a, artefactos, codigo, onConfirmarCon, onCanc
         </div>
       )}
       {a.pantalla && a.estado === "ejecutada" && (
-        <Link href={a.pantalla} onClick={() => { onNavegar?.(); avisarHash(a.pantalla ?? ""); }}
+        <button type="button" onClick={() => { onNavegar?.(); voi.navegarA(a.pantalla!, codigo ? `${codigo} · ${diario ? "Figuras" : "Evidencia"}` : "el informe"); }}
           className="mt-2.5 inline-flex items-center gap-1 text-xs font-semibold text-brand-primary hover:underline">
-          Ver en el informe <ArrowUpRight size={13} />
-        </Link>
+          Ir al informe <ArrowUpRight size={13} />
+        </button>
       )}
     </div>
   );
@@ -485,6 +581,9 @@ export function HojaSumar({ piezas, inv, indice, conversacionId, onCerrar, onLis
   onCerrar: () => void;
   onListo: (r: ResultadoEvidencia) => void;
 }) {
+  const voi = useVoi()!;
+  const diario = esInformeDiario(inv);
+  const etiqueta = etiquetaDestino(inv);
   const [ed, setEd] = useState<Record<string, { titulo: string; nota: string }>>(() =>
     Object.fromEntries(piezas.map((p) => [p.clave, { titulo: p.spec.titulo ?? "", nota: p.spec.nota ?? "" }])));
   const [cantidad] = useState(piezas.length);
@@ -500,18 +599,23 @@ export function HojaSumar({ piezas, inv, indice, conversacionId, onCerrar, onLis
   }, [ocupado, onCerrar]);
 
   const sumar = async () => {
-    if (!inv.auditoria_id) return;
+    const destino: DestinoEvidencia | null = diario
+      ? (inv.informe_id ? { informe_diario_id: inv.informe_id } : null)
+      : (inv.auditoria_id ? { auditoria_id: inv.auditoria_id } : null);
+    if (!destino) return;
     setOcupado(true);
     setError(null);
     try {
-      const r = await voiApi.sumarEvidencia(inv.auditoria_id, conversacionId, piezas.map((p) => ({
+      const r = await voiApi.sumarEvidencia(destino, conversacionId, piezas.map((p) => ({
         ...(p.artefacto.local ? { spec: p.spec } : { artefacto_id: p.artefacto.id, widget: p.widget ?? undefined }),
         titulo: ed[p.clave].titulo.trim() || undefined,
         nota: ed[p.clave].nota.trim() || undefined,
-        hallazgo_id: hallazgo || undefined,
+        hallazgo_id: !diario && hallazgo ? hallazgo : undefined,
       })));
       setResultado(r);
       onListo(r);
+      // La pantalla del informe diario (si está abierta) se actualiza sola.
+      if (diario) window.dispatchEvent(new CustomEvent("voi:figuras"));
     } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
   };
 
@@ -523,11 +627,11 @@ export function HojaSumar({ piezas, inv, indice, conversacionId, onCerrar, onLis
         <div className={`h-1.5 flex-shrink-0 ${resultado ? "bg-emerald-500" : "bg-brand-cyan"}`} />
         <div className="px-6 pt-5 pb-4 border-b border-brand-border flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-semibold uppercase tracking-wider2 text-brand-slate">Modo auditor · {inv.codigo}</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider2 text-brand-slate">{diario ? "Modo informe diario" : "Modo auditor"} · {etiqueta}</div>
             <h2 id="voi-hoja-sumar" className="font-display text-2xl text-brand-ink uppercase leading-tight mt-0.5">
-              {resultado ? "Evidencia sumada" : `Sumar ${cantidad === 1 ? "una figura" : `${cantidad} figuras`} al informe`}
+              {resultado ? (diario ? "Figuras sumadas" : "Evidencia sumada") : `Sumar ${cantidad === 1 ? "una figura" : `${cantidad} figuras`} al informe`}
             </h2>
-            <div className="text-sm text-brand-slate truncate">{inv.titulo}</div>
+            <div className="text-sm text-brand-slate truncate">{diario ? `Informe diario del ${diaLargo(inv.fecha)}` : inv.titulo}</div>
           </div>
           <BotonCerrar onClick={onCerrar} disabled={ocupado} />
         </div>
@@ -550,11 +654,20 @@ export function HojaSumar({ piezas, inv, indice, conversacionId, onCerrar, onLis
                 Ya estaban en el informe (no se duplicaron): {resultado.repetidas.map((f) => `Figura ${f.figura}`).join(", ")}.
               </div>
             )}
+            <p className="text-xs text-brand-slate leading-snug">
+              «Ir al informe» cierra el lienzo y abre {diario ? "la sección Figuras del informe diario" : `la pestaña Evidencia de ${resultado.informe.codigo}`};
+              después lo volvés a abrir desde el panel de Voi.
+            </p>
             <div className="flex items-center gap-2 pt-1 flex-wrap">
-              <Link href={informeHref(resultado.informe.id)} onClick={() => avisarHash("#")} className="btn-primary">
-                Ver en el informe <ArrowUpRight size={15} />
-              </Link>
-              <button type="button" onClick={onCerrar} className="btn-secondary">Seguir investigando</button>
+              <button type="button" className="btn-primary"
+                onClick={() => {
+                  onCerrar();
+                  voi.navegarA(resultado.informe.pantalla ?? (diario ? figurasHref(resultado.informe.id) : informeHref(resultado.informe.id)),
+                    `${resultado.informe.codigo} · ${diario ? "Figuras" : "Evidencia"}`);
+                }}>
+                Ir al informe <ArrowUpRight size={15} />
+              </button>
+              <button type="button" onClick={onCerrar} className="btn-secondary">{diario ? "Seguir armando" : "Seguir investigando"}</button>
             </div>
           </div>
         ) : (
@@ -571,12 +684,14 @@ export function HojaSumar({ piezas, inv, indice, conversacionId, onCerrar, onLis
                     <input value={e.titulo} maxLength={255} onChange={(ev) => setEd({ ...ed, [p.clave]: { ...e, titulo: ev.target.value } })}
                       aria-label="Título de la figura" placeholder="Título: la conclusión que muestra" className="input mt-2 py-2 font-semibold" />
                     <textarea value={e.nota} maxLength={4000} rows={2} onChange={(ev) => setEd({ ...ed, [p.clave]: { ...e, nota: ev.target.value } })}
-                      aria-label="Lectura del auditor" placeholder="Lectura del auditor: qué muestra, por qué importa, fuente y corte (opcional)"
+                      aria-label={diario ? "Lectura de la figura" : "Lectura del auditor"}
+                      placeholder={diario ? "Lectura para quien recibe el informe: qué muestra y por qué importa (opcional)"
+                        : "Lectura del auditor: qué muestra, por qué importa, fuente y corte (opcional)"}
                       className="input mt-2 min-h-[64px]" />
                   </div>
                 );
               })}
-              {indice && indice.hallazgos.length > 0 && (
+              {!diario && indice && indice.hallazgos.length > 0 && (
                 <div>
                   <label className="label" htmlFor="voi-hoja-hallazgo">Respaldan el hallazgo (opcional)</label>
                   <select id="voi-hoja-hallazgo" value={hallazgo} onChange={(e) => setHallazgo(e.target.value)} className="input">
@@ -589,7 +704,7 @@ export function HojaSumar({ piezas, inv, indice, conversacionId, onCerrar, onLis
               )}
               <p className="text-xs text-brand-slate">
                 {piezas.some((p) => p.artefacto.local) ? "Las tablas del chat se congelan tal como se ven: el informe no cambia si los datos cambian después. " : ""}
-                Queda registrado en la bitácora del informe.
+                {diario ? "Quedan en el informe y en su PDF; las revisás antes de firmar." : "Queda registrado en la bitácora del informe."}
               </p>
               {error && <p className="text-sm text-brand-primary">{error}</p>}
             </div>
