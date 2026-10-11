@@ -119,18 +119,36 @@ function TarjetaMetrica({ m, i, onChange, onQuitar }: { m: MetricaCritica; i: nu
 }
 
 // ------------------------------------------------------------------ el editor
+type Seguimiento = Record<string, { estado: EstadoSeg; nota: string }>;
+/** Lo que se edita, tal como lo trae el servidor (al abrir, y cada vez que Voi cambia el informe). */
+function editable(d: InformeDetalle) {
+  return {
+    resultados: {
+      pospago: { ...d.resultados.pospago, comentario: d.resultados.pospago?.comentario ?? "" },
+      gpon: { ...d.resultados.gpon, comentario: d.resultados.gpon?.comentario ?? "" },
+      otros: d.resultados.otros ?? [], fuente: d.resultados.fuente ?? null,
+    } as Resultados,
+    resumen: d.resumen,
+    metricas: d.metricas as MetricaCritica[],
+    seg: Object.fromEntries(d.seguimiento.map((s) => [s.compromiso_id, { estado: s.estado, nota: s.nota }])) as Seguimiento,
+    importados: d.importados as Importado[],
+    cargo: d.cargo,
+  };
+}
+type Editable = ReturnType<typeof editable>;
+const igual = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const NOMBRE_CAMPO: Record<keyof Editable, string> = {
+  resultados: "los resultados del día", resumen: "el resumen", metricas: "las métricas críticas", seg: "el seguimiento",
+  importados: "los datos de la plataforma", cargo: "el cargo",
+};
+
 export function EditorInforme({ inicial, onFirmado }: { inicial: InformeDetalle; onFirmado: (d: InformeDetalle) => void }) {
   const router = useRouter();
   const d = inicial;
-  const [resultados, setResultados] = useState<Resultados>(() => ({
-    pospago: { ...d.resultados.pospago, comentario: d.resultados.pospago?.comentario ?? "" },
-    gpon: { ...d.resultados.gpon, comentario: d.resultados.gpon?.comentario ?? "" },
-    otros: d.resultados.otros ?? [], fuente: d.resultados.fuente ?? null,
-  }));
+  const [resultados, setResultados] = useState<Resultados>(() => editable(d).resultados);
   const [resumen, setResumen] = useState(d.resumen);
   const [metricas, setMetricas] = useState<MetricaCritica[]>(d.metricas);
-  const [seg, setSeg] = useState<Record<string, { estado: EstadoSeg; nota: string }>>(
-    () => Object.fromEntries(d.seguimiento.map((s) => [s.compromiso_id, { estado: s.estado, nota: s.nota }])));
+  const [seg, setSeg] = useState<Seguimiento>(() => editable(d).seg);
   const [importados, setImportados] = useState<Importado[]>(d.importados);
   const [figuras, setFiguras] = useState<FiguraInforme[]>(d.figuras ?? []);   // se cambian con sus propios pedidos, no con el guardado
   const [cargo, setCargo] = useState(d.cargo);
@@ -144,24 +162,36 @@ export function EditorInforme({ inicial, onFirmado }: { inicial: InformeDetalle;
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
 
-  // ---- guardado automático (con lo último siempre a mano)
-  const ultimo = useRef<any>(null);
-  ultimo.current = {
-    resultados, resumen, metricas, importados: importados.map((x) => x.id), cargo,
-    seguimiento: Object.entries(seg).map(([compromiso_id, s]) => ({ compromiso_id, ...s })),
-  };
+  // ---- guardado automático: manda solo lo que cambió desde lo último guardado (así no pisa lo que Voi escribió)
+  const local = useRef<Editable>(null as unknown as Editable);   // lo que se ve, con la forma del servidor
+  local.current = { resultados, resumen, metricas, seg, importados, cargo };
+  const enServidor = useRef<Editable>(editable(d));               // lo último que se sabe guardado
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const enVuelo = useRef<Promise<void> | null>(null);
   const otraVez = useRef(false);
   const primera = useRef(true);
+  const traidoDeVoi = useRef(false);
+  const estadoRef = useRef<EstadoGuardado>("guardado");
+  estadoRef.current = estado;
 
   const guardar = useCallback(async (): Promise<void> => {
     if (enVuelo.current) { otraVez.current = true; return enVuelo.current; }
     const p = (async () => {
       setEstado("guardando");
+      const foto = local.current;
+      const cambiados = (Object.keys(NOMBRE_CAMPO) as (keyof Editable)[]).filter((k) => !igual(foto[k], enServidor.current[k]));
       try {
-        const r = await apiFetch<{ updated_at: string }>(`${ID_API}/${d.id}`, { method: "PUT", body: JSON.stringify(ultimo.current) });
-        setGuardadoAt(r.updated_at);
+        if (cambiados.length > 0) {
+          const cuerpo: Record<string, unknown> = {};
+          for (const k of cambiados) {
+            cuerpo[k === "seg" ? "seguimiento" : k] =
+              k === "seg" ? Object.entries(foto.seg).map(([compromiso_id, s]) => ({ compromiso_id, ...s }))
+                : k === "importados" ? foto.importados.map((x) => x.id) : foto[k];
+          }
+          const r = await apiFetch<{ updated_at: string }>(`${ID_API}/${d.id}`, { method: "PUT", body: JSON.stringify(cuerpo) });
+          enServidor.current = { ...enServidor.current, ...Object.fromEntries(cambiados.map((k) => [k, foto[k]])) };
+          setGuardadoAt(r.updated_at);
+        }
         setEstado("guardado");
       } catch (e: any) {
         setEstado("error");
@@ -177,11 +207,45 @@ export function EditorInforme({ inicial, onFirmado }: { inicial: InformeDetalle;
 
   useEffect(() => {
     if (primera.current) { primera.current = false; return; }
+    if (traidoDeVoi.current) {
+      // Lo que cambió lo trajo Voi del servidor: no hay nada nuevo que guardar (salvo lo propio que ya estaba pendiente).
+      traidoDeVoi.current = false;
+      if (estadoRef.current !== "pendiente") return;
+    }
     setEstado("pendiente");
     clearTimeout(timer.current);
     timer.current = setTimeout(() => { guardar().catch(() => undefined); }, ESPERA_GUARDADO);
     return () => clearTimeout(timer.current);
   }, [resultados, resumen, metricas, seg, importados, cargo, guardar]);
+
+  /** Voi cambió este informe desde el chat: se trae del servidor y se aplica solo lo que cambió, sin pisar lo que se
+   * está escribiendo acá (si los dos tocaron lo mismo, queda lo de Voi, que es lo que el usuario le pidió). */
+  const traerDeVoi = useCallback(async () => {
+    if (enVuelo.current) await enVuelo.current.catch(() => undefined);   // que el servidor tenga la última palabra
+    let r: InformeDetalle;
+    try { r = await apiFetch<InformeDetalle>(`${ID_API}/${d.id}`); } catch { return; }
+    const nuevo = editable(r);
+    const viejo = enServidor.current;
+    const cambios = (Object.keys(NOMBRE_CAMPO) as (keyof Editable)[]).filter((k) => !igual(nuevo[k], viejo[k]));
+    enServidor.current = nuevo;
+    setFiguras(r.figuras ?? []);
+    if (cambios.length === 0) return;
+    traidoDeVoi.current = true;
+    if (cambios.includes("resultados")) setResultados(nuevo.resultados);
+    if (cambios.includes("resumen")) setResumen(nuevo.resumen);
+    if (cambios.includes("metricas")) setMetricas(nuevo.metricas);
+    if (cambios.includes("seg")) setSeg(nuevo.seg);
+    if (cambios.includes("importados")) setImportados(nuevo.importados);
+    if (cambios.includes("cargo")) setCargo(nuevo.cargo);
+    if (estadoRef.current === "guardado") setGuardadoAt(r.updated_at);
+    const nombres = cambios.map((k) => NOMBRE_CAMPO[k]);
+    setAviso(`Voi actualizó ${nombres.length > 1 ? `${nombres.slice(0, -1).join(", ")} y ${nombres[nombres.length - 1]}` : nombres[0]}.`);
+  }, [d.id]);
+  useEffect(() => {
+    const f = (e: Event) => { if ((e as CustomEvent<{ id?: string }>).detail?.id === d.id) traerDeVoi(); };
+    window.addEventListener("voi:informe", f);
+    return () => window.removeEventListener("voi:informe", f);
+  }, [d.id, traerDeVoi]);
 
   /** Antes de firmar, descargar o salir: lo pendiente queda guardado. */
   const asegurar = useCallback(async () => {

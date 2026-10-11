@@ -3,7 +3,7 @@
 import {
   CalendarClock, CircleCheck, Eye, EyeOff, FileDown, MessageSquareText, Send, Share2, ShieldAlert, ShieldCheck, TriangleAlert,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ErrorMsg } from "@/components/supervision/dialogos";
 import { apiFetch, downloadFile, getToken } from "@/lib/api";
 import { Chip, Seccion } from "./campos";
@@ -102,6 +102,15 @@ function Comentarios({ d, onCambio }: { d: InformeDetalle; onCambio: (c: Comenta
 // ------------------------------------------------------------------ el informe en lectura
 export function VistaInforme({ inicial, superadmin, recienFirmado }: { inicial: InformeDetalle; superadmin: boolean; recienFirmado?: boolean }) {
   const [d, setD] = useState(inicial);
+  // Voi comentó o marcó revisado este informe desde el chat: se trae de nuevo sin recargar la pantalla.
+  useEffect(() => {
+    const f = (e: Event) => {
+      if ((e as CustomEvent<{ id?: string }>).detail?.id !== inicial.id) return;
+      apiFetch<InformeDetalle>(`${ID_API}/${inicial.id}`).then(setD).catch(() => undefined);
+    };
+    window.addEventListener("voi:informe", f);
+    return () => window.removeEventListener("voi:informe", f);
+  }, [inicial.id]);
   const [resaltar, setResaltar] = useState(true);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

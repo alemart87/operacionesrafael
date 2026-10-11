@@ -61,10 +61,7 @@ export default function LoginPage() {
       >
         {/* El mural de puntos de la fachada, tenue, y el logo en movimiento. */}
         <MuralPuntos className="absolute inset-0 w-full h-full opacity-[0.16] pointer-events-none" />
-        <div className="flex items-start justify-between gap-6 relative z-10">
-          <div className="bg-white rounded-lg px-4 py-2.5 shadow-elevated">
-            <img src="/logo-voicenter-color.png" alt="Voicenter" className="h-9 w-auto block" />
-          </div>
+        <div className="flex items-start justify-end relative z-10">
           <LogoAnimado size={230} sobreRojo className="xl:w-[300px] xl:h-auto drop-shadow-[0_8px_24px_rgba(0,0,0,0.25)]" />
         </div>
 

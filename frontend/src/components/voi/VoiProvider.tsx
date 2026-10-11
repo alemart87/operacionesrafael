@@ -13,7 +13,7 @@ import { ApiError, CurrentUserInfo, getToken } from "@/lib/api";
 import { OPERATIVA_ROUTES, isNavActive, operativaFromPath, submoduloFromPath } from "@/lib/operativas";
 import {
   AccionVoi, AjustesEvidencia, ConexionVoi, ConversacionVoi, DestinoModo, EstadoVoi, EventoVoi, GuiaVoi, InvestigacionVoi, ItemVoi,
-  OpcionVoi, Pantalla, PantallaVoi, TipoModo, avisarHash, ddmm, escucharConversacion, pantallaDeRuta, voiApi,
+  OpcionVoi, Pantalla, PantallaVoi, TipoModo, avisarHash, avisarInformeCambiado, ddmm, escucharConversacion, pantallaDeRuta, voiApi,
 } from "@/lib/voi";
 import { SelectorAuditor } from "./VoiAuditor";
 import { AvisoVoi, GuiaFlotante, Resalte } from "./VoiGuia";
@@ -357,9 +357,10 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
           despachar({ t: "modo", inv: ev.investigacion, previo: convRef.current?.investigacion?.tipo ?? "auditor" });
           setConv((c) => (c && c.id === id ? { ...c, investigacion: ev.investigacion } : c));
         }
-        // Voi sumó figuras a un informe: la pantalla del informe diario, si está abierta, se actualiza sola.
-        if (ev.tipo === "accion" && ev.accion.herramienta === "proponer_evidencia" && ev.accion.estado === "ejecutada") {
-          window.dispatchEvent(new CustomEvent("voi:figuras"));
+        // Voi cambió un informe (figuras, resultados, resumen, comentario…): la pantalla, si está abierta, se actualiza sola.
+        if (ev.tipo === "accion" && ev.accion.estado === "ejecutada") {
+          if (ev.accion.herramienta === "proponer_evidencia") window.dispatchEvent(new CustomEvent("voi:figuras"));
+          avisarInformeCambiado(ev.accion.pantalla, ev.accion.herramienta);
         }
         if (ev.tipo === "mensaje" && !abiertoRef.current) setNoLeidos((n) => n + 1);
         // Lo nuevo del lienzo se abre solo en pantallas anchas (al lado del chat); en el teléfono queda la tarjeta.
