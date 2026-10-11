@@ -513,7 +513,13 @@ Perfiles). Código en `backend/app/operativas/televentas_claro/informe_diario/`.
      cumplido, en curso o no cumplido, con una nota. Cumplido y no cumplido los cierran.
   7. **Firma**: nombre y cargo (editable; se recuerda) y, si se quiere, la **firma manuscrita** dibujada con el
      dedo o el mouse (PNG validado con Pillow, hasta 120 KB; se guarda para los próximos informes).
-- **Guardado automático** del borrador (a 1,2 s del último cambio), con aviso si se intenta salir sin guardar.
+- **Guardado automático** del borrador (a 1,2 s del último cambio), con aviso si se intenta salir sin guardar. Manda
+  **solo lo que cambió** (el `PUT` es parcial: lo que no viene queda como está), así no pisa lo que Voi acaba de
+  escribir en el mismo informe.
+- **Se actualiza sola cuando Voi cambia el informe**: cada acción de Voi sobre un informe diario (preparar el borrador,
+  cargar resultados, importar datos, sumar figuras, comentar) avisa a la pantalla (`voi:informe`); el editor trae el
+  informe del servidor y aplica solo lo que cambió, sin perder lo que el usuario está escribiendo, con el aviso «Voi
+  actualizó el resumen y los datos de la plataforma»; la vista de un informe firmado también se refresca.
 - **Firmar**: hacen falta Pospago, GPON y el resumen (20 caracteres o más). El informe queda cerrado con un
   **código de verificación** (SHA-256 del contenido, el nombre, el cargo, la hora y la firma): si alguien lo
   modificara en la base, el código deja de coincidir y el superadmin lo ve. Después solo se agregan comentarios.
@@ -1033,6 +1039,20 @@ isotipo se arman uno a uno, laten como un ecualizador de voz y se desarman en un
 el mural de puntos de la fachada que respira despacio. Es SVG con animaciones CSS (solo `transform` y `opacity`, en la
 GPU): no es un video, pesa unos pocos KB, no descarga nada y quien pidió menos movimiento en su sistema lo ve quieto.
 En el teléfono aparece en chico sobre el formulario.
+
+### Transiciones (movimiento de la interfaz)
+
+- **Las pantallas aparecen** con un fundido suave y un leve movimiento hacia arriba (0,46 s, la curva de iOS), en
+  `AppShell` (`.pagina-entra`).
+- **Cambiar de pantalla pasa como una hoja**: los clics en enlaces internos van por la API de View Transitions del
+  navegador (`lib/transiciones.ts`): la pantalla que se va gira apenas desde su borde izquierdo y se funde mientras
+  entra la nueva; la cabecera y el panel de Voi tienen su propio nombre de transición y quedan quietos. Se intercepta
+  el clic en fase de captura y `preventDefault()` frena la navegación propia del `Link` de Next (que respeta
+  `defaultPrevented`) sin saltarse su `onClick`; la transición espera a que cambie la ruta (tope 700 ms). Sin la API,
+  o con «reducir movimiento», la pantalla nueva solo aparece con su fundido. Ctrl/⌘-clic, pestañas con `#`, descargas
+  y enlaces externos no se tocan.
+- **Voi entra y sale deslizándose** desde la derecha (desde abajo en el teléfono) con la misma curva, 0,42 s al entrar
+  y 0,24 s al cerrarse (sigue montado ese instante, `voi.cerrando`); la página acoplada se corre con el mismo tiempo.
 
 Todo lo configura el superadmin en **Seguridad** (`/admin/seguridad`) y se hace
 cumplir en el servidor en **cada pedido** (`api/deps.py::get_current_user`), así

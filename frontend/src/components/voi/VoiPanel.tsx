@@ -63,10 +63,11 @@ export function VoiPanel() {
 
   return (
     <aside
-      className={`voi-panel no-print fixed z-40 inset-0 md:inset-auto md:top-0 md:right-0 md:bottom-0 md:w-[440px] bg-white md:border-l border-brand-border md:shadow-[-12px_0_32px_-12px_rgba(15,17,22,0.18)] flex flex-col ${inv ? (diario ? "voi-informe" : "voi-auditor") : ""}`}
+      className={`voi-panel ${voi.cerrando ? "voi-panel-sale" : ""} no-print fixed z-40 inset-0 md:inset-auto md:top-0 md:right-0 md:bottom-0 md:w-[440px] bg-white md:border-l border-brand-border md:shadow-[-12px_0_32px_-12px_rgba(15,17,22,0.18)] flex flex-col ${inv ? (diario ? "voi-informe" : "voi-auditor") : ""}`}
       role="dialog"
       aria-label={inv ? (diario ? "Voi en modo informe diario" : "Voi en modo auditor") : "Voi, el asistente de la plataforma"}
       onKeyDown={onKeyDown}
+      style={{ viewTransitionName: "voi-panel" }}
     >
       {/* Cabecera */}
       <div className="flex items-center gap-2.5 pl-4 pr-2 h-14 flex-shrink-0 border-b border-brand-border pt-[env(safe-area-inset-top)] box-content">
