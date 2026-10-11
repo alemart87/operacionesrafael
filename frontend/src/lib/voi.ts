@@ -5,6 +5,7 @@
  * El backend (app/asistente) corre el agente en Claude Managed Agents con los permisos del usuario.
  */
 import { apiFetch, getToken, refreshSession } from "./api";
+import type { ArtefactoVoi } from "@/components/voi/lienzo/tipos";
 
 export const VOI_API = "/api/v1/asistente";
 
@@ -56,6 +57,7 @@ export type ItemVoi =
   | { tipo: "paso"; id: string; herramienta?: string | null; etiqueta?: string | null; estado: "corriendo" | "ok" | "error"; detalle?: string | null; at?: string | null; entrada?: unknown; resultado?: string }
   | { tipo: "accion"; id: string; accion: AccionVoi; at?: string | null }
   | { tipo: "aviso"; id: string; texto: string; nivel?: "info" | "alerta" | "error"; at?: string | null }
+  | { tipo: "lienzo"; id: string; artefacto: ArtefactoVoi; at?: string | null; entrada?: unknown; resultado?: string }
   | { tipo: "contexto"; id: string; texto: string; at?: string | null }
   | { tipo: "pensando"; id: string; at?: string | null };
 
@@ -63,6 +65,7 @@ export interface TranscripcionVoi {
   conversacion: ConversacionVoi;
   items: ItemVoi[];
   pendientes: AccionVoi[];
+  artefactos?: ArtefactoVoi[];
 }
 
 /** Lo que llega en vivo por la conversación (ver app/asistente/consumidor.py). */
@@ -76,6 +79,7 @@ export type EventoVoi =
   | { tipo: "pensando" }
   | { tipo: "paso"; id: string; herramienta?: string; etiqueta?: string; estado: "corriendo" | "ok" | "error"; detalle?: string | null }
   | { tipo: "accion"; accion: AccionVoi }
+  | { tipo: "lienzo"; artefacto: ArtefactoVoi }
   | { tipo: "estado"; estado: string; motivo?: string; aviso?: string | null }
   | { tipo: "error"; mensaje: string; reintenta?: boolean }
   | { tipo: "aviso"; texto: string }

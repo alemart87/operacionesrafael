@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ROLE_LABELS } from "@/lib/api";
 import { ItemVoi, TranscripcionVoi, VOI_API, cuando } from "@/lib/voi";
 import { TarjetaAccion, VoiMarkdown } from "../VoiMensajes";
+import { PiezaLienzo } from "../lienzo/VoiLienzo";
 import { VoiIsotipo } from "../VoiIsotipo";
 import { ConversacionAdminVoi, ESTADO_CONV, num, usd } from "./tipos";
 
@@ -45,6 +46,14 @@ function ItemAdmin({ it }: { it: ItemVoi }) {
         <div className="ml-7">
           <TarjetaAccion a={it.accion} onConfirmar={() => {}} onCancelar={() => {}} />
           {"entrada" in it && (it as any).entrada && <Detalle titulo="Pedido">{JSON.stringify((it as any).entrada, null, 2)}</Detalle>}
+        </div>
+      );
+    case "lienzo":
+      return (
+        <div className="ml-7">
+          <div className="text-[11px] font-semibold text-brand-slate mb-1">Mostró en el lienzo</div>
+          <PiezaLienzo spec={it.artefacto.spec} compacto />
+          {it.entrada !== undefined && <Detalle titulo="Pedido">{JSON.stringify(it.entrada, null, 2)}</Detalle>}
         </div>
       );
     case "aviso":

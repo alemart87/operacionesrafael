@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiFetch } from "@/lib/api";
 import { VOI_API } from "@/lib/voi";
-import { ConfigVoi, ConsumoVoi, EstadoAdminVoi, NIVEL, num, usd } from "./tipos";
+import { ConfigVoi, ConsumoVoi, ESFUERZOS, EsfuerzoVoi, EstadoAdminVoi, NIVEL, num, usd } from "./tipos";
 
 function Kpi({ icono, titulo, valor, detalle, tono, children }: {
   icono: React.ReactNode; titulo: string; valor: React.ReactNode; detalle?: React.ReactNode; tono: string; children?: React.ReactNode;
@@ -81,6 +81,7 @@ export function TabResumen({ estado, onCambio }: { estado: EstadoAdminVoi; onCam
     apiFetch<ConsumoVoi>(`${VOI_API}/admin/consumo`).then(setConsumo).catch(() => setConsumo(null));
   }, [estado]);
 
+  const esfuerzo: EsfuerzoVoi = cfg.modelo?.esfuerzo ?? "medium";
   const sucio = JSON.stringify(cfg) !== JSON.stringify(estado.config);
   const pct = estado.tope_mes_usd ? Math.min(100, (estado.gasto_mes_usd / estado.tope_mes_usd) * 100) : 0;
 
@@ -100,7 +101,10 @@ export function TabResumen({ estado, onCambio }: { estado: EstadoAdminVoi; onCam
     return `${r.mensaje}${r.latencia_ms !== undefined ? ` (${r.latencia_ms} ms)` : ""}.`;
   });
   const guardar = () => accion("guardar", async () => {
-    await apiFetch(`${VOI_API}/admin/config`, { method: "PUT", body: JSON.stringify({ habilitado: cfg.habilitado, topes: cfg.topes, autonomia: cfg.autonomia }) });
+    await apiFetch(`${VOI_API}/admin/config`, {
+      method: "PUT",
+      body: JSON.stringify({ habilitado: cfg.habilitado, topes: cfg.topes, autonomia: cfg.autonomia, modelo: { esfuerzo } }),
+    });
     return "Configuración guardada: rige desde el próximo mensaje.";
   });
   const setTope = (k: keyof ConfigVoi["topes"], v: number) => setCfg((c) => ({ ...c, topes: { ...c.topes, [k]: v } }));
@@ -149,7 +153,9 @@ export function TabResumen({ estado, onCambio }: { estado: EstadoAdminVoi; onCam
                   {ag?.publicado_at && `Publicado el ${new Date(ag.publicado_at).toLocaleString("es-PY")}.`}</>
                 : "Se publica solo al arrancar si hay clave, o con el botón."}
             </Fila>
-            <Fila ok={null} titulo={`Modelo: ${estado.modelo.id}`}>Claude Managed Agents · esfuerzo {estado.modelo.effort ?? "por defecto"} · contenedor sin internet.</Fila>
+            <Fila ok={null} titulo={`Modelo: ${estado.modelo.id}`}>
+              Claude Managed Agents · razonamiento {ESFUERZOS.find((e) => e.k === (estado.config.modelo?.esfuerzo ?? "medium"))?.nombre.toLowerCase()} · contenedor sin internet.
+            </Fila>
             <Fila ok={estado.webhook ? true : null} titulo={estado.webhook ? "Webhook de Anthropic activo" : "Webhook (opcional)"}>
               {estado.webhook ? "Las sesiones avisan cuando terminan o esperan una acción." :
                 <>Opcional: registralo en la consola de Anthropic hacia <code className="font-mono">/api/v1/asistente/webhooks/anthropic</code> y cargá <code className="font-mono">ANTHROPIC_WEBHOOK_SIGNING_KEY</code>.</>}
@@ -266,6 +272,24 @@ export function TabResumen({ estado, onCambio }: { estado: EstadoAdminVoi; onCam
             onChange={(v) => setCfg((c) => ({ ...c, autonomia: { borradores_sin_confirmar: !v } }))}
             titulo="Confirmar también los borradores propios"
             detalle="Por defecto Voi prepara borradores (como el informe diario) sin preguntar y pide confirmación para todo lo que afecta a otros." />
+        </div>
+        <div className="mt-5">
+          <span className="label">Razonamiento de Voi</span>
+          <div className="grid sm:grid-cols-3 gap-2" role="radiogroup" aria-label="Razonamiento de Voi">
+            {ESFUERZOS.map((e) => (
+              <button key={e.k} type="button" role="radio" aria-checked={esfuerzo === e.k}
+                onClick={() => setCfg((c) => ({ ...c, modelo: { esfuerzo: e.k } }))}
+                className={`text-left rounded-xl border px-3.5 py-2.5 transition-colors ${esfuerzo === e.k
+                  ? "border-brand-primary bg-brand-primary-light/60 ring-1 ring-brand-primary/30" : "border-brand-border hover:bg-brand-bg-soft"}`}>
+                <span className="flex items-center gap-2 text-sm font-semibold text-brand-ink">
+                  <span className={`w-3.5 h-3.5 rounded-full border-2 ${esfuerzo === e.k ? "border-brand-primary bg-brand-primary" : "border-brand-mist"}`} />
+                  {e.nombre}
+                </span>
+                <span className="block text-[11px] text-brand-slate mt-0.5 leading-snug">{e.detalle}</span>
+              </button>
+            ))}
+          </div>
+          <span className="block mt-1 text-[11px] text-brand-mist">Vale para las conversaciones nuevas; las abiertas siguen como empezaron.</span>
         </div>
         <div className="mt-5 grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <CampoNumero label="Presupuesto del mes" sufijo="US$" valor={cfg.topes.mensual_usd} onChange={(v) => setTope("mensual_usd", v)} ayuda="Toda la plataforma." />

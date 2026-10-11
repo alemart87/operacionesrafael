@@ -313,7 +313,7 @@ registrar(Herramienta(
                  "Usala para seguimiento de casos, vencimientos o antes de enviar un ticket nuevo."),
     esquema=esquema({"vista": {"type": "string", "enum": ["abiertos", "mes"]},
                      "mios": {"type": "boolean", "description": "Solo los que envió el usuario."}}),
-    fn=_tickets, permisos=(P_SUP, P_TICKETS), modos=TODOS))
+    fn=_tickets, permisos=(P_SUP,), modos=TODOS))        # la bandeja pide Supervisión (como la pantalla)
 
 
 async def _coaching_dia(ctx: Ctx, a: dict[str, Any]) -> Any:
@@ -372,12 +372,43 @@ async def _informes(ctx: Ctx, a: dict[str, Any]) -> Any:
 
 registrar(Herramienta(
     nombre="informes_diarios", etiqueta="Consultando tus informes diarios",
-    descripcion=("Los informes diarios del usuario (el superadmin ve los de todos) entre dos fechas: estado (borrador o "
-                 "firmado), resultados, resumen, la racha de días y los compromisos abiertos o vencidos. Usala para "
-                 "seguimiento del informe diario o antes de preparar uno."),
+    descripcion=("Los informes diarios PROPIOS del usuario entre dos fechas: estado (borrador o firmado), resultados, "
+                 "resumen, comentarios, la racha de días y sus compromisos abiertos o vencidos (con su id, para "
+                 "registrar el seguimiento al preparar el informe). Usala antes de preparar uno. Para los informes de "
+                 "todo el equipo, el superadmin usa seguimiento_informes_diarios."),
     esquema=esquema({"desde": {"type": "string", "description": "AAAA-MM-DD (por defecto, hace 13 días)."},
                      "hasta": {"type": "string", "description": "AAAA-MM-DD (por defecto, hoy)."}}),
     fn=_informes, permisos=(P_INF,), modos=GESTION_AUD))
+
+
+async def _seguimiento_informes(ctx: Ctx, a: dict[str, Any]) -> Any:
+    hasta = fecha(a.get("hasta"), "hasta", defecto=hoy())
+    desde = fecha(a.get("desde"), "desde", defecto=hasta - timedelta(days=13))
+    r = await llamar(inf_api.seguimiento, desde=desde, hasta=hasta, autor_id=(a.get("autor_id") or None),
+                     user=ctx.user, db=ctx.db)
+    autores = [{**seleccionar(x, ("id", "nombre", "cargo", "firmados", "esperados", "pct")),
+                "faltan_dias": [d["fecha"] for d in x.get("dias") or [] if d.get("estado") in ("falta", "borrador")]}
+               for x in r.get("autores") or []]
+    informes = [seleccionar(x, ("id", "fecha", "autor", "estado", "resumen", "pospago", "gpon", "criticas", "nivel",
+                                "comentarios", "revisado_at", "tarde")) for x in r.get("informes") or []]
+    palabras = r.get("palabras") or {}
+    return compactar({"desde": r.get("desde"), "hasta": r.get("hasta"), "kpis": r.get("kpis"), "autores": autores,
+                      "informes": informes, "compromisos_abiertos": r.get("compromisos"),
+                      "alertas_de_palabras": (palabras.get("alertas") or [])[:10],
+                      "pantalla": "/televentas-claro/informe-diario/seguimiento"}, max_lista=25)
+
+
+registrar(Herramienta(
+    nombre="seguimiento_informes_diarios", etiqueta="Revisando el seguimiento de los informes diarios",
+    descripcion=("Solo superadmin: el seguimiento de los informes diarios de todo el equipo en un rango (hasta 92 días; "
+                 "por defecto, los últimos 14): cumplimiento por autor (firmados contra esperados y los días que faltan), "
+                 "los informes con su id, resumen, métricas críticas y si ya se revisaron, los compromisos abiertos y "
+                 "las alertas por palabras clave. Usala para saber quién no informó, qué está crítico o qué falta "
+                 "revisar, y antes de comentar un informe."),
+    esquema=esquema({"desde": {"type": "string", "description": "AAAA-MM-DD"},
+                     "hasta": {"type": "string", "description": "AAAA-MM-DD"},
+                     "autor_id": {"type": "string", "description": "Solo un autor (opcional)."}}),
+    fn=_seguimiento_informes, modos=frozenset({"superadmin"})))
 
 
 # ------------------------------------------------------------------ auditoría de ventas

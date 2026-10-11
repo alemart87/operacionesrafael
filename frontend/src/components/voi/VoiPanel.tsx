@@ -1,14 +1,14 @@
 "use client";
 
 import {
-  ArrowDown, ArrowUp, Brain, ChevronLeft, FileText, History, Loader2, MapPin, MessageSquarePlus, Pencil, Pin, PinOff,
+  ArrowDown, ArrowUp, Brain, ChevronLeft, FileText, History, LayoutDashboard, Loader2, MapPin, MessageSquarePlus, Pencil, Pin, PinOff,
   Settings2, ShieldCheck, Sparkles, Square, Trash2, WifiOff, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ConversacionVoi, MemoriaVoi, cuando, voiApi } from "@/lib/voi";
 import { VoiIsotipo } from "./VoiIsotipo";
-import { Trabajando, VoiMensajes } from "./VoiMensajes";
+import { Trabajando, VoiMarkdown, VoiMensajes } from "./VoiMensajes";
 import { useVoi } from "./VoiProvider";
 
 const MODO_TEXTO = {
@@ -21,6 +21,7 @@ const COMANDOS = [
   { cmd: "/nueva", texto: "Empezar una conversación nueva" },
   { cmd: "/historial", texto: "Ver tus conversaciones" },
   { cmd: "/memoria", texto: "Lo que Voi recuerda de vos" },
+  { cmd: "/lienzo", texto: "Abrir el lienzo (gráficos, tablas, tableros)" },
   { cmd: "/ayuda", texto: "Qué puede hacer Voi" },
 ];
 
@@ -67,16 +68,32 @@ export function VoiPanel() {
           <VoiIsotipo size={26} estado={estadoIso} apagado={estado?.disponible === false} titulo="Voi" />
         )}
         <div className="leading-none min-w-0">
-          <div className="font-display text-xl text-brand-ink tracking-wide">
+          <div className={`font-display text-brand-ink tracking-wide truncate whitespace-nowrap ${vista === "chat" ? "text-xl" : "text-base sm:text-lg"}`}>
             {vista === "historial" ? "Conversaciones" : vista === "memoria" ? "Lo que recuerdo" : "Voi"}
           </div>
-          <div className="text-[9px] uppercase tracking-[0.16em] text-brand-slate mt-1 font-semibold">Powered by Claude</div>
+          <div className="text-[9px] uppercase tracking-[0.06em] sm:tracking-[0.16em] text-brand-slate mt-1 font-semibold whitespace-nowrap">Powered by Claude</div>
         </div>
         <div className="ml-auto flex items-center">
-          <IconoBoton titulo="Nueva conversación (/nueva)" onClick={voi.nueva}><MessageSquarePlus size={18} /></IconoBoton>
+          {/* En el celular, dentro del historial o la memoria se esconden «nueva» y «lienzo» para que entre el título. */}
+          <span className={vista === "chat" ? "contents" : "hidden sm:contents"}>
+            <IconoBoton titulo="Nueva conversación (/nueva)" onClick={voi.nueva}><MessageSquarePlus size={18} /></IconoBoton>
+          </span>
           <IconoBoton titulo="Conversaciones (/historial)" activo={vista === "historial"} onClick={() => setVista(vista === "historial" ? "chat" : "historial")}>
             <History size={18} />
           </IconoBoton>
+          <span className={vista === "chat" ? "contents" : "hidden sm:contents"}>
+          <IconoBoton titulo="Lienzo: gráficos, tablas y tableros (/lienzo)" activo={voi.lienzo.abierto}
+            onClick={() => (voi.lienzo.abierto ? voi.cerrarLienzo() : voi.abrirLienzo())}>
+            <span className="relative">
+              <LayoutDashboard size={18} />
+              {voi.chat.artefactos.length > 0 && !voi.lienzo.abierto && (
+                <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-0.5 rounded-full bg-brand-cyan text-white text-[9px] font-bold grid place-items-center ring-2 ring-white">
+                  {voi.chat.artefactos.length}
+                </span>
+              )}
+            </span>
+          </IconoBoton>
+          </span>
           <IconoBoton titulo="Lo que Voi recuerda (/memoria)" activo={vista === "memoria"} onClick={() => setVista(vista === "memoria" ? "chat" : "memoria")}>
             <Brain size={18} />
           </IconoBoton>
@@ -156,6 +173,8 @@ function Chat() {
             onConfirmar={voi.confirmar}
             onCancelar={voi.cancelar}
             onReintentar={voi.reintentar}
+            onAbrirLienzo={voi.abrirLienzo}
+            onAmpliar={voi.mostrarEnLienzo}
             onNavegar={navegar}
           />
         )}
@@ -227,6 +246,13 @@ function Compositor() {
 
   // En la compu el cursor queda listo para escribir; en el teléfono no (el teclado taparía las sugerencias).
   useEffect(() => { if (window.matchMedia("(min-width: 768px)").matches) area.current?.focus(); }, []);
+  // Un borrador que viene de otra vista (p. ej. «Enseñarle algo a Voi»): se carga y queda el cursor al final.
+  useEffect(() => {
+    if (!voi.borrador) return;
+    setTexto(voi.borrador);
+    voi.setBorrador("");
+    requestAnimationFrame(() => { const el = area.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
+  }, [voi.borrador, voi]);
   useLayoutEffect(() => {
     const el = area.current;
     if (!el) return;
@@ -245,6 +271,7 @@ function Compositor() {
     if (cmd === "/nueva") voi.nueva();
     else if (cmd === "/historial") voi.setVista("historial");
     else if (cmd === "/memoria") voi.setVista("memoria");
+    else if (cmd === "/lienzo") voi.abrirLienzo();
     else if (cmd === "/ayuda") voi.enviar("¿Qué podés hacer por mí en la plataforma?");
   }, [voi]);
 
@@ -412,6 +439,7 @@ function Historial() {
 
 // ------------------------------------------------------------------ memoria
 function Memoria() {
+  const voi = useVoi()!;
   const [items, setItems] = useState<MemoriaVoi[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [borrando, setBorrando] = useState<string | null>(null);
@@ -419,27 +447,40 @@ function Memoria() {
     try { setItems((await voiApi.memoria()).items); setError(null); } catch (e: any) { setError(e.message); setItems([]); }
   }, []);
   useEffect(() => { cargar(); }, [cargar]);
+  const ensenar = () => { voi.setBorrador("Recordá que "); voi.setVista("chat"); };
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-      <p className="text-sm text-brand-slate leading-snug">
-        Acá queda lo que me pediste recordar y el contexto útil para las próximas conversaciones (tus preferencias, en qué
-        estamos trabajando). Es solo tuyo: podés borrar lo que quieras.
-      </p>
+    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="rounded-2xl border border-brand-border bg-gradient-to-br from-brand-purple/[0.06] to-brand-cyan/[0.06] p-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-brand-ink"><Brain size={16} className="text-brand-purple" /> Cómo funciona la memoria de Voi</div>
+        <p className="mt-1.5 text-sm text-brand-graphite leading-snug">
+          Cada conversación empieza de cero. Lo que ves acá es <b>lo único que Voi se lleva de una conversación a otra</b>.
+        </p>
+        <ul className="mt-3 space-y-2.5 text-[13px] text-brand-graphite leading-snug">
+          <li className="flex gap-2"><Sparkles size={15} className="text-brand-cyan flex-shrink-0 mt-0.5" />
+            <span><b>Qué guarda:</b> tus preferencias (cómo te gusta ver los datos, qué métricas seguís), tu equipo y tus objetivos, y en qué quedó un trabajo.</span></li>
+          <li className="flex gap-2"><MessageSquarePlus size={15} className="text-brand-cyan flex-shrink-0 mt-0.5" />
+            <span><b>Cómo se llena:</b> decile «Recordá que…», o Voi lo anota solo cuando algo te va a servir después (y te avisa).</span></li>
+          <li className="flex gap-2"><ShieldCheck size={15} className="text-brand-cyan flex-shrink-0 mt-0.5" />
+            <span><b>Es privada:</b> solo vos y Voi la usan. Podés borrar cualquier recuerdo cuando quieras.</span></li>
+        </ul>
+        <button type="button" onClick={ensenar} className="btn-primary mt-4 px-4 py-2 text-xs">
+          <Sparkles size={14} /> Enseñarle algo a Voi
+        </button>
+      </div>
       {error && <p className="text-sm text-brand-primary">{error}</p>}
       {items === null && <div className="text-sm text-brand-mist flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Cargando…</div>}
       {items && items.length === 0 && !error && (
-        <div className="rounded-xl border border-dashed border-brand-border p-6 text-center">
-          <Brain size={28} className="mx-auto text-brand-mist" />
-          <p className="mt-2 text-sm text-brand-slate">Todavía no guardé nada.</p>
-          <p className="mt-1 text-xs text-brand-mist">Probá: «Recordá que prefiero ver los números en tablas».</p>
-        </div>
+        <p className="text-center text-sm text-brand-slate py-2">Todavía no hay recuerdos guardados.</p>
+      )}
+      {items && items.length > 0 && (
+        <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-mist">Lo que Voi recuerda de vos</div>
       )}
       {items?.map((m) => (
-        <div key={m.id} className="rounded-xl border border-brand-border p-3">
+        <div key={m.id} className="rounded-xl border border-brand-border bg-white p-3">
           <div className="flex items-center gap-2 text-xs text-brand-slate">
             <FileText size={13} className="text-brand-cyan" />
-            <span className="font-mono truncate">{m.ruta.split("/").pop()}</span>
+            <span className="font-medium truncate">{m.ruta.split("/").pop()?.replace(/\.md$/, "").replace(/[-_]/g, " ")}</span>
             <span className="text-brand-mist">{cuando(m.actualizada)}</span>
             <button
               type="button"
@@ -451,7 +492,7 @@ function Memoria() {
               {borrando === m.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
             </button>
           </div>
-          <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-sm text-brand-graphite leading-snug">{m.contenido}</pre>
+          <div className="mt-2"><VoiMarkdown texto={m.contenido} /></div>
         </div>
       ))}
     </div>

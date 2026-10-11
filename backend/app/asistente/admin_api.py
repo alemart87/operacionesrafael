@@ -6,7 +6,7 @@ import logging
 import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -75,11 +75,16 @@ class Autonomia(BaseModel):
     borradores_sin_confirmar: Optional[bool] = None
 
 
+class Modelo(BaseModel):
+    esfuerzo: Optional[Literal["low", "medium", "high"]] = None
+
+
 class ConfigPayload(BaseModel):
     habilitado: Optional[bool] = None
     topes: Optional[Topes] = None
     retencion: Optional[Retencion] = None
     autonomia: Optional[Autonomia] = None
+    modelo: Optional[Modelo] = None
 
 
 @router.put("/config")

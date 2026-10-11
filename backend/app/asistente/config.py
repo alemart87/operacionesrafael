@@ -14,8 +14,6 @@ from .models import AsistenteConfig
 NOMBRE = "Voi"
 ZONA = ZoneInfo("America/Asuncion")
 UTILIDAD = "asistente"                      # la utilidad de cada operativa: `<operativa>.asistente`
-ESFUERZO_CHAT = "low"                       # Sonnet 5.5: «low» para chat, «medium» para trabajo de varios pasos
-ESFUERZO_MISION = "medium"
 
 # Precios de lista de Claude Sonnet 5.5 (US$ por millón de tokens), para estimar mientras llega el costo oficial.
 PRECIOS = {"entrada": 2.0, "salida": 10.0, "cache_lectura": 0.10, "cache_5m": 2.50, "cache_1h": 4.0}
@@ -32,7 +30,10 @@ DEFECTO: dict[str, Any] = {
     },
     "retencion": {"sesion_dias": 30, "copia_meses": 12},
     "autonomia": {"borradores_sin_confirmar": True},
+    # Cuánto razona Claude antes de responder (por conversación): low = rápido, medium = equilibrado, high = profundo.
+    "modelo": {"esfuerzo": "medium"},
 }
+ESFUERZOS = ("low", "medium", "high")
 
 
 def _mezclar(base: dict, extra: dict) -> dict:

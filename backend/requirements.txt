@@ -28,3 +28,5 @@ tzdata==2026.4
 # Voi, el agente de la plataforma: SDK oficial de Anthropic (Claude Managed Agents) y YAML de su definición
 anthropic==1.13.0
 pyyaml==6.0.3
+# Base de conocimiento de Voi: texto de los PDF que sube el superadmin (se lee en un subproceso aislado)
+pypdf==6.19.0

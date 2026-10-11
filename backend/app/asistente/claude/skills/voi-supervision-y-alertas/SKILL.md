@@ -40,6 +40,10 @@ Proponé una acción concreta por alerta y, si el usuario quiere, usá gestionar
   cierra solo.
 - Para enviar uno: buscá el asesor con buscar_personas, armá una descripción con los datos del caso y usá
   enviar_ticket_revision (pide confirmación).
+- Seguimiento (seguimiento_ticket, pide confirmación): **comentar** (si esperaba datos, es la respuesta y el plazo
+  vuelve a correr), **reabrir** uno resuelto dentro de los 5 días hábiles (con el motivo), **cancelar** uno abierto
+  (con el motivo) o **reasignar** a otro supervisor activo (el plazo sigue: es del caso). El número sale de
+  tickets_de_revision.
 
 ## Coaching
 Lo registra el supervisor (diagnóstico, compromiso, fecha de seguimiento; una o varias métricas). El impacto se mide

@@ -10,6 +10,9 @@
   hizo (con su nivel de autonomía, la confirmación y el resultado). Garantiza que cada pedido del agente se ejecute y se
   responda una sola vez, aunque se corte la conexión o se reinicie el servidor.
 - `AsistenteUsoDiario`: consumo por usuario y día (US$ y tokens), para la consola y los topes.
+- `AsistenteArtefacto`: lo que Voi mostró en el lienzo (gráficos, tablas, indicadores, tableros), por conversación.
+- `AsistenteDocumento` y `AsistenteFragmento`: la base de conocimiento que sube el superadmin (el archivo original, su
+  texto en fragmentos para buscar y citar, y quién lo puede consultar).
 """
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Index, Integer, LargeBinary, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
@@ -128,3 +131,51 @@ class AsistenteUsoDiario(Base):
     cache_lectura: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     cache_escritura: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     costo_centavos: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class AsistenteArtefacto(Base):
+    __tablename__ = "asistente_artefactos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    conversacion_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    evento_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)      # el pedido del agente
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    titulo: Mapped[str] = mapped_column(String(200), nullable=False)
+    spec: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)           # ya validada y normalizada
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AsistenteDocumento(Base):
+    __tablename__ = "asistente_documentos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    titulo: Mapped[str] = mapped_column(String(200), nullable=False)
+    descripcion: Mapped[str] = mapped_column(Text, default="", nullable=False)       # qué contiene (ayuda a Voi)
+    archivo_nombre: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    paginas: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Quién lo puede consultar: {"tipo": "todos" | "permisos" | "superadmin", "permisos": ["<operativa>.<utilidad>", …]}
+    alcance: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    contenido_gz: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)  # el archivo original (comprimido)
+    caracteres: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    fragmentos: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+
+
+class AsistenteFragmento(Base):
+    __tablename__ = "asistente_fragmentos"
+    __table_args__ = (Index("ix_asistente_fragmento_doc_orden", "documento_id", "orden"),)
+
+    id: Mapped[str] = mapped_column(String(24), primary_key=True)                     # frag_… (lo que cita Voi)
+    documento_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    orden: Mapped[int] = mapped_column(Integer, nullable=False)
+    pagina: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    seccion: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    terminos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)       # término normalizado → veces

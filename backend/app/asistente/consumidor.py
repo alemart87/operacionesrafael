@@ -458,7 +458,8 @@ async def _ejecutar_y_responder(db: AsyncSession, accion_id: str, h: Herramienta
     try:
         a = await db.get(AsistenteAccion, accion_id)
         entrada = dict(a.entrada or {})
-        texto, es_error = await ejecutar(h, entrada, Ctx(db=db, user=user, conversacion_id=cid), modo_de(user))
+        ctx = Ctx(db=db, user=user, conversacion_id=cid, extra={"evento_id": a.evento_id})
+        texto, es_error = await ejecutar(h, entrada, ctx, modo_de(user))
         a = await db.get(AsistenteAccion, accion_id)          # recargada (la herramienta pudo deshacer cambios)
         a.estado, a.resuelta_at, a.respuesta = (FALLIDA if es_error else EJECUTADA), _ahora(), texto
         if h.nivel > 1:
@@ -475,6 +476,8 @@ async def _ejecutar_y_responder(db: AsyncSession, accion_id: str, h: Herramienta
         await _responder(db, a, sid)
         salida.append({"tipo": "paso", "id": a.evento_id, "herramienta": h.nombre, "etiqueta": h.etiqueta,
                        "estado": "error" if es_error else "ok", "detalle": texto[:300] if es_error else None})
+        if not es_error:
+            salida.extend(ctx.extra.get("publicar") or [])     # p. ej. lo que se mostró en el lienzo
     finally:
         _en_curso.discard(accion_id)
 

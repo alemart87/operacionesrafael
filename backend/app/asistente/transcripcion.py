@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .consumidor import AVISOS_FIN, ERRORES, accion_dict, etiqueta_espacio, texto_de
 from .herramientas import obtener
-from .models import EJECUTADA, FALLIDA, PENDIENTE, AsistenteAccion, AsistenteConversacion, AsistenteEvento
+from .herramientas.lienzo import artefacto_dict
+from .models import (EJECUTADA, FALLIDA, PENDIENTE, AsistenteAccion, AsistenteArtefacto, AsistenteConversacion,
+                     AsistenteEvento)
 
 ESTADO_PASO = {EJECUTADA: "ok", FALLIDA: "error", "cancelada": "error"}
 
@@ -46,6 +48,9 @@ async def construir(db: AsyncSession, conv: AsistenteConversacion, *, completo: 
                                 .order_by(AsistenteEvento.id))).scalars().all()
     acciones = {a.evento_id: a for a in (await db.execute(select(AsistenteAccion).where(
         AsistenteAccion.conversacion_id == conv.id))).scalars().all()}
+    artefactos = (await db.execute(select(AsistenteArtefacto).where(AsistenteArtefacto.conversacion_id == conv.id)
+                                   .order_by(AsistenteArtefacto.created_at))).scalars().all()
+    por_evento = {a.evento_id: a for a in artefactos if a.evento_id}
     items: list[dict[str, Any]] = []
     pasos: dict[str, dict[str, Any]] = {}
     for e in eventos:
@@ -58,7 +63,9 @@ async def construir(db: AsyncSession, conv: AsistenteConversacion, *, completo: 
         elif t == "agent.custom_tool_use":
             a = acciones.get(e.evento_id)
             h = obtener(d.get("name") or "")
-            if a is not None and a.nivel > 1:
+            if e.evento_id in por_evento:          # lo que se mostró en el lienzo
+                item = {"tipo": "lienzo", "id": e.evento_id, "artefacto": artefacto_dict(por_evento[e.evento_id]), "at": at}
+            elif a is not None and a.nivel > 1:
                 item = {"tipo": "accion", "id": e.evento_id, "accion": accion_dict(a), "at": at}
             else:
                 item = {"tipo": "paso", "id": e.evento_id, "herramienta": d.get("name"),
@@ -108,4 +115,5 @@ async def construir(db: AsyncSession, conv: AsistenteConversacion, *, completo: 
         elif completo and t == "agent.thinking":
             items.append({"tipo": "pensando", "id": e.evento_id, "at": at})
     return {"conversacion": conversacion_dict(conv, admin=completo), "items": items,
-            "pendientes": [accion_dict(a) for a in acciones.values() if a.estado == PENDIENTE]}
+            "pendientes": [accion_dict(a) for a in acciones.values() if a.estado == PENDIENTE],
+            "artefactos": [artefacto_dict(a) for a in artefactos]}
