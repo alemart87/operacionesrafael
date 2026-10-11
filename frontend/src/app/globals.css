@@ -359,3 +359,32 @@ h3,
 @media (prefers-reduced-motion: reduce) {
   .voi-dot, .voi-linea, .voi-panel, .voi-cursor, .voi-flota { animation: none !important; }
 }
+
+/* Gráficos de Voi con ancho fijo (figuras del informe de auditoría): se escalan sin deformarse si no entran. */
+.voi-grafico-fijo .recharts-wrapper { max-width: 100%; height: auto !important; }
+.voi-grafico-fijo svg.recharts-surface { max-width: 100%; height: auto; }
+
+/* ===== Modo auditor =====
+   Un borde fino alrededor del panel y del lienzo (y del botón de Voi) que pasa despacio por los colores de Voicenter,
+   de a uno, con un brillo leve. Nada más cambia de color: el resto del modo usa la paleta neutra de la plataforma.
+   Quien pidió menos movimiento lo ve fijo, en cyan. */
+@keyframes voi-auditor-borde {
+  0%, 100% { border-color: rgba(0, 178, 191, 0.9); box-shadow: 0 0 14px -3px rgba(0, 178, 191, 0.35); }
+  25% { border-color: rgba(102, 36, 131, 0.8); box-shadow: 0 0 14px -3px rgba(102, 36, 131, 0.28); }
+  50% { border-color: rgba(230, 51, 42, 0.8); box-shadow: 0 0 14px -3px rgba(230, 51, 42, 0.28); }
+  75% { border-color: rgba(243, 146, 0, 0.85); box-shadow: 0 0 14px -3px rgba(243, 146, 0, 0.3); }
+}
+.voi-auditor::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(0, 178, 191, 0.9);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 60;
+  animation: voi-auditor-borde 12s ease-in-out infinite;
+}
+.voi-boton-auditor { animation: voi-auditor-borde 12s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .voi-auditor::after, .voi-boton-auditor { animation: none; }
+}

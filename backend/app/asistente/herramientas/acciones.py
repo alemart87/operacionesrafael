@@ -24,6 +24,8 @@ from ...operativas.televentas_claro.informe_diario.models import FIRMADO, Inform
 from ...operativas.televentas_claro.supervision import comando_api, tickets_api
 from ...operativas.televentas_claro.supervision.models import AlertaComando, Operador, Ticket
 from ...operativas.televentas_claro.supervision import api as sup_api
+from .. import investigacion
+from ..models import AsistenteConversacion
 from .base import (CONFIRMAR, PROPIO, TC, Ctx, ErrorHerramienta, Herramienta, compactar, esquema, fecha, llamar,
                    registrar, seleccionar, texto)
 from .datos import hoy
@@ -409,8 +411,15 @@ async def _preparar_auditoria(ctx: Ctx, a: dict[str, Any]) -> Any:
     r = await llamar(aud_api.crear, payload=payload, request=ctx.request(), user=ctx.user, db=ctx.db)
     d = r.model_dump(mode="json") if hasattr(r, "model_dump") else dict(r)
     hallazgos = [seleccionar(h, ("codigo", "titulo", "severidad", "categoria", "vendedor")) for h in d.get("hallazgos") or []]
+    # En modo auditor sin informe destino, el que se acaba de crear pasa a serlo.
+    conv = await ctx.db.get(AsistenteConversacion, ctx.conversacion_id)
+    destino = None
+    if conv is not None and (inv := investigacion.estado(conv)) is not None and not inv.get("auditoria_id"):
+        nuevo = await investigacion.activar(ctx.db, conv, ctx.user, d.get("id"), por="voi")
+        ctx.extra.setdefault("publicar", []).append({"tipo": "investigacion", "investigacion": nuevo})
+        destino = "Quedó como informe destino del modo auditor: ya podés proponer evidencia."
     return compactar({**seleccionar(d, ("id", "codigo", "titulo", "status", "periodo_desde", "periodo_hasta", "resumen")),
-                      "hallazgos_automaticos": hallazgos, "meses": meses,
+                      "hallazgos_automaticos": hallazgos, "meses": meses, "modo_auditor": destino,
                       "pantalla": f"/televentas-claro/auditoria/{d.get('id')}",
                       "importante": "Quedó en BORRADOR con los hallazgos automáticos: el auditor lo revisa, completa y "
                                     "cambia de estado desde la pantalla."}, max_lista=15)

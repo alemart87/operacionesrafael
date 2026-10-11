@@ -27,6 +27,7 @@ def conversacion_dict(c: AsistenteConversacion, *, admin: bool = False) -> dict[
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "ultima_actividad": c.ultima_actividad.isoformat() if c.ultima_actividad else None,
         "disponible": c.estado not in ("terminated", "borrada", "budget_reached") and bool(c.session_id),
+        "investigacion": c.investigacion if isinstance(c.investigacion, dict) and c.investigacion.get("activo") else None,
     }
     if admin:
         d.update({"user_id": c.user_id, "user_nombre": c.user_nombre, "perfil": c.perfil, "oculta": c.oculta,

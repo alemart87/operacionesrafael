@@ -22,6 +22,20 @@ export interface EstadoVoi {
   sugerencias: string[];
   privacidad: string;
   confirma_borradores: boolean;
+  /** Tiene Auditoría de ventas: puede trabajar en modo auditor (investigación con informe destino). */
+  modo_auditor?: boolean;
+}
+
+/** Modo auditor de una conversación: es una investigación de auditoría con un informe destino. */
+export interface InvestigacionVoi {
+  activo: boolean;
+  auditoria_id?: string | null;
+  codigo?: string | null;
+  titulo?: string | null;
+  estado?: string | null;
+  desde?: string | null;
+  /** Quién lo activó: el usuario (desde el panel) o Voi (con su herramienta). */
+  por?: string | null;
 }
 
 export interface ConversacionVoi {
@@ -35,6 +49,7 @@ export interface ConversacionVoi {
   created_at: string | null;
   ultima_actividad: string | null;
   disponible: boolean;
+  investigacion?: InvestigacionVoi | null;
 }
 
 export interface AccionVoi {
@@ -49,6 +64,43 @@ export interface AccionVoi {
   mensaje: string | null;
   created_at: string | null;
   resuelta_at: string | null;
+  /** Lo que la tarjeta necesita para dejar elegir (p. ej. las piezas que Voi propone sumar a un informe). */
+  detalle?: DetalleEvidencia | null;
+}
+
+/** Una pieza del lienzo que Voi propone sumar al informe (`clave`: id del artefacto, o «id#n» para una parte de un tablero). */
+export interface PiezaPropuesta {
+  clave: string;
+  artefacto_id: string;
+  widget: number | null;
+  titulo: string | null;
+  nota: string | null;
+}
+export interface DetalleEvidencia {
+  tipo: "evidencia";
+  piezas: PiezaPropuesta[];
+  hallazgo?: string | null;
+}
+/** Lo que el usuario eligió en la tarjeta de evidencia. */
+export interface AjustesEvidencia {
+  seleccion: string[];
+  ediciones?: Record<string, { titulo?: string; nota?: string }>;
+}
+
+/** Pieza que el usuario suma al informe desde el lienzo (de Voi por su id, o armada en el navegador con `spec`). */
+export interface PiezaParaInforme {
+  artefacto_id?: string;
+  widget?: number;
+  spec?: unknown;
+  titulo?: string;
+  nota?: string;
+  hallazgo_id?: string;
+}
+export interface FiguraSumada { id: string; figura: number | null; titulo: string }
+export interface ResultadoEvidencia {
+  informe: { id: string; codigo: string; titulo: string };
+  agregadas: FiguraSumada[];
+  repetidas: FiguraSumada[];
 }
 
 export type ItemVoi =
@@ -80,6 +132,7 @@ export type EventoVoi =
   | { tipo: "paso"; id: string; herramienta?: string; etiqueta?: string; estado: "corriendo" | "ok" | "error"; detalle?: string | null }
   | { tipo: "accion"; accion: AccionVoi }
   | { tipo: "lienzo"; artefacto: ArtefactoVoi }
+  | { tipo: "investigacion"; investigacion: InvestigacionVoi | null }
   | { tipo: "estado"; estado: string; motivo?: string; aviso?: string | null }
   | { tipo: "error"; mensaje: string; reintenta?: boolean }
   | { tipo: "aviso"; texto: string }
@@ -112,8 +165,19 @@ export const voiApi = {
     apiFetch<ConversacionVoi>(`${VOI_API}/conversaciones/${id}`, { method: "PATCH", body: JSON.stringify(cambios) }),
   quitar: (id: string) => apiFetch(`${VOI_API}/conversaciones/${id}`, { method: "DELETE" }),
   detener: (id: string) => apiFetch(`${VOI_API}/conversaciones/${id}/detener`, { method: "POST" }),
-  confirmar: (id: string) => apiFetch<AccionVoi>(`${VOI_API}/acciones/${id}/confirmar`, { method: "POST" }),
+  confirmar: (id: string, ajustes?: AjustesEvidencia) =>
+    apiFetch<AccionVoi>(`${VOI_API}/acciones/${id}/confirmar`, { method: "POST", body: JSON.stringify(ajustes ? { ajustes } : {}) }),
   cancelar: (id: string) => apiFetch<AccionVoi>(`${VOI_API}/acciones/${id}/cancelar`, { method: "POST" }),
+  /** Entra o sale del modo auditor (y elige el informe destino). */
+  investigacion: (id: string, activo: boolean, auditoria_id?: string | null) =>
+    apiFetch<ConversacionVoi>(`${VOI_API}/conversaciones/${id}/investigacion`, {
+      method: "POST", body: JSON.stringify({ activo, auditoria_id: auditoria_id ?? null }),
+    }),
+  /** Suma piezas del lienzo (elegidas por el usuario) como figuras de un informe de auditoría. */
+  sumarEvidencia: (auditoria_id: string, conversacion_id: string | null, piezas: PiezaParaInforme[]) =>
+    apiFetch<ResultadoEvidencia>(`${VOI_API}/evidencias`, {
+      method: "POST", body: JSON.stringify({ auditoria_id, conversacion_id, piezas }),
+    }),
   memoria: () => apiFetch<{ items: MemoriaVoi[] }>(`${VOI_API}/memoria`),
   borrarMemoria: (id: string) => apiFetch(`${VOI_API}/memoria/${id}`, { method: "DELETE" }),
 };
@@ -210,6 +274,13 @@ export function escucharConversacion(
     cancelado = true;
     ctrl?.abort();
   };
+}
+
+/** Un enlace interno con «#pestaña» hacia la misma pantalla no dispara «hashchange» (la navegación usa pushState):
+ * se avisa a mano para que la pantalla abra la pestaña (p. ej. …/informes/<id>#evidencia). */
+export function avisarHash(href: string) {
+  if (typeof window === "undefined" || !href.includes("#")) return;
+  setTimeout(() => window.dispatchEvent(new HashChangeEvent("hashchange")), 80);
 }
 
 /** «hace 5 min», «ayer 18:20», «12/10». */

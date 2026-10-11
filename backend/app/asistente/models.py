@@ -10,7 +10,8 @@
   hizo (con su nivel de autonomía, la confirmación y el resultado). Garantiza que cada pedido del agente se ejecute y se
   responda una sola vez, aunque se corte la conexión o se reinicie el servidor.
 - `AsistenteUsoDiario`: consumo por usuario y día (US$ y tokens), para la consola y los topes.
-- `AsistenteArtefacto`: lo que Voi mostró en el lienzo (gráficos, tablas, indicadores, tableros), por conversación.
+- `AsistenteArtefacto`: lo que Voi mostró en el lienzo (gráficos, tablas, indicadores, tableros), por conversación;
+  marcado como confidencial si la conversación ya usó datos de Facturación.
 - `AsistenteDocumento` y `AsistenteFragmento`: la base de conocimiento que sube el superadmin (el archivo original, su
   texto en fragmentos para buscar y citar, y quién lo puede consultar).
 """
@@ -75,6 +76,9 @@ class AsistenteConversacion(Base):
     tokens: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     # Lo que se le dio a la sesión: {"herramientas": [...], "habilidades": [...], "pantalla": {...}}
     contexto: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # Modo auditor (investigación): {"auditoria_id", "codigo", "titulo", "estado", "desde", "por"} o vacío. Columna
+    # propia: la escriben el usuario y Voi sin pisar lo que el consumidor anota en `contexto`.
+    investigacion: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     mensajes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     temas: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -143,6 +147,8 @@ class AsistenteArtefacto(Base):
     tipo: Mapped[str] = mapped_column(String(20), nullable=False)
     titulo: Mapped[str] = mapped_column(String(200), nullable=False)
     spec: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)           # ya validada y normalizada
+    # La conversación ya había usado datos de Facturación: la pieza no puede ir a un informe que ven otros perfiles.
+    confidencial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

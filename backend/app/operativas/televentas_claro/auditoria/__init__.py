@@ -6,6 +6,7 @@ analizados congelados, hallazgos automáticos y manuales con evidencia,
 seguimiento, estados con historial y redacción para imprimir en PDF.
 
 - `api.py`: fuentes, riesgos en vivo, informes, hallazgos, seguimiento, estados.
+- `evidencias.py`: evidencia visual (figuras del lienzo de Voi e imágenes en el disco persistente).
 - `models.py` · `schemas.py`: tablas y contratos de la API.
 - `snapshot.py`: consolidación de informes, ranking, señales, datos llamativos
   y hallazgos automáticos (lógica pura, cubierta por tests).

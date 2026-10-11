@@ -10,10 +10,11 @@ import { createPortal } from "react-dom";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { apiFetch } from "@/lib/api";
-import { VOI_API, type AccionVoi, type ItemVoi } from "@/lib/voi";
+import { VOI_API, avisarHash, type AccionVoi, type AjustesEvidencia, type DetalleEvidencia, type ItemVoi } from "@/lib/voi";
 import { pareceNumero } from "@/lib/voiFormato";
+import { ICONO_TIPO, NOMBRE_TIPO } from "./lienzo/iconos";
 import type { ArtefactoVoi } from "./lienzo/tipos";
-import { ICONO_TIPO, NOMBRE_TIPO } from "./lienzo/VoiLienzo";
+import { TarjetaEvidencia } from "./VoiAuditor";
 import { VoiIsotipo } from "./VoiIsotipo";
 
 // ------------------------------------------------------------------ tablas del chat
@@ -227,7 +228,7 @@ export function VoiMarkdown({ texto, onNavegar, onAmpliar }: { texto: string; on
             if (h.startsWith("cita:")) return <Cita id={h.slice(5)}>{children}</Cita>;
             if (h.startsWith("/") && !h.startsWith("//")) {
               return (
-                <Link href={h} onClick={onNavegar} className="inline-flex items-center gap-0.5 font-semibold text-brand-primary hover:underline">
+                <Link href={h} onClick={() => { onNavegar?.(); avisarHash(h); }} className="inline-flex items-center gap-0.5 font-semibold text-brand-primary hover:underline">
                   {children}
                   <ArrowUpRight size={13} />
                 </Link>
@@ -333,7 +334,7 @@ export function TarjetaAccion({ a, onConfirmar, onCancelar, onNavegar }: {
         </div>
       )}
       {a.pantalla && a.estado === "ejecutada" && (
-        <Link href={a.pantalla} onClick={onNavegar} className="mt-2.5 inline-flex items-center gap-1 text-xs font-semibold text-brand-primary hover:underline">
+        <Link href={a.pantalla} onClick={() => { onNavegar?.(); avisarHash(a.pantalla ?? ""); }} className="mt-2.5 inline-flex items-center gap-1 text-xs font-semibold text-brand-primary hover:underline">
           Abrir <ArrowUpRight size={13} />
         </Link>
       )}
@@ -357,16 +358,28 @@ export function Trabajando() {
   );
 }
 
+const esEvidencia = (a: AccionVoi): a is AccionVoi & { detalle: DetalleEvidencia } =>
+  a.herramienta === "proponer_evidencia" && a.detalle?.tipo === "evidencia" && Array.isArray(a.detalle.piezas) && a.detalle.piezas.length > 0;
+
 /** La conversación: mensajes del usuario y de Voi, pasos (agrupados), tarjetas de acción y avisos. */
-export function VoiMensajes({ items, parciales, onConfirmar, onCancelar, onReintentar, onNavegar, onAbrirLienzo, onAmpliar }: {
+export function VoiMensajes({
+  items, parciales, onConfirmar, onConfirmarCon, onCancelar, onReintentar, onNavegar, onAbrirLienzo, onAmpliar, artefactos = [],
+  codigoInforme,
+}: {
   items: ItemVoi[];
   parciales: Record<string, string>;
   onConfirmar: (a: AccionVoi) => void;
+  /** Confirmar con lo elegido en la tarjeta (las piezas que van al informe). */
+  onConfirmarCon?: (a: AccionVoi, ajustes: AjustesEvidencia) => void;
   onCancelar: (a: AccionVoi) => void;
   onReintentar: (id: string, texto: string) => void;
   onNavegar?: () => void;
   onAbrirLienzo?: (id: string) => void;
   onAmpliar?: (a: ArtefactoVoi) => void;
+  /** Lo que Voi mostró en el lienzo (para las tarjetas que proponen sumar piezas al informe). */
+  artefactos?: ArtefactoVoi[];
+  /** Código del informe destino del modo auditor (AUD-…). */
+  codigoInforme?: string | null;
 }) {
   // Pasos seguidos se muestran juntos, como un recorrido de lo que hizo Voi.
   const bloques: (ItemVoi | { tipo: "pasos"; id: string; pasos: Extract<ItemVoi, { tipo: "paso" }>[] })[] = [];
@@ -424,9 +437,15 @@ export function VoiMensajes({ items, parciales, onConfirmar, onCancelar, onReint
           );
         }
         if (b.tipo === "accion") {
+          const a = b.accion;
           return (
             <div key={b.id} className="ml-7">
-              <TarjetaAccion a={b.accion} onConfirmar={onConfirmar} onCancelar={onCancelar} onNavegar={onNavegar} />
+              {esEvidencia(a) && onConfirmarCon ? (
+                <TarjetaEvidencia a={a} artefactos={artefactos} codigo={codigoInforme} onConfirmarCon={onConfirmarCon}
+                  onCancelar={onCancelar} onAbrirLienzo={onAbrirLienzo} onNavegar={onNavegar} />
+              ) : (
+                <TarjetaAccion a={a} onConfirmar={onConfirmar} onCancelar={onCancelar} onNavegar={onNavegar} />
+              )}
             </div>
           );
         }

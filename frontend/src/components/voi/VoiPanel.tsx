@@ -7,6 +7,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ConversacionVoi, MemoriaVoi, cuando, voiApi } from "@/lib/voi";
+import { ChipModoAuditor, FranjaAuditor, InvitacionAuditor, SUGERENCIAS_AUDITOR } from "./VoiAuditor";
 import { VoiIsotipo } from "./VoiIsotipo";
 import { Trabajando, VoiMarkdown, VoiMensajes } from "./VoiMensajes";
 import { useVoi } from "./VoiProvider";
@@ -53,11 +54,14 @@ export function VoiPanel() {
     }
   };
 
+  const inv = voi.investigacion;
+  const navegar = () => { if (!voi.acoplado && window.matchMedia("(max-width: 767px)").matches) voi.cerrar(); };
+
   return (
     <aside
-      className="voi-panel no-print fixed z-40 inset-0 md:inset-auto md:top-0 md:right-0 md:bottom-0 md:w-[440px] bg-white md:border-l border-brand-border md:shadow-[-12px_0_32px_-12px_rgba(15,17,22,0.18)] flex flex-col"
+      className={`voi-panel no-print fixed z-40 inset-0 md:inset-auto md:top-0 md:right-0 md:bottom-0 md:w-[440px] bg-white md:border-l border-brand-border md:shadow-[-12px_0_32px_-12px_rgba(15,17,22,0.18)] flex flex-col ${inv ? "voi-auditor" : ""}`}
       role="dialog"
-      aria-label="Voi, el asistente de la plataforma"
+      aria-label={inv ? "Voi en modo auditor" : "Voi, el asistente de la plataforma"}
       onKeyDown={onKeyDown}
     >
       {/* Cabecera */}
@@ -108,6 +112,10 @@ export function VoiPanel() {
         </div>
       </div>
       <div className={`h-0.5 flex-shrink-0 ${chat.trabajando ? "voi-linea" : ""}`} />
+      {inv && vista === "chat" && (
+        <FranjaAuditor inv={inv} onCambiar={() => voi.setSelectorAuditor(true)} onNavegar={navegar}
+          onSalir={() => voi.desactivarAuditor().catch(() => undefined)} />
+      )}
 
       {vista === "historial" ? <Historial /> : vista === "memoria" ? <Memoria /> : <Chat />}
     </aside>
@@ -171,11 +179,14 @@ function Chat() {
             items={chat.items}
             parciales={chat.parciales}
             onConfirmar={voi.confirmar}
+            onConfirmarCon={voi.confirmarCon}
             onCancelar={voi.cancelar}
             onReintentar={voi.reintentar}
             onAbrirLienzo={voi.abrirLienzo}
             onAmpliar={voi.mostrarEnLienzo}
             onNavegar={navegar}
+            artefactos={chat.artefactos}
+            codigoInforme={voi.investigacion?.codigo ?? null}
           />
         )}
         {mostrarTrabajando && <Trabajando />}
@@ -203,18 +214,22 @@ function Chat() {
 
 function Bienvenida() {
   const voi = useVoi()!;
-  const { estado, usuario } = voi;
+  const { estado, usuario, investigacion: inv } = voi;
   const nombre = (usuario?.full_name ?? "").split(" ")[0];
+  const sugerencias = inv ? SUGERENCIAS_AUDITOR : estado?.sugerencias ?? [];
   return (
     <div className="h-full flex flex-col items-center text-center pt-6 pb-2">
       <div className="voi-flota"><VoiIsotipo size={68} /></div>
       <h2 className="mt-5 font-display text-3xl text-brand-ink">Hola{nombre ? `, ${nombre}` : ""}</h2>
       <p className="mt-1.5 text-sm text-brand-slate max-w-[320px] leading-snug">
-        {estado ? MODO_TEXTO[estado.modo] : "Soy Voi, el asistente de la plataforma."}
+        {inv
+          ? `Estás en modo auditor${inv.codigo ? ` con el informe ${inv.codigo}` : ""}. Cada gráfico que te muestre en el lienzo te lo ofrezco como figura; vos elegís cuáles van.`
+          : estado ? MODO_TEXTO[estado.modo] : "Soy Voi, el asistente de la plataforma."}
       </p>
-      {estado && estado.sugerencias.length > 0 && (
+      {estado?.modo_auditor && !inv && <InvitacionAuditor />}
+      {estado && sugerencias.length > 0 && (
         <div className="mt-6 w-full grid gap-2">
-          {estado.sugerencias.map((s) => (
+          {sugerencias.map((s) => (
             <button
               key={s}
               type="button"
@@ -298,6 +313,7 @@ function Compositor() {
 
   return (
     <div className="flex-shrink-0 border-t border-brand-border bg-white px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="flex flex-wrap items-center gap-x-2">
       {pantalla?.titulo && (
         <button
           type="button"
@@ -310,6 +326,8 @@ function Compositor() {
           <span className="truncate">{pantalla.titulo}</span>
         </button>
       )}
+      {voi.estado?.modo_auditor && !voi.investigacion && <ChipModoAuditor />}
+      </div>
       <div className="relative" data-voi-menu={comandos.length ? "" : undefined}>
         {comandos.length > 0 && (
           <div className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-brand-border bg-white shadow-elevated overflow-hidden animate-pop" role="listbox">
@@ -392,6 +410,11 @@ function FilaConversacion({ c }: { c: ConversacionVoi }) {
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-brand-mist">
           <span>{cuando(c.ultima_actividad)}</span>
           {badge && <span className={badge.k}>{badge.t}</span>}
+          {c.investigacion?.activo && (
+            <span className="rounded border border-brand-border bg-brand-bg px-1.5 py-px text-[10px] font-semibold text-brand-graphite whitespace-nowrap">
+              Modo auditor{c.investigacion.codigo ? ` · ${c.investigacion.codigo}` : ""}
+            </span>
+          )}
         </div>
       </button>
       {quitar ? (

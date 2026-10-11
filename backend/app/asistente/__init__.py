@@ -7,6 +7,7 @@
   herramientas (con confirmación cuando corresponde), guarda todo y lo reparte en vivo al navegador.
 - `memoria.py`: la memoria de cada usuario (memory store). `consumo.py`: costos y topes.
 - `conocimiento.py` y `conocimiento_api.py`: la base de conocimiento (documentos del superadmin, búsqueda y citas).
+- `investigacion.py` y `investigacion_api.py`: el modo auditor (informe destino y piezas del lienzo como figuras).
 - `api.py` (usuarios) y `admin_api.py` (consola del superadmin).
 - `simulador.py`: un motor que imita a Managed Agents para pruebas y demostraciones (sin clave).
 """
@@ -15,10 +16,11 @@ from __future__ import annotations
 from typing import Any
 
 from ..core.database import session_scope
-from . import admin_api, api, config, conocimiento_api, consumidor, publicacion
+from . import admin_api, api, config, conocimiento_api, consumidor, investigacion_api, publicacion
 from .migraciones import MIGRACIONES
 
-ROUTERS = [api.router, admin_api.router, conocimiento_api.router, conocimiento_api.admin_router]
+ROUTERS = [api.router, admin_api.router, conocimiento_api.router, conocimiento_api.admin_router,
+           investigacion_api.router]
 WORKERS: dict[str, Any] = {}
 MIGRACIONES_DATOS = list(MIGRACIONES)
 

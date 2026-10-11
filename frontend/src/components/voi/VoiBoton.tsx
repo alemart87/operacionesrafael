@@ -10,17 +10,18 @@ export function VoiBoton() {
   const [mac, setMac] = useState(false);
   useEffect(() => setMac(/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)), []);
   if (!voi?.habilitado) return null;
-  const { chat, abierto, esperaConfirmacion, noLeidos } = voi;
+  const { chat, abierto, esperaConfirmacion, noLeidos, investigacion } = voi;
   const aviso = !abierto && (esperaConfirmacion || noLeidos > 0);
   return (
     <button
       type="button"
       onClick={voi.alternar}
       aria-pressed={abierto}
-      aria-label="Voi, el asistente de la plataforma"
-      title={`Voi, el asistente (${mac ? "⌘" : "Ctrl"}+K)`}
+      aria-label={investigacion ? "Voi, en modo auditor" : "Voi, el asistente de la plataforma"}
+      title={investigacion ? `Voi · modo auditor${investigacion.codigo ? ` · ${investigacion.codigo}` : ""} (${mac ? "⌘" : "Ctrl"}+K)` : `Voi, el asistente (${mac ? "⌘" : "Ctrl"}+K)`}
       className={`no-print relative inline-flex items-center gap-2 h-10 pl-2.5 pr-2.5 sm:pr-3 rounded-full border transition-all ${
-        abierto ? "border-brand-ink bg-brand-ink text-white" : "border-brand-border bg-white hover:border-brand-primary/50 hover:shadow-soft"}`}
+        abierto ? "border-brand-ink bg-brand-ink text-white" : "border-brand-border bg-white hover:border-brand-primary/50 hover:shadow-soft"} ${
+        investigacion ? "voi-boton-auditor" : ""}`}
     >
       <span className={`inline-flex items-center justify-center ${abierto ? "rounded-full bg-white p-[3px]" : ""}`}>
         <VoiIsotipo size={abierto ? 16 : 20} estado={chat.trabajando ? "pensando" : "quieto"} />

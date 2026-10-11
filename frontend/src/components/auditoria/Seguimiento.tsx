@@ -4,8 +4,8 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { AUD_API, fechaHora, type AuditoriaDetalle } from "./tipos";
 
-const TIPO_CLS: Record<string, string> = { nota: "bg-brand-cyan", estado: "bg-brand-ink", hallazgo: "bg-brand-orange" };
-const TIPO_LABEL: Record<string, string> = { nota: "Nota", estado: "Estado", hallazgo: "Hallazgo" };
+const TIPO_CLS: Record<string, string> = { nota: "bg-brand-cyan", estado: "bg-brand-ink", hallazgo: "bg-brand-orange", evidencia: "bg-brand-purple" };
+const TIPO_LABEL: Record<string, string> = { nota: "Nota", estado: "Estado", hallazgo: "Hallazgo", evidencia: "Evidencia" };
 
 /** Bitácora del informe: notas del auditor, cambios de estado y de hallazgos, en orden cronológico inverso. */
 export function Seguimiento({ a, onChange }: { a: AuditoriaDetalle; onChange: () => Promise<void> }) {

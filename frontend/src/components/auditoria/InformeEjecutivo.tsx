@@ -1,6 +1,7 @@
 "use client";
 
 import { PrintCover, PrintHeader } from "@/components/PrintButton";
+import { FiguraInforme, figurasDeHallazgo } from "./Evidencia";
 import { GraficoAuditoria, tituloGrafico } from "./GraficoAuditoria";
 import {
   ESTADO_AUD_LABEL, HALLAZGO_ESTADO_LABEL, SEVERIDAD_CLS, SEVERIDAD_LABEL, fechaCorta, fechaHora, n, pct, rangoPeriodos,
@@ -27,13 +28,30 @@ function Texto({ texto, vacio }: { texto: string | null; vacio: string }) {
   return <div className="text-[15px] text-brand-graphite leading-relaxed whitespace-pre-line">{texto}</div>;
 }
 
+/** «Figuras 2 y 5» que respaldan un hallazgo (enlazan a la figura en pantalla). */
+export function RefFiguras({ numeros }: { numeros: number[] }) {
+  if (!numeros.length) return null;
+  return (
+    <p className="text-xs text-brand-slate mt-1.5">
+      <b className="text-brand-ink">Evidencia visual:</b>{" "}
+      {numeros.map((x, i) => (
+        <span key={x}>{i > 0 && (i === numeros.length - 1 ? " y " : ", ")}<a href={`#figura-${x}`} className="font-semibold text-brand-primary hover:underline">Figura {x}</a></span>
+      ))}
+    </p>
+  );
+}
+
 /**
  * Informe ejecutivo: lo que necesita la Gerencia para decidir. Lectura del auditor, indicadores,
- * hallazgos (sin tablas de evidencia), gráficos con sus comentarios, vendedores críticos,
- * conclusiones y recomendaciones. La evidencia completa va en el informe extenso.
+ * hallazgos (sin tablas de evidencia), evidencia visual (figuras numeradas), gráficos con sus comentarios,
+ * vendedores críticos, conclusiones y recomendaciones. La evidencia completa va en el informe extenso.
  */
 export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
   const s = a.snapshot;
+  const evidencias = a.evidencias ?? [];
+  // Las secciones se numeran solas: las opcionales (evidencia visual, gráficos) no dejan huecos.
+  let seccion = 0;
+  const num = () => String(++seccion);
   const k = s.kpis;
   const periodo = rangoPeriodos(a);
   const nombre = (id: string | null) => (id && a.usuarios[id]) || "—";
@@ -84,13 +102,13 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
         ))}
       </div>
 
-      <Bloque num="1" titulo="Resumen del auditor">
+      <Bloque num={num()} titulo="Resumen del auditor">
         <div className="rounded-lg border-l-4 border-l-brand-primary bg-brand-primary-light/40 p-5">
           <Texto texto={a.resumen} vacio="Sin resumen redactado." />
         </div>
       </Bloque>
 
-      <Bloque num="2" titulo="Indicadores clave">
+      <Bloque num={num()} titulo="Indicadores clave">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {kpis.map(([l, v, h, c]) => (
             <div key={l} className={`card p-4 border-l-[3px] ${c}`}>
@@ -107,7 +125,7 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
         )}
       </Bloque>
 
-      <Bloque num="3" titulo={`Hallazgos (${n(hallazgos.length)})`}>
+      <Bloque num={num()} titulo={`Hallazgos (${n(hallazgos.length)})`}>
         <div className="flex flex-wrap gap-2 mb-4">
           {(["alta", "media", "baja"] as Severidad[]).map((sv) => (
             <span key={sv} className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-semibold ${SEVERIDAD_CLS[sv]}`}>
@@ -130,6 +148,7 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
               {(h.responsable || h.fecha_compromiso) && (
                 <p className="text-xs text-brand-slate mt-1">Responsable: {h.responsable ?? "—"} · Compromiso: {fechaCorta(h.fecha_compromiso)}</p>
               )}
+              <RefFiguras numeros={figurasDeHallazgo(evidencias, h.id)} />
             </article>
           ))}
           {hallazgos.length === 0 && <p className="text-sm text-brand-mist italic">Sin hallazgos vigentes.</p>}
@@ -168,8 +187,18 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
         )}
       </Bloque>
 
+      {evidencias.length > 0 && (
+        <Bloque num={num()} titulo={`Evidencia visual (${n(evidencias.length)} ${evidencias.length === 1 ? "figura" : "figuras"})`}>
+          <div className="space-y-4">
+            {evidencias.map((e, i) => (
+              <FiguraInforme key={e.id} e={e} numero={i + 1} hallazgo={a.hallazgos.find((h) => h.id === e.hallazgo_id)} nombre={nombre} compacta />
+            ))}
+          </div>
+        </Bloque>
+      )}
+
       {a.graficos.length > 0 && (
-        <Bloque num="4" titulo="Gráficos y comentarios del auditor">
+        <Bloque num={num()} titulo="Gráficos y comentarios del auditor">
           <div className="space-y-4">
             {a.graficos.map((g, i) => (
               <figure key={`${g.key}-${i}`} className="card p-4">
@@ -186,7 +215,7 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
         </Bloque>
       )}
 
-      <Bloque num={a.graficos.length ? "5" : "4"} titulo={`Vendedores críticos (${n(criticos.length)})`}>
+      <Bloque num={num()} titulo={`Vendedores críticos (${n(criticos.length)})`}>
         {criticos.length ? (
           <table className="w-full text-sm">
             <thead>
@@ -209,10 +238,10 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
         <p className="text-[11px] text-brand-slate mt-2">{n(k.vendedores_atencion)} vendedores más quedan en alerta media: el detalle está en el informe extenso.</p>
       </Bloque>
 
-      <Bloque num={a.graficos.length ? "6" : "5"} titulo="Conclusiones">
+      <Bloque num={num()} titulo="Conclusiones">
         <Texto texto={a.conclusiones} vacio="Sin conclusiones redactadas." />
       </Bloque>
-      <Bloque num={a.graficos.length ? "7" : "6"} titulo="Recomendaciones">
+      <Bloque num={num()} titulo="Recomendaciones">
         <Texto texto={a.recomendaciones} vacio="Sin recomendaciones redactadas." />
       </Bloque>
 

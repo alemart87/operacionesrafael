@@ -17,6 +17,7 @@ Cada submódulo nuevo va en su propia carpeta y suma acá sus routers y workers.
 from __future__ import annotations
 
 from .auditoria import api as auditoria_api
+from .auditoria import evidencias as auditoria_evidencias
 from .facturacion import agent_api as facturacion_agent_api
 from .facturacion import api as facturacion_api
 from .facturacion.jobs.queue import facturacion_worker
@@ -37,7 +38,8 @@ from .ventas_netas.jobs import queue as ventas_netas_queue
 
 ROUTERS = [router, ventas_netas_api.router, productividad_api.router, sph_api.router, supervision_api.router,
            supervision_coaching_api.router, supervision_tickets_api.router, supervision_comando_api.router,
-           informe_diario_api.router, auditoria_api.router, facturacion_api.router, facturacion_agent_api.router]
+           informe_diario_api.router, auditoria_api.router, auditoria_evidencias.router, facturacion_api.router,
+           facturacion_agent_api.router]
 
 # Workers de fondo: nombre -> coroutine factory. main.py los supervisa.
 WORKERS = {"ventas_netas": ventas_netas_queue.worker, "facturacion": facturacion_worker}

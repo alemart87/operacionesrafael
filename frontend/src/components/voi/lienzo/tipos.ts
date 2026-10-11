@@ -47,6 +47,8 @@ export interface ArtefactoVoi {
   created_at?: string | null;
   /** Armado en el navegador (p. ej. una tabla del chat ampliada): no se guarda. */
   local?: boolean;
+  /** Sale de una conversación que usó datos de Facturación: no puede ir a un informe de auditoría. */
+  confidencial?: boolean;
 }
 
 /**

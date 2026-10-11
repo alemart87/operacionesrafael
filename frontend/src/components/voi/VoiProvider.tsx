@@ -12,8 +12,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { ApiError, CurrentUserInfo, getToken } from "@/lib/api";
 import { OPERATIVA_ROUTES, isNavActive, operativaFromPath, submoduloFromPath } from "@/lib/operativas";
 import {
-  AccionVoi, ConexionVoi, ConversacionVoi, EstadoVoi, EventoVoi, ItemVoi, Pantalla, escucharConversacion, voiApi,
+  AccionVoi, AjustesEvidencia, ConexionVoi, ConversacionVoi, EstadoVoi, EventoVoi, InvestigacionVoi, ItemVoi, Pantalla,
+  escucharConversacion, voiApi,
 } from "@/lib/voi";
+import { SelectorAuditor } from "./VoiAuditor";
 import { VoiPanel } from "./VoiPanel";
 import type { ArtefactoVoi } from "./lienzo/tipos";
 import { VoiLienzo } from "./lienzo/VoiLienzo";
@@ -206,6 +208,18 @@ interface VoiCtx {
   cerrarLienzo: () => void;
   /** Muestra en el lienzo algo armado en el navegador (p. ej. una tabla de una respuesta). */
   mostrarEnLienzo: (a: ArtefactoVoi) => void;
+  /** Confirma una tarjeta con lo que el usuario eligió en ella (p. ej. qué piezas suma al informe). */
+  confirmarCon: (a: AccionVoi, ajustes: AjustesEvidencia) => Promise<void>;
+  /** Modo auditor de la conversación actual (null si no está activo). */
+  investigacion: InvestigacionVoi | null;
+  /** Entra en modo auditor (o cambia el informe destino). `nueva`: empieza una conversación para la investigación. */
+  activarAuditor: (auditoriaId?: string | null, opciones?: { nueva?: boolean }) => Promise<void>;
+  desactivarAuditor: () => Promise<void>;
+  /** Abre Voi en modo auditor con ese informe como destino (desde la pantalla del informe). */
+  investigarInforme: (auditoriaId: string) => Promise<void>;
+  /** El selector del informe destino (se abre desde el panel, el lienzo o la bienvenida). */
+  selectorAuditor: boolean;
+  setSelectorAuditor: (v: boolean) => void;
 }
 
 const Ctx = createContext<VoiCtx | null>(null);
@@ -239,10 +253,14 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
   const [noLeidos, setNoLeidos] = useState(0);
   const [borrador, setBorrador] = useState("");
   const [lienzo, setLienzo] = useState<{ abierto: boolean; foco: string | null; locales: ArtefactoVoi[] }>({ abierto: false, foco: null, locales: [] });
+  const [selectorAuditor, setSelectorAuditor] = useState(false);
   const dejarDeEscuchar = useRef<(() => void) | null>(null);
   const abiertoRef = useRef(abierto);
   const tmp = useRef(0);
   abiertoRef.current = abierto;
+  // La conversación actual sin esperar al próximo dibujo (p. ej. entrar en modo auditor y enseguida mandar un pedido).
+  const convRef = useRef<ConversacionVoi | null>(conv);
+  convRef.current = conv;
 
   const habilitado = tieneVoi(usuario);
 
@@ -272,6 +290,8 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
         despachar({ t: "evento", ev });
         if (ev.tipo === "transcripcion") setConv(ev.conversacion);
         if (ev.tipo === "estado") setConv((c) => (c ? { ...c, estado: ev.estado } : c));
+        // Voi (o el usuario desde otra pestaña) entró o salió del modo auditor: el panel se enciende o se apaga.
+        if (ev.tipo === "investigacion") setConv((c) => (c && c.id === id ? { ...c, investigacion: ev.investigacion } : c));
         if (ev.tipo === "mensaje" && !abiertoRef.current) setNoLeidos((n) => n + 1);
         // Lo nuevo del lienzo se abre solo en pantallas anchas (al lado del chat); en el teléfono queda la tarjeta.
         if (ev.tipo === "lienzo" && window.matchMedia("(min-width: 1024px)").matches) {
@@ -374,22 +394,24 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     setVista("chat");
     despachar({ t: "optimista", id, texto: limpio });
     const ctx = usarPantalla ? pantalla : null;
+    const actual = convRef.current;
     try {
       // Sin conversación, o la actual ya no acepta mensajes (terminó o llegó a su tope): se empieza una nueva.
-      if (!conv || conv.disponible === false) {
+      if (!actual || actual.disponible === false) {
         const c = await voiApi.nueva(limpio, ctx);
+        convRef.current = c;
         setConv(c);
         escuchar(c.id, false);   // la transcripción trae el mensaje y reemplaza al optimista
         recargarConversaciones();
       } else {
-        const r = await voiApi.enviar(conv.id, limpio, ctx);
-        setConv(r.conversacion);
+        const r = await voiApi.enviar(actual.id, limpio, ctx);
+        setConv((x) => (x && x.id === r.conversacion.id ? { ...x, ...r.conversacion } : r.conversacion));
       }
     } catch (e: any) {
       const msg = e instanceof ApiError || e instanceof Error ? e.message : "No se pudo enviar";
       despachar({ t: "fallo", id, error: msg });
     }
-  }, [conv, pantalla, usarPantalla, recargarConversaciones, escuchar]);
+  }, [pantalla, usarPantalla, recargarConversaciones, escuchar]);
 
   /** Vuelve a mandar un mensaje que no salió (el fallido se reemplaza por el nuevo). */
   const reintentar = useCallback(async (id: string, texto: string) => {
@@ -426,10 +448,10 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     try { await voiApi.detener(conv.id); } catch (e: any) { despachar({ t: "error", valor: e.message }); }
   }, [conv]);
 
-  const resolver = useCallback(async (a: AccionVoi, confirmar: boolean) => {
+  const resolver = useCallback(async (a: AccionVoi, confirmar: boolean, ajustes?: AjustesEvidencia) => {
     despachar({ t: "accion", accion: { ...a, estado: confirmar ? "ejecutando" : "cancelada" } });
     try {
-      const r = confirmar ? await voiApi.confirmar(a.id) : await voiApi.cancelar(a.id);
+      const r = confirmar ? await voiApi.confirmar(a.id, ajustes) : await voiApi.cancelar(a.id);
       despachar({ t: "accion", accion: r });
       despachar({ t: "trabajando", valor: true });
     } catch (e: any) {
@@ -445,12 +467,51 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     setLienzo((l) => ({ abierto: true, foco: a.id, locales: [...l.locales.filter((x) => x.id !== a.id), a] }));
   }, []);
 
+  // ---------------------------------------------------------------- modo auditor
+  const investigacion = conv?.investigacion?.activo ? conv.investigacion : null;
+
+  const activarAuditor = useCallback(async (auditoriaId?: string | null, opciones?: { nueva?: boolean }) => {
+    let c = convRef.current;
+    // Sin conversación (o una que ya no acepta mensajes, o se pide una aparte): la investigación empieza en una nueva.
+    if (!c || c.disponible === false || opciones?.nueva) {
+      c = await voiApi.nueva("", null);
+      convRef.current = c;
+      setConv(c);
+      escuchar(c.id);
+      setVista("chat");
+    }
+    const r = await voiApi.investigacion(c.id, true, auditoriaId ?? null);
+    convRef.current = { ...c, ...r };
+    setConv((x) => (x && x.id === r.id ? { ...x, ...r } : r));
+    recargarConversaciones();
+  }, [escuchar, recargarConversaciones]);
+
+  const desactivarAuditor = useCallback(async () => {
+    const c = convRef.current;
+    if (!c) return;
+    const r = await voiApi.investigacion(c.id, false);
+    convRef.current = { ...c, ...r };
+    setConv((x) => (x && x.id === r.id ? { ...x, ...r } : r));
+    recargarConversaciones();
+  }, [recargarConversaciones]);
+
+  const investigarInforme = useCallback(async (auditoriaId: string) => {
+    setAbierto(true);
+    setNoLeidos(0);
+    setVista("chat");
+    if (investigacion?.auditoria_id === auditoriaId) return;
+    // Una conversación con mensajes sigue siendo lo que era: la investigación arranca en una nueva.
+    const conMensajes = chat.items.some((i) => i.tipo === "usuario" || i.tipo === "voi");
+    await activarAuditor(auditoriaId, { nueva: conMensajes });
+  }, [investigacion?.auditoria_id, chat.items, activarAuditor]);
+
   const valor: VoiCtx = {
     usuario, habilitado, setUsuario, abierto, acoplado, abrir, cerrar, alternar, vista, setVista, estado, errorEstado,
     conv, chat, conversaciones, recargarConversaciones, enviar, reintentar, nueva, abrirConversacion, quitarConversacion,
     editarConversacion, detener, confirmar: (a) => resolver(a, true), cancelar: (a) => resolver(a, false),
     pantalla, usarPantalla, setUsarPantalla, noLeidos, esperaConfirmacion, lienzo, abrirLienzo, cerrarLienzo,
-    mostrarEnLienzo, borrador, setBorrador,
+    mostrarEnLienzo, borrador, setBorrador, confirmarCon: (a, ajustes) => resolver(a, true, ajustes),
+    investigacion, activarAuditor, desactivarAuditor, investigarInforme, selectorAuditor, setSelectorAuditor,
   };
 
   return (
@@ -458,6 +519,7 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
       {children}
       {habilitado && abierto && <VoiPanel />}
       {habilitado && abierto && lienzo.abierto && <VoiLienzo />}
+      {habilitado && selectorAuditor && <SelectorAuditor />}
     </Ctx.Provider>
   );
 }

@@ -4,26 +4,60 @@
  * El lienzo de Voi: lo que Voi mostró en la conversación (gráficos, indicadores, tablas y tableros), en grande, al lado
  * del chat. En pantallas anchas ocupa el espacio de la página; en tablet y teléfono, la pantalla completa. Cada pieza se
  * puede ver como gráfico o como tabla de datos y descargar en CSV o PNG.
+ *
+ * En modo auditor el lienzo lleva el borde del modo y cada pieza (o cada parte de un tablero) se puede elegir para
+ * sumarla como figura al informe de auditoría destino; las que ya están en el informe muestran su número.
  */
 import {
-  AreaChart, ArrowLeft, BarChart3, BarChartHorizontal, Download, FileImage, Gauge, LayoutDashboard, LineChart,
-  PieChart, Sparkles, Table2, X,
+  ArrowLeft, BarChart3, Check, CheckCircle2, Download, FileImage, LayoutDashboard, Lock, Plus, Sparkles, Table2, X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { descargarCsv } from "@/lib/csv";
 import { aNumero } from "@/lib/voiFormato";
+import { FranjaAuditor, HojaSumar, type PiezaElegida, useIndiceInforme } from "../VoiAuditor";
 import { useVoi } from "../VoiProvider";
+import { ICONO_TIPO, NOMBRE_TIPO } from "./iconos";
 import { ArtefactoVoi, PiezaVoi, SERIES, TINTA, nombreX } from "./tipos";
 import { CuerpoPieza } from "./VoiGrafico";
 
-export const ICONO_TIPO: Record<string, any> = {
-  kpis: Gauge, barras: BarChartHorizontal, columnas: BarChart3, apiladas: BarChart3, lineas: LineChart, area: AreaChart,
-  dona: PieChart, tabla: Table2, tablero: LayoutDashboard,
-};
-export const NOMBRE_TIPO: Record<string, string> = {
-  kpis: "Indicadores", barras: "Gráfico de barras", columnas: "Gráfico de columnas", apiladas: "Barras apiladas",
-  lineas: "Gráfico de líneas", area: "Gráfico de área", dona: "Gráfico de dona", tabla: "Tabla", tablero: "Tablero",
-};
+export { ICONO_TIPO, NOMBRE_TIPO };
+
+/** Elegir una pieza para sumarla al informe (modo auditor). */
+export interface EleccionPieza {
+  elegida: boolean;
+  alternar: () => void;
+  /** Por qué no se puede sumar (p. ej. usa datos confidenciales de Facturación). */
+  bloqueo?: string | null;
+  /** Ya está en el informe destino con este número de figura. */
+  figura?: number | null;
+}
+
+const CONFIDENCIAL = "Sale de una conversación que usó datos de Facturación (confidenciales): no puede ir a un informe de auditoría.";
+
+/** «Al informe» (elegir la pieza), «Elegida», «Figura N» (ya está en el informe) o «Confidencial». Misma altura que
+ * los botones de la barra (Datos, CSV, PNG). */
+function BotonEleccion({ e }: { e: EleccionPieza }) {
+  const base = "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-[5px] text-xs font-semibold";
+  if (e.bloqueo) {
+    return <span title={e.bloqueo} className={`${base} border-brand-border bg-brand-bg text-brand-slate`}><Lock size={12} /> Confidencial</span>;
+  }
+  if (e.figura) {
+    return (
+      <span title="Ya está en el informe destino" className={`${base} border-emerald-200 bg-emerald-50 text-emerald-700`}>
+        <CheckCircle2 size={13} /> Figura {e.figura}
+      </span>
+    );
+  }
+  return (
+    <button type="button" onClick={e.alternar} aria-pressed={e.elegida}
+      title={e.elegida ? "Quitar de lo que va al informe" : "Elegir para sumar al informe"}
+      className={`${base} transition-colors ${e.elegida
+        ? "border-brand-ink bg-brand-ink text-white hover:bg-brand-graphite"
+        : "border-brand-border bg-white text-brand-graphite hover:border-brand-slate/60 hover:text-brand-ink"}`}>
+      {e.elegida ? <Check size={13} /> : <Plus size={13} />} {e.elegida ? "Elegida" : "Al informe"}
+    </button>
+  );
+}
 
 function nombreArchivo(t: string) {
   return t.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 60) || "voi";
@@ -101,19 +135,28 @@ function BotonChico({ onClick, titulo, children, activo }: { onClick: () => void
   );
 }
 
-/** Una pieza con su título, su lectura, el cambio a tabla de datos y las descargas. */
-export function PiezaLienzo({ spec, compacto = false }: { spec: PiezaVoi; compacto?: boolean }) {
+/** Una pieza con su título, su lectura, el cambio a tabla de datos y las descargas (y, en modo auditor, «Al informe»). */
+export function PiezaLienzo({ spec, compacto = false, eleccion, eleccionDe }: {
+  spec: PiezaVoi;
+  compacto?: boolean;
+  eleccion?: EleccionPieza;
+  /** Para un tablero: la elección de cada una de sus partes. */
+  eleccionDe?: (i: number) => EleccionPieza | undefined;
+}) {
   const [verDatos, setVerDatos] = useState(false);
   const caja = useRef<HTMLDivElement>(null);
   const grafico = !["kpis", "tabla", "tablero"].includes(spec.tipo);
   return (
-    <div className={`rounded-2xl border border-brand-border bg-white ${compacto ? "p-4" : "p-5"}`}>
+    <div className={`rounded-2xl border bg-white transition-shadow ${compacto ? "p-4" : "p-5"} ${
+      eleccion?.elegida ? "border-brand-ink shadow-elevated" : "border-brand-border"}`}>
       <div className="flex flex-wrap items-start gap-2">
-        <div className="min-w-0 flex-1">
+        {/* Con poco ancho, la barra de botones baja debajo del título (el título nunca queda aplastado). */}
+        <div className="min-w-[11rem] flex-1">
           <h3 className={`font-semibold text-brand-ink leading-snug ${compacto ? "text-sm" : "text-base"}`}>{spec.titulo}</h3>
           {spec.descripcion && <p className="mt-0.5 text-sm text-brand-slate leading-snug">{spec.descripcion}</p>}
         </div>
-        <div className="flex items-center gap-0.5 no-print">
+        <div className="flex flex-wrap items-center gap-0.5 no-print">
+          {eleccion && <span className="mr-1"><BotonEleccion e={eleccion} /></span>}
           {grafico && (
             <BotonChico titulo={verDatos ? "Ver el gráfico" : "Ver los datos en una tabla"} onClick={() => setVerDatos(!verDatos)} activo={verDatos}>
               <Table2 size={13} /> Datos
@@ -126,19 +169,19 @@ export function PiezaLienzo({ spec, compacto = false }: { spec: PiezaVoi; compac
         </div>
       </div>
       <div ref={caja} className="mt-4">
-        {spec.tipo === "tablero" ? <Tablero spec={spec} /> : <CuerpoPieza spec={spec} verDatos={verDatos} compacto={compacto} />}
+        {spec.tipo === "tablero" ? <Tablero spec={spec} eleccionDe={eleccionDe} /> : <CuerpoPieza spec={spec} verDatos={verDatos} compacto={compacto} />}
       </div>
       {spec.nota && <p className="mt-3 text-[11px] text-brand-mist">{spec.nota}</p>}
     </div>
   );
 }
 
-function Tablero({ spec }: { spec: PiezaVoi }) {
+function Tablero({ spec, eleccionDe }: { spec: PiezaVoi; eleccionDe?: (i: number) => EleccionPieza | undefined }) {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
       {(spec.widgets ?? []).map((w, i) => (
         <div key={i} className={w.tipo === "kpis" || w.tipo === "tabla" || (spec.widgets ?? []).length === 1 ? "xl:col-span-2" : ""}>
-          <PiezaLienzo spec={w} compacto />
+          <PiezaLienzo spec={w} compacto eleccion={eleccionDe?.(i)} />
         </div>
       ))}
     </div>
@@ -150,19 +193,53 @@ export function VoiLienzo() {
   const artefactos: ArtefactoVoi[] = useMemo(() => [...voi.chat.artefactos, ...voi.lienzo.locales], [voi.chat.artefactos, voi.lienzo.locales]);
   const sel = artefactos.find((a) => a.id === voi.lienzo.foco) ?? artefactos[artefactos.length - 1];
   const chips = useRef<HTMLDivElement>(null);
+  const inv = voi.investigacion;
+  const { indice, recargar } = useIndiceInforme(inv?.auditoria_id);
+  // Claves elegidas para el informe («id» o «id#n» para una parte de un tablero), en el orden en que se eligieron.
+  const [elegidas, setElegidas] = useState<string[]>([]);
+  const [hoja, setHoja] = useState(false);
+
+  useEffect(() => { setElegidas([]); }, [voi.conv?.id, inv?.auditoria_id, inv?.activo]);
+  // Lo que Voi suma al informe con su tarjeta también se marca acá (se vuelve a pedir el índice).
+  const sumadasPorVoi = voi.chat.items.filter((i) => i.tipo === "accion" && i.accion.herramienta === "proponer_evidencia" && i.accion.estado === "ejecutada").length;
+  const previas = useRef(sumadasPorVoi);
+  useEffect(() => {
+    if (sumadasPorVoi !== previas.current) recargar();
+    previas.current = sumadasPorVoi;
+  }, [sumadasPorVoi, recargar]);
 
   useEffect(() => {
-    const f = (e: KeyboardEvent) => { if (e.key === "Escape") voi.cerrarLienzo(); };
+    const f = (e: KeyboardEvent) => { if (e.key === "Escape" && !hoja && !voi.selectorAuditor) voi.cerrarLienzo(); };
     window.addEventListener("keydown", f);
     return () => window.removeEventListener("keydown", f);
-  }, [voi]);
+  }, [voi, hoja]);
   useEffect(() => {
     chips.current?.querySelector("[aria-current=true]")?.scrollIntoView({ block: "nearest", inline: "center" });
   }, [sel?.id]);
 
+  const figuras = useMemo(() => new Map((indice?.figuras ?? []).filter((f) => f.artefacto_id).map((f) => [f.artefacto_id!, f.figura])), [indice]);
+  const alternar = useCallback((clave: string) => setElegidas((l) => (l.includes(clave) ? l.filter((x) => x !== clave) : [...l, clave])), []);
+  const eleccion = (a: ArtefactoVoi, widget?: number): EleccionPieza | undefined => {
+    if (!inv) return undefined;
+    const clave = widget === undefined ? a.id : `${a.id}#${widget}`;
+    return {
+      elegida: elegidas.includes(clave), alternar: () => alternar(clave),
+      bloqueo: a.confidencial ? CONFIDENCIAL : null, figura: a.local ? null : figuras.get(clave) ?? null,
+    };
+  };
+  const piezasElegidas: PiezaElegida[] = elegidas.flatMap((clave) => {
+    const [id, parte] = clave.split("#");
+    const a = artefactos.find((x) => x.id === id);
+    if (!a) return [];
+    const widget = parte === undefined ? null : Number(parte);
+    const spec = widget === null ? a.spec : a.spec.widgets?.[widget];
+    return spec ? [{ clave, artefacto: a, widget, spec }] : [];
+  });
+  const elegidasDe = (a: ArtefactoVoi) => elegidas.filter((c) => c === a.id || c.startsWith(`${a.id}#`)).length;
+
   return (
     <section
-      className="voi-panel no-print fixed z-[45] inset-0 lg:right-[440px] bg-brand-bg flex flex-col lg:border-r border-brand-border"
+      className={`voi-panel no-print fixed z-[45] inset-0 lg:right-[440px] bg-brand-bg flex flex-col lg:border-r border-brand-border ${inv ? "voi-auditor" : ""}`}
       role="dialog"
       aria-label="Lienzo de Voi"
     >
@@ -181,17 +258,25 @@ export function VoiLienzo() {
           <X size={18} />
         </button>
       </div>
+      {inv && <FranjaAuditor inv={inv} onCambiar={() => voi.setSelectorAuditor(true)} />}
       {artefactos.length > 1 && (
         <div ref={chips} className="flex gap-2 overflow-x-auto px-4 py-2.5 bg-white border-b border-brand-border flex-shrink-0">
           {artefactos.map((a) => {
             const Icono = ICONO_TIPO[a.tipo] ?? BarChart3;
             const activo = a.id === sel?.id;
+            const marcadas = inv ? elegidasDe(a) : 0;
+            const enInforme = inv && !a.local && figuras.has(a.id);
             return (
               <button key={a.id} type="button" aria-current={activo} onClick={() => voi.abrirLienzo(a.id)}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs whitespace-nowrap max-w-[260px] transition-colors ${
                   activo ? "border-brand-ink bg-brand-ink text-white" : "border-brand-border bg-white text-brand-graphite hover:border-brand-ink/40"}`}>
                 <Icono size={13} className="flex-shrink-0" />
                 <span className="truncate">{a.titulo}</span>
+                {marcadas > 0 && (
+                  <span className={`ml-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold grid place-items-center ${activo ? "bg-white text-brand-ink" : "bg-brand-ink text-white"}`}>{marcadas}</span>
+                )}
+                {!marcadas && enInforme && <CheckCircle2 size={12} className={activo ? "text-emerald-300" : "text-emerald-600"} aria-label="En el informe" />}
+                {inv && a.confidencial && <Lock size={11} className="opacity-60" aria-label="Confidencial" />}
               </button>
             );
           })}
@@ -199,9 +284,43 @@ export function VoiLienzo() {
       )}
       <div className="flex-1 overflow-y-auto overscroll-contain p-4 lg:p-6">
         <div className="max-w-5xl mx-auto">
-          {sel ? <PiezaLienzo key={sel.id} spec={sel.spec} /> : <Vacio />}
+          {sel ? (
+            <PiezaLienzo key={sel.id} spec={sel.spec} eleccion={eleccion(sel)}
+              eleccionDe={sel.spec.tipo === "tablero" ? (i) => eleccion(sel, i) : undefined} />
+          ) : <Vacio />}
         </div>
       </div>
+      {inv && artefactos.length > 0 && (
+        <div className="flex-shrink-0 border-t border-brand-border bg-white px-4 lg:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center gap-3">
+          <div className="min-w-0 flex-1 leading-snug">
+            {elegidas.length ? (
+              <>
+                <div className="text-sm font-semibold text-brand-ink">{elegidas.length === 1 ? "1 pieza elegida" : `${elegidas.length} piezas elegidas`}</div>
+                <div className="text-xs text-brand-slate truncate">
+                  Para <span className="whitespace-nowrap">{inv.codigo ?? "el informe"}</span>{indice ? ` · tiene ${indice.figuras.length} figura${indice.figuras.length === 1 ? "" : "s"}` : ""}
+                </div>
+              </>
+            ) : (
+              <div className="text-xs text-brand-slate">
+                Marcá <span className="font-semibold text-brand-ink">Al informe</span> en lo que quieras sumar
+                {inv.codigo ? <> a <span className="whitespace-nowrap">{inv.codigo}</span></> : ""}.
+              </div>
+            )}
+          </div>
+          {elegidas.length > 0 && <button type="button" onClick={() => setElegidas([])} className="btn-ghost px-3 py-2 text-xs">Limpiar</button>}
+          {inv.auditoria_id ? (
+            <button type="button" onClick={() => setHoja(true)} disabled={!elegidas.length || indice?.informe.editable === false}
+              title={indice?.informe.editable === false ? "El informe está cerrado: su evidencia quedó fija" : undefined}
+              className="btn-primary px-4 py-2 whitespace-nowrap">Sumar al informe</button>
+          ) : (
+            <button type="button" onClick={() => voi.setSelectorAuditor(true)} className="btn-primary px-4 py-2 whitespace-nowrap">Elegir informe</button>
+          )}
+        </div>
+      )}
+      {hoja && inv?.auditoria_id && (
+        <HojaSumar piezas={piezasElegidas} inv={inv} indice={indice} conversacionId={voi.conv?.id ?? null}
+          onCerrar={() => setHoja(false)} onListo={() => { setElegidas([]); recargar(); }} />
+      )}
     </section>
   );
 }

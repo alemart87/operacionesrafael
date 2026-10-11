@@ -7,7 +7,7 @@
  * series y, siempre, la tabla de datos como alternativa.
  */
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Minus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { cloneElement, useMemo, useState } from "react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart,
   ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -138,12 +138,21 @@ export function TablaVoi({ spec, maxAlto = 420 }: { spec: PiezaVoi; maxAlto?: nu
 }
 
 // ------------------------------------------------------------------ gráficos
+/** Contenedor del gráfico: se adapta al ancho disponible o, con `fijo` (informes e impresión, donde el contenedor no
+ * se mide bien), se dibuja con un ancho fijo y la hoja de estilos lo escala sin deformarlo (.voi-grafico-fijo). */
+function Marco({ fijo, alto, children }: { fijo?: number; alto: number; children: React.ReactElement }) {
+  if (fijo) {
+    return <div className="voi-grafico-fijo" style={{ width: fijo, maxWidth: "100%" }}>{cloneElement(children, { width: fijo, height: alto })}</div>;
+  }
+  return <ResponsiveContainer width="100%" height={alto}>{children}</ResponsiveContainer>;
+}
+
 function anchoEtiquetas(datos: Record<string, any>[], x: string): number {
   const largo = Math.max(...datos.map((d) => String(d[x] ?? "").length), 4);
   return Math.min(190, Math.max(56, largo * 6.6 + 12));
 }
 
-function Barras({ spec, compacto }: { spec: PiezaVoi; compacto?: boolean }) {
+function Barras({ spec, compacto, fijo }: { spec: PiezaVoi; compacto?: boolean; fijo?: number }) {
   const datos = spec.datos ?? [];
   const x = spec.x!;
   const series = spec.series ?? [];
@@ -154,12 +163,12 @@ function Barras({ spec, compacto }: { spec: PiezaVoi; compacto?: boolean }) {
   return (
     <>
       <LeyendaVoi series={series.map((s, i) => ({ nombre: s.nombre, color: color(i) }))} />
-      <ResponsiveContainer width="100%" height={compacto ? Math.min(alto, 320) : alto}>
+      <Marco fijo={fijo} alto={compacto ? Math.min(alto, 320) : alto}>
         <BarChart data={datos} layout="vertical" margin={{ top: 4, right: una ? 64 : 16, bottom: 4, left: 4 }} barGap={2} barCategoryGap={una ? "24%" : "18%"}>
           <CartesianGrid horizontal={false} stroke={GRILLA} />
           <XAxis type="number" tick={TICK} tickLine={false} axisLine={false} tickFormatter={(v) => formatearEje(v, spec.formato)} />
           <YAxis type="category" dataKey={x} width={anchoEtiquetas(datos, x)} tick={{ ...TICK, fill: TINTA }} tickLine={false} axisLine={{ stroke: GRILLA }} interval={0} />
-          <Tooltip cursor={{ fill: "rgba(15,17,22,0.04)" }} content={<TooltipVoi formato={spec.formato} />} />
+          {!fijo && <Tooltip cursor={{ fill: "rgba(15,17,22,0.04)" }} content={<TooltipVoi formato={spec.formato} />} />}
           {spec.meta !== undefined && (
             <ReferenceLine x={spec.meta} stroke={EJE} strokeDasharray="4 4" label={{ value: spec.meta_nombre ?? "Meta", position: "top", fill: EJE, fontSize: 11 }} />
           )}
@@ -172,12 +181,12 @@ function Barras({ spec, compacto }: { spec: PiezaVoi; compacto?: boolean }) {
             </Bar>
           ))}
         </BarChart>
-      </ResponsiveContainer>
+      </Marco>
     </>
   );
 }
 
-function Columnas({ spec, compacto, apiladas }: { spec: PiezaVoi; compacto?: boolean; apiladas?: boolean }) {
+function Columnas({ spec, compacto, apiladas, fijo }: { spec: PiezaVoi; compacto?: boolean; apiladas?: boolean; fijo?: number }) {
   const datos = spec.datos ?? [];
   const x = spec.x!;
   const series = spec.series ?? [];
@@ -186,12 +195,12 @@ function Columnas({ spec, compacto, apiladas }: { spec: PiezaVoi; compacto?: boo
   return (
     <>
       <LeyendaVoi series={series.map((s, i) => ({ nombre: s.nombre, color: color(i) }))} />
-      <ResponsiveContainer width="100%" height={compacto ? 240 : 360}>
+      <Marco fijo={fijo} alto={compacto ? 240 : 360}>
         <BarChart data={datos} margin={{ top: una ? 18 : 8, right: 8, bottom: 0, left: 4 }} barGap={2} barCategoryGap="22%">
           <CartesianGrid vertical={false} stroke={GRILLA} />
           <XAxis dataKey={x} tick={TICK} tickLine={false} axisLine={{ stroke: GRILLA }} interval="preserveStartEnd" minTickGap={8} />
           <YAxis tick={TICK} tickLine={false} axisLine={false} width={56} tickFormatter={(v) => formatearEje(v, spec.formato)} />
-          <Tooltip cursor={{ fill: "rgba(15,17,22,0.04)" }} content={<TooltipVoi formato={spec.formato} />} />
+          {!fijo && <Tooltip cursor={{ fill: "rgba(15,17,22,0.04)" }} content={<TooltipVoi formato={spec.formato} />} />}
           {spec.meta !== undefined && !apiladas && (
             <ReferenceLine y={spec.meta} stroke={EJE} strokeDasharray="4 4" label={{ value: spec.meta_nombre ?? "Meta", position: "insideTopRight", fill: EJE, fontSize: 11 }} />
           )}
@@ -206,12 +215,12 @@ function Columnas({ spec, compacto, apiladas }: { spec: PiezaVoi; compacto?: boo
             </Bar>
           ))}
         </BarChart>
-      </ResponsiveContainer>
+      </Marco>
     </>
   );
 }
 
-function ApiladasHorizontal({ spec, compacto }: { spec: PiezaVoi; compacto?: boolean }) {
+function ApiladasHorizontal({ spec, compacto, fijo }: { spec: PiezaVoi; compacto?: boolean; fijo?: number }) {
   const datos = spec.datos ?? [];
   const x = spec.x!;
   const series = spec.series ?? [];
@@ -219,23 +228,23 @@ function ApiladasHorizontal({ spec, compacto }: { spec: PiezaVoi; compacto?: boo
   return (
     <>
       <LeyendaVoi series={series.map((s, i) => ({ nombre: s.nombre, color: color(i) }))} />
-      <ResponsiveContainer width="100%" height={compacto ? Math.min(alto, 320) : alto}>
+      <Marco fijo={fijo} alto={compacto ? Math.min(alto, 320) : alto}>
         <BarChart data={datos} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 4 }} barCategoryGap="24%">
           <CartesianGrid horizontal={false} stroke={GRILLA} />
           <XAxis type="number" tick={TICK} tickLine={false} axisLine={false} tickFormatter={(v) => formatearEje(v, spec.formato)} />
           <YAxis type="category" dataKey={x} width={anchoEtiquetas(datos, x)} tick={{ ...TICK, fill: TINTA }} tickLine={false} axisLine={{ stroke: GRILLA }} interval={0} />
-          <Tooltip cursor={{ fill: "rgba(15,17,22,0.04)" }} content={<TooltipVoi formato={spec.formato} />} />
+          {!fijo && <Tooltip cursor={{ fill: "rgba(15,17,22,0.04)" }} content={<TooltipVoi formato={spec.formato} />} />}
           {series.map((s, i) => (
             <Bar key={s.campo} dataKey={s.campo} name={s.nombre} fill={color(i)} stackId="a" barSize={20} isAnimationActive={false}
               radius={i === series.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]} stroke="#FFFFFF" strokeWidth={2} />
           ))}
         </BarChart>
-      </ResponsiveContainer>
+      </Marco>
     </>
   );
 }
 
-function Lineas({ spec, compacto, area }: { spec: PiezaVoi; compacto?: boolean; area?: boolean }) {
+function Lineas({ spec, compacto, area, fijo }: { spec: PiezaVoi; compacto?: boolean; area?: boolean; fijo?: number }) {
   const datos = spec.datos ?? [];
   const x = spec.x!;
   const series = spec.series ?? [];
@@ -248,7 +257,7 @@ function Lineas({ spec, compacto, area }: { spec: PiezaVoi; compacto?: boolean; 
       <CartesianGrid vertical={false} stroke={GRILLA} />
       <XAxis dataKey={x} tick={TICK} tickLine={false} axisLine={{ stroke: GRILLA }} interval="preserveStartEnd" minTickGap={16} />
       <YAxis tick={TICK} tickLine={false} axisLine={false} width={56} tickFormatter={(v) => formatearEje(v, spec.formato)} />
-      <Tooltip cursor={{ stroke: "#9CA3AF", strokeWidth: 1 }} content={<TooltipVoi formato={spec.formato} />} />
+      {!fijo && <Tooltip cursor={{ stroke: "#9CA3AF", strokeWidth: 1 }} content={<TooltipVoi formato={spec.formato} />} />}
       {spec.meta !== undefined && (
         <ReferenceLine y={spec.meta} stroke={EJE} strokeDasharray="4 4" label={{ value: spec.meta_nombre ?? "Meta", position: "insideTopRight", fill: EJE, fontSize: 11 }} />
       )}
@@ -257,7 +266,7 @@ function Lineas({ spec, compacto, area }: { spec: PiezaVoi; compacto?: boolean; 
   return (
     <>
       <LeyendaVoi linea series={series.map((s, i) => ({ nombre: s.nombre, color: color(i) }))} />
-      <ResponsiveContainer width="100%" height={compacto ? 240 : 360}>
+      <Marco fijo={fijo} alto={compacto ? 240 : 360}>
         {area && series.length === 1 ? (
           <AreaChart data={datos} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
             {comun}
@@ -273,7 +282,7 @@ function Lineas({ spec, compacto, area }: { spec: PiezaVoi; compacto?: boolean; 
             ))}
           </LineChart>
         )}
-      </ResponsiveContainer>
+      </Marco>
     </>
   );
 }
@@ -318,23 +327,25 @@ function Dona({ spec, compacto }: { spec: PiezaVoi; compacto?: boolean }) {
   );
 }
 
-/** El cuerpo de una pieza (sin título): el gráfico, los indicadores o la tabla. */
-export function CuerpoPieza({ spec, verDatos = false, compacto = false }: { spec: PiezaVoi; verDatos?: boolean; compacto?: boolean }) {
+/** El cuerpo de una pieza (sin título): el gráfico, los indicadores o la tabla. `fijo`: ancho fijo (informes, PDF). */
+export function CuerpoPieza({ spec, verDatos = false, compacto = false, fijo }: { spec: PiezaVoi; verDatos?: boolean; compacto?: boolean; fijo?: number }) {
   if (spec.tipo === "kpis") return <Kpis spec={spec} />;
-  if (spec.tipo === "tabla" || verDatos) return <TablaVoi spec={spec} maxAlto={compacto ? 300 : 460} />;
+  if (spec.tipo === "tabla" || verDatos) return <TablaVoi spec={spec} maxAlto={fijo ? 100000 : compacto ? 300 : 460} />;
   switch (spec.tipo) {
     case "barras":
-      return <Barras spec={spec} compacto={compacto} />;
+      return <Barras spec={spec} compacto={compacto} fijo={fijo} />;
     case "columnas":
-      return <Columnas spec={spec} compacto={compacto} />;
+      return <Columnas spec={spec} compacto={compacto} fijo={fijo} />;
     case "apiladas": {
       const largo = Math.max(...(spec.datos ?? []).map((d) => String(d[spec.x!] ?? "").length), 0);
-      return (spec.datos?.length ?? 0) > 8 || largo > 10 ? <ApiladasHorizontal spec={spec} compacto={compacto} /> : <Columnas spec={spec} compacto={compacto} apiladas />;
+      return (spec.datos?.length ?? 0) > 8 || largo > 10
+        ? <ApiladasHorizontal spec={spec} compacto={compacto} fijo={fijo} />
+        : <Columnas spec={spec} compacto={compacto} apiladas fijo={fijo} />;
     }
     case "lineas":
-      return <Lineas spec={spec} compacto={compacto} />;
+      return <Lineas spec={spec} compacto={compacto} fijo={fijo} />;
     case "area":
-      return <Lineas spec={spec} compacto={compacto} area />;
+      return <Lineas spec={spec} compacto={compacto} area fijo={fijo} />;
     case "dona":
       return <Dona spec={spec} compacto={compacto} />;
     default:

@@ -123,6 +123,43 @@ class HallazgoRead(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class EvidenciaRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    auditoria_id: str
+    orden: int
+    tipo: str
+    titulo: str
+    nota: Optional[str] = None
+    hallazgo_id: Optional[str] = None
+    spec: Optional[dict[str, Any]] = None
+    archivo_nombre: Optional[str] = None
+    bytes: int = 0
+    ancho: Optional[int] = None
+    alto: Optional[int] = None
+    origen: str
+    conversacion_id: Optional[str] = None
+    artefacto_id: Optional[str] = None
+    """Pieza del lienzo de la que salió (id del artefacto o «id#n» para una parte de un tablero)."""
+    created_by: str
+    created_at: datetime
+    updated_by: Optional[str] = None
+    updated_at: Optional[datetime] = None
+    disponible: bool = True
+    """Para imágenes: el archivo está en el disco (si el almacenamiento se perdió, queda la ficha sin la imagen)."""
+
+
+class EvidenciaUpdate(BaseModel):
+    titulo: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    nota: Optional[str] = Field(default=None, max_length=4000)
+    hallazgo_id: Optional[str] = Field(default=None, max_length=36)
+    """Vacío ("") desvincula el hallazgo."""
+
+
+class EvidenciasOrden(BaseModel):
+    ids: List[str] = Field(min_length=1, max_length=200)
+
+
 class SeguimientoRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -170,6 +207,7 @@ class AuditoriaDetalle(AuditoriaResumen):
     graficos: list[dict[str, Any]] = Field(default_factory=list)
     historial: list[dict[str, Any]] = Field(default_factory=list)
     hallazgos: List[HallazgoRead] = Field(default_factory=list)
+    evidencias: List[EvidenciaRead] = Field(default_factory=list)
     seguimientos: List[SeguimientoRead] = Field(default_factory=list)
     usuarios: dict[str, str] = Field(default_factory=dict)
     editable: bool = False
