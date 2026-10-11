@@ -2,7 +2,7 @@
 
 import {
   AlertTriangle, ArrowUpRight, BarChart3, BookOpen, Check, CheckCircle2, Copy, ExternalLink, Info, Loader2, Maximize2,
-  MousePointerClick, RotateCcw, ShieldCheck, XCircle, Zap,
+  ClipboardPenLine, MousePointerClick, RotateCcw, ShieldCheck, XCircle, Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -420,7 +420,7 @@ const esEvidencia = (a: AccionVoi): a is AccionVoi & { detalle: DetalleEvidencia
 /** La conversación: mensajes del usuario y de Voi, pasos (agrupados), tarjetas de acción y avisos. */
 export function VoiMensajes({
   items, parciales, onConfirmar, onConfirmarCon, onCancelar, onReintentar, onNavegar, onAbrirLienzo, onAmpliar, artefactos = [],
-  codigoInforme, onElegir, onVerGuia, onAbrirRuta,
+  codigoInforme, diario = false, onElegir, onVerGuia, onAbrirRuta,
 }: {
   items: ItemVoi[];
   parciales: Record<string, string>;
@@ -434,8 +434,10 @@ export function VoiMensajes({
   onAmpliar?: (a: ArtefactoVoi) => void;
   /** Lo que Voi mostró en el lienzo (para las tarjetas que proponen sumar piezas al informe). */
   artefactos?: ArtefactoVoi[];
-  /** Código del informe destino del modo auditor (AUD-…). */
+  /** Cómo se nombra el informe destino del modo activo («AUD-…» o «Informe diario · dd/mm»). */
   codigoInforme?: string | null;
+  /** El modo activo es el informe diario (cambia los textos de la tarjeta de figuras). */
+  diario?: boolean;
   /** Elegir una de las opciones que ofreció Voi (botones). */
   onElegir?: (op: OpcionVoi) => void;
   /** Volver a abrir una guía paso a paso que Voi mostró. */
@@ -504,7 +506,7 @@ export function VoiMensajes({
           return (
             <div key={b.id} className="ml-7">
               {esEvidencia(a) && onConfirmarCon ? (
-                <TarjetaEvidencia a={a} artefactos={artefactos} codigo={codigoInforme} onConfirmarCon={onConfirmarCon}
+                <TarjetaEvidencia a={a} artefactos={artefactos} codigo={codigoInforme} diario={diario} onConfirmarCon={onConfirmarCon}
                   onCancelar={onCancelar} onAbrirLienzo={onAbrirLienzo} onNavegar={onNavegar} />
               ) : a.herramienta === "proponer_modo_auditor" ? (
                 <TarjetaModoAuditor a={a} onConfirmar={onConfirmar} onCancelar={onCancelar} />
@@ -545,13 +547,17 @@ export function VoiMensajes({
               <div className="flex items-center gap-3">
                 <span className="h-px flex-1 bg-brand-border" />
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-graphite whitespace-nowrap">
-                  <ShieldCheck size={13} className={b.activo ? "text-brand-cyan" : "text-brand-mist"} /> {b.texto}
+                  {b.modo === "informe_diario"
+                    ? <ClipboardPenLine size={13} className={b.activo ? "text-brand-purple" : "text-brand-mist"} />
+                    : <ShieldCheck size={13} className={b.activo ? "text-brand-cyan" : "text-brand-mist"} />} {b.texto}
                 </span>
                 <span className="h-px flex-1 bg-brand-border" />
               </div>
               {b.activo && (
                 <p className="mt-1 text-center text-[11px] text-brand-slate leading-snug">
-                  Voi busca alertas por su cuenta y te ofrece cada gráfico como figura del informe.
+                  {b.modo === "informe_diario"
+                    ? "Voi mira los datos del día, te propone el contenido y te ofrece cada gráfico como figura del informe; vos revisás y firmás."
+                    : "Voi busca alertas por su cuenta y te ofrece cada gráfico como figura del informe."}
                 </p>
               )}
             </div>

@@ -201,6 +201,7 @@ class _Sesion:
                                                            "cache_read_input_tokens": 0, "active_seconds": 0.0})
     costo: int = 0
     contexto: str = ""                      # el último system.message (p. ej. «MODO AUDITOR ACTIVO»)
+    ultima: Optional[tuple[str, dict[str, Any]]] = None     # la última consulta de datos (herramienta, entrada)
 
 
 class _Stream:
@@ -235,6 +236,21 @@ class _Eventos:
         for e in evs:
             if e.get("type") not in EVENTOS_USUARIO:
                 raise ErrorSimulado(400, f"invalid event type: {e.get('type')}")
+        # Como la API: mientras la sesión espera resultados de herramientas, solo se aceptan resultados, confirmaciones
+        # o una interrupción (y un system.message pegado a un resultado); el lote se rechaza entero.
+        esperando = set((s.turno or {}).get("espera") or {})
+        for i, e in enumerate(evs):
+            t = e.get("type")
+            if t == "user.custom_tool_result":
+                esperando.discard(e.get("custom_tool_use_id"))
+            elif t == "system.message" and i > 0 and evs[i - 1].get("type") == "user.custom_tool_result":
+                continue
+            elif t in ("user.message", "system.message") and esperando:
+                ids = ", ".join(sorted(esperando))
+                raise ErrorSimulado(400, f"Error code: 400 - Invalid {t} event at events[{i}]: waiting on responses to "
+                                         f"events [{ids}]; only `user.tool_confirmation`, `user.custom_tool_result`, "
+                                         "`user.tool_result`, or `user.interrupt` may be sent (a `system.message` may "
+                                         "trail a tool result)")
         if s.cola is None:
             s.cola = asyncio.Queue()
         enviados = []
@@ -484,6 +500,15 @@ class ClienteSimulado:
             return [("memoria", "/mnt/memory/voi/preferencias.md", f"- {nota[:300]}"),
                     ("mensaje", f"Listo, lo anoté en mi memoria: «{nota[:200]}». Lo voy a tener en cuenta en las "
                                 "próximas conversaciones.")]
+        # Modo informe diario: armar el informe con Voi (el borrador del día se crea si no existe).
+        if "modo_informe_diario" in h and RE_MODO_INFORME.search(n) and "borrador" not in n:
+            if re.search(r"\b(sal|desactiv|termin|cerr)", n):
+                return [("herramienta", "modo_informe_diario", {"accion": "desactivar"}), ("mensaje", _final)]
+            fecha = re.search(r"\b(20\d\d-\d\d-\d\d)\b", n)
+            entrada = {"accion": "activar", **({"fecha": fecha.group(1)} if fecha else {})}
+            if "ayer" in n and not fecha:
+                entrada["fecha"] = (ahora_local().date() - timedelta(days=1)).isoformat()
+            return [("herramienta", "modo_informe_diario", entrada), ("mensaje", _final_modo_informe)]
         # Fuera del modo auditor, si el usuario está investigando, Voi le ofrece activarlo (tarjeta Activar / Ahora no).
         if "Modo auditor: disponible pero apagado" in s.contexto and "proponer_modo_auditor" in h \
                 and "modo auditor" not in n and RE_INVESTIGA.search(n):
@@ -495,7 +520,7 @@ class ClienteSimulado:
         if "MODO AUDITOR ACTIVO" in s.contexto and "alertas_del_corte" in h and "lienzo" not in n and "grafic" not in n \
                 and "tablero" not in n and (RE_INVESTIGA.search(n) or re.search(r"barrido|alerta|critic|que (esta|hay)|por donde", n)):
             return [("herramienta", "alertas_del_corte", {}), ("mensaje", _final)]
-        plan = self._plan_guia(texto, n, h) or self._plan_fase2(texto, n, h, "MODO AUDITOR ACTIVO" in s.contexto)
+        plan = self._plan_guia(texto, n, h) or self._plan_fase2(texto, n, h, "MODO AUDITOR ACTIVO" in s.contexto, s)
         if plan:
             return plan
         if "ticket" in n and re.search(r"\b(envi|mand|cre|abr|gener|deriv)", n) and \
@@ -518,7 +543,12 @@ class ClienteSimulado:
                 if nombre in HERRAMIENTAS_CON_FECHA:
                     hoy = ahora_local().date()
                     entrada = {**entrada, "fecha": (hoy - timedelta(days=1) if "ayer" in n else hoy).isoformat()}
-                return [("herramienta", nombre, entrada), ("mensaje", _final)]
+                s.ultima = (nombre, entrada)
+                pasos: list[tuple] = [("herramienta", nombre, entrada), ("mensaje", _final)]
+                if "ofrecer_opciones" in h and "mostrar_en_lienzo" in h:
+                    informe = "MODO INFORME DIARIO ACTIVO" in s.contexto
+                    pasos.append(("herramienta", "ofrecer_opciones", lambda rs, inf=informe: _opciones_datos(rs, inf)))
+                return pasos
         return [("mensaje", _ayuda(h))]
 
 
@@ -538,7 +568,8 @@ class ClienteSimulado:
             return [("herramienta", "abrir_pantalla", {"pantalla": texto.strip()[:200]}), ("mensaje", _final_pantalla)]
         return None
 
-    def _plan_fase2(self, texto: str, n: str, h: set[str], auditor: bool = False) -> Optional[list[tuple]]:
+    def _plan_fase2(self, texto: str, n: str, h: set[str], auditor: bool = False,
+                    s: Optional[_Sesion] = None) -> Optional[list[tuple]]:
         """Modo auditor, lienzo, documentos con citas, facturación y las acciones de seguimiento."""
         numero = re.search(r"\b(\d{1,6})\b", n)
         if "modo_auditor" in h and re.search(r"modo auditor|investigaci", n):
@@ -593,6 +624,8 @@ class ClienteSimulado:
         if "mostrar_en_lienzo" in h and any(k in n for k in ("grafic", "lienzo", "tablero", "visualiz", "dashboard")):
             fuente = next(((nombre, entrada) for claves, nombre, entrada in REGLAS
                            if nombre in h and any(k in n for k in claves)), None)
+            if fuente is None and s is not None and s.ultima and s.ultima[0] in h:
+                fuente = s.ultima                      # «con estos datos»: lo último que se consultó
             fuente = fuente or next(((nombre, {}) for nombre in ("ventas_del_mes", "supervision_del_mes",
                                                                  "productividad_del_dia") if nombre in h), None)
             if fuente:
@@ -604,7 +637,8 @@ class ClienteSimulado:
                 armar = _spec_tablero if "tablero" in n else _spec_lienzo
                 pasos = [("herramienta", nombre, entrada),
                          ("herramienta", "mostrar_en_lienzo", lambda rs: armar(rs))]
-                if auditor and "proponer_evidencia" in h:
+                informe = s is not None and "MODO INFORME DIARIO ACTIVO" in s.contexto
+                if (auditor or informe) and "proponer_evidencia" in h:
                     # En modo auditor: después de mostrar, pregunta qué sumar al informe (la tarjeta con casillas).
                     pasos.append(("herramienta", "proponer_evidencia", lambda rs: _entrada_evidencia(rs)))
                     return [*pasos, ("mensaje", _final_evidencia)]
@@ -613,6 +647,9 @@ class ClienteSimulado:
 
 
 HERRAMIENTAS_CON_FECHA = {"productividad_del_dia", "ventas_del_dia", "coaching_del_dia"}
+RE_MODO_INFORME = re.compile(r"modo informe|arm(a|emos|ame|ar) (el|mi) informe|ayudame con (el|mi) informe|preparemos (el|mi) informe|"
+                             r"complet(a|emos|ar) (el|mi) informe|hac(e|emos|er) (el|mi) informe|empecemos (el|mi) informe|"
+                             r"trabajemos (el|mi) informe|salir del modo informe")
 RE_INVESTIGA = re.compile(r"investig|sospech|irregular|anomal|dudos|no cierra|que esta mal|revisa (las|los) (alertas|vendedores|ventas)")
 HERRAMIENTAS_CON_MES = {"ventas_del_mes", "supervision_del_mes"}
 REGLAS: list[tuple[tuple[str, ...], str, dict[str, Any]]] = [     # de lo más específico a lo más general
@@ -781,8 +818,25 @@ def _final_evidencia(rs: list[dict[str, Any]]) -> str:
     if not figuras:
         return d.get("mensaje") or "No se sumó nada nuevo al informe."
     lista = "\n".join(f"- **Figura {f.get('figura')}** · {f.get('titulo')}" for f in figuras)
-    return (f"Listo: {d.get('mensaje')}\n\n{lista}\n\nEl informe {d.get('informe')} tiene ahora {d.get('total_figuras')} "
-            f"figuras. [Ver la evidencia del informe]({d.get('pantalla')})")
+    destino = str(d.get("informe") or "")
+    diario = str(d.get("pantalla") or "").endswith("#figuras")
+    nombre = f"El {destino[0].lower()}{destino[1:]}" if destino.lower().startswith("informe") else f"El informe {destino}"
+    enlace = "Ver las figuras del informe" if diario else "Ver la evidencia del informe"
+    return (f"Listo: {d.get('mensaje')}\n\n{lista}\n\n{nombre} tiene ahora {d.get('total_figuras')} "
+            f"figuras. [{enlace}]({d.get('pantalla')})")
+
+
+def _final_modo_informe(rs: list[dict[str, Any]]) -> str:
+    """Después de activar el modo informe diario."""
+    r = rs[-1] if rs else None
+    if not r or r["error"]:
+        return _final(rs)
+    d = _datos(r) or {}
+    fecha = (d.get("informe") or {}).get("fecha") or ""
+    dia = f"{fecha[8:10]}/{fecha[5:7]}" if len(fecha) >= 10 else fecha
+    return (f"Listo, activé el **modo informe diario** para el informe del {dia}. Vamos paso a paso: miro los datos del "
+            "día, te propongo los resultados, el resumen y las métricas críticas, y cada gráfico te lo ofrezco como figura "
+            "del informe. ¿Empiezo por las llamadas o por las ventas del día?")
 
 
 def _final_modo(rs: list[dict[str, Any]]) -> str:
@@ -809,6 +863,18 @@ def _opciones_inicio(h: set[str]) -> dict[str, Any]:
     if "abrir_pantalla" in h:
         ops.append({"texto": "Abrir Ventas Netas", "mensaje": "Llevame a Ventas Netas", "ruta": "/televentas-claro/ventas-netas"})
     return {"pregunta": "¿Por dónde empezamos?", "opciones": ops[:4]}
+
+
+def _opciones_datos(rs: list[dict[str, Any]], informe_diario: bool = False) -> dict[str, Any]:
+    """Después de una consulta con datos: armar un tablero, verlo en la pantalla o llevarlo al informe diario."""
+    d = _datos(rs[-1]) if rs else None
+    ops: list[dict[str, Any]] = [{"texto": "Armar un tablero", "mensaje": "Armá un tablero con estos datos"},
+                                 {"texto": "Ver un gráfico", "mensaje": "Mostrame esto en un gráfico"}]
+    if informe_diario:
+        ops.append({"texto": "Sumar al informe diario", "mensaje": "Armá un tablero con estos datos y sumalo al informe diario"})
+    if isinstance(d, dict) and d.get("pantalla"):
+        ops.append({"texto": "Ver en la pantalla", "mensaje": f"Llevame a {d['pantalla']}", "ruta": str(d["pantalla"])})
+    return {"pregunta": "¿Seguimos con estos datos?", "opciones": ops}
 
 
 def _final_guia(rs: list[dict[str, Any]]) -> str:

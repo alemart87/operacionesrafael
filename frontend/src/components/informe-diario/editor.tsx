@@ -9,13 +9,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AreaTexto, ErrorMsg, Modal } from "@/components/supervision/dialogos";
 import { apiFetch, downloadFile } from "@/lib/api";
 import { CampoNumero, Chip, Seccion, Segmentado } from "./campos";
+import { SeccionFiguras } from "./figuras";
 import { DialogoFirma } from "./firma";
 import { DialogoImportar, TarjetaImportado } from "./importados";
 import {
   CHIP, ESTADO_METRICA, ESTADO_SEG, ID_API, ID_HREF, SUGERENCIAS_METRICA, TONO_TEXTO, cumplimiento, diaCorto, diaLargo, faltantes, horaPy,
   metricaVacia, nuevoId, numero,
-  type EstadoMetrica, type EstadoSeg, type Fuente, type Importado, type InformeDetalle, type MetricaCritica, type Resultado,
-  type Resultados,
+  type EstadoMetrica, type EstadoSeg, type FiguraInforme, type Fuente, type Importado, type InformeDetalle, type MetricaCritica,
+  type Resultado, type Resultados,
 } from "./tipos";
 
 type EstadoGuardado = "guardado" | "pendiente" | "guardando" | "error";
@@ -131,6 +132,7 @@ export function EditorInforme({ inicial, onFirmado }: { inicial: InformeDetalle;
   const [seg, setSeg] = useState<Record<string, { estado: EstadoSeg; nota: string }>>(
     () => Object.fromEntries(d.seguimiento.map((s) => [s.compromiso_id, { estado: s.estado, nota: s.nota }])));
   const [importados, setImportados] = useState<Importado[]>(d.importados);
+  const [figuras, setFiguras] = useState<FiguraInforme[]>(d.figuras ?? []);   // se cambian con sus propios pedidos, no con el guardado
   const [cargo, setCargo] = useState(d.cargo);
   const [firmaImg, setFirmaImg] = useState<string | null>(d.firma_guardada?.imagen ?? null);
   const [usarFirma, setUsarFirma] = useState(!!d.firma_guardada?.imagen);
@@ -379,9 +381,12 @@ export function EditorInforme({ inicial, onFirmado }: { inicial: InformeDetalle;
         )}
       </Seccion>
 
-      {/* ---- 5. seguimiento de compromisos */}
+      {/* ---- 5. figuras del lienzo de Voi */}
+      <SeccionFiguras n={5} informeId={d.id} figuras={figuras} setFiguras={setFiguras} onError={setError} onAviso={setAviso} />
+
+      {/* ---- 6. seguimiento de compromisos */}
       {compromisos.length > 0 && (
-        <Seccion n={5} titulo="Seguimiento de compromisos" id="seguimiento"
+        <Seccion n={6} titulo="Seguimiento de compromisos" id="seguimiento"
           sub="Los compromisos de informes anteriores. Cumplido y no cumplido los cierran; en curso los deja para el próximo informe.">
           <ul className="space-y-2.5">
             {compromisos.map((c) => {
@@ -414,8 +419,8 @@ export function EditorInforme({ inicial, onFirmado }: { inicial: InformeDetalle;
         </Seccion>
       )}
 
-      {/* ---- 6. firma */}
-      <Seccion n={compromisos.length ? 6 : 5} titulo="Firma" id="firma" sub="Va al pie del informe y del PDF, con tu nombre y tu cargo.">
+      {/* ---- 7. firma */}
+      <Seccion n={compromisos.length ? 7 : 6} titulo="Firma" id="firma" sub="Va al pie del informe y del PDF, con tu nombre y tu cargo.">
         <div className="grid sm:grid-cols-2 gap-4 items-start">
           <div className="space-y-3">
             <div>
@@ -505,6 +510,9 @@ export function EditorInforme({ inicial, onFirmado }: { inicial: InformeDetalle;
                 <li className="flex items-center gap-2"><CircleCheck size={15} className="text-emerald-600" aria-hidden /> Resumen del día</li>
                 <li className="flex items-center gap-2">{metricas.length ? <CircleCheck size={15} className="text-emerald-600" aria-hidden /> : <CircleDashed size={15} aria-hidden />} {metricas.length} métrica(s) crítica(s), {metricas.filter((m) => m.compromiso.trim()).length} con compromiso</li>
                 <li className="flex items-center gap-2">{importados.length ? <CircleCheck size={15} className="text-emerald-600" aria-hidden /> : <CircleDashed size={15} aria-hidden />} {importados.length} dato(s) importado(s)</li>
+                {figuras.length > 0 && (
+                  <li className="flex items-center gap-2"><CircleCheck size={15} className="text-emerald-600" aria-hidden /> {figuras.length} figura(s) del lienzo de Voi{figuras.some((f) => !f.imagen) ? " (alguna va al PDF con sus datos)" : ""}</li>
+                )}
                 {compromisos.length > 0 && <li className="flex items-center gap-2"><CircleCheck size={15} className="text-emerald-600" aria-hidden /> Seguimiento de {Object.keys(seg).length} de {compromisos.length} compromiso(s)</li>}
               </ul>
               <div className="rounded-md bg-brand-bg-soft border border-brand-border px-3.5 py-3">

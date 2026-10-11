@@ -12,8 +12,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { ApiError, CurrentUserInfo, getToken } from "@/lib/api";
 import { OPERATIVA_ROUTES, isNavActive, operativaFromPath, submoduloFromPath } from "@/lib/operativas";
 import {
-  AccionVoi, AjustesEvidencia, ConexionVoi, ConversacionVoi, EstadoVoi, EventoVoi, GuiaVoi, InvestigacionVoi, ItemVoi,
-  OpcionVoi, Pantalla, PantallaVoi, avisarHash, escucharConversacion, pantallaDeRuta, voiApi,
+  AccionVoi, AjustesEvidencia, ConexionVoi, ConversacionVoi, DestinoModo, EstadoVoi, EventoVoi, GuiaVoi, InvestigacionVoi, ItemVoi,
+  OpcionVoi, Pantalla, PantallaVoi, TipoModo, avisarHash, ddmm, escucharConversacion, pantallaDeRuta, voiApi,
 } from "@/lib/voi";
 import { SelectorAuditor } from "./VoiAuditor";
 import { AvisoVoi, GuiaFlotante, Resalte } from "./VoiGuia";
@@ -44,7 +44,9 @@ type Accion =
   | { t: "accion"; accion: AccionVoi }
   | { t: "trabajando"; valor: boolean }
   | { t: "conexion"; valor: ConexionVoi }
-  | { t: "error"; valor: string | null };
+  | { t: "error"; valor: string | null }
+  /** Un modo se prendió o se apagó (`previo`: el que estaba activo, para nombrarlo al salir). */
+  | { t: "modo"; inv: InvestigacionVoi | null; previo: TipoModo | null };
 
 const VACIO: ChatVoi = { items: [], artefactos: [], parciales: {}, trabajando: false, estado: null, costo: null, conexion: "cerrado", error: null };
 
@@ -77,6 +79,19 @@ function reducir(s: ChatVoi, a: Accion): ChatVoi {
       return { ...s, conexion: a.valor };
     case "error":
       return { ...s, error: a.valor };
+    case "modo": {
+      // Un separador en el chat cuando un modo se prende, cambia de informe o se apaga (en un chat vacío lo explica la
+      // bienvenida). Si lo activó la tarjeta «¿Activamos el modo auditor?», la propia tarjeta ya lo cuenta.
+      if (!s.items.length) return s;
+      const reciente = s.items.slice(-3).find((i) => i.tipo === "accion" && i.accion.herramienta === "proponer_modo_auditor");
+      if (reciente && a.inv) return s;
+      const diario = a.inv ? a.inv.tipo === "informe_diario" : a.previo === "informe_diario";
+      const texto = a.inv
+        ? diario ? `Modo informe diario activado · informe del ${ddmm(a.inv.fecha)}`
+          : `Modo auditor activado${a.inv.codigo ? ` · ${a.inv.codigo}` : " · sin informe destino"}`
+        : diario ? "Saliste del modo informe diario" : "Saliste del modo auditor";
+      return { ...s, items: [...s.items, { tipo: "modo", id: `modo-${Date.now()}`, activo: !!a.inv, texto, modo: diario ? "informe_diario" : "auditor" }] };
+    }
     case "evento":
       return aplicar(s, a.ev);
   }
@@ -155,17 +170,6 @@ function aplicar(s: ChatVoi, ev: EventoVoi): ChatVoi {
       return { ...s, items: upsert(s.items, { tipo: "guia", id: ev.id ?? `guia-${Date.now()}`, guia: ev.guia }) };
     case "navegar":
       return { ...s, items: upsert(s.items, { tipo: "pantalla", id: ev.id ?? `nav-${Date.now()}`, ruta: ev.ruta, titulo: ev.titulo ?? null }) };
-    case "investigacion": {
-      // Un separador en el chat cuando el modo se prende, cambia de informe o se apaga (en un chat vacío lo explica la
-      // bienvenida).
-      if (!s.items.length) return s;
-      // Si lo activó la tarjeta «¿Activamos el modo auditor?», la propia tarjeta ya lo cuenta.
-      const reciente = s.items.slice(-3).find((i) => i.tipo === "accion" && i.accion.herramienta === "proponer_modo_auditor");
-      if (reciente && ev.investigacion) return s;
-      const inv = ev.investigacion;
-      const texto = inv ? `Modo auditor activado${inv.codigo ? ` · ${inv.codigo}` : " · sin informe destino"}` : "Saliste del modo auditor";
-      return { ...s, items: [...s.items, { tipo: "modo", id: `modo-${Date.now()}`, activo: !!inv, texto }] };
-    }
     default:
       return s;
   }
@@ -238,9 +242,16 @@ interface VoiCtx {
   investigacion: InvestigacionVoi | null;
   /** Entra en modo auditor (o cambia el informe destino). `nueva`: empieza una conversación para la investigación. */
   activarAuditor: (auditoriaId?: string | null, opciones?: { nueva?: boolean }) => Promise<void>;
+  /** Sale del modo activo (auditor o informe diario). */
   desactivarAuditor: () => Promise<void>;
+  desactivarModo: () => Promise<void>;
   /** Abre Voi en modo auditor con ese informe como destino (desde la pantalla del informe). */
   investigarInforme: (auditoriaId: string) => Promise<void>;
+  /** Entra en modo informe diario con el borrador de un día (hoy por defecto; se crea si no existe) o con un informe
+   * propio por id. `arrancar`: Voi empieza solo («Armemos el informe diario…»). */
+  activarInformeDiario: (destino?: { informe_id?: string | null; fecha?: string | null }, opciones?: { nueva?: boolean; arrancar?: boolean }) => Promise<void>;
+  /** Abre Voi en modo informe diario con ese informe (o el de hoy) como destino, desde la pantalla del informe. */
+  armarInformeDiario: (informeId?: string | null) => Promise<void>;
   /** El selector del informe destino (se abre desde el panel, el lienzo o la bienvenida). */
   selectorAuditor: boolean;
   setSelectorAuditor: (v: boolean) => void;
@@ -341,8 +352,15 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
         despachar({ t: "evento", ev });
         if (ev.tipo === "transcripcion") setConv(ev.conversacion);
         if (ev.tipo === "estado") setConv((c) => (c ? { ...c, estado: ev.estado } : c));
-        // Voi (o el usuario desde otra pestaña) entró o salió del modo auditor: el panel se enciende o se apaga.
-        if (ev.tipo === "investigacion") setConv((c) => (c && c.id === id ? { ...c, investigacion: ev.investigacion } : c));
+        // Voi (o el usuario desde otra pestaña) entró o salió de un modo: el panel se enciende o se apaga.
+        if (ev.tipo === "investigacion") {
+          despachar({ t: "modo", inv: ev.investigacion, previo: convRef.current?.investigacion?.tipo ?? "auditor" });
+          setConv((c) => (c && c.id === id ? { ...c, investigacion: ev.investigacion } : c));
+        }
+        // Voi sumó figuras a un informe: la pantalla del informe diario, si está abierta, se actualiza sola.
+        if (ev.tipo === "accion" && ev.accion.herramienta === "proponer_evidencia" && ev.accion.estado === "ejecutada") {
+          window.dispatchEvent(new CustomEvent("voi:figuras"));
+        }
         if (ev.tipo === "mensaje" && !abiertoRef.current) setNoLeidos((n) => n + 1);
         // Lo nuevo del lienzo se abre solo en pantallas anchas (al lado del chat); en el teléfono queda la tarjeta.
         if (ev.tipo === "lienzo" && window.matchMedia("(min-width: 1024px)").matches) {
@@ -528,7 +546,8 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     if (window.location.pathname !== camino) router.push(ruta);
     else if (ruta.includes("#")) window.location.hash = ruta.split("#")[1];
     avisarHash(ruta);
-    // En el teléfono el panel tapa la pantalla: se cierra para que se vea adónde lo llevó.
+    // El lienzo tapa la pantalla: se cierra (se vuelve a abrir desde el panel). En el teléfono, también el panel.
+    setLienzo((l) => (l.abierto ? { ...l, abierto: false } : l));
     if (!acoplado && window.matchMedia("(max-width: 767px)").matches) setAbierto(false);
     setAviso({ texto: `Voi abrió ${titulo ?? ruta}`, volver: true });
     setNavegadoAt(Date.now());
@@ -558,12 +577,13 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     setLienzo((l) => ({ abierto: true, foco: a.id, locales: [...l.locales.filter((x) => x.id !== a.id), a] }));
   }, []);
 
-  // ---------------------------------------------------------------- modo auditor
+  // ---------------------------------------------------------------- modos: auditor e informe diario
   const investigacion = conv?.investigacion?.activo ? conv.investigacion : null;
 
-  const activarAuditor = useCallback(async (auditoriaId?: string | null, opciones?: { nueva?: boolean }) => {
+  /** Activa un modo en la conversación actual (o en una nueva: sin conversación, con una que ya no acepta mensajes, o
+   * si se pide una aparte). */
+  const cambiarModo = useCallback(async (destino: DestinoModo, opciones?: { nueva?: boolean }) => {
     let c = convRef.current;
-    // Sin conversación (o una que ya no acepta mensajes, o se pide una aparte): la investigación empieza en una nueva.
     if (!c || c.disponible === false || opciones?.nueva) {
       c = await voiApi.nueva("", null);
       convRef.current = c;
@@ -571,13 +591,26 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
       escuchar(c.id);
       setVista("chat");
     }
-    const r = await voiApi.investigacion(c.id, true, auditoriaId ?? null);
+    const r = await voiApi.investigacion(c.id, true, destino);
     convRef.current = { ...c, ...r };
     setConv((x) => (x && x.id === r.id ? { ...x, ...r } : r));
     recargarConversaciones();
   }, [escuchar, recargarConversaciones]);
 
-  const desactivarAuditor = useCallback(async () => {
+  const activarAuditor = useCallback((auditoriaId?: string | null, opciones?: { nueva?: boolean }) =>
+    cambiarModo({ tipo: "auditor", auditoria_id: auditoriaId ?? null }, opciones), [cambiarModo]);
+
+  const activarInformeDiario = useCallback(async (destino?: { informe_id?: string | null; fecha?: string | null },
+                                                  opciones?: { nueva?: boolean; arrancar?: boolean }) => {
+    await cambiarModo({ tipo: "informe_diario", informe_id: destino?.informe_id ?? null, fecha: destino?.fecha ?? null }, opciones);
+    if (opciones?.arrancar) {
+      const fecha = convRef.current?.investigacion?.fecha;
+      const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Asuncion" });
+      await enviar(fecha && fecha !== hoy ? `Armemos el informe diario del ${fecha}` : "Armemos el informe diario de hoy");
+    }
+  }, [cambiarModo, enviar]);
+
+  const desactivarModo = useCallback(async () => {
     const c = convRef.current;
     if (!c) return;
     const r = await voiApi.investigacion(c.id, false);
@@ -590,11 +623,20 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     setAbierto(true);
     setNoLeidos(0);
     setVista("chat");
-    if (investigacion?.auditoria_id === auditoriaId) return;
+    if (investigacion?.tipo !== "informe_diario" && investigacion?.auditoria_id === auditoriaId) return;
     // Una conversación con mensajes sigue siendo lo que era: la investigación arranca en una nueva.
     const conMensajes = chat.items.some((i) => i.tipo === "usuario" || i.tipo === "voi");
     await activarAuditor(auditoriaId, { nueva: conMensajes });
-  }, [investigacion?.auditoria_id, chat.items, activarAuditor]);
+  }, [investigacion?.tipo, investigacion?.auditoria_id, chat.items, activarAuditor]);
+
+  const armarInformeDiario = useCallback(async (informeId?: string | null) => {
+    setAbierto(true);
+    setNoLeidos(0);
+    setVista("chat");
+    if (investigacion?.tipo === "informe_diario" && (!informeId || investigacion.informe_id === informeId)) return;
+    const conMensajes = chat.items.some((i) => i.tipo === "usuario" || i.tipo === "voi");
+    await activarInformeDiario({ informe_id: informeId ?? null }, { nueva: conMensajes, arrancar: true });
+  }, [investigacion?.tipo, investigacion?.informe_id, chat.items, activarInformeDiario]);
 
   const valor: VoiCtx = {
     usuario, habilitado, setUsuario, abierto, acoplado, abrir, cerrar, alternar, vista, setVista, estado, errorEstado,
@@ -602,7 +644,8 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     editarConversacion, detener, confirmar: (a) => resolver(a, true), cancelar: (a) => resolver(a, false),
     pantalla, usarPantalla, setUsarPantalla, noLeidos, esperaConfirmacion, lienzo, abrirLienzo, cerrarLienzo,
     mostrarEnLienzo, borrador, setBorrador, confirmarCon: (a, ajustes) => resolver(a, true, ajustes),
-    investigacion, activarAuditor, desactivarAuditor, investigarInforme, selectorAuditor, setSelectorAuditor,
+    investigacion, activarAuditor, desactivarAuditor: desactivarModo, desactivarModo, investigarInforme, activarInformeDiario,
+    armarInformeDiario, selectorAuditor, setSelectorAuditor,
     pantallas, pantallaActual, navegarA, guia, abrirGuia, cerrarGuia, irAPaso, resalte, aviso, setAviso, navegadoAt,
     elegirOpcion,
   };

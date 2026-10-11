@@ -13,7 +13,8 @@ import unicodedata
 from datetime import date, timedelta
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -21,8 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....api.deps import CurrentUser, client_ip, require_perm, require_superadmin
 from ....core.database import get_db
+from ....core.logging import logger
 from ....core.perfiles import perfil_name
+from ....jobs.isolated import friendly_error, run_isolated
+from ....services import imagenes
 from ....services.audit_service import record_action
+from . import figuras as fig_srv
 from . import importar as fuentes_srv
 from . import informe as srv
 from . import pdf as pdf_srv
@@ -147,10 +152,21 @@ async def preparar(payload: CrearPayload, request: Request, response: Response, 
         srv.validar_fecha(fecha, dia)
     except srv.ReglaInvalida as exc:
         raise _regla(exc) from exc
-    inf = await srv.del_autor(db, user.id, fecha)
-    if inf:
+    inf, nuevo = await abrir_borrador(db, user, fecha)
+    if not nuevo:
         response.status_code = status.HTTP_200_OK
         return {"id": inf.id, "nuevo": False, "estado": inf.estado}
+    await record_action(db, user_id=user.id, action="informe_diario_creado", resource_type="informe_diario", resource_id=inf.id,
+                        ip=client_ip(request), extra={"fecha": fecha.isoformat()})
+    return {"id": inf.id, "nuevo": True, "estado": inf.estado}
+
+
+async def abrir_borrador(db: AsyncSession, user: CurrentUser, fecha: date) -> tuple[InformeDiario, bool]:
+    """El informe del usuario para ese día: el que ya existe o un borrador nuevo (también lo usa Voi). Devuelve
+    (informe, nuevo); si dos pedidos llegan a la vez, vale el que llegó primero."""
+    inf = await srv.del_autor(db, user.id, fecha)
+    if inf:
+        return inf, False
     f = await srv.firma_guardada(db, user.id)
     inf = InformeDiario(operativa=OPERATIVA, fecha=fecha, autor_id=user.id, autor_nombre=user.full_name,
                         autor_cargo=(f.cargo if f and f.cargo else perfil_name(user.role)), estado=BORRADOR,
@@ -162,12 +178,8 @@ async def preparar(payload: CrearPayload, request: Request, response: Response, 
         await db.commit()
     except IntegrityError:   # dos pedidos a la vez: vale el que llegó primero
         await db.rollback()
-        inf = await srv.del_autor(db, user.id, fecha)
-        response.status_code = status.HTTP_200_OK
-        return {"id": inf.id, "nuevo": False, "estado": inf.estado}
-    await record_action(db, user_id=user.id, action="informe_diario_creado", resource_type="informe_diario", resource_id=inf.id,
-                        ip=client_ip(request), extra={"fecha": fecha.isoformat()})
-    return {"id": inf.id, "nuevo": True, "estado": inf.estado}
+        return await srv.del_autor(db, user.id, fecha), False
+    return inf, True
 
 
 # ------------------------------------------------------------------ fuentes para importar
@@ -371,6 +383,7 @@ async def descartar(informe_id: str, request: Request, user: CurrentUser = Depen
     fecha = inf.fecha.isoformat()
     await db.delete(inf)
     await db.commit()
+    await fig_srv.borrar_archivos(inf.id)
     await record_action(db, user_id=user.id, action="informe_diario_descartado", resource_type="informe_diario",
                         resource_id=informe_id, ip=client_ip(request), extra={"fecha": fecha})
     return {"status": "deleted"}
@@ -444,7 +457,9 @@ async def descargar_pdf(informe_id: str, request: Request, user: CurrentUser = D
                         db: AsyncSession = Depends(get_db)) -> Response:
     """El PDF para enviar: con la firma y el código si está firmado; con la marca «BORRADOR» si no."""
     inf = await _visible(db, informe_id, user)
-    contenido = pdf_srv.generar(srv.a_dict(inf))
+    d = srv.a_dict(inf)
+    d["figuras"] = fig_srv.para_pdf(inf)            # con la ruta de la captura, si la hay
+    contenido = pdf_srv.generar(d)
     await record_action(db, user_id=user.id, action="informe_diario_pdf", resource_type="informe_diario", resource_id=inf.id,
                         ip=client_ip(request), extra={"fecha": inf.fecha.isoformat(), "estado": inf.estado})
     return Response(contenido, media_type="application/pdf",
@@ -495,3 +510,91 @@ async def revisado(informe_id: str, payload: RevisadoPayload, request: Request, 
     await record_action(db, user_id=user.id, action="informe_diario_revisado", resource_type="informe_diario", resource_id=inf.id,
                         ip=client_ip(request), extra={"revisado": payload.revisado})
     return {"revisado_at": srv.iso(inf.revisado_at)}
+
+
+# ------------------------------------------------------------------ figuras (piezas del lienzo de Voi)
+class FiguraPayload(BaseModel):
+    titulo: Optional[str] = Field(None, max_length=255)
+    nota: Optional[str] = Field(None, max_length=4000)
+
+
+def _figura_http(exc: fig_srv.FiguraError) -> HTTPException:
+    return HTTPException(exc.codigo, str(exc))
+
+
+@router.patch("/{informe_id}/figuras/{figura_id}")
+async def editar_figura(informe_id: str, figura_id: str, payload: FiguraPayload, user: CurrentUser = Depends(require_informe),
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    """Título y lectura de una figura (solo el autor, mientras es borrador)."""
+    inf = await _visible(db, informe_id, user)
+    try:
+        f = fig_srv.editar(inf, figura_id, user.id, titulo=payload.titulo, nota=payload.nota)
+    except fig_srv.FiguraError as exc:
+        raise _figura_http(exc) from exc
+    inf.updated_at = srv.ahora()
+    await db.commit()
+    return fig_srv.figura_dict(f, fig_srv.numero(inf, figura_id) or 0)
+
+
+@router.delete("/{informe_id}/figuras/{figura_id}")
+async def quitar_figura(informe_id: str, figura_id: str, request: Request, user: CurrentUser = Depends(require_informe),
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    inf = await _visible(db, informe_id, user)
+    try:
+        f = fig_srv.quitar(inf, figura_id, user.id)
+    except fig_srv.FiguraError as exc:
+        raise _figura_http(exc) from exc
+    inf.updated_at = srv.ahora()
+    await db.commit()
+    await record_action(db, user_id=user.id, action="informe_diario_figura_quitada", resource_type="informe_diario",
+                        resource_id=inf.id, ip=client_ip(request), extra={"figura": figura_id, "titulo": f.get("titulo")})
+    return {"ok": True, "figuras": fig_srv.para_dict(inf)}
+
+
+@router.post("/{informe_id}/figuras/{figura_id}/imagen")
+async def subir_imagen_figura(informe_id: str, figura_id: str, archivo: UploadFile = File(...),
+                              user: CurrentUser = Depends(require_informe), db: AsyncSession = Depends(get_db)) -> dict:
+    """La captura de la figura (PNG que arma el navegador) para el PDF: queda en el disco persistente, sin metadatos."""
+    inf = await _visible(db, informe_id, user)
+    try:
+        fig_srv.buscar(inf, figura_id)
+        fig_srv.exigir_editable(inf, user.id)
+    except fig_srv.FiguraError as exc:
+        raise _figura_http(exc) from exc
+    limite = fig_srv.MAX_IMAGEN_MB * 1024 * 1024
+    contenido = await archivo.read(limite + 1)
+    if not contenido:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "La imagen está vacía.")
+    if len(contenido) > limite:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"La imagen supera {fig_srv.MAX_IMAGEN_MB} MB.")
+    try:
+        r = await run_isolated(imagenes.procesar, contenido)
+    except imagenes.ImagenInvalida as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Informe diario: no se pudo procesar la captura de la figura {figura_id}: {exc!r}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, friendly_error(exc)) from exc
+    try:
+        f = fig_srv.guardar_imagen(inf, figura_id, user.id, r["completa"], r.get("ancho"), r.get("alto"))
+    except fig_srv.FiguraError as exc:
+        raise _figura_http(exc) from exc
+    except OSError as exc:
+        logger.error(f"Informe diario: no se pudo guardar la captura en el disco: {exc}")
+        raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, "No se pudo guardar la imagen en el disco. Avisá a soporte.") from exc
+    await db.commit()
+    return fig_srv.figura_dict(f, fig_srv.numero(inf, figura_id) or 0)
+
+
+@router.get("/{informe_id}/figuras/{figura_id}/imagen")
+async def ver_imagen_figura(informe_id: str, figura_id: str, user: CurrentUser = Depends(require_informe),
+                            db: AsyncSession = Depends(get_db)) -> FileResponse:
+    inf = await _visible(db, informe_id, user)
+    try:
+        f = fig_srv.buscar(inf, figura_id)
+    except fig_srv.FiguraError as exc:
+        raise _figura_http(exc) from exc
+    p = fig_srv.ruta(f.get("imagen"))
+    if p is None or not p.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "La figura no tiene imagen capturada")
+    return FileResponse(p, media_type="image/webp",
+                        headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})

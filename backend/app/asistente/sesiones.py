@@ -8,6 +8,7 @@ de gasto. Cada mensaje del usuario va como `user.message`; el contexto (quién e
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -35,6 +36,8 @@ MODO_TEXTO = {
 }
 # Si la API no aceptara `system.message`, el contexto viaja como primer bloque del mensaje (y no se muestra).
 _contexto_en_mensaje = False
+# «waiting on responses to events [sevt_…, sevt_…]»: la sesión espera resultados de herramientas que no recibió.
+_ESPERANDO = re.compile(r"waiting on responses to events \[([^\]]*)\]")
 
 
 class NoDisponible(RuntimeError):
@@ -71,7 +74,8 @@ def contexto_texto(user: CurrentUser, modo: str, pantalla: dict[str, Any] | None
         p = pantallas.pantalla_de_ruta(str(pantalla["ruta"]))
         que = f" Es: {p.que_hace}" if p is not None else ""
         lineas.append(f"- Está viendo la pantalla {str(pantalla['ruta'])[:200]}{titulo}.{que}")
-    lineas.extend(investigacion_svc.contexto_lineas(investigacion, puede=investigacion_svc.puede_investigar(user)))
+    lineas.extend(investigacion_svc.contexto_lineas(investigacion, puede=investigacion_svc.puede_investigar(user),
+                                                    puede_informe=investigacion_svc.puede_informe(user)))
     return "\n".join(lineas)
 
 
@@ -180,16 +184,42 @@ def _eventos_mensaje(texto: str, contexto: str) -> list[dict[str, Any]]:
             {"type": "user.message", "content": [{"type": "text", "text": texto}]}]
 
 
+def reclamados(exc: Exception) -> list[str] | None:
+    """Los pedidos de herramienta que Anthropic dice estar esperando, si el error es ese."""
+    m = _ESPERANDO.search(str(exc))
+    if not m:
+        return None
+    return [x.strip().strip("'\"") for x in m.group(1).split(",") if x.strip()]
+
+
 async def _enviar_eventos(session_id: str, previos: list[dict[str, Any]], texto: str, contexto: str) -> None:
     global _contexto_en_mensaje
     try:
         await cliente().beta.sessions.events.send(session_id, events=[*previos, *_eventos_mensaje(texto, contexto)])
     except Exception as exc:
-        if _contexto_en_mensaje or "system" not in str(exc).lower() or getattr(exc, "status_code", None) != 400:
+        detalle = str(exc).lower()
+        # Solo si la API rechaza el tipo system.message en sí (no cuando espera resultados de herramientas).
+        if (_contexto_en_mensaje or "system.message" not in detalle or reclamados(exc) is not None
+                or getattr(exc, "status_code", None) != 400):
             raise
         log.warning("La API no aceptó system.message (%s): el contexto va dentro del mensaje", exc)
         _contexto_en_mensaje = True
         await cliente().beta.sessions.events.send(session_id, events=[*previos, *_eventos_mensaje(texto, contexto)])
+
+
+async def _enviar_destrabando(db: AsyncSession, conv: AsistenteConversacion, previos: list[dict[str, Any]], texto: str,
+                              contexto: str) -> None:
+    """Manda el mensaje; si la sesión estaba esperando resultados que no tiene, se los responde y se reintenta una vez."""
+    try:
+        await _enviar_eventos(conv.session_id, previos, texto, contexto)
+    except Exception as exc:
+        ids = reclamados(exc)
+        if not ids:
+            raise
+        log.warning("La sesión de %s esperaba %s: se responden y se reintenta", conv.id, ids)
+        ya = {e.get("custom_tool_use_id") for e in previos}
+        extra = await consumidor.responder_reclamados(db, conv, [i for i in ids if i not in ya])
+        await _enviar_eventos(conv.session_id, [*extra, *previos], texto, contexto)
 
 
 async def enviar(db: AsyncSession, conv: AsistenteConversacion, user: CurrentUser, texto: str,
@@ -197,8 +227,9 @@ async def enviar(db: AsyncSession, conv: AsistenteConversacion, user: CurrentUse
     """Manda el mensaje del usuario (y el contexto). Si había acciones esperando confirmación, se cancelan: el usuario
     siguió la conversación sin confirmarlas."""
     previos, canceladas = await consumidor.cancelar_pendientes(db, conv, "el usuario siguió la conversación sin confirmarla")
-    await _enviar_eventos(conv.session_id, previos, texto,
-                          contexto_texto(user, modo_de(user), pantalla, investigacion_svc.estado(conv)))
+    await consumidor.completar_sin_responder(db, conv)
+    await _enviar_destrabando(db, conv, previos, texto,
+                              contexto_texto(user, modo_de(user), pantalla, investigacion_svc.estado(conv)))
     await consumidor.marcar_respondidas(db, canceladas)
     conv = await db.get(AsistenteConversacion, conv.id)
     if conv.mensajes == 0 and conv.titulo == "Nueva conversación":

@@ -18,6 +18,14 @@ días atrás). Es un borrador hasta que la persona lo **firma** (Voi nunca firma
 5. Usá preparar_informe_diario con todo eso y con importar = [llamadas, cargas] para dejar los datos congelados.
 6. Decile al usuario qué cargaste y que lo revise y lo firme desde la pantalla (con el enlace).
 
+## Armarlo con el usuario: modo informe diario
+- Con modo_informe_diario la conversación pasa a armar el informe del día (o la fecha que diga). Andá paso a paso y
+  pedí el OK con ofrecer_opciones: «¿Cargo estos resultados?» → Sí / Ajustar; «¿Sumo este gráfico como figura?».
+- Cada gráfico o tablero que muestres en el lienzo (llamadas por hora, ventas del día, proyección, coaching) ofrecelo
+  como figura con proponer_evidencia: título = la conclusión («La conversación cerró en 23,6 %, bajo la meta»), nota =
+  qué muestra y de dónde sale. Las figuras salen en la pantalla del informe y en el PDF.
+- Cerrá abriendo el informe con abrir_pantalla: el usuario revisa, ajusta y firma. Vos nunca firmás.
+
 ## Buenas métricas críticas
 - Medibles y del día: «% de conversación 21,4% (meta 37%)», «Pospago 41 vs. 55 esperados», «12 líneas sin uso nuevas».
 - Compromisos con verbo, responsable y fecha: «Coaching de conversación a los 5 agentes en rojo — Lucía — mañana».

@@ -243,21 +243,25 @@ async def test_conversacion_consulta_y_respuesta(simulador):
 
         t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=coord)).json()
         tipos = [i["tipo"] for i in t["items"]]
-        assert tipos[0] == "usuario" and "paso" in tipos and tipos[-1] == "voi"
+        assert tipos[0] == "usuario" and "paso" in tipos and "voi" in tipos
         paso = next(i for i in t["items"] if i["tipo"] == "paso")
         assert paso["herramienta"] == "productividad_del_dia" and paso["estado"] == "ok"
-        assert "31,5" in t["items"][-1]["texto"] or "5.200" in t["items"][-1]["texto"]
+        voi_txt = [i for i in t["items"] if i["tipo"] == "voi"][-1]["texto"]
+        assert "31,5" in voi_txt or "5.200" in voi_txt
+        # Después de los datos, Voi ofrece armar un tablero (botones).
+        assert t["items"][-1]["tipo"] == "opciones", json.dumps(t["items"][-1], ensure_ascii=False)
+        assert "Armar un tablero" in [o["texto"] for o in t["items"][-1]["opciones"]]
         assert "contexto" not in tipos                                   # el contexto lo ve solo el superadmin
 
         async with AsyncSessionLocal() as db:
             accs = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid))).scalars().all()
-            assert len(accs) == 1 and accs[0].estado == "ejecutada" and accs[0].respondida_at and accs[0].respuesta is None
+            assert len(accs) == 2 and all(a.estado == "ejecutada" and a.respondida_at and a.respuesta is None for a in accs)
             # El contexto de la plataforma llegó como system.message (con la pantalla).
             ctx = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == cid,
                                                                   AsistenteEvento.tipo == "system.message"))).scalar_one()
             assert "Paola Coordinadora" in json.dumps(ctx.datos, ensure_ascii=False) and "/inicio" in json.dumps(ctx.datos)
             uso = (await db.execute(select(AsistenteUsoDiario).where(AsistenteUsoDiario.user_id == coord_id))).scalar_one()
-            assert uso.mensajes == 1 and uso.herramientas == 1 and uso.costo_centavos >= 1 and uso.input_tokens > 0
+            assert uso.mensajes == 1 and uso.herramientas == 2 and uso.costo_centavos >= 1 and uso.input_tokens > 0
             c = await db.get(AsistenteConversacion, cid)
             assert c.costo_centavos == uso.costo_centavos and set(c.contexto["herramientas"]) >= {"productividad_del_dia"}
             # Ningún evento repetido.
@@ -285,8 +289,8 @@ async def test_conversacion_consulta_y_respuesta(simulador):
         assert (await ac.delete(f"{BASE}/conversaciones/{cid}", headers=coord)).status_code == 200
         assert (await ac.get(f"{BASE}/conversaciones", headers=coord)).json()["items"] == []
         adm = (await ac.get(f"{BASE}/admin/conversaciones", headers=admin, params={"usuario": coord_id})).json()
-        # Dos consultas: la productividad y los botones de opciones que acompañan a «qué podés hacer».
-        assert adm["total"] == 1 and adm["items"][0]["oculta"] and adm["items"][0]["consultas"] == 2
+        # Tres consultas: la productividad, los botones que siguen a los datos y los de «qué podés hacer».
+        assert adm["total"] == 1 and adm["items"][0]["oculta"] and adm["items"][0]["consultas"] == 3
 
         # El superadmin lee la conversación completa (con el contexto) y queda auditado.
         full = (await ac.get(f"{BASE}/admin/conversaciones/{cid}", headers=admin)).json()
@@ -521,9 +525,92 @@ async def test_se_recupera_despues_de_un_corte(simulador, monkeypatch):
         conv = await _esperar(cid, hasta=("idle",))
         async with AsyncSessionLocal() as db:
             accs = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid))).scalars().all()
-            assert len(accs) == 1 and accs[0].estado == "ejecutada" and accs[0].respondida_at
+            # La consulta cortada se completó una sola vez; después siguieron los botones de opciones.
+            assert [a.herramienta for a in accs] == ["productividad_del_dia", "ofrecer_opciones"]
+            assert all(a.estado == "ejecutada" and a.respondida_at for a in accs)
         t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=sg)).json()
-        assert t["items"][-1]["tipo"] == "voi" and conv.estado == "idle"
+        assert [i["tipo"] for i in t["items"]][-2:] == ["voi", "opciones"] and conv.estado == "idle"
+
+
+@pytest.mark.asyncio
+async def test_la_sesion_no_queda_esperando_una_herramienta(simulador, monkeypatch):
+    """Si la plataforma falla mientras ejecuta una herramienta (o se reinicia), la sesión queda esperando ese resultado
+    y rechazaría cualquier mensaje. El próximo mensaje la destraba: responde lo que faltaba y sigue."""
+    await _prod_hoy()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        await _publicado(ac, admin)
+        _, coord = await _nuevo(ac, admin, "coordinador", "Lara Coordinadora")
+
+        # 1) Falla antes de anotar la acción: el pedido queda guardado como evento, pero sin respuesta.
+        original = consumidor._herramienta_interna
+
+        async def rota(db, conv, ev, salida):
+            raise RuntimeError("se cayó la base en el peor momento")
+        monkeypatch.setattr(consumidor, "_herramienta_interna", rota)
+        # …y tampoco se puede responder el error (como con la red cortada): la sesión queda esperando.
+        monkeypatch.setattr(consumidor, "_resultado", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sin red")))
+        r = await ac.post(f"{BASE}/conversaciones", headers=coord, json={"texto": "¿Cómo vino la productividad de llamadas hoy?"})
+        cid = r.json()["id"]
+        await _esperar(cid, hasta=("idle", "requires_action", "running", "terminated"), segundos=6)
+        sesion = next(iter(simulador.sesiones.values()))
+        assert sesion.turno and sesion.turno["espera"], "la sesión simulada tiene que estar esperando un resultado"
+        async with AsyncSessionLocal() as db:
+            assert (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid))).first() is None
+
+        # El mensaje siguiente no cae con 502: la plataforma responde el pedido reclamado y el mensaje entra.
+        monkeypatch.setattr(consumidor, "_herramienta_interna", original)
+        monkeypatch.undo()
+        monkeypatch.setattr(settings, "asistente_simulador", True)
+        r = await ac.post(f"{BASE}/conversaciones/{cid}/mensajes", headers=coord, json={"texto": "¿Qué podés hacer?"})
+        assert r.status_code == 200, r.text
+        await _esperar(cid)
+        t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=coord)).json()
+        tipos = [i["tipo"] for i in t["items"]]
+        assert tipos.count("usuario") == 2 and "Soy **Voi**" in [i for i in t["items"] if i["tipo"] == "voi"][-1]["texto"]
+        fallido = next(i for i in t["items"] if i["tipo"] == "paso")
+        assert fallido["estado"] == "error" and fallido["herramienta"] == "productividad_del_dia"
+        async with AsyncSessionLocal() as db:
+            a = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid,
+                                                                 AsistenteAccion.herramienta == "productividad_del_dia"))).scalar_one()
+            assert a.estado == "fallida" and a.respondida_at is not None and a.respuesta is None   # la copia queda en la sesión
+
+        # 2) Una acción que quedó «ejecutando» de un reinicio: se da por cortada y se responde antes del mensaje.
+        r = await ac.post(f"{BASE}/conversaciones", headers=coord, json={"texto": "Prepará el borrador del informe diario"})
+        cid2 = r.json()["id"]
+        await _esperar(cid2)
+        sid2 = (await _conv(cid2)).session_id
+        s2 = next(s for s in simulador.sesiones.values() if s.id == sid2)
+        eid = "sevt_huerfano_000000000000000001"
+        s2.turno = {"texto": "", "pasos": [], "i": 0, "resultados": [], "espera": {eid: "enviar_ticket_revision"},
+                    "salida": 0, "t0": consumidor._ahora()}
+        async with AsyncSessionLocal() as db:
+            db.add(AsistenteAccion(conversacion_id=cid2, user_id=(await _conv(cid2)).user_id, herramienta="enviar_ticket_revision",
+                                   nivel=3, entrada={}, resumen="Enviar un ticket", evento_id=eid, estado="ejecutando"))
+            await db.commit()
+        r = await ac.post(f"{BASE}/conversaciones/{cid2}/mensajes", headers=coord, json={"texto": "¿Qué podés hacer?"})
+        assert r.status_code == 200, r.text
+        await _esperar(cid2)
+        async with AsyncSessionLocal() as db:
+            a = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.evento_id == eid))).scalar_one()
+            assert a.estado == "fallida" and a.respondida_at is not None and "Se cortó" in a.resultado["mensaje"]
+
+        # 3) Una acción ejecutándose ahora mismo: 409 claro, nunca 502.
+        consumidor._en_curso.add(a.id)
+        try:
+            async with AsyncSessionLocal() as db:
+                a = await db.get(AsistenteAccion, a.id)
+                a.respondida_at = None
+                await db.commit()
+            r = await ac.post(f"{BASE}/conversaciones/{cid2}/mensajes", headers=coord, json={"texto": "¿Y ahora?"})
+            assert r.status_code == 409 and "terminando una acción" in r.json()["detail"]
+        finally:
+            consumidor._en_curso.discard(a.id)
+
+
+async def _conv(cid: str) -> AsistenteConversacion:
+    async with AsyncSessionLocal() as db:
+        return await db.get(AsistenteConversacion, cid)
 
 
 @pytest.mark.asyncio

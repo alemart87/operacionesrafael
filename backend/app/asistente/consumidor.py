@@ -57,6 +57,20 @@ AVISOS_FIN = {"budget_reached": "Esta conversación llegó a su tope de gasto: e
               "retries_exhausted": "No se pudo completar después de varios intentos. Probá de nuevo en un rato."}
 CONTEXTO_ABRE = "<contexto_plataforma>"
 CANCELADA_TEXTO = "El usuario canceló esta acción: no se hizo. No la repitas salvo que te la vuelva a pedir."
+CORTADA_TEXTO = ("Se cortó la conexión mientras se hacía esta acción y no se puede confirmar si se completó. Pedile al "
+                 "usuario que lo revise en la pantalla antes de repetirla.")
+NO_PROCESADA_TEXTO = ("La plataforma no pudo procesar este pedido (se reinició o falló mientras lo ejecutaba). Contale al "
+                      "usuario y, si hace falta, volvé a pedirlo.")
+
+
+class Ocupado(RuntimeError):
+    """Una acción de esta conversación se está ejecutando ahora mismo: hay que esperar a que termine."""
+
+
+def _es_corte(exc: BaseException) -> bool:
+    """Un problema de red o de tiempo (transitorio), no un error de la plataforma."""
+    nombre = type(exc).__name__.lower()
+    return isinstance(exc, (ConnectionError, TimeoutError, OSError)) or "connection" in nombre or "timeout" in nombre
 
 
 def _ahora() -> datetime:
@@ -402,7 +416,26 @@ async def _respondida(db: AsyncSession, cid: str, evento_id: str | None) -> None
 
 async def _herramienta(db: AsyncSession, conv: AsistenteConversacion, ev: dict[str, Any],
                        salida: list[dict[str, Any]]) -> None:
-    """El agente pidió una herramienta de la plataforma (una sola vez por evento)."""
+    """El agente pidió una herramienta de la plataforma (una sola vez por evento). Si algo nuestro falla, igual se le
+    responde a la sesión: una sesión esperando un resultado que nunca llega rechaza todo lo demás."""
+    sid = conv.session_id
+    try:
+        await _herramienta_interna(db, conv, ev, salida)
+    except Exception as exc:  # noqa: BLE001
+        if _es_corte(exc):
+            raise               # se cortó la red: al volver a escuchar (o con el próximo mensaje) se completa
+        log.exception("Herramienta %s de %s falló por fuera de su ejecución", ev.get("name"), conv.id)
+        await db.rollback()
+        try:
+            await _resultado(sid, ev["id"], NO_PROCESADA_TEXTO, True)
+        except Exception as exc2:  # noqa: BLE001 — se reintenta al próximo mensaje (resultados sin responder)
+            log.warning("No se pudo responder el pedido %s de %s: %s", ev.get("id"), conv.id, exc2)
+        salida.append({"tipo": "paso", "id": ev["id"], "herramienta": ev.get("name"), "estado": "error",
+                       "detalle": f"No se pudo procesar ({type(exc).__name__})."})
+
+
+async def _herramienta_interna(db: AsyncSession, conv: AsistenteConversacion, ev: dict[str, Any],
+                               salida: list[dict[str, Any]]) -> None:
     cid, sid, uid, perfil = conv.id, conv.session_id, conv.user_id, conv.perfil
     previa = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid,
                                                               AsistenteAccion.evento_id == ev["id"]))).scalar_one_or_none()
@@ -499,15 +532,12 @@ async def _completar(db: AsyncSession, a: AsistenteAccion, sid: str, perfil: str
             # Consultas y borradores propios se pueden repetir sin riesgo.
             await _ejecutar_y_responder(db, a.id, h, user, a.conversacion_id, sid, perfil, salida)
             return
-        a.estado, a.resuelta_at = FALLIDA, _ahora()
-        a.respuesta = ("Se cortó la conexión mientras se hacía esta acción y no se puede confirmar si se completó. "
-                       "Pedile al usuario que lo revise en la pantalla antes de repetirla.")
+        a.estado, a.resuelta_at, a.respuesta = FALLIDA, _ahora(), CORTADA_TEXTO
         a.resultado = {**(a.resultado or {}), "mensaje": "Se cortó mientras se hacía: revisalo en la pantalla."}
         await db.commit()
         salida.append({"tipo": "accion", "accion": accion_dict(a)})
     if a.respuesta is None:
-        a.respuesta = json.dumps(a.resultado, ensure_ascii=False, default=str) if a.resultado else (
-            CANCELADA_TEXTO if a.estado == CANCELADA else "Listo.")
+        a.respuesta = _texto_resultado(a)
     await _responder(db, a, sid)
 
 
@@ -614,6 +644,68 @@ async def cancelar_pendientes(db: AsyncSession, conv: AsistenteConversacion, mot
         difusion.publicar(conv.id, {"tipo": "accion", "accion": accion_dict(a)})
     await db.commit()
     return eventos, tomadas
+
+
+def _texto_resultado(a: AsistenteAccion) -> str:
+    if a.respuesta:
+        return a.respuesta
+    if a.resultado:
+        return json.dumps(a.resultado, ensure_ascii=False, default=str)
+    return CANCELADA_TEXTO if a.estado == CANCELADA else "Listo."
+
+
+def _evento_resultado(a: AsistenteAccion) -> dict[str, Any]:
+    return {"type": "user.custom_tool_result", "custom_tool_use_id": a.evento_id, "is_error": a.estado != EJECUTADA,
+            "content": [{"type": "text", "text": _texto_resultado(a)}]}
+
+
+async def completar_sin_responder(db: AsyncSession, conv: AsistenteConversacion) -> None:
+    """Antes de mandar un mensaje: lo que quedó sin responder a Anthropic (un corte o un reinicio) se completa igual
+    que al volver a escuchar: una consulta se repite, una acción cortada a mitad se da por fallida, y lo ya resuelto se
+    reenvía. Si una acción se está ejecutando ahora mismo, `Ocupado`: hay que esperar a que termine."""
+    filas = (await db.execute(select(AsistenteAccion).where(
+        AsistenteAccion.conversacion_id == conv.id, AsistenteAccion.respondida_at.is_(None),
+        AsistenteAccion.estado != PENDIENTE))).scalars().all()
+    if any(a.id in _en_curso for a in filas):
+        raise Ocupado()
+    salida: list[dict[str, Any]] = []
+    for a in filas:
+        await _completar(db, a, conv.session_id, conv.perfil, salida)
+    _repartir(conv.id, salida)
+
+
+async def responder_reclamados(db: AsyncSession, conv: AsistenteConversacion, evento_ids: list[str]) -> list[dict[str, Any]]:
+    """Anthropic dice que la sesión espera estos pedidos: se les responde con lo que haya. Uno que está pendiente de
+    confirmación se cancela; uno que nunca se registró (falló antes de anotarlo) queda como fallido, con lo que el
+    evento guardado cuente de él. Devuelve los resultados para mandar antes del mensaje."""
+    eventos: list[dict[str, Any]] = []
+    for eid in evento_ids:
+        a = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == conv.id,
+                                                             AsistenteAccion.evento_id == eid))).scalar_one_or_none()
+        if a is None:
+            guardado = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == conv.id,
+                                                                        AsistenteEvento.evento_id == eid))).scalar_one_or_none()
+            datos = (guardado.datos if guardado else None) or {}
+            a = AsistenteAccion(conversacion_id=conv.id, user_id=conv.user_id, herramienta=str(datos.get("name") or "desconocida")[:80],
+                                nivel=1, entrada=datos.get("input") if isinstance(datos.get("input"), dict) else {},
+                                resumen="Pedido que la plataforma no pudo procesar", evento_id=eid, estado=FALLIDA,
+                                respuesta=NO_PROCESADA_TEXTO, resuelta_at=_ahora())
+            db.add(a)
+        elif a.estado == PENDIENTE:
+            a.estado, a.resuelta_at = CANCELADA, _ahora()
+            a.resultado = {"motivo": "El usuario siguió la conversación sin confirmarla."}
+            a.respuesta = "Acción no realizada: el usuario siguió la conversación sin confirmarla. No la repitas salvo que la vuelva a pedir."
+        elif a.estado == EJECUTANDO and a.id not in _en_curso:
+            a.estado, a.resuelta_at, a.respuesta = FALLIDA, _ahora(), CORTADA_TEXTO
+        elif a.id in _en_curso:
+            raise Ocupado()
+        a.respondida_at = None          # Anthropic no lo tiene: se vuelve a mandar
+        eventos.append(_evento_resultado(a))
+        difusion.publicar(conv.id, {"tipo": "accion", "accion": accion_dict(a)} if a.nivel > 1 else
+                          {"tipo": "paso", "id": a.evento_id, "herramienta": a.herramienta, "estado": "error",
+                           "detalle": "No se pudo procesar."})
+    await db.commit()
+    return eventos
 
 
 async def marcar_respondidas(db: AsyncSession, ids: list[str]) -> None:
