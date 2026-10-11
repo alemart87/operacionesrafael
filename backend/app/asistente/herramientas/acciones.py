@@ -420,7 +420,7 @@ async def _preparar_auditoria(ctx: Ctx, a: dict[str, Any]) -> Any:
         destino = "Quedó como informe destino del modo auditor: ya podés proponer evidencia."
     return compactar({**seleccionar(d, ("id", "codigo", "titulo", "status", "periodo_desde", "periodo_hasta", "resumen")),
                       "hallazgos_automaticos": hallazgos, "meses": meses, "modo_auditor": destino,
-                      "pantalla": f"/televentas-claro/auditoria/{d.get('id')}",
+                      "pantalla": f"/televentas-claro/auditoria/informes/{d.get('id')}",
                       "importante": "Quedó en BORRADOR con los hallazgos automáticos: el auditor lo revisa, completa y "
                                     "cambia de estado desde la pantalla."}, max_lista=15)
 
@@ -473,7 +473,7 @@ async def _agregar_hallazgo(ctx: Ctx, a: dict[str, Any]) -> Any:
     d = HallazgoRead.model_validate(h).model_dump(mode="json")
     return {**seleccionar(d, ("codigo", "titulo", "severidad", "categoria", "vendedor", "estado", "responsable",
                               "fecha_compromiso")),
-            "auditoria": aud.codigo, "pantalla": f"/televentas-claro/auditoria/{aud.id}"}
+            "auditoria": aud.codigo, "pantalla": f"/televentas-claro/auditoria/informes/{aud.id}#hallazgos"}
 
 
 async def _resumen_hallazgo(ctx: Ctx, a: dict[str, Any]) -> str:

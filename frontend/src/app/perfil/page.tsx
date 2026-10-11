@@ -159,7 +159,7 @@ export default function PerfilPage() {
                   {uploadingPhoto ? "Subiendo…" : "Cambiar foto"}
                 </button>
               )}
-              <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onPhoto} />
+              <input ref={fileRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="hidden" onChange={onPhoto} />
             </div>
           </div>
 

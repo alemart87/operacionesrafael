@@ -147,6 +147,17 @@ function aplicar(s: ChatVoi, ev: EventoVoi): ChatVoi {
       return { ...s, items: [...s.items, { tipo: "aviso", id: `av-${Date.now()}`, texto: ev.texto, nivel: "info" }] };
     case "uso":
       return { ...s, costo: ev.costo_usd };
+    case "investigacion": {
+      // Un separador en el chat cuando el modo se prende, cambia de informe o se apaga (en un chat vacío lo explica la
+      // bienvenida).
+      if (!s.items.length) return s;
+      // Si lo activó la tarjeta «¿Activamos el modo auditor?», la propia tarjeta ya lo cuenta.
+      const reciente = s.items.slice(-3).find((i) => i.tipo === "accion" && i.accion.herramienta === "proponer_modo_auditor");
+      if (reciente && ev.investigacion) return s;
+      const inv = ev.investigacion;
+      const texto = inv ? `Modo auditor activado${inv.codigo ? ` · ${inv.codigo}` : " · sin informe destino"}` : "Saliste del modo auditor";
+      return { ...s, items: [...s.items, { tipo: "modo", id: `modo-${Date.now()}`, activo: !!inv, texto }] };
+    }
     default:
       return s;
   }

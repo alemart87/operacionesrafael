@@ -601,6 +601,9 @@ La pestaña **Evidencia** del informe junta las **figuras numeradas** que respal
   ordenan con flechas o arrastrando, se ven en grande en un visor y se quitan con confirmación. Mientras el informe
   está en Borrador o En revisión se editan; cerrado, quedan fijas (se siguen viendo). Cada cambio queda en la
   bitácora del informe (tipo «Evidencia») y en el registro de auditoría general.
+- El selector de archivos filtra por **extensión** (`.png,.jpg,.jpeg,.webp,.gif`), no por tipo MIME: en Windows,
+  Chrome traduce cada tipo MIME a extensiones leyendo el registro antes de abrir la ventana y en algunas computadoras
+  la demoraba minutos. (Las fotos de perfil tenían el mismo problema y se corrigió igual.)
 - **En el informe**: el ejecutivo suma la sección **Evidencia visual** con cada figura numerada, su lectura, la fuente
   y el hallazgo; los hallazgos citan sus figuras («Evidencia visual: Figura 2 y 5»). El extenso agrega además un
   **índice de figuras**. Las secciones se numeran solas y el PDF espera a que carguen las imágenes.
@@ -616,6 +619,7 @@ con su ficha y avisa que la imagen no está. Eliminar un borrador borra su carpe
 
 | Endpoint (`/api/v1/televentas-claro/auditoria…`) | Qué hace |
 |---|---|
+| `GET /informes/{id}` | El informe (también acepta el código, `AUD-2026-003`); en la app, `/televentas-claro/auditoria/<id>` redirige a `/televentas-claro/auditoria/informes/<id>` |
 | `GET /informes/{id}/evidencias` | Figuras del informe, en orden |
 | `GET /informes/{id}/evidencias/indice` | Índice liviano para Voi: informe, hallazgos y figuras (con la pieza de origen) |
 | `POST /informes/{id}/evidencias/imagen` | Subir una imagen (multipart: `archivo`, `titulo`, `nota`, `hallazgo_id`) |
@@ -741,13 +745,20 @@ en una **investigación** con un **informe destino**:
 
 - **Cómo se entra:** desde el panel (chip **Modo auditor** del compositor o la tarjeta «Investigación de auditoría» de la
   bienvenida), desde un informe con **Investigar con Voi** (abre Voi con ese informe como destino, en una conversación
-  nueva si la actual ya tenía mensajes) o lo activa **Voi** con su herramienta `modo_auditor` cuando el usuario empieza
-  una investigación o se lo pide. Se elige el informe (en Borrador o En revisión), se trabaja sin destino o se le pide a
-  Voi que **prepare uno nuevo** (queda como destino solo).
-- **Se ve:** el panel, el lienzo y el botón de Voi llevan un **borde fino que pasa despacio por los colores de
-  Voicenter** (de a uno, con un brillo leve) y una franja «Modo auditor» con el informe destino, **Cambiar** y
-  **Salir**. Todo lo demás conserva la paleta neutra de la plataforma (botones, modales y tarjetas iguales al resto).
-  Quien pidió menos movimiento ve el borde fijo.
+  nueva si la actual ya tenía mensajes), pidiéndoselo a Voi («entrá en modo auditor») o **aceptando la sugerencia de
+  Voi**: si el modo está apagado y la persona está investigando (alertas, vendedores en riesgo, líneas sin uso, ventas
+  dudosas), Voi pregunta antes de seguir con una tarjeta **«¿Activamos el modo auditor?»** (Activar / Ahora no;
+  herramienta `proponer_modo_auditor`). Si la rechaza, no insiste en esa conversación. Se elige el informe (en Borrador o
+  En revisión), se trabaja sin destino o se le pide a Voi que **prepare uno nuevo** (queda como destino solo).
+- **Cambia la actitud de Voi:** en modo auditor es escéptico e incisivo. Busca alertas por su cuenta (vendedores
+  críticos y en alerta, líneas sin uso, Sali Hablando, finalizadas sin activar, riesgo alto sin uso, pendientes viejas,
+  suspendidas, alertas del centro de comandos, tickets vencidos), cruza fuentes y compara contra el corte anterior y la
+  meta, señala lo que no cierra con cifras y vendedores, separa hechos de hipótesis y cierra con el próximo paso de
+  auditoría (hallazgo, ticket o figura). Se lo recuerda la plataforma en cada mensaje.
+- **Se ve:** el panel, el lienzo y el botón de Voi **brillan**: un borde que late y pasa por los colores de Voicenter de
+  a uno, con resplandor; en el chat, un separador «Modo auditor activado · AUD-…»; arriba, una franja con el informe
+  destino, **Cambiar** y **Salir**. Botones, modales y tarjetas mantienen la paleta neutra de la plataforma. Quien pidió
+  menos movimiento ve el borde fijo.
 - **Voi pregunta siempre:** cada mensaje le recuerda el modo y el destino; cada vez que muestra algo en el lienzo llama
   a `proponer_evidencia` y aparece una **tarjeta con una casilla por pieza** (todas, algunas o ninguna), con el título
   y la lectura editables. Solo se suma lo elegido (el servidor valida que la elección sea un subconjunto de lo

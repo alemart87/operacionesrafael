@@ -21,7 +21,8 @@ import {
 } from "@/components/auditoria/tipos";
 import { apiFetch } from "@/lib/api";
 import {
-  avisarHash, voiApi, type AccionVoi, type AjustesEvidencia, type DetalleEvidencia, type InvestigacionVoi, type ResultadoEvidencia,
+  avisarHash, voiApi, type AccionVoi, type AjustesEvidencia, type DetalleEvidencia, type DetalleModoAuditor, type InvestigacionVoi,
+  type ResultadoEvidencia,
 } from "@/lib/voi";
 import { ICONO_TIPO, NOMBRE_TIPO } from "./lienzo/iconos";
 import type { ArtefactoVoi, PiezaVoi } from "./lienzo/tipos";
@@ -149,10 +150,69 @@ export function ChipModoAuditor() {
 }
 
 export const SUGERENCIAS_AUDITOR = [
-  "Mostrame en un gráfico las líneas sin uso por vendedor del último corte",
+  "Hacé un barrido de alertas y decime qué no cierra",
   "¿Qué vendedores están críticos y por qué?",
-  "Armame un tablero de riesgos de la auditoría",
+  "Mostrame en un gráfico las líneas sin uso por vendedor del último corte",
 ];
+
+/** Qué cambia en modo auditor (lo mismo en el selector y en la tarjeta en la que Voi lo sugiere). */
+const QUE_CAMBIA: { Icono: any; texto: string }[] = [
+  { Icono: Search, texto: "Voi busca alertas por su cuenta y señala lo que no cierra, con cifras y vendedores." },
+  { Icono: Layers, texto: "Cada gráfico que te muestra te lo ofrece como figura del informe: vos elegís cuáles van." },
+  { Icono: FileSearch, texto: "Todo se suma a un informe destino; las capturas y fotos las subís en su pestaña Evidencia." },
+];
+
+function QueCambia() {
+  return (
+    <ul className="space-y-1.5">
+      {QUE_CAMBIA.map(({ Icono, texto }) => (
+        <li key={texto} className="flex items-start gap-2 text-[13px] text-brand-graphite leading-snug">
+          <Icono size={14} className="mt-0.5 flex-shrink-0 text-brand-cyan" /> <span>{texto}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** La tarjeta en la que Voi sugiere activar el modo auditor porque la persona está investigando. */
+export function TarjetaModoAuditor({ a, onConfirmar, onCancelar }: {
+  a: AccionVoi;
+  onConfirmar: (a: AccionVoi) => void;
+  onCancelar: (a: AccionVoi) => void;
+}) {
+  const d = (a.detalle ?? {}) as DetalleModoAuditor;
+  if (a.estado !== "pendiente") {
+    const activo = a.estado === "ejecutada" || a.estado === "ejecutando";
+    return (
+      <div className="rounded-xl border border-brand-border bg-white px-3.5 py-2.5 flex items-start gap-2 text-sm animate-pop">
+        {a.estado === "ejecutando" ? <Loader2 size={15} className="animate-spin text-brand-cyan" /> :
+          <ShieldCheck size={15} className={activo ? "text-brand-cyan" : "text-brand-mist"} />}
+        <span className="min-w-0 leading-snug">
+          <span className={`block ${activo ? "font-semibold text-brand-ink" : "text-brand-slate"}`}>
+            {activo ? "Modo auditor activado" : "Seguimos sin el modo auditor"}
+          </span>
+          {activo && <span className="block text-xs text-brand-slate">Voi busca alertas por su cuenta y te ofrece cada gráfico como figura del informe.</span>}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-brand-border bg-white p-3.5 shadow-soft animate-pop">
+      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider2 text-brand-cyan">
+        <ShieldCheck size={12} /> Sugerencia de Voi
+      </div>
+      <p className="mt-1.5 text-sm font-semibold text-brand-ink">¿Activamos el modo auditor?</p>
+      {d.motivo && <p className="mt-0.5 text-xs text-brand-slate leading-snug">{d.motivo}</p>}
+      <div className="mt-2.5"><QueCambia /></div>
+      <div className="mt-3 flex items-center gap-2">
+        <button type="button" onClick={() => onConfirmar(a)} className="btn-primary px-4 py-1.5 text-xs whitespace-nowrap">
+          <ShieldCheck size={14} /> Activar modo auditor
+        </button>
+        <button type="button" onClick={() => onCancelar(a)} className="btn-ghost px-3 py-1.5 text-xs whitespace-nowrap">Ahora no</button>
+      </div>
+    </div>
+  );
+}
 
 // ------------------------------------------------------------------ selector del informe destino
 /** Entrar en modo auditor, elegir o cambiar el informe destino, o salir. Modal en la compu, hoja en el teléfono. */
@@ -227,10 +287,7 @@ export function SelectorAuditor() {
             </div>
             <BotonCerrar onClick={cerrar} disabled={!!ocupado} />
           </div>
-          <p className="mt-2 text-sm text-brand-slate leading-relaxed">
-            Voi trabaja como auditor: datos verificables y hallazgos con evidencia. Cada vez que muestra algo en el lienzo te
-            pregunta qué gráficos sumar al informe; solo entra lo que elegís.
-          </p>
+          <div className="mt-3"><QueCambia /></div>
         </div>
 
         <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-4">

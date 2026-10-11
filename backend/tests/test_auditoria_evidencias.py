@@ -297,3 +297,68 @@ async def test_piezas_con_facturacion_no_van_al_informe(simulador, tmp_path, mon
             "auditoria_id": inf["id"], "conversacion_id": cid,
             "piezas": [{"spec": {"tipo": "tabla", "titulo": "Copia", "datos": [{"a": "x", "b": 1}]}}]})
         assert r.status_code == 409 and "Facturación" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_voi_sugiere_el_modo_auditor_y_enlaces_del_informe(simulador, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path / "disco"))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        await _publicado(ac, admin)
+        _, auditor = await _nuevo(ac, admin, "auditor", "Ana Auditora")
+        inf = await _informe(ac, auditor, tmp_path, monkeypatch, admin)
+
+        # El informe también se abre con su código (los enlaces que arma Voi pueden traer cualquiera de los dos).
+        r = await ac.get(f"{AUD}/informes/{inf['codigo']}", headers=auditor)
+        assert r.status_code == 200 and r.json()["id"] == inf["id"]
+
+        # Investigando sin el modo: Voi pregunta si lo activa (tarjeta) y el contexto se lo indica.
+        cid = (await ac.post(f"{BASE}/conversaciones", headers=auditor,
+                             json={"texto": "Investigá las ventas dudosas de septiembre"})).json()["id"]
+        await _esperar(cid)
+        t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=auditor)).json()
+        card = t["pendientes"][0]
+        assert card["herramienta"] == "proponer_modo_auditor" and card["detalle"]["tipo"] == "modo_auditor"
+        assert card["resumen"].startswith("Activar el modo auditor")
+        async with AsyncSessionLocal() as db:
+            ctx = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == cid,
+                                                                  AsistenteEvento.tipo == "system.message"))).scalars().all()
+            assert any("disponible pero apagado" in json.dumps(e.datos, ensure_ascii=False) for e in ctx)
+        r = await ac.post(f"{BASE}/acciones/{card['id']}/confirmar", headers=auditor, json={})
+        assert r.status_code == 200
+        await _esperar(cid, hasta=("idle",))
+        async with AsyncSessionLocal() as db:
+            c = await db.get(AsistenteConversacion, cid)
+            assert c.investigacion["activo"] and c.investigacion["por"] == "voi"
+        # Ya en modo auditor, el contexto trae la postura de auditor (incisiva) y no vuelve a sugerirlo.
+        await asyncio.sleep(0.05)
+        await ac.post(f"{BASE}/conversaciones/{cid}/mensajes", headers=auditor, json={"texto": "¿Qué no cierra?"})
+        await _esperar(cid)
+        async with AsyncSessionLocal() as db:
+            ctx = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == cid,
+                                                                  AsistenteEvento.tipo == "system.message"))).scalars().all()
+            textos = [json.dumps(e.datos, ensure_ascii=False) for e in ctx]
+            activos = [x for x in textos if "MODO AUDITOR ACTIVO" in x]
+            assert activos and all("buscá alertas por tu cuenta" in x and "disponible pero apagado" not in x for x in activos)
+
+        # Si lo rechaza, sigue sin el modo.
+        cid2 = (await ac.post(f"{BASE}/conversaciones", headers=auditor,
+                              json={"texto": "Revisá los vendedores sospechosos"})).json()["id"]
+        await _esperar(cid2)
+        card = (await ac.get(f"{BASE}/conversaciones/{cid2}", headers=auditor)).json()["pendientes"][0]
+        assert (await ac.post(f"{BASE}/acciones/{card['id']}/cancelar", headers=auditor)).json()["estado"] == "cancelada"
+        await _esperar(cid2, hasta=("idle",))
+        async with AsyncSessionLocal() as db:
+            assert (await db.get(AsistenteConversacion, cid2)).investigacion is None
+
+        # Sin Auditoría no se sugiere ni existe la herramienta.
+        _, coord = await _nuevo(ac, admin, "coordinador")
+        estado = (await ac.get(f"{BASE}/estado", headers=coord)).json()
+        assert "proponer_modo_auditor" not in {h["nombre"] for h in estado["herramientas"]}
+
+        # Los enlaces que devuelve Voi al preparar un informe llevan la ruta real del informe.
+        from app.asistente.herramientas.acciones import _preparar_auditoria  # noqa: F401
+        import inspect
+        from app.asistente.herramientas import acciones
+        fuente = inspect.getsource(acciones)
+        assert "/televentas-claro/auditoria/{" not in fuente and "/televentas-claro/auditoria/informes/{" in fuente

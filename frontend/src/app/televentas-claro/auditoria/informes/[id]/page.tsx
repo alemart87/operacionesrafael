@@ -59,8 +59,13 @@ function Informe() {
   const [actualizar, setActualizar] = useState(false);
 
   const load = useCallback(async () => {
-    try { setA(await apiFetch<AuditoriaDetalle>(`${AUD_API}/informes/${id}`)); } catch (e: any) { setError(e.message); }
-  }, [id]);
+    try {
+      const d = await apiFetch<AuditoriaDetalle>(`${AUD_API}/informes/${id}`);
+      // Un enlace con el código (AUD-2026-003) se pasa a la dirección con el id, la que usan todas las acciones.
+      if (d.id !== id) { router.replace(`/televentas-claro/auditoria/informes/${d.id}${window.location.hash}`); return; }
+      setA(d);
+    } catch (e: any) { setError(e.message); }
+  }, [id, router]);
   useEffect(() => { load(); }, [load]);
 
   const cambiarEstado = async () => {

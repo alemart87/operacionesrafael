@@ -321,7 +321,7 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <input ref={photoRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onPhotoPicked} />
+      <input ref={photoRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="hidden" onChange={onPhotoPicked} />
 
       <ConfirmDialog
         open={!!editUser}
