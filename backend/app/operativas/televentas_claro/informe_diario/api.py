@@ -348,11 +348,13 @@ class SeguimientoItem(BaseModel):
 
 
 class GuardarPayload(BaseModel):
-    resultados: Resultados = Field(default_factory=Resultados)
-    resumen: str = Field("", max_length=5000)
-    metricas: list[Metrica] = Field(default_factory=list, max_length=20)
-    seguimiento: list[SeguimientoItem] = Field(default_factory=list, max_length=60)
-    importados: list[str] = Field(default_factory=list, max_length=MAX_IMPORTADOS)   # ids a conservar, en orden
+    """Lo que se manda se guarda; lo que no viene queda como está. Así el guardado automático del editor manda solo lo
+    que cambió y no pisa lo que Voi (u otra pestaña) acaba de escribir en el mismo informe."""
+    resultados: Optional[Resultados] = None
+    resumen: Optional[str] = Field(None, max_length=5000)
+    metricas: Optional[list[Metrica]] = Field(None, max_length=20)
+    seguimiento: Optional[list[SeguimientoItem]] = Field(None, max_length=60)
+    importados: Optional[list[str]] = Field(None, max_length=MAX_IMPORTADOS)   # ids a conservar, en orden
     cargo: Optional[str] = Field(None, max_length=120)
 
 
@@ -361,14 +363,19 @@ async def guardar(informe_id: str, payload: GuardarPayload, user: CurrentUser = 
                   db: AsyncSession = Depends(get_db)) -> dict:
     """Guarda el borrador (lo llama el guardado automático: no se audita cada vez)."""
     inf = await _borrador_propio(db, informe_id, user)
-    abiertos = {c.id for c in await srv.compromisos_abiertos(db, inf.autor_id, inf.fecha)}
-    actuales = {x["id"]: x for x in inf.importados or []}
-    inf.resultados = payload.resultados.model_dump()
-    inf.resumen = payload.resumen.strip()
-    inf.metricas = [{**m.model_dump(), "fecha_compromiso": m.fecha_compromiso.isoformat() if m.fecha_compromiso else None}
-                    for m in payload.metricas]
-    inf.seguimiento = [s.model_dump() for s in payload.seguimiento if s.compromiso_id in abiertos]
-    inf.importados = [actuales[i] for i in dict.fromkeys(payload.importados) if i in actuales]
+    if payload.resultados is not None:
+        inf.resultados = payload.resultados.model_dump()
+    if payload.resumen is not None:
+        inf.resumen = payload.resumen.strip()
+    if payload.metricas is not None:
+        inf.metricas = [{**m.model_dump(), "fecha_compromiso": m.fecha_compromiso.isoformat() if m.fecha_compromiso else None}
+                        for m in payload.metricas]
+    if payload.seguimiento is not None:
+        abiertos = {c.id for c in await srv.compromisos_abiertos(db, inf.autor_id, inf.fecha)}
+        inf.seguimiento = [s.model_dump() for s in payload.seguimiento if s.compromiso_id in abiertos]
+    if payload.importados is not None:
+        actuales = {x["id"]: x for x in inf.importados or []}
+        inf.importados = [actuales[i] for i in dict.fromkeys(payload.importados) if i in actuales]
     if payload.cargo is not None and payload.cargo.strip():
         inf.autor_cargo = payload.cargo.strip()
     inf.updated_at = srv.ahora()

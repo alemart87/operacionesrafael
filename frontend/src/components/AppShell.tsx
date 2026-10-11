@@ -10,6 +10,7 @@ import { ControlSesion, type EstadoSeguridad } from "./seguridad/ControlSesion";
 import { VoiBoton } from "./voi/VoiBoton";
 import { useVoi } from "./voi/VoiProvider";
 import { OperativaNavItem, isNavActive, operativaFromPath, requiredUtilidades, submoduloFromPath } from "@/lib/operativas";
+import { navegacionConHoja, useNavegacionSuave } from "@/lib/transiciones";
 
 const ADMIN_NAV = [
   { href: "/admin/users", label: "Usuarios" },
@@ -41,6 +42,12 @@ export function useSession(): Session {
  * superadmin), barra de la operativa activa, perfil y cierre de sesión.
  * Carga los permisos desde /auth/me y bloquea las operativas sin acceso.
  */
+/** Una pantalla: aparece con su fundido, salvo que haya llegado con la transición de hoja (la anima el navegador). */
+function Pagina({ ruta, className, children }: { ruta: string | null; className: string; children: React.ReactNode }) {
+  const [conFundido] = useState(() => !navegacionConHoja(ruta));
+  return <div className={`${conFundido ? "pagina-entra" : ""} ${className}`}>{children}</div>;
+}
+
 export function AppShell({ children, workspace = false }: {
   children: React.ReactNode;
   /** Pantalla completa sin márgenes ni footer (chat del agente). */
@@ -52,6 +59,7 @@ export function AppShell({ children, workspace = false }: {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [seguridad, setSeguridad] = useState<EstadoSeguridad | null>(null);
   const voi = useVoi();
+  useNavegacionSuave();   // los enlaces internos pasan de pantalla como una hoja
 
   useEffect(() => {
     if (!getToken()) {
@@ -154,11 +162,11 @@ export function AppShell({ children, workspace = false }: {
   return (
     <SessionContext.Provider value={session}>
       <div
-        className={`${workspace ? "h-screen overflow-hidden" : "min-h-screen"} flex flex-col bg-brand-bg transition-[padding] duration-300 print:!pr-0`}
+        className={`${workspace ? "h-screen overflow-hidden" : "min-h-screen"} flex flex-col bg-brand-bg transicion-acople print:!pr-0`}
         // Con Voi abierto en una pantalla ancha, el panel se acopla a la derecha y la página se corre.
         style={{ paddingRight: voi?.abierto && voi.acoplado && voi.habilitado ? 440 : 0 }}
       >
-        <header className="bg-white border-b border-brand-border shadow-soft sticky top-0 z-30">
+        <header className="bg-white border-b border-brand-border shadow-soft sticky top-0 z-30 cromo-fijo" style={{ viewTransitionName: "cabecera" }}>
           <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
             <Link href="/inicio" className="hover:opacity-90 transition-opacity flex-shrink-0">
               <Brand logoHeight={40} compactOnPhone withTagline={!compacta} />
@@ -280,10 +288,14 @@ export function AppShell({ children, workspace = false }: {
         </header>
         {seguridad && <ControlSesion s={seguridad} />}
 
+        {/* La pantalla: aparece con un fundido suave y, al cambiar de ruta, pasa como una hoja (View Transitions). */}
         <main
-          className={workspace ? "flex-1 flex min-h-0 w-full" : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 py-8"}
+          className={`pagina-escena ${workspace ? "flex-1 flex min-h-0 w-full" : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 py-8"}`}
+          style={{ viewTransitionName: "contenido" }}
         >
-          {children}
+          <Pagina key={pathname} ruta={pathname} className={workspace ? "flex-1 flex min-h-0 w-full" : "w-full"}>
+            {children}
+          </Pagina>
         </main>
 
         {!workspace && (

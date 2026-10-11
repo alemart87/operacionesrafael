@@ -377,6 +377,13 @@ export function cuando(iso: string | null | undefined): string {
   return d.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit" });
 }
 
+/** Voi ejecutó una acción sobre un informe diario (la ruta de su resultado lo nombra): se avisa con «voi:informe» y el id
+ * para que la pantalla del informe, si está abierta, se traiga lo nuevo sin recargar. */
+export function avisarInformeCambiado(ruta: string | null | undefined, herramienta?: string): void {
+  const m = /\/televentas-claro\/informe-diario\/([0-9a-f-]{36})/.exec(ruta ?? "");
+  if (m) window.dispatchEvent(new CustomEvent("voi:informe", { detail: { id: m[1], herramienta: herramienta ?? null } }));
+}
+
 /** La pantalla del catálogo a la que pertenece una ruta (la de prefijo más largo), como lo resuelve el backend. */
 export function pantallaDeRuta(items: PantallaVoi[], pathname: string | null): PantallaVoi | null {
   if (!pathname) return null;

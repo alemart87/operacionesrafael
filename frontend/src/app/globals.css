@@ -326,18 +326,70 @@ h3,
   background-size: 200% 100%;
   animation: voi-barrido 1.6s linear infinite;
 }
-/* El panel entra desde la derecha (en el teléfono, desde abajo). */
+/* El panel entra desde la derecha como una hoja que se desliza (en el teléfono, desde abajo), con la curva suave de
+   iOS; al cerrarse se va por donde vino. La página acoplada se corre con la misma curva y el mismo tiempo. */
 @keyframes voi-entra-lado {
-  from { transform: translateX(28px); opacity: 0; }
+  from { transform: translateX(100%); opacity: 0.6; }
   to { transform: none; opacity: 1; }
+}
+@keyframes voi-sale-lado {
+  from { transform: none; opacity: 1; }
+  to { transform: translateX(100%); opacity: 0.6; }
 }
 @keyframes voi-entra-abajo {
-  from { transform: translateY(24px); opacity: 0; }
+  from { transform: translateY(100%); opacity: 0.6; }
   to { transform: none; opacity: 1; }
 }
-.voi-panel { animation: voi-entra-abajo 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes voi-sale-abajo {
+  from { transform: none; opacity: 1; }
+  to { transform: translateY(100%); opacity: 0.6; }
+}
+.voi-panel { animation: voi-entra-abajo 0.42s cubic-bezier(0.32, 0.72, 0, 1) both; will-change: transform; }
+.voi-panel.voi-panel-sale { animation: voi-sale-abajo 0.24s cubic-bezier(0.4, 0, 1, 1) both; pointer-events: none; }
 @media (min-width: 768px) {
   .voi-panel { animation-name: voi-entra-lado; }
+  .voi-panel.voi-panel-sale { animation-name: voi-sale-lado; }
+}
+.transicion-acople { transition: padding-right 0.42s cubic-bezier(0.32, 0.72, 0, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .voi-panel, .voi-panel.voi-panel-sale { animation-duration: 0.01s; }
+  .transicion-acople { transition: none; }
+}
+
+/* ===== Las pantallas: aparecen con un fundido suave y un leve movimiento (estilo Apple) y, al cambiar de ruta, se
+   pasan como una hoja: la que se va gira apenas desde su borde izquierdo mientras entra la nueva. La cabecera y el
+   panel de Voi tienen su propio nombre de transición y quedan quietos. ===== */
+.pagina-escena { perspective: 1600px; }
+@keyframes pagina-entra {
+  from { opacity: 0; transform: translateY(10px) scale(0.992); }
+  to { opacity: 1; transform: none; }
+}
+.pagina-entra { animation: pagina-entra 0.46s cubic-bezier(0.32, 0.72, 0, 1) both; transform-origin: 50% 0; }
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(cabecera), ::view-transition-new(cabecera) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(voi-panel), ::view-transition-new(voi-panel) { animation: none; mix-blend-mode: normal; }
+::view-transition-image-pair(contenido) { perspective: 1600px; isolation: auto; }
+@keyframes hoja-sale {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateX(-28px) rotateY(7deg); }
+}
+@keyframes hoja-entra {
+  from { opacity: 0; transform: translateX(44px) rotateY(-9deg); }
+  to { opacity: 1; transform: none; }
+}
+::view-transition-old(contenido) {
+  animation: hoja-sale 0.3s cubic-bezier(0.4, 0, 1, 1) both;
+  transform-origin: 0 50%;
+  mix-blend-mode: normal;
+}
+::view-transition-new(contenido) {
+  animation: hoja-entra 0.5s cubic-bezier(0.32, 0.72, 0, 1) both;
+  transform-origin: 0 50%;
+  mix-blend-mode: normal;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pagina-entra { animation: none; }
+  ::view-transition-old(contenido), ::view-transition-new(contenido) { animation-duration: 0.01s; }
 }
 /* Cursor mientras Voi escribe. */
 @keyframes voi-cursor { 50% { opacity: 0; } }

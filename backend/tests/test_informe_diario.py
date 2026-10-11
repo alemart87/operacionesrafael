@@ -203,6 +203,12 @@ async def test_flujo_preparar_importar_firmar_pdf_y_seguimiento(monkeypatch):
         d = (await ac.get(f"{BASE}/{iid}", headers=coord)).json()
         assert d["resultados"]["pospago"]["valor"] == 44 and len(d["metricas"]) == 2 and d["cargo"] == "Coordinadora de Televentas"
         assert [x["tipo"] for x in d["importados"]] == ["cargas", "llamadas"]
+        # El guardado automático manda solo lo que cambió: lo que no viene queda como está (así no pisa lo que escribió Voi).
+        assert (await ac.put(f"{BASE}/{iid}", headers=coord, json={"resumen": cuerpo["resumen"] + " Y nada más cambió."})).status_code == 200
+        d = (await ac.get(f"{BASE}/{iid}", headers=coord)).json()
+        assert d["resumen"].endswith("Y nada más cambió.") and d["resultados"]["pospago"]["valor"] == 44 and len(d["metricas"]) == 2
+        assert [x["tipo"] for x in d["importados"]] == ["cargas", "llamadas"] and d["cargo"] == "Coordinadora de Televentas"
+        assert (await ac.put(f"{BASE}/{iid}", headers=coord, json={"resumen": cuerpo["resumen"]})).status_code == 200
 
         # PDF del borrador (con la marca), y firma con la firma manuscrita guardada.
         r = await ac.get(f"{BASE}/{iid}/pdf", headers=coord)

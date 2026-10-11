@@ -13,7 +13,7 @@ import { ApiError, CurrentUserInfo, getToken } from "@/lib/api";
 import { OPERATIVA_ROUTES, isNavActive, operativaFromPath, submoduloFromPath } from "@/lib/operativas";
 import {
   AccionVoi, AjustesEvidencia, ConexionVoi, ConversacionVoi, DestinoModo, EstadoVoi, EventoVoi, GuiaVoi, InvestigacionVoi, ItemVoi,
-  OpcionVoi, Pantalla, PantallaVoi, TipoModo, avisarHash, ddmm, escucharConversacion, pantallaDeRuta, voiApi,
+  OpcionVoi, Pantalla, PantallaVoi, TipoModo, avisarHash, avisarInformeCambiado, ddmm, escucharConversacion, pantallaDeRuta, voiApi,
 } from "@/lib/voi";
 import { SelectorAuditor } from "./VoiAuditor";
 import { AvisoVoi, GuiaFlotante, Resalte } from "./VoiGuia";
@@ -202,6 +202,8 @@ interface VoiCtx {
   habilitado: boolean;
   setUsuario: (u: CurrentUserInfo | null) => void;
   abierto: boolean;
+  /** El panel se está yendo (animación de salida): sigue montado un instante después de cerrar. */
+  cerrando: boolean;
   acoplado: boolean;
   abrir: () => void;
   cerrar: () => void;
@@ -357,9 +359,10 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
           despachar({ t: "modo", inv: ev.investigacion, previo: convRef.current?.investigacion?.tipo ?? "auditor" });
           setConv((c) => (c && c.id === id ? { ...c, investigacion: ev.investigacion } : c));
         }
-        // Voi sumó figuras a un informe: la pantalla del informe diario, si está abierta, se actualiza sola.
-        if (ev.tipo === "accion" && ev.accion.herramienta === "proponer_evidencia" && ev.accion.estado === "ejecutada") {
-          window.dispatchEvent(new CustomEvent("voi:figuras"));
+        // Voi cambió un informe (figuras, resultados, resumen, comentario…): la pantalla, si está abierta, se actualiza sola.
+        if (ev.tipo === "accion" && ev.accion.estado === "ejecutada") {
+          if (ev.accion.herramienta === "proponer_evidencia") window.dispatchEvent(new CustomEvent("voi:figuras"));
+          avisarInformeCambiado(ev.accion.pantalla, ev.accion.herramienta);
         }
         if (ev.tipo === "mensaje" && !abiertoRef.current) setNoLeidos((n) => n + 1);
         // Lo nuevo del lienzo se abre solo en pantallas anchas (al lado del chat); en el teléfono queda la tarjeta.
@@ -444,6 +447,17 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     return () => { document.body.style.overflow = previo; };
   }, [abierto]);
 
+  // Al cerrar, el panel queda montado lo que dura su animación de salida.
+  const [cerrando, setCerrando] = useState(false);
+  const estuvoAbierto = useRef(false);
+  useEffect(() => {
+    if (abierto) { estuvoAbierto.current = true; setCerrando(false); return; }
+    if (!estuvoAbierto.current) return;
+    estuvoAbierto.current = false;
+    setCerrando(true);
+    const t = setTimeout(() => setCerrando(false), 240);
+    return () => clearTimeout(t);
+  }, [abierto]);
   const abrir = useCallback(() => { setAbierto(true); setNoLeidos(0); }, []);
   const cerrar = useCallback(() => setAbierto(false), []);
   const alternar = useCallback(() => setAbierto((a) => !a), []);
@@ -639,7 +653,7 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
   }, [investigacion?.tipo, investigacion?.informe_id, chat.items, activarInformeDiario]);
 
   const valor: VoiCtx = {
-    usuario, habilitado, setUsuario, abierto, acoplado, abrir, cerrar, alternar, vista, setVista, estado, errorEstado,
+    usuario, habilitado, setUsuario, abierto, cerrando, acoplado, abrir, cerrar, alternar, vista, setVista, estado, errorEstado,
     conv, chat, conversaciones, recargarConversaciones, enviar, reintentar, nueva, abrirConversacion, quitarConversacion,
     editarConversacion, detener, confirmar: (a) => resolver(a, true), cancelar: (a) => resolver(a, false),
     pantalla, usarPantalla, setUsarPantalla, noLeidos, esperaConfirmacion, lienzo, abrirLienzo, cerrarLienzo,
@@ -653,7 +667,7 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={valor}>
       {children}
-      {habilitado && abierto && <VoiPanel />}
+      {habilitado && (abierto || cerrando) && <VoiPanel />}
       {habilitado && abierto && lienzo.abierto && <VoiLienzo />}
       {habilitado && selectorAuditor && <SelectorAuditor />}
       {habilitado && <GuiaFlotante />}
