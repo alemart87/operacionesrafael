@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from . import models  # noqa: F401  (registra los modelos en Base.metadata)
+from . import asistente as voi  # Voi, el agente de la plataforma (Claude Managed Agents)
 from . import operativas as modulos_operativas  # routers, workers y modelos de cada operativa
 from .api.v1 import audit, auth, operativas, perfiles, seguridad, sistema, users
 from .core.config import APP_NAME, settings
@@ -119,7 +120,7 @@ async def _run_data_migrations() -> list[str]:
     hechas: list[str] = []
     async with AsyncSessionLocal() as db:
         aplicadas = {i for (i,) in (await db.execute(select(MigracionDatos.id))).all()}
-        for mid, fn in modulos_operativas.MIGRACIONES_DATOS:
+        for mid, fn in [*modulos_operativas.MIGRACIONES_DATOS, *voi.MIGRACIONES_DATOS]:
             if mid in aplicadas:
                 continue
             try:
@@ -161,8 +162,9 @@ async def lifespan(app: FastAPI):
                 logger.exception(f"[supervisor] worker {nombre} murió ({exc}); relanzando en 10s")
             await asyncio.sleep(10)
 
-    tasks = [asyncio.create_task(_supervisar(n, f)) for n, f in modulos_operativas.WORKERS.items()]
-    logger.info(f"Boot: workers iniciados: {', '.join(modulos_operativas.WORKERS) or 'ninguno'}")
+    workers = {**modulos_operativas.WORKERS, **voi.WORKERS}
+    tasks = [asyncio.create_task(_supervisar(n, f)) for n, f in workers.items()]
+    logger.info(f"Boot: workers iniciados: {', '.join(workers) or 'ninguno'}")
 
     # Tareas de arranque (p. ej. actualizar informes a la versión vigente del análisis):
     # en segundo plano, para que el servidor responda desde el primer momento.
@@ -172,10 +174,12 @@ async def lifespan(app: FastAPI):
         except Exception as exc:  # noqa: BLE001
             logger.exception(f"Boot: {nombre} falló ({exc})")
 
-    tasks += [asyncio.create_task(_al_arrancar(n, f)) for n, f in modulos_operativas.AL_ARRANCAR.items()]
+    al_arrancar = {**modulos_operativas.AL_ARRANCAR, **voi.AL_ARRANCAR}
+    tasks += [asyncio.create_task(_al_arrancar(n, f)) for n, f in al_arrancar.items()]
     yield
     for t in tasks:
         t.cancel()
+    await voi.consumidor.detener_todos()
     logger.info("Shutdown")
 
 
@@ -219,4 +223,8 @@ app.include_router(sistema.router, prefix="/api/v1")
 
 # --- Operativas (módulos independientes, ver app/operativas/) ---
 for r in modulos_operativas.ROUTERS:
+    app.include_router(r, prefix="/api/v1")
+
+# --- Voi, el agente de la plataforma ---
+for r in voi.ROUTERS:
     app.include_router(r, prefix="/api/v1")

@@ -25,3 +25,6 @@ segno==1.6.1
 reportlab==4.2.5
 pillow==12.3.0
 tzdata==2026.4
+# Voi, el agente de la plataforma: SDK oficial de Anthropic (Claude Managed Agents) y YAML de su definición
+anthropic==1.13.0
+pyyaml==6.0.3
