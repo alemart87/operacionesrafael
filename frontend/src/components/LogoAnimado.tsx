@@ -20,8 +20,10 @@ export function LogoAnimado({ size = 240, sobreRojo = false, marca = true, class
   className?: string;
 }) {
   const alto = marca ? 236 : 178;
+  // El lienzo es más ancho que los puntos (-44 … 212) para que la marca entre completa; los puntos quedan centrados.
+  const ancho = marca ? 256 : 168;
   return (
-    <svg viewBox={`0 0 168 ${alto}`} width={size} height={size * (alto / 168)} className={`logo-animado ${className}`} role="img" aria-label="Voicenter">
+    <svg viewBox={`${marca ? -44 : 0} 0 ${ancho} ${alto}`} width={size} height={size * (alto / ancho)} className={`logo-animado ${className}`} role="img" aria-label="Voicenter">
       {PUNTOS.map(([col, fila, color]) => (
         <circle key={`${col}-${fila}`} className="logo-animado-dot" cx={12 + col * 24} cy={12 + fila * 22} r={8.2}
           fill={sobreRojo && color === "#E6332A" ? BLANCO : color}

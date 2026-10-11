@@ -65,7 +65,7 @@ export default function LoginPage() {
           <div className="bg-white rounded-lg px-4 py-2.5 shadow-elevated">
             <img src="/logo-voicenter-color.png" alt="Voicenter" className="h-9 w-auto block" />
           </div>
-          <LogoAnimado size={168} sobreRojo className="xl:w-[220px] xl:h-auto drop-shadow-[0_8px_24px_rgba(0,0,0,0.25)]" />
+          <LogoAnimado size={230} sobreRojo className="xl:w-[300px] xl:h-auto drop-shadow-[0_8px_24px_rgba(0,0,0,0.25)]" />
         </div>
 
         <div className="space-y-6 max-w-md relative z-10">
@@ -99,7 +99,7 @@ export default function LoginPage() {
       <div className="flex items-center justify-center px-6 py-12 bg-brand-bg-soft">
         <div className="w-full max-w-md">
           <div className="lg:hidden flex flex-col items-center gap-2 mb-8">
-            <LogoAnimado size={92} />
+            <LogoAnimado size={150} />
             <div className="font-display text-sm uppercase tracking-wider2 text-brand-slate">Gerencia Expansión RM</div>
           </div>
 
