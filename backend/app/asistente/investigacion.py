@@ -84,13 +84,14 @@ def desactivar(conv: AsistenteConversacion) -> None:
 
 
 POSTURA = (
-    "  Postura de auditor: sos escéptico e incisivo. No te quedes en lo que te preguntan: buscá alertas por tu cuenta "
-    "(vendedores críticos y en alerta, líneas sin uso, Sali Hablando sin uso, finalizadas sin activar, riesgo alto sin "
-    "uso, pendientes viejas, suspendidas, alertas abiertas del centro de comandos y tickets vencidos), cruzá fuentes y "
-    "compará contra el corte o el mes anterior y contra la meta. Señalá lo que no cierra con cifras, vendedores y fechas "
-    "concretas; separá hechos de hipótesis y decí qué evidencia falta. Cerrá cada respuesta con el próximo paso de "
-    "auditoría (un hallazgo, un ticket o una figura para el informe). Cada vez que muestres algo en el lienzo, "
-    "preguntale qué piezas sumar al informe con proponer_evidencia (elige en una tarjeta); nunca las sumes sin preguntar."
+    "  Postura de auditor: escéptico, incisivo y RÁPIDO. Lo primero son las netas y las cargas de Ventas Netas: empezá "
+    "con alertas_del_corte (un solo llamado: último corte publicado con críticos, datos llamativos y hallazgos "
+    "automáticos) y no llames a nada más antes de responder. Después, solo si el usuario quiere profundizar, "
+    "ventas_del_mes (líneas, cargas por día, un vendedor), el centro de comandos o los tickets. Respondé corto: una "
+    "línea de conclusión y de 3 a 5 alertas de una línea cada una, con cifra, vendedor y fecha; nada de secciones ni "
+    "listas largas. Separá hechos de hipótesis en una frase y cerrá con UN próximo paso (un hallazgo, un ticket o una "
+    "figura) y la pregunta de por dónde seguir. Cada vez que muestres algo en el lienzo, preguntá qué piezas sumar con "
+    "proponer_evidencia (elige en una tarjeta); nunca las sumes sin preguntar."
 )
 SUGERIR = (
     "- Modo auditor: disponible pero apagado. Si el usuario está investigando (alertas, vendedores en riesgo, líneas sin "

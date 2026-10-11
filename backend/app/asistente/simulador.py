@@ -491,6 +491,10 @@ class ClienteSimulado:
                      {"motivo": "Estás revisando alertas y riesgos: en modo auditor busco lo que no cierra y armamos la "
                                 "evidencia del informe."}),
                     ("mensaje", _final_modo)]
+        # En modo auditor, el barrido empieza siempre por el corte de Ventas Netas (un solo llamado).
+        if "MODO AUDITOR ACTIVO" in s.contexto and "alertas_del_corte" in h and "lienzo" not in n and "grafic" not in n \
+                and "tablero" not in n and (RE_INVESTIGA.search(n) or re.search(r"barrido|alerta|critic|que (esta|hay)|por donde", n)):
+            return [("herramienta", "alertas_del_corte", {}), ("mensaje", _final)]
         plan = self._plan_fase2(texto, n, h, "MODO AUDITOR ACTIVO" in s.contexto)
         if plan:
             return plan

@@ -601,9 +601,16 @@ La pestaña **Evidencia** del informe junta las **figuras numeradas** que respal
   ordenan con flechas o arrastrando, se ven en grande en un visor y se quitan con confirmación. Mientras el informe
   está en Borrador o En revisión se editan; cerrado, quedan fijas (se siguen viendo). Cada cambio queda en la
   bitácora del informe (tipo «Evidencia») y en el registro de auditoría general.
-- El selector de archivos filtra por **extensión** (`.png,.jpg,.jpeg,.webp,.gif`), no por tipo MIME: en Windows,
-  Chrome traduce cada tipo MIME a extensiones leyendo el registro antes de abrir la ventana y en algunas computadoras
-  la demoraba minutos. (Las fotos de perfil tenían el mismo problema y se corrigió igual.)
+- **Elegir archivos sin esperar:** en Chrome y Edge el botón **Subir imágenes** usa la ventana moderna
+  (`showOpenFilePicker`), que arranca en el **Escritorio** y recuerda la última carpeta de esta pantalla; la ventana
+  clásica de Windows abre en la última carpeta que usó el navegador (a veces Imágenes en OneDrive o una carpeta de red
+  con miles de fotos) y tarda minutos en listarla. Donde no existe, queda el selector clásico filtrando por extensión
+  (`.png,.jpg,.jpeg,.webp,.gif`), nunca por tipo MIME. Además, **Capturar pantalla** toma una ventana (p. ej. el CRM)
+  desde el navegador y la suma como figura sin buscar ningún archivo, y **Ctrl + V** pega una captura del portapapeles.
+- **Se guarda solo:** la cabecera del informe muestra «Sin guardar → Guardando… → Guardado hh:mm» (o «No se pudo
+  guardar · Reintentar»). La redacción se guarda un segundo después de la última tecla y al salir de la pestaña; los
+  gráficos, al cambiarlos; los hallazgos, la evidencia y el seguimiento, al instante. Con algo sin guardar, el
+  navegador avisa antes de cerrar la pestaña.
 - **En el informe**: el ejecutivo suma la sección **Evidencia visual** con cada figura numerada, su lectura, la fuente
   y el hallazgo; los hallazgos citan sus figuras («Evidencia visual: Figura 2 y 5»). El extenso agrega además un
   **índice de figuras**. Las secciones se numeran solas y el PDF espera a que carguen las imágenes.
@@ -750,11 +757,12 @@ en una **investigación** con un **informe destino**:
   dudosas), Voi pregunta antes de seguir con una tarjeta **«¿Activamos el modo auditor?»** (Activar / Ahora no;
   herramienta `proponer_modo_auditor`). Si la rechaza, no insiste en esa conversación. Se elige el informe (en Borrador o
   En revisión), se trabaja sin destino o se le pide a Voi que **prepare uno nuevo** (queda como destino solo).
-- **Cambia la actitud de Voi:** en modo auditor es escéptico e incisivo. Busca alertas por su cuenta (vendedores
-  críticos y en alerta, líneas sin uso, Sali Hablando, finalizadas sin activar, riesgo alto sin uso, pendientes viejas,
-  suspendidas, alertas del centro de comandos, tickets vencidos), cruza fuentes y compara contra el corte anterior y la
-  meta, señala lo que no cierra con cifras y vendedores, separa hechos de hipótesis y cierra con el próximo paso de
-  auditoría (hallazgo, ticket o figura). Se lo recuerda la plataforma en cada mensaje.
+- **Cambia la actitud de Voi:** en modo auditor es escéptico, incisivo y rápido. **Lo primero son las netas y las
+  cargas de Ventas Netas**: empieza con la herramienta `alertas_del_corte` (un solo llamado: el último corte publicado
+  con los vendedores críticos y en alerta media, los datos llamativos y los hallazgos automáticos, ya resumidos) y
+  responde con eso, corto: una línea de conclusión, de 3 a 5 alertas con cifra y vendedor, hechos separados de
+  hipótesis y un próximo paso. Solo si el auditor quiere «urgar más» sigue con `ventas_del_mes` (líneas, cargas por
+  día, un vendedor), el centro de comandos y los tickets. Se lo recuerda la plataforma en cada mensaje.
 - **Se ve:** el panel, el lienzo y el botón de Voi **brillan**: un borde que late y pasa por los colores de Voicenter de
   a uno, con resplandor; en el chat, un separador «Modo auditor activado · AUD-…»; arriba, una franja con el informe
   destino, **Cambiar** y **Salir**. Botones, modales y tarjetas mantienen la paleta neutra de la plataforma. Quien pidió

@@ -339,7 +339,25 @@ async def test_voi_sugiere_el_modo_auditor_y_enlaces_del_informe(simulador, tmp_
                                                                   AsistenteEvento.tipo == "system.message"))).scalars().all()
             textos = [json.dumps(e.datos, ensure_ascii=False) for e in ctx]
             activos = [x for x in textos if "MODO AUDITOR ACTIVO" in x]
-            assert activos and all("buscá alertas por tu cuenta" in x and "disponible pero apagado" not in x for x in activos)
+            assert activos and all("alertas_del_corte" in x and "disponible pero apagado" not in x for x in activos)
+
+        # En modo auditor, el barrido empieza por el corte de Ventas Netas: un solo llamado, compacto.
+        await asyncio.sleep(0.05)
+        await ac.post(f"{BASE}/conversaciones/{cid}/mensajes", headers=auditor, json={"texto": "Hacé un barrido de alertas"})
+        await _esperar(cid)
+        async with AsyncSessionLocal() as db:
+            evs = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == cid)
+                                    .order_by(AsistenteEvento.created_at))).scalars().all()
+            usos = [e for e in evs if e.tipo == "agent.custom_tool_use"]
+            assert any(e.datos.get("name") == "alertas_del_corte" for e in usos), [e.datos.get("name") for e in usos]
+            uso = next(e for e in reversed(usos) if e.datos.get("name") == "alertas_del_corte")
+            res = next(e for e in evs if e.tipo == "user.custom_tool_result" and e.datos.get("custom_tool_use_id") == uso.evento_id)
+            assert not res.datos.get("is_error")
+            r = json.loads("".join(b.get("text", "") for b in res.datos.get("content") or []))
+            assert r["corte"]["mes"] == "2026-09" and "netas" in r["netas"] and "cargas" in r["cargas"]
+            assert isinstance(r["criticos"], list) and isinstance(r["hallazgos_automaticos"], list)
+            assert r["corte"]["pantalla"].startswith("/televentas-claro/ventas-netas/reports/")
+            assert len(json.dumps(r)) < 12000                      # compacto: entra en una respuesta corta
 
         # Si lo rechaza, sigue sin el modo.
         cid2 = (await ac.post(f"{BASE}/conversaciones", headers=auditor,

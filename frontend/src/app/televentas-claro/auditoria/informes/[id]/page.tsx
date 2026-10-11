@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { IndicadorGuardado, guardado } from "@/components/auditoria/Autoguardado";
 import { EvidenciaTab, esperarImagenes } from "@/components/auditoria/Evidencia";
 import { GraficoAuditoria, tituloGrafico } from "@/components/auditoria/GraficoAuditoria";
 import { Hallazgos } from "@/components/auditoria/Hallazgos";
@@ -106,6 +107,7 @@ function Informe() {
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-sm font-semibold text-brand-slate">{a.codigo}</span>
               <span className={ESTADO_CLS[a.status]}>{ESTADO_AUD_LABEL[a.status]}</span>
+              <IndicadorGuardado editable={a.editable} />
             </div>
             <h1 className="font-display text-3xl text-brand-ink uppercase leading-tight">{a.titulo}</h1>
             <p className="text-sm text-brand-slate mt-1">
@@ -159,9 +161,9 @@ function Informe() {
       {vista === "resumen" && <RiesgosView s={a.snapshot} />}
       {vista === "hallazgos" && <Hallazgos a={a} onChange={load} />}
       {vista === "evidencia" && <EvidenciaTab a={a} onChange={load} />}
-      {vista === "graficos" && <Graficos a={a} onChange={load} />}
+      {vista === "graficos" && <Graficos a={a} onDetalle={setA} />}
       {vista === "seguimiento" && <Seguimiento a={a} onChange={load} />}
-      {vista === "redaccion" && <Redaccion a={a} onChange={load} />}
+      {vista === "redaccion" && <Redaccion a={a} onDetalle={setA} />}
       {vista === "informe" && (
         <>
           <div className="grid md:grid-cols-2 gap-4 mb-5 no-print">
@@ -242,19 +244,33 @@ function Informe() {
 }
 
 /** Gráficos elegidos por el auditor para el informe: catálogo, orden, título y nota. */
-function Graficos({ a, onChange }: { a: AuditoriaDetalle; onChange: () => Promise<void> }) {
+function Graficos({ a, onDetalle }: { a: AuditoriaDetalle; onDetalle: (d: AuditoriaDetalle) => void }) {
   const [lista, setLista] = useState<GraficoElegido[]>(a.graficos);
-  const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setLista(a.graficos), [a.graficos]);
-  const cambiado = JSON.stringify(lista) !== JSON.stringify(a.graficos);
+  // Lo último que el servidor tiene: lo que llega de afuera solo pisa la lista si acá no hay cambios sin guardar.
+  const servidor = useRef(JSON.stringify(a.graficos));
+  useEffect(() => {
+    const nuevo = JSON.stringify(a.graficos);
+    if (nuevo !== servidor.current) { servidor.current = nuevo; setLista(a.graficos); }
+  }, [a.graficos]);
 
-  const guardar = async () => {
-    setOcupado(true);
+  // Se guarda solo, poco después del último cambio (el indicador de la cabecera lo muestra).
+  const guardar = useCallback(async (l: GraficoElegido[]) => {
+    const cuerpo = JSON.stringify(l);
+    if (cuerpo === servidor.current) return;
     setError(null);
-    try { await apiFetch(`${AUD_API}/informes/${a.id}`, { method: "PATCH", body: JSON.stringify({ graficos: lista }) }); await onChange(); }
-    catch (e: any) { setError(e.message); } finally { setOcupado(false); }
-  };
+    try {
+      const d = await guardado.con(() => apiFetch<AuditoriaDetalle>(`${AUD_API}/informes/${a.id}`, { method: "PATCH", body: JSON.stringify({ graficos: l }) }), () => guardar(l));
+      servidor.current = cuerpo;
+      onDetalle(d);
+    } catch (e: any) { setError(e.message); }
+  }, [a.id, onDetalle]);
+  useEffect(() => {
+    if (!a.editable || JSON.stringify(lista) === servidor.current) return;
+    guardado.pendiente();
+    const t = setTimeout(() => guardar(lista), 900);
+    return () => clearTimeout(t);
+  }, [lista, a.editable, guardar]);
   const mover = (i: number, d: -1 | 1) => {
     const j = i + d;
     if (j < 0 || j >= lista.length) return;
@@ -284,10 +300,9 @@ function Graficos({ a, onChange }: { a: AuditoriaDetalle; onChange: () => Promis
             })}
           </ul>
         </div>
-        {a.editable && (
-          <button onClick={guardar} disabled={!cambiado || ocupado} className="btn-primary w-full">{ocupado ? "Guardando…" : cambiado ? "Guardar gráficos" : "Sin cambios"}</button>
-        )}
-        {!a.editable && <p className="text-xs text-brand-slate">Informe {ESTADO_AUD_LABEL[a.status].toLowerCase()}: los gráficos no se modifican.</p>}
+        {a.editable
+          ? <p className="text-xs text-brand-slate">Los cambios se guardan solos (mirá «Guardado» arriba).</p>
+          : <p className="text-xs text-brand-slate">Informe {ESTADO_AUD_LABEL[a.status].toLowerCase()}: los gráficos no se modifican.</p>}
         {error && <div className="text-sm text-brand-primary">{error}</div>}
       </div>
       <div className="lg:col-span-2 space-y-4">
@@ -315,23 +330,42 @@ function Graficos({ a, onChange }: { a: AuditoriaDetalle; onChange: () => Promis
 }
 
 /** Redacción del informe: alcance, resumen ejecutivo, conclusiones y recomendaciones. */
-function Redaccion({ a, onChange }: { a: AuditoriaDetalle; onChange: () => Promise<void> }) {
-  const [form, setForm] = useState({ titulo: a.titulo, alcance: a.alcance ?? "", resumen: a.resumen ?? "", conclusiones: a.conclusiones ?? "", recomendaciones: a.recomendaciones ?? "" });
-  const [ocupado, setOcupado] = useState(false);
+function Redaccion({ a, onDetalle }: { a: AuditoriaDetalle; onDetalle: (d: AuditoriaDetalle) => void }) {
+  const desde = (x: AuditoriaDetalle) => ({ titulo: x.titulo, alcance: x.alcance ?? "", resumen: x.resumen ?? "", conclusiones: x.conclusiones ?? "", recomendaciones: x.recomendaciones ?? "" });
+  const [form, setForm] = useState(() => desde(a));
   const [error, setError] = useState<string | null>(null);
-  const [guardado, setGuardado] = useState<string | null>(null);
-  useEffect(() => setForm({ titulo: a.titulo, alcance: a.alcance ?? "", resumen: a.resumen ?? "", conclusiones: a.conclusiones ?? "", recomendaciones: a.recomendaciones ?? "" }), [a]);
-  const cambiado = form.titulo !== a.titulo || form.alcance !== (a.alcance ?? "") || form.resumen !== (a.resumen ?? "") || form.conclusiones !== (a.conclusiones ?? "") || form.recomendaciones !== (a.recomendaciones ?? "");
+  // Lo último que el servidor tiene. Lo que llega de afuera (otra pestaña, «Actualizar») solo pisa el texto si acá no
+  // hay nada sin guardar; si no, se perderían las teclas escritas mientras se guardaba.
+  const servidor = useRef(JSON.stringify(desde(a)));
+  useEffect(() => {
+    const nuevo = JSON.stringify(desde(a));
+    if (nuevo === servidor.current) return;
+    setForm((f) => (JSON.stringify(f) === servidor.current ? desde(a) : f));
+    servidor.current = nuevo;
+  }, [a]);
 
-  const guardar = async () => {
-    setOcupado(true);
+  const guardar = useCallback(async (f: typeof form) => {
+    const cuerpo = JSON.stringify(f);
+    if (cuerpo === servidor.current) return;
+    if (f.titulo.trim().length < 3) { guardado.error("El título necesita al menos 3 letras"); return; }
     setError(null);
     try {
-      await apiFetch(`${AUD_API}/informes/${a.id}`, { method: "PATCH", body: JSON.stringify(form) });
-      await onChange();
-      setGuardado(new Date().toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit" }));
-    } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
-  };
+      const d = await guardado.con(() => apiFetch<AuditoriaDetalle>(`${AUD_API}/informes/${a.id}`, { method: "PATCH", body: cuerpo }), () => guardar(f));
+      servidor.current = cuerpo;
+      onDetalle(d);
+    } catch (e: any) { setError(e.message); }
+  }, [a.id, onDetalle]);
+  // Se guarda solo un segundo después de la última tecla (y al salir de la pestaña, abajo).
+  useEffect(() => {
+    if (!a.editable || JSON.stringify(form) === servidor.current) return;
+    guardado.pendiente();
+    const t = setTimeout(() => guardar(form), 1200);
+    return () => clearTimeout(t);
+  }, [form, a.editable, guardar]);
+  const formRef = useRef(form);
+  formRef.current = form;
+  useEffect(() => () => { if (JSON.stringify(formRef.current) !== servidor.current) guardar(formRef.current); }, [guardar]);
+
   const campo = (key: keyof typeof form, label: string, ayuda: string, alto = "min-h-[140px]") => (
     <div>
       <label className="label">{label}</label>
@@ -351,9 +385,8 @@ function Redaccion({ a, onChange }: { a: AuditoriaDetalle; onChange: () => Promi
       {campo("conclusiones", "Conclusiones", "Qué se concluye del análisis y de los hallazgos.")}
       {campo("recomendaciones", "Recomendaciones", "Acciones concretas, responsables y plazos.")}
       {a.editable && (
-        <div className="flex items-center gap-3">
-          <button onClick={guardar} disabled={!cambiado || ocupado} className="btn-primary">{ocupado ? "Guardando…" : "Guardar redacción"}</button>
-          {guardado && !cambiado && <span className="text-xs text-emerald-700">Guardado {guardado}</span>}
+        <div className="flex items-center gap-3 text-xs text-brand-slate">
+          <span>Se guarda solo mientras escribís: el estado está arriba, junto al código del informe.</span>
           {error && <span className="text-sm text-brand-primary">{error}</span>}
         </div>
       )}
