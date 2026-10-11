@@ -556,8 +556,8 @@ export function VoiMensajes({
               {b.activo && (
                 <p className="mt-1 text-center text-[11px] text-brand-slate leading-snug">
                   {b.modo === "informe_diario"
-                    ? "Voi mira los datos del día, te propone el contenido y te ofrece cada gráfico como figura del informe; vos revisás y firmás."
-                    : "Voi busca alertas por su cuenta y te ofrece cada gráfico como figura del informe."}
+                    ? "El agente mira los datos del día, te propone el contenido y te ofrece cada gráfico como figura del informe; vos revisás y firmás."
+                    : "El agente busca alertas por su cuenta y te ofrece cada gráfico como figura del informe."}
                 </p>
               )}
             </div>

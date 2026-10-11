@@ -293,7 +293,7 @@ export function VistaInforme({ inicial, superadmin, recienFirmado }: { inicial: 
         </Seccion>
       )}
 
-      <FigurasVista figuras={d.figuras ?? []} />
+      <FigurasVista informeId={d.id} figuras={d.figuras ?? []} />
 
       {d.seguimiento.length > 0 && (
         <Seccion titulo="Seguimiento de compromisos anteriores">

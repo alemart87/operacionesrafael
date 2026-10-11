@@ -395,9 +395,16 @@ def _figuras(d: dict[str, Any], ancho: float) -> list[Any]:
         if f.get("nota"):
             bloque.append(Paragraph(_limpio(f["nota"]), _e("fn", fontSize=8.5, leading=11.5, textColor=GRAFITO)))
         bloque.append(Spacer(1, 1.5 * mm))
+        es_imagen = f.get("tipo") == "imagen"
         imagen = _imagen_figura(f.get("imagen_ruta"), ancho)
-        bloque += [imagen] if imagen is not None else _figura_tabla(f.get("spec") or {}, ancho)
-        bloque.append(Paragraph('<font size="7" color="#9CA3AF">Figura del lienzo de Voi · Operaciones Voicenter</font>', _e("fv", leading=10)))
+        if imagen is not None:
+            bloque.append(imagen)
+        elif es_imagen:
+            bloque.append(Paragraph("La imagen no está disponible en el almacenamiento.", _e("fi", fontSize=8.5, leading=11.5, textColor=PIZARRA)))
+        else:
+            bloque += _figura_tabla(f.get("spec") or {}, ancho)
+        pie = "Imagen aportada por el autor" if es_imagen else "Figura del lienzo de Voi"
+        bloque.append(Paragraph(f'<font size="7" color="#9CA3AF">{pie} · Operaciones Voicenter</font>', _e("fv", leading=10)))
         out += [KeepTogether(bloque), Spacer(1, 4 * mm)]
     return out
 

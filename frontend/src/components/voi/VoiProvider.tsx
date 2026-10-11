@@ -87,9 +87,9 @@ function reducir(s: ChatVoi, a: Accion): ChatVoi {
       if (reciente && a.inv) return s;
       const diario = a.inv ? a.inv.tipo === "informe_diario" : a.previo === "informe_diario";
       const texto = a.inv
-        ? diario ? `Modo informe diario activado · informe del ${ddmm(a.inv.fecha)}`
-          : `Modo auditor activado${a.inv.codigo ? ` · ${a.inv.codigo}` : " · sin informe destino"}`
-        : diario ? "Saliste del modo informe diario" : "Saliste del modo auditor";
+        ? diario ? `Voi entró en modo informe diario · informe del ${ddmm(a.inv.fecha)}`
+          : `Voi entró en modo auditor${a.inv.codigo ? ` · ${a.inv.codigo}` : " · sin informe destino"}`
+        : diario ? "Voi salió del modo informe diario" : "Voi salió del modo auditor";
       return { ...s, items: [...s.items, { tipo: "modo", id: `modo-${Date.now()}`, activo: !!a.inv, texto, modo: diario ? "informe_diario" : "auditor" }] };
     }
     case "evento":

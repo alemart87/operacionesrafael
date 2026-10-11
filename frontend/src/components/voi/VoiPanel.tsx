@@ -234,8 +234,8 @@ function Bienvenida() {
       <p className="mt-1.5 text-sm text-brand-slate max-w-[320px] leading-snug">
         {inv
           ? diario
-            ? `Estás en modo informe diario con el informe del ${ddmm(inv.fecha)}. Miro los datos del día, te propongo el contenido y cada gráfico te lo ofrezco como figura; vos revisás y firmás.`
-            : `Estás en modo auditor${inv.codigo ? ` con el informe ${inv.codigo}` : ""}. Cada gráfico que te muestre en el lienzo te lo ofrezco como figura; vos elegís cuáles van.`
+            ? `Estoy en modo informe diario con tu informe del ${ddmm(inv.fecha)}. Miro los datos del día, te propongo el contenido y cada gráfico te lo ofrezco como figura; vos revisás y firmás.`
+            : `Estoy en modo auditor${inv.codigo ? ` con el informe ${inv.codigo}` : ""}. Cada gráfico que te muestre en el lienzo te lo ofrezco como figura; vos elegís cuáles van.`
           : estado ? MODO_TEXTO[estado.modo] : "Soy Voi, el asistente de la plataforma."}
       </p>
       {estado?.modo_informe_diario && !inv && <InvitacionInforme />}

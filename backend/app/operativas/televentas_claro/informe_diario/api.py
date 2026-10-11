@@ -13,7 +13,7 @@ import unicodedata
 from datetime import date, timedelta
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -551,29 +551,67 @@ async def quitar_figura(informe_id: str, figura_id: str, request: Request, user:
     return {"ok": True, "figuras": fig_srv.para_dict(inf)}
 
 
-@router.post("/{informe_id}/figuras/{figura_id}/imagen")
-async def subir_imagen_figura(informe_id: str, figura_id: str, archivo: UploadFile = File(...),
-                              user: CurrentUser = Depends(require_informe), db: AsyncSession = Depends(get_db)) -> dict:
-    """La captura de la figura (PNG que arma el navegador) para el PDF: queda en el disco persistente, sin metadatos."""
-    inf = await _visible(db, informe_id, user)
-    try:
-        fig_srv.buscar(inf, figura_id)
-        fig_srv.exigir_editable(inf, user.id)
-    except fig_srv.FiguraError as exc:
-        raise _figura_http(exc) from exc
+async def _leer_imagen(archivo: UploadFile) -> bytes:
     limite = fig_srv.MAX_IMAGEN_MB * 1024 * 1024
     contenido = await archivo.read(limite + 1)
     if not contenido:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "La imagen está vacía.")
     if len(contenido) > limite:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"La imagen supera {fig_srv.MAX_IMAGEN_MB} MB.")
+    return contenido
+
+
+async def _procesar_imagen(contenido: bytes, que: str) -> dict:
+    """La imagen validada y vuelta a codificar sin metadatos, en un subproceso aislado."""
     try:
-        r = await run_isolated(imagenes.procesar, contenido)
+        return await run_isolated(imagenes.procesar, contenido)
     except imagenes.ImagenInvalida as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Informe diario: no se pudo procesar la captura de la figura {figura_id}: {exc!r}")
+        logger.warning(f"Informe diario: no se pudo procesar {que}: {exc!r}")
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, friendly_error(exc)) from exc
+
+
+@router.post("/{informe_id}/figuras/imagen", status_code=status.HTTP_201_CREATED)
+async def subir_figura_imagen(informe_id: str, request: Request, archivo: UploadFile = File(...),
+                              titulo: Optional[str] = Form(None), nota: Optional[str] = Form(None),
+                              user: CurrentUser = Depends(require_informe), db: AsyncSession = Depends(get_db)) -> dict:
+    """Una captura o foto del autor como figura del informe (como la evidencia del informe de auditoría): se procesa en
+    un subproceso aislado, sin metadatos, y queda en el disco persistente."""
+    inf = await _visible(db, informe_id, user)
+    try:
+        fig_srv.exigir_editable(inf, user.id)
+        fig_srv._exigir_lugar(fig_srv.listar(inf))
+    except fig_srv.FiguraError as exc:
+        raise _figura_http(exc) from exc
+    r = await _procesar_imagen(await _leer_imagen(archivo), f"la imagen «{archivo.filename}»")
+    try:
+        f = fig_srv.crear_imagen(inf, user_id=user.id, webp=r["completa"], ancho=r.get("ancho"), alto=r.get("alto"),
+                                 titulo=titulo, nota=nota, archivo_nombre=archivo.filename)
+    except fig_srv.FiguraError as exc:
+        raise _figura_http(exc) from exc
+    except OSError as exc:
+        logger.error(f"Informe diario: no se pudo guardar la imagen en el disco: {exc}")
+        raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, "No se pudo guardar la imagen en el disco. Avisá a soporte.") from exc
+    inf.updated_at = srv.ahora()
+    await db.commit()
+    await record_action(db, user_id=user.id, action="informe_diario_figura_imagen", resource_type="informe_diario",
+                        resource_id=inf.id, ip=client_ip(request),
+                        extra={"figura": f["id"], "archivo": archivo.filename, "formato": r.get("formato_origen")})
+    return fig_srv.figura_dict(f, fig_srv.numero(inf, f["id"]) or 0)
+
+
+@router.post("/{informe_id}/figuras/{figura_id}/imagen")
+async def subir_imagen_figura(informe_id: str, figura_id: str, archivo: UploadFile = File(...),
+                              user: CurrentUser = Depends(require_informe), db: AsyncSession = Depends(get_db)) -> dict:
+    """La captura de un gráfico (PNG que arma el navegador) para el PDF: queda en el disco persistente, sin metadatos."""
+    inf = await _visible(db, informe_id, user)
+    try:
+        fig_srv.buscar(inf, figura_id)
+        fig_srv.exigir_editable(inf, user.id)
+    except fig_srv.FiguraError as exc:
+        raise _figura_http(exc) from exc
+    r = await _procesar_imagen(await _leer_imagen(archivo), f"la captura de la figura {figura_id}")
     try:
         f = fig_srv.guardar_imagen(inf, figura_id, user.id, r["completa"], r.get("ancho"), r.get("alto"))
     except fig_srv.FiguraError as exc:

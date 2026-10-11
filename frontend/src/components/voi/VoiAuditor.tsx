@@ -130,10 +130,11 @@ export function FranjaAuditor({ inv, onCambiar, onSalir, onNavegar }: {
     <div className="flex items-center gap-3 pl-4 pr-2 py-2 border-b border-brand-border bg-brand-bg-soft flex-shrink-0" role="status" aria-live="polite">
       <Icono size={16} className={`flex-shrink-0 ${diario ? "text-brand-purple" : "text-brand-cyan"}`} aria-hidden />
       <div className="min-w-0 flex-1 leading-snug">
-        <div className="text-xs font-semibold text-brand-ink">{diario ? "Modo informe diario" : "Modo auditor"}</div>
+        <div className="text-xs font-semibold text-brand-ink">{diario ? "Voi en modo informe diario" : "Voi en modo auditor"}</div>
         <div className="text-xs text-brand-slate truncate">
-          {diario ? <>Informe del <span className="font-medium text-brand-graphite">{ddmm(inv.fecha)}</span> · borrador · las figuras del lienzo van a este informe</>
-            : inv.auditoria_id ? <><span className="font-medium text-brand-graphite">{inv.codigo}</span> · {inv.titulo}</> : "Sin informe destino"}
+          {diario ? <>El agente arma con vos el informe del <span className="font-medium text-brand-graphite">{ddmm(inv.fecha)}</span> (borrador): sus gráficos van a ese informe</>
+            : inv.auditoria_id ? <>El agente investiga con vos · <span className="font-medium text-brand-graphite">{inv.codigo}</span> · {inv.titulo}</>
+              : "El agente investiga con vos · sin informe destino"}
         </div>
       </div>
       {pantalla && (
@@ -281,7 +282,7 @@ export function TarjetaModoAuditor({ a, onConfirmar, onCancelar }: {
           <ShieldCheck size={15} className={activo ? "text-brand-cyan" : "text-brand-mist"} />}
         <span className="min-w-0 leading-snug">
           <span className={`block ${activo ? "font-semibold text-brand-ink" : "text-brand-slate"}`}>
-            {activo ? "Modo auditor activado" : "Seguimos sin el modo auditor"}
+            {activo ? "Voi entró en modo auditor" : "Seguimos sin el modo auditor"}
           </span>
           {activo && <span className="block text-xs text-brand-slate">Voi busca alertas por su cuenta y te ofrece cada gráfico como figura del informe.</span>}
         </span>
@@ -627,7 +628,7 @@ export function HojaSumar({ piezas, inv, indice, conversacionId, onCerrar, onLis
         <div className={`h-1.5 flex-shrink-0 ${resultado ? "bg-emerald-500" : "bg-brand-cyan"}`} />
         <div className="px-6 pt-5 pb-4 border-b border-brand-border flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-semibold uppercase tracking-wider2 text-brand-slate">{diario ? "Modo informe diario" : "Modo auditor"} · {etiqueta}</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider2 text-brand-slate">{diario ? "Voi en modo informe diario" : "Voi en modo auditor"} · {etiqueta}</div>
             <h2 id="voi-hoja-sumar" className="font-display text-2xl text-brand-ink uppercase leading-tight mt-0.5">
               {resultado ? (diario ? "Figuras sumadas" : "Evidencia sumada") : `Sumar ${cantidad === 1 ? "una figura" : `${cantidad} figuras`} al informe`}
             </h2>
