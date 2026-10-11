@@ -66,6 +66,46 @@ registrar(Herramienta(
     fn=_modo, permisos=(P_AUD,)))
 
 
+# ------------------------------------------------------------------ sugerir el modo auditor
+async def _sugerir(ctx: Ctx, e: dict[str, Any]) -> Any:
+    """El usuario aceptó en la tarjeta: se activa el modo (con el informe destino, si Voi propuso uno)."""
+    conv = await _conv(ctx)
+    try:
+        inv = await investigacion.activar(ctx.db, conv, ctx.user, e.get("auditoria"), por="voi")
+    except ValueError:
+        inv = await investigacion.activar(ctx.db, conv, ctx.user, None, por="voi")   # el informe no sirve: sin destino
+    _publicar(ctx, inv)
+    return {
+        "modo_auditor": "activo", "mensaje": "Modo auditor activado.",
+        "informe_destino": ({"codigo": inv["codigo"], "titulo": inv["titulo"]} if inv.get("auditoria_id") else None),
+        "indicaciones": ("Seguí con la investigación con postura de auditor: buscá alertas por tu cuenta y, si no hay "
+                         "informe destino, preguntá a cuál va la evidencia o ofrecé prepararlo."),
+    }
+
+
+async def _resumen_sugerir(ctx: Ctx, e: dict[str, Any]) -> str:
+    motivo = str(e.get("motivo") or "").strip()[:300]
+    return f"Activar el modo auditor{': ' + motivo if motivo else ''}"
+
+
+def _tarjeta_sugerir(entrada: dict[str, Any]) -> dict[str, Any]:
+    return {"tipo": "modo_auditor", "motivo": str(entrada.get("motivo") or "").strip()[:300] or None,
+            "auditoria": str(entrada.get("auditoria") or "").strip()[:40] or None}
+
+
+registrar(Herramienta(
+    nombre="proponer_modo_auditor", etiqueta="Sugiriendo el modo auditor", nivel=CONFIRMAR,
+    descripcion=("Le pregunta al usuario si quiere activar el MODO AUDITOR (le aparece una tarjeta con «Activar» y "
+                 "«Ahora no»). Usala, antes de responder, cuando el modo está apagado y el usuario está investigando: "
+                 "alertas, vendedores en riesgo, líneas sin uso, ventas o cargas dudosas, auditorías o hallazgos. "
+                 "`motivo`: en una frase, por qué conviene (lo ve el usuario). `auditoria`: el informe destino si ya "
+                 "sabés cuál (id o código). Si lo rechaza, seguí normal y no insistas en la misma conversación."),
+    esquema=esquema({"motivo": {"type": "string", "description": "Por qué conviene activarlo, en una frase."},
+                     "auditoria": {"type": "string", "description": "Opcional: id o código del informe destino."}},
+                    ["motivo"]),
+    fn=_sugerir, resumen=_resumen_sugerir, tarjeta=_tarjeta_sugerir, permisos=(P_AUD,)))
+
+
 # ------------------------------------------------------------------ proponer evidencia
 def _piezas(e: dict[str, Any]) -> list[dict[str, Any]]:
     piezas = e.get("piezas")

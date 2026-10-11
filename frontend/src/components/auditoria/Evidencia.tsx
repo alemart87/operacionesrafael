@@ -23,7 +23,13 @@ import { apiFetch, getToken, refreshSession } from "@/lib/api";
 import { AUD_API, ORIGEN_EVIDENCIA, fechaHora, type AuditoriaDetalle, type Evidencia, type Hallazgo } from "./tipos";
 
 const MAX_MB = 15;
+/* El selector de archivos filtra por EXTENSIÓN, nunca por tipo MIME: en Windows, Chrome traduce cada tipo MIME a
+   extensiones leyendo el registro antes de abrir la ventana y en algunas computadoras eso la demora minutos (y traba el
+   equipo). Las demás cargas de la plataforma (.xlsx, .txt) ya filtran así. */
+const EXTENSIONES = [".png", ".jpg", ".jpeg", ".webp", ".gif"];
 const TIPOS_IMAGEN = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const esImagen = (f: File) =>
+  TIPOS_IMAGEN.includes(f.type) || EXTENSIONES.some((x) => f.name.toLowerCase().endsWith(x));
 
 // ------------------------------------------------------------------ imágenes con la sesión
 const cache = new Map<string, Promise<string>>();
@@ -354,7 +360,7 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
     setError(null);
     const validos: File[] = [];
     for (const f of archivos) {
-      if (f.type && !TIPOS_IMAGEN.includes(f.type)) {
+      if (!esImagen(f)) {
         setSubidas((s) => [...s, { id: `${Date.now()}-${Math.random()}`, nombre: f.name, progreso: 0, error: "No es una imagen PNG, JPG, WebP o GIF." }]);
       } else if (f.size > MAX_MB * 1024 * 1024) {
         setSubidas((s) => [...s, { id: `${Date.now()}-${Math.random()}`, nombre: f.name, progreso: 0, error: `Supera los ${MAX_MB} MB.` }]);
@@ -449,7 +455,8 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
         subirArchivos(Array.from(ev.dataTransfer.files));
       }}>
       {/* Cabecera */}
-      <div className="card p-5 flex flex-col lg:flex-row lg:items-center gap-4">
+      <div className="card p-5">
+      <div className="flex flex-col lg:flex-row lg:items-start gap-4">
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-2xl text-brand-ink uppercase leading-tight">Evidencia visual</h2>
           <p className="mt-1 text-sm text-brand-slate max-w-3xl leading-relaxed">
@@ -475,7 +482,21 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
           )}
         </div>
       </div>
-      <input ref={input} type="file" multiple accept={TIPOS_IMAGEN.join(",")} className="hidden"
+          {/* Cómo funciona, en tres pasos. */}
+          <ol className="mt-4 grid sm:grid-cols-3 gap-2.5">
+            {[
+              ["Investigá con Voi", "«Investigar con Voi» lo abre en modo auditor con este informe: busca alertas y arma gráficos."],
+              ["Elegí las figuras", "Cada gráfico te lo ofrece como figura y marcás cuáles van. En el lienzo, con «Al informe»."],
+              ["Sumá capturas y fotos", "Arrastralas, elegilas o pegalas con Ctrl + V. Salen numeradas en el informe y en el PDF."],
+            ].map(([t, d], i) => (
+              <li key={t} className="flex items-start gap-2.5 rounded-lg border border-brand-border bg-brand-bg-soft px-3 py-2.5">
+                <span className="w-5 h-5 rounded-full bg-brand-ink text-white text-[11px] font-semibold grid place-items-center flex-shrink-0 mt-px">{i + 1}</span>
+                <span className="text-xs text-brand-slate leading-snug"><span className="block text-sm font-semibold text-brand-ink">{t}</span>{d}</span>
+              </li>
+            ))}
+          </ol>
+      </div>
+      <input ref={input} type="file" multiple accept={EXTENSIONES.join(",")} className="hidden"
         onChange={(ev) => { const f = Array.from(ev.target.files ?? []); ev.target.value = ""; subirArchivos(f); }} />
 
       {!editable && (

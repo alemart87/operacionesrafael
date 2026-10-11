@@ -64,8 +64,8 @@ export interface AccionVoi {
   mensaje: string | null;
   created_at: string | null;
   resuelta_at: string | null;
-  /** Lo que la tarjeta necesita para dejar elegir (p. ej. las piezas que Voi propone sumar a un informe). */
-  detalle?: DetalleEvidencia | null;
+  /** Lo que la tarjeta necesita (las piezas que Voi propone sumar a un informe, o por qué sugiere el modo auditor). */
+  detalle?: DetalleEvidencia | DetalleModoAuditor | null;
 }
 
 /** Una pieza del lienzo que Voi propone sumar al informe (`clave`: id del artefacto, o «id#n» para una parte de un tablero). */
@@ -80,6 +80,12 @@ export interface DetalleEvidencia {
   tipo: "evidencia";
   piezas: PiezaPropuesta[];
   hallazgo?: string | null;
+}
+/** Voi sugiere activar el modo auditor (la persona está investigando). */
+export interface DetalleModoAuditor {
+  tipo: "modo_auditor";
+  motivo?: string | null;
+  auditoria?: string | null;
 }
 /** Lo que el usuario eligió en la tarjeta de evidencia. */
 export interface AjustesEvidencia {
@@ -111,6 +117,8 @@ export type ItemVoi =
   | { tipo: "aviso"; id: string; texto: string; nivel?: "info" | "alerta" | "error"; at?: string | null }
   | { tipo: "lienzo"; id: string; artefacto: ArtefactoVoi; at?: string | null; entrada?: unknown; resultado?: string }
   | { tipo: "contexto"; id: string; texto: string; at?: string | null }
+  /** El modo auditor se prendió o se apagó en esta conversación (separador en el chat). */
+  | { tipo: "modo"; id: string; activo: boolean; texto: string; at?: string | null }
   | { tipo: "pensando"; id: string; at?: string | null };
 
 export interface TranscripcionVoi {

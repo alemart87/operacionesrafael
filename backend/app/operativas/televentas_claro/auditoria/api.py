@@ -50,7 +50,10 @@ async def _nombres(db: AsyncSession, ids: set[str | None]) -> dict[str, str]:
 
 
 async def _get(db: AsyncSession, auditoria_id: str) -> Auditoria:
+    """Un informe por id o por código (AUD-2026-003): los enlaces que arma Voi pueden traer cualquiera de los dos."""
     a = await db.get(Auditoria, auditoria_id)
+    if a is None and auditoria_id.upper().startswith("AUD-"):
+        a = (await db.execute(select(Auditoria).where(Auditoria.codigo == auditoria_id.upper()[:40]))).scalar_one_or_none()
     if not a:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Informe de auditoría no encontrado")
     return a

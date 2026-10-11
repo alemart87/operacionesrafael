@@ -484,6 +484,13 @@ class ClienteSimulado:
             return [("memoria", "/mnt/memory/voi/preferencias.md", f"- {nota[:300]}"),
                     ("mensaje", f"Listo, lo anoté en mi memoria: «{nota[:200]}». Lo voy a tener en cuenta en las "
                                 "próximas conversaciones.")]
+        # Fuera del modo auditor, si el usuario está investigando, Voi le ofrece activarlo (tarjeta Activar / Ahora no).
+        if "Modo auditor: disponible pero apagado" in s.contexto and "proponer_modo_auditor" in h \
+                and "modo auditor" not in n and RE_INVESTIGA.search(n):
+            return [("herramienta", "proponer_modo_auditor",
+                     {"motivo": "Estás revisando alertas y riesgos: en modo auditor busco lo que no cierra y armamos la "
+                                "evidencia del informe."}),
+                    ("mensaje", _final_modo)]
         plan = self._plan_fase2(texto, n, h, "MODO AUDITOR ACTIVO" in s.contexto)
         if plan:
             return plan
@@ -586,6 +593,7 @@ class ClienteSimulado:
 
 
 HERRAMIENTAS_CON_FECHA = {"productividad_del_dia", "ventas_del_dia", "coaching_del_dia"}
+RE_INVESTIGA = re.compile(r"investig|sospech|irregular|anomal|dudos|no cierra|que esta mal|revisa (las|los) (alertas|vendedores|ventas)")
 HERRAMIENTAS_CON_MES = {"ventas_del_mes", "supervision_del_mes"}
 REGLAS: list[tuple[tuple[str, ...], str, dict[str, Any]]] = [     # de lo más específico a lo más general
     (("auditor",), "auditorias_de_ventas", {}),
@@ -755,6 +763,18 @@ def _final_evidencia(rs: list[dict[str, Any]]) -> str:
     lista = "\n".join(f"- **Figura {f.get('figura')}** · {f.get('titulo')}" for f in figuras)
     return (f"Listo: {d.get('mensaje')}\n\n{lista}\n\nEl informe {d.get('informe')} tiene ahora {d.get('total_figuras')} "
             f"figuras. [Ver la evidencia del informe]({d.get('pantalla')})")
+
+
+def _final_modo(rs: list[dict[str, Any]]) -> str:
+    """Después de la tarjeta «¿Activamos el modo auditor?»."""
+    r = rs[-1] if rs else None
+    if not r or r["error"]:
+        return "Entendido, seguimos sin el modo auditor. Si después lo querés, activalo desde el panel."
+    d = _datos(r) or {}
+    destino = (d.get("informe_destino") or {}).get("codigo")
+    return (f"Listo, activé el **modo auditor**{f' con el informe {destino}' if destino else ''}. Desde ahora busco "
+            "alertas por mi cuenta, separo hechos de hipótesis y cada gráfico que te muestre te lo ofrezco como figura "
+            "del informe. ¿Empiezo por los vendedores críticos, las líneas sin uso o Sali Hablando?")
 
 
 def _final_lienzo(rs: list[dict[str, Any]]) -> str:

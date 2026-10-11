@@ -415,9 +415,14 @@ registrar(Herramienta(
 async def _auditorias(ctx: Ctx, a: dict[str, Any]) -> Any:
     lista = await llamar(aud_api.listar, user=ctx.user, db=ctx.db)
     d = compactar(lista)
+    # El enlace de cada informe va armado: Voi nunca tiene que inventarlo (la ruta lleva «/informes/»).
+    for it in d.get("items") or [] if isinstance(d, dict) else []:
+        if isinstance(it, dict) and it.get("id"):
+            it["pantalla"] = f"/televentas-claro/auditoria/informes/{it['id']}"
     if a.get("id"):
         det = await llamar(aud_api.detalle, auditoria_id=str(a["id"]), user=ctx.user, db=ctx.db)
-        d = {"detalle": compactar(det, max_lista=30)}
+        det = compactar(det, max_lista=30)
+        return {"detalle": det, "pantalla": f"/televentas-claro/auditoria/informes/{det.get('id') or a['id']}"}
     return {**d, "pantalla": "/televentas-claro/auditoria"}
 
 

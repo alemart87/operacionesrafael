@@ -83,22 +83,34 @@ def desactivar(conv: AsistenteConversacion) -> None:
     conv.investigacion = None
 
 
-def contexto_lineas(inv: Optional[dict[str, Any]]) -> list[str]:
-    """Lo que Voi recibe en cada mensaje mientras el modo está activo."""
+POSTURA = (
+    "  Postura de auditor: sos escéptico e incisivo. No te quedes en lo que te preguntan: buscá alertas por tu cuenta "
+    "(vendedores críticos y en alerta, líneas sin uso, Sali Hablando sin uso, finalizadas sin activar, riesgo alto sin "
+    "uso, pendientes viejas, suspendidas, alertas abiertas del centro de comandos y tickets vencidos), cruzá fuentes y "
+    "compará contra el corte o el mes anterior y contra la meta. Señalá lo que no cierra con cifras, vendedores y fechas "
+    "concretas; separá hechos de hipótesis y decí qué evidencia falta. Cerrá cada respuesta con el próximo paso de "
+    "auditoría (un hallazgo, un ticket o una figura para el informe). Cada vez que muestres algo en el lienzo, "
+    "preguntale qué piezas sumar al informe con proponer_evidencia (elige en una tarjeta); nunca las sumes sin preguntar."
+)
+SUGERIR = (
+    "- Modo auditor: disponible pero apagado. Si el usuario está investigando (alertas, vendedores en riesgo, líneas sin "
+    "uso, ventas o cargas dudosas, auditorías o hallazgos), antes de seguir preguntale si quiere activarlo con "
+    "proponer_modo_auditor (le aparece una tarjeta para aceptar). Si dice que no, seguí normal y no insistas en la "
+    "misma conversación."
+)
+
+
+def contexto_lineas(inv: Optional[dict[str, Any]], *, puede: bool = False) -> list[str]:
+    """Lo que Voi recibe en cada mensaje: la postura y el destino con el modo activo, o la sugerencia de activarlo."""
     if not inv:
-        return []
+        return [SUGERIR] if puede else []
     if inv.get("auditoria_id"):
         destino = (f"Informe destino: {inv.get('codigo')} «{inv.get('titulo')}» "
                    f"({ESTADO_TEXTO.get(inv.get('estado') or '', inv.get('estado') or '')}).")
     else:
         destino = ("Sin informe destino todavía: antes de proponer evidencia preguntale a qué informe va (consultá "
                    "auditorias_de_ventas) o ofrecé prepararlo con preparar_auditoria.")
-    return [
-        f"- MODO AUDITOR ACTIVO (investigación de auditoría). {destino}",
-        "  Trabajá como auditor: datos verificables, hallazgos con evidencia y conclusiones prudentes. Cada vez que "
-        "muestres algo en el lienzo, preguntale qué piezas quiere sumar al informe con proponer_evidencia (el usuario "
-        "elige en una tarjeta); nunca las sumes sin preguntar.",
-    ]
+    return [f"- MODO AUDITOR ACTIVO (investigación de auditoría). {destino}", POSTURA]
 
 
 def publicar(cid: str, inv: Optional[dict[str, Any]]) -> None:

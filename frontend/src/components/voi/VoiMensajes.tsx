@@ -14,7 +14,7 @@ import { VOI_API, avisarHash, type AccionVoi, type AjustesEvidencia, type Detall
 import { pareceNumero } from "@/lib/voiFormato";
 import { ICONO_TIPO, NOMBRE_TIPO } from "./lienzo/iconos";
 import type { ArtefactoVoi } from "./lienzo/tipos";
-import { TarjetaEvidencia } from "./VoiAuditor";
+import { TarjetaEvidencia, TarjetaModoAuditor } from "./VoiAuditor";
 import { VoiIsotipo } from "./VoiIsotipo";
 
 // ------------------------------------------------------------------ tablas del chat
@@ -443,8 +443,28 @@ export function VoiMensajes({
               {esEvidencia(a) && onConfirmarCon ? (
                 <TarjetaEvidencia a={a} artefactos={artefactos} codigo={codigoInforme} onConfirmarCon={onConfirmarCon}
                   onCancelar={onCancelar} onAbrirLienzo={onAbrirLienzo} onNavegar={onNavegar} />
+              ) : a.herramienta === "proponer_modo_auditor" ? (
+                <TarjetaModoAuditor a={a} onConfirmar={onConfirmar} onCancelar={onCancelar} />
               ) : (
                 <TarjetaAccion a={a} onConfirmar={onConfirmar} onCancelar={onCancelar} onNavegar={onNavegar} />
+              )}
+            </div>
+          );
+        }
+        if (b.tipo === "modo") {
+          return (
+            <div key={b.id} className="py-1" role="status">
+              <div className="flex items-center gap-3">
+                <span className="h-px flex-1 bg-brand-border" />
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-graphite whitespace-nowrap">
+                  <ShieldCheck size={13} className={b.activo ? "text-brand-cyan" : "text-brand-mist"} /> {b.texto}
+                </span>
+                <span className="h-px flex-1 bg-brand-border" />
+              </div>
+              {b.activo && (
+                <p className="mt-1 text-center text-[11px] text-brand-slate leading-snug">
+                  Voi busca alertas por su cuenta y te ofrece cada gráfico como figura del informe.
+                </p>
               )}
             </div>
           );

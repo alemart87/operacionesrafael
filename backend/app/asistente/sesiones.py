@@ -69,7 +69,7 @@ def contexto_texto(user: CurrentUser, modo: str, pantalla: dict[str, Any] | None
     if pantalla and pantalla.get("ruta"):
         titulo = f" — {str(pantalla['titulo'])[:200]}" if pantalla.get("titulo") else ""
         lineas.append(f"- Está viendo la pantalla {str(pantalla['ruta'])[:200]}{titulo}.")
-    lineas.extend(investigacion_svc.contexto_lineas(investigacion))
+    lineas.extend(investigacion_svc.contexto_lineas(investigacion, puede=investigacion_svc.puede_investigar(user)))
     return "\n".join(lineas)
 
 
