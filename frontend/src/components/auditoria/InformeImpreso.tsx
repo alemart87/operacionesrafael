@@ -2,7 +2,9 @@
 
 import { PrintCover, PrintHeader } from "@/components/PrintButton";
 import { Senales } from "@/components/ventas-netas/ui";
+import { FiguraInforme, IndiceFiguras, figurasDeHallazgo } from "./Evidencia";
 import { GraficoAuditoria, tituloGrafico } from "./GraficoAuditoria";
+import { RefFiguras } from "./InformeEjecutivo";
 import { NivelBadge, TablaEvidencia } from "./RiesgosView";
 import {
   CATEGORIA_LABEL, ESTADO_AUD_LABEL, HALLAZGO_ESTADO_LABEL, SEVERIDAD_LABEL, fechaCorta, fechaHora, n, nombrePeriodo, pct, rangoPeriodos,
@@ -35,6 +37,10 @@ function Titulo({ num, children }: { num: string; children: React.ReactNode }) {
  */
 export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle; conEvidencia?: boolean }) {
   const s = a.snapshot;
+  const evidencias = a.evidencias ?? [];
+  // Las secciones se numeran solas: las opcionales (evidencia visual, gráficos) no dejan huecos.
+  let seccion = 0;
+  const num = () => String(++seccion);
   const k = s.kpis;
   const nombre = (id: string | null) => (id && a.usuarios[id]) || "—";
   const hallazgos = [...a.hallazgos].sort((x, y) => (x.estado === "descartado" ? 1 : 0) - (y.estado === "descartado" ? 1 : 0) || x.orden - y.orden);
@@ -68,13 +74,13 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
         </tbody>
       </table>
 
-      <Titulo num="1">Alcance</Titulo>
+      <Titulo num={num()}>Alcance</Titulo>
       <Parrafo texto={a.alcance} vacio="Sin alcance redactado." />
 
-      <Titulo num="2">Resumen ejecutivo</Titulo>
+      <Titulo num={num()}>Resumen ejecutivo</Titulo>
       <Parrafo texto={a.resumen} vacio="Sin resumen redactado." />
 
-      <Titulo num="3">Indicadores clave</Titulo>
+      <Titulo num={num()}>Indicadores clave</Titulo>
       <div className="grid md:grid-cols-4 gap-3">
         {[
           ["Ventas netas", n(k.netas), `${n(k.pospago)} Pospago · ${n(k.gpon)} GPON · ${n(k.iptv)} IPTV`],
@@ -94,7 +100,7 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
         ))}
       </div>
 
-      <Titulo num="4">Datos llamativos</Titulo>
+      <Titulo num={num()}>Datos llamativos</Titulo>
       <table className="w-full text-sm">
         <thead><tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border"><th className="py-1.5 pr-3">Gravedad</th><th className="py-1.5 pr-3">Observación</th><th className="py-1.5 text-right">Cifra</th></tr></thead>
         <tbody>
@@ -108,7 +114,7 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
         </tbody>
       </table>
 
-      <Titulo num="5">Hallazgos ({n(hallazgos.length)})</Titulo>
+      <Titulo num={num()}>Hallazgos ({n(hallazgos.length)})</Titulo>
       <table className="w-full text-sm mb-4">
         <thead><tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border"><th className="py-1.5 pr-3">Cód.</th><th className="py-1.5 pr-3">Hallazgo</th><th className="py-1.5 pr-3">Severidad</th><th className="py-1.5 pr-3">Estado</th><th className="py-1.5 pr-3">Responsable</th><th className="py-1.5">Compromiso</th></tr></thead>
         <tbody>
@@ -134,12 +140,26 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
               {conEvidencia ? " · detalle en el anexo" : " · detalle disponible en el sistema"}
             </div>
           )}
+          <RefFiguras numeros={figurasDeHallazgo(evidencias, h.id)} />
         </section>
       ))}
 
+      {evidencias.length > 0 && (
+        <>
+          <Titulo num={num()}>Evidencia visual ({n(evidencias.length)} {evidencias.length === 1 ? "figura" : "figuras"})</Titulo>
+          <div className="text-[10px] uppercase tracking-wider2 text-brand-slate mb-1">Índice de figuras</div>
+          <IndiceFiguras evidencias={evidencias} hallazgos={a.hallazgos} />
+          <div className="space-y-4">
+            {evidencias.map((e, i) => (
+              <FiguraInforme key={e.id} e={e} numero={i + 1} hallazgo={a.hallazgos.find((h) => h.id === e.hallazgo_id)} nombre={nombre} />
+            ))}
+          </div>
+        </>
+      )}
+
       {a.graficos.length > 0 && (
         <>
-          <Titulo num="6">Gráficos</Titulo>
+          <Titulo num={num()}>Gráficos</Titulo>
           {a.graficos.map((g, i) => (
             <div key={`${g.key}-${i}`} className="card p-4 mb-4">
               <h3 className="font-display text-lg text-brand-ink uppercase mb-2">{g.titulo || tituloGrafico(g.key)}</h3>
@@ -150,7 +170,7 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
         </>
       )}
 
-      <Titulo num={a.graficos.length ? "7" : "6"}>Vendedores riesgosos ({n(s.riesgosos.length)})</Titulo>
+      <Titulo num={num()}>Vendedores riesgosos ({n(s.riesgosos.length)})</Titulo>
       <table className="w-full text-sm">
         <thead><tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
           <th className="py-1.5 pr-2">Nivel</th><th className="py-1.5 pr-2">Vendedor</th><th className="py-1.5 pr-2 text-right">Puntaje</th><th className="py-1.5 pr-2 text-right">Netas</th><th className="py-1.5 pr-2 text-right">Sin uso</th><th className="py-1.5 pr-2 text-right">% uso</th><th className="py-1.5 pr-2 text-right">Sali s/uso</th><th className="py-1.5 pr-2 text-right">Susp.</th><th className="py-1.5">Patrón</th>
@@ -166,12 +186,12 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
         </tbody>
       </table>
 
-      <Titulo num={a.graficos.length ? "8" : "7"}>Conclusiones</Titulo>
+      <Titulo num={num()}>Conclusiones</Titulo>
       <Parrafo texto={a.conclusiones} vacio="Sin conclusiones redactadas." />
-      <Titulo num={a.graficos.length ? "9" : "8"}>Recomendaciones</Titulo>
+      <Titulo num={num()}>Recomendaciones</Titulo>
       <Parrafo texto={a.recomendaciones} vacio="Sin recomendaciones redactadas." />
 
-      <Titulo num={a.graficos.length ? "10" : "9"}>Seguimiento</Titulo>
+      <Titulo num={num()}>Seguimiento</Titulo>
       <ul className="text-sm space-y-1">
         {[...a.seguimientos].reverse().map((sg) => (
           <li key={sg.id} className="border-b border-brand-border/60 py-1"><span className="text-[11px] text-brand-slate">{fechaHora(sg.created_at)} · {nombre(sg.created_by)}</span> — {sg.texto}</li>

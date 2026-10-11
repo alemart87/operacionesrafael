@@ -60,6 +60,9 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE facturacion_uploads ADD COLUMN IF NOT EXISTS contenido_gz BYTEA",
     # v0.9 · Coaching: varias métricas por coaching (Pospago + GPON…)
     "ALTER TABLE sup_coachings ADD COLUMN IF NOT EXISTS metricas JSON",
+    # v1.0 · Voi en modo auditor: informe destino por conversación y piezas del lienzo con datos confidenciales
+    "ALTER TABLE asistente_conversaciones ADD COLUMN IF NOT EXISTS investigacion JSON",
+    "ALTER TABLE asistente_artefactos ADD COLUMN IF NOT EXISTS confidencial BOOLEAN NOT NULL DEFAULT FALSE",
 ]
 
 

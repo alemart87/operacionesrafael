@@ -11,7 +11,9 @@ import json
 import math
 from typing import Any
 
-from ..models import AsistenteArtefacto
+from sqlalchemy import func, select
+
+from ..models import AsistenteAccion, AsistenteArtefacto
 from .base import CONSULTAR, Ctx, ErrorHerramienta, Herramienta, esquema, registrar
 
 TIPOS = ("kpis", "barras", "columnas", "lineas", "area", "apiladas", "dona", "tabla", "tablero")
@@ -208,8 +210,13 @@ async def _mostrar(ctx: Ctx, a: dict[str, Any]) -> Any:
     spec, avisos = normalizar(a)
     if len(json.dumps(spec, ensure_ascii=False, default=str)) > MAX_BYTES:
         raise ErrorHerramienta("La visualización es demasiado grande: resumí los datos (agrupá o mostrá los principales).")
+    # Si la conversación ya usó datos de Facturación, la pieza queda marcada: no puede ir a un informe de auditoría.
+    confidencial = bool((await ctx.db.execute(select(func.count()).select_from(AsistenteAccion).where(
+        AsistenteAccion.conversacion_id == ctx.conversacion_id,
+        AsistenteAccion.herramienta.like("facturacion_%")))).scalar())
     art = AsistenteArtefacto(conversacion_id=ctx.conversacion_id, user_id=ctx.user.id, tipo=spec["tipo"],
-                             titulo=spec["titulo"], spec=spec, evento_id=ctx.extra.get("evento_id"))
+                             titulo=spec["titulo"], spec=spec, evento_id=ctx.extra.get("evento_id"),
+                             confidencial=confidencial)
     ctx.db.add(art)
     await ctx.db.flush()
     ctx.extra.setdefault("publicar", []).append({"tipo": "lienzo", "artefacto": artefacto_dict(art)})
@@ -220,7 +227,7 @@ async def _mostrar(ctx: Ctx, a: dict[str, Any]) -> Any:
 
 def artefacto_dict(a: AsistenteArtefacto) -> dict[str, Any]:
     return {"id": a.id, "tipo": a.tipo, "titulo": a.titulo, "spec": a.spec, "evento_id": a.evento_id,
-            "created_at": a.created_at.isoformat() if a.created_at else None}
+            "confidencial": bool(a.confidencial), "created_at": a.created_at.isoformat() if a.created_at else None}
 
 
 _FORMATO = {"type": "string", "enum": list(FORMATOS),

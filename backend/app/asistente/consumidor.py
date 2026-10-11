@@ -28,7 +28,7 @@ from ..core.database import session_scope
 from ..services.audit_service import record_action
 from . import config, consumo, difusion
 from .cliente import cliente
-from .herramientas import CONFIRMAR, Ctx, Herramienta, ejecutar, obtener
+from .herramientas import CONFIRMAR, Ctx, ErrorHerramienta, Herramienta, ejecutar, obtener
 from .models import (CANCELADA, EJECUTADA, EJECUTANDO, FALLIDA, PENDIENTE, AsistenteAccion, AsistenteConversacion,
                      AsistenteEvento)
 from .permisos import modo as modo_de
@@ -131,12 +131,18 @@ def _json(texto: str) -> dict[str, Any]:
 def accion_dict(a: AsistenteAccion, etiqueta: str | None = None) -> dict[str, Any]:
     h = obtener(a.herramienta)
     res = a.resultado or {}
-    return {"id": a.id, "evento_id": a.evento_id, "herramienta": a.herramienta,
-            "etiqueta": etiqueta or (h.etiqueta if h else a.herramienta), "nivel": a.nivel, "resumen": a.resumen,
-            "estado": a.estado, "pantalla": res.get("pantalla") if isinstance(res, dict) else None,
-            "mensaje": (res.get("mensaje") or res.get("motivo")) if isinstance(res, dict) else None,
-            "created_at": a.created_at.isoformat() if a.created_at else None,
-            "resuelta_at": a.resuelta_at.isoformat() if a.resuelta_at else None}
+    d = {"id": a.id, "evento_id": a.evento_id, "herramienta": a.herramienta,
+         "etiqueta": etiqueta or (h.etiqueta if h else a.herramienta), "nivel": a.nivel, "resumen": a.resumen,
+         "estado": a.estado, "pantalla": res.get("pantalla") if isinstance(res, dict) else None,
+         "mensaje": (res.get("mensaje") or res.get("motivo")) if isinstance(res, dict) else None,
+         "created_at": a.created_at.isoformat() if a.created_at else None,
+         "resuelta_at": a.resuelta_at.isoformat() if a.resuelta_at else None}
+    if h is not None and h.tarjeta is not None:
+        try:
+            d["detalle"] = h.tarjeta(a.entrada or {})
+        except Exception:  # noqa: BLE001 — la tarjeta se ve igual, sin el detalle
+            log.warning("No se pudo armar el detalle de la tarjeta de %s", a.herramienta)
+    return d
 
 
 # ------------------------------------------------------------------ el consumidor
@@ -519,8 +525,14 @@ async def _tomar(db: AsyncSession, accion_id: str, estado: str) -> bool:
     return (r.rowcount or 0) == 1
 
 
-async def resolver(db: AsyncSession, accion_id: str, *, confirmar: bool) -> AsistenteAccion | None:
-    """El usuario confirmó o canceló una acción pendiente: se ejecuta (o no) y se le avisa al agente."""
+class AjusteInvalido(ValueError):
+    """Lo que el usuario eligió en la tarjeta no es válido (la acción sigue pendiente)."""
+
+
+async def resolver(db: AsyncSession, accion_id: str, *, confirmar: bool,
+                   ajustes: dict[str, Any] | None = None) -> AsistenteAccion | None:
+    """El usuario confirmó o canceló una acción pendiente: se ejecuta (o no) y se le avisa al agente. `ajustes`: lo que
+    eligió en la tarjeta (solo para herramientas que lo admiten: p. ej. qué piezas sumar al informe)."""
     a = await db.get(AsistenteAccion, accion_id)
     if a is None:
         return None
@@ -532,6 +544,19 @@ async def resolver(db: AsyncSession, accion_id: str, *, confirmar: bool) -> Asis
     h = obtener(a.herramienta)
     puede = bool(user and h and puede_usar(user))
     salida: list[dict[str, Any]] = []
+    nada_elegido = False
+    if confirmar and puede and ajustes and h.ajustar is not None:
+        try:
+            ajustada = h.ajustar(dict(a.entrada or {}), ajustes)
+        except ErrorHerramienta as exc:
+            raise AjusteInvalido(str(exc)) from exc
+        if ajustada is None:
+            nada_elegido = True              # eligió no sumar nada: es como cancelar, con su motivo
+        else:
+            a.entrada = ajustada
+            await db.commit()
+    if nada_elegido:
+        confirmar = False
     if confirmar and puede:
         if not await _tomar(db, accion_id, EJECUTANDO):
             return await db.get(AsistenteAccion, accion_id)
@@ -543,9 +568,14 @@ async def resolver(db: AsyncSession, accion_id: str, *, confirmar: bool) -> Asis
             return await db.get(AsistenteAccion, accion_id)
         a = await db.get(AsistenteAccion, accion_id)
         a.resuelta_at = _ahora()
-        a.resultado = {"motivo": "Cancelada por el usuario." if not confirmar else "Ya no tenés permiso para esta acción."}
-        a.respuesta = CANCELADA_TEXTO if not confirmar else (
-            "El usuario ya no tiene permiso para esta acción: no se hizo. Contale qué permiso le falta.")
+        if nada_elegido:
+            a.resultado = {"motivo": "No elegiste ninguna: no se sumó nada."}
+            a.respuesta = ("El usuario no eligió ninguna de las piezas propuestas: no se sumó nada al informe. No las "
+                           "vuelvas a proponer salvo que lo pida.")
+        else:
+            a.resultado = {"motivo": "Cancelada por el usuario." if not confirmar else "Ya no tenés permiso para esta acción."}
+            a.respuesta = CANCELADA_TEXTO if not confirmar else (
+                "El usuario ya no tiene permiso para esta acción: no se hizo. Contale qué permiso le falta.")
         await db.commit()
         await record_action(db, user_id=a.user_id, action="asistente_accion_cancelada", resource_type="asistente_accion",
                             resource_id=a.id, ip="asistente", user_agent="Voi (asistente de la plataforma)",

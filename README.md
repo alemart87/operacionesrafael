@@ -540,7 +540,7 @@ Ventas Netas. Código en `backend/app/operativas/televentas_claro/auditoria/`.
 |---|---|---|
 | Informes de auditoría | `/televentas-claro/auditoria` | Lista por estado con hallazgos abiertos y de severidad alta |
 | Riesgos | `…/riesgos` | Elegir fuentes (un informe de Ventas Netas por mes) y ver el análisis en vivo; crear el informe |
-| Informe | `…/informes/{id}` | Resumen, hallazgos, gráficos, seguimiento, redacción y vista para imprimir en PDF |
+| Informe | `…/informes/{id}` | Resumen, hallazgos, **evidencia visual**, gráficos, seguimiento, redacción y vista para imprimir en PDF |
 | Guía del auditor | `…/guia` | Esquemas de riesgo, Sali Hablando, líneas sin uso, patrones de venta y entrega, semáforo del vendedor, alertas de negocio, checklist y recomendaciones tipo; imprimible en PDF |
 
 - Al crear un informe (`AUD-AAAA-NNN`) se **congela** una copia de los datos
@@ -588,6 +588,41 @@ Ventas Netas. Código en `backend/app/operativas/televentas_claro/auditoria/`.
 - Utilidad `auditoria`: Analista por defecto; el superadmin la asigna a
   Coordinador desde Perfiles. Todo queda en el registro de auditoría general.
 
+### Evidencia visual (figuras del informe)
+
+La pestaña **Evidencia** del informe junta las **figuras numeradas** que respaldan la auditoría:
+
+- **Gráficos de Voi**: piezas del lienzo (gráficos, indicadores, tablas o partes de un tablero) que el auditor suma
+  desde Voi en **modo auditor** (ver más abajo). Se congela la especificación ya validada: se vuelve a dibujar igual en
+  la pantalla y en el PDF, aunque los datos cambien después.
+- **Imágenes aportadas** (capturas del CRM, fotos de legajos, otras pruebas): se suben eligiéndolas, **arrastrándolas**
+  o **pegándolas con Ctrl+V**, con progreso por archivo. PNG, JPG, WebP o GIF de hasta 15 MB y 60 megapíxeles.
+- Cada figura tiene título (la conclusión), **lectura del auditor**, el **hallazgo que respalda** (H-02) y su fuente; se
+  ordenan con flechas o arrastrando, se ven en grande en un visor y se quitan con confirmación. Mientras el informe
+  está en Borrador o En revisión se editan; cerrado, quedan fijas (se siguen viendo). Cada cambio queda en la
+  bitácora del informe (tipo «Evidencia») y en el registro de auditoría general.
+- **En el informe**: el ejecutivo suma la sección **Evidencia visual** con cada figura numerada, su lectura, la fuente
+  y el hallazgo; los hallazgos citan sus figuras («Evidencia visual: Figura 2 y 5»). El extenso agrega además un
+  **índice de figuras**. Las secciones se numeran solas y el PDF espera a que carguen las imágenes.
+
+**Seguridad de las imágenes.** Se procesan en un **subproceso aislado** (`app/services/imagenes.py`, solo Pillow): se
+valida que sean imágenes reales (estructura completa y formato admitido, tope de píxeles contra «bombas» de
+descompresión), se enderezan según la cámara, se les quitan **todos los metadatos** (EXIF con ubicación GPS,
+dispositivo, fecha; XMP; perfiles) y se vuelven a codificar en **WebP** (completa hasta 2.400 px, sin pérdida para
+capturas; miniatura de 720 px). Nunca se guarda el archivo original tal como llegó. Se guardan en el **disco
+persistente** (`UPLOAD_DIR/auditoria/<informe>/`, con escritura atómica y rutas que arma el servidor) y se sirven solo
+con el permiso de Auditoría (`image/webp`, `nosniff`, caché privada). Si el almacenamiento se pierde, la figura queda
+con su ficha y avisa que la imagen no está. Eliminar un borrador borra su carpeta.
+
+| Endpoint (`/api/v1/televentas-claro/auditoria…`) | Qué hace |
+|---|---|
+| `GET /informes/{id}/evidencias` | Figuras del informe, en orden |
+| `GET /informes/{id}/evidencias/indice` | Índice liviano para Voi: informe, hallazgos y figuras (con la pieza de origen) |
+| `POST /informes/{id}/evidencias/imagen` | Subir una imagen (multipart: `archivo`, `titulo`, `nota`, `hallazgo_id`) |
+| `GET /informes/{id}/evidencias/{eid}/imagen?v=completa\|miniatura` | La imagen (WebP), con la sesión |
+| `PATCH /informes/{id}/evidencias/{eid}` · `DELETE …` | Editar título, lectura y hallazgo (`""` lo desvincula) / quitar |
+| `POST /informes/{id}/evidencias/orden` | Nuevo orden (todas las figuras, una vez cada una) |
+
 ## Televentas CLARO · Facturación (solo superadmin)
 
 Liquidación de comisiones de Claro (Telemarketing Fijo PGY), portada desde
@@ -631,7 +666,7 @@ plataforma le da las herramientas, los permisos, la memoria y los topes.
 | Superadmin | Siempre | Toda la plataforma (incluida Facturación) |
 | Sub gerente | Por defecto (utilidad «Asistente IA») | Los módulos de su perfil, incluida **Facturación** |
 | Coordinador | Por defecto | Los módulos de su perfil |
-| Auditor | Por defecto | **Modo auditoría**: auditoría de ventas (preparar informes y hallazgos), vendedores en alerta, alertas del centro de comandos y tickets |
+| Auditor | Por defecto | **Modo auditoría**: auditoría de ventas (preparar informes y hallazgos, **modo auditor** con evidencia del lienzo), vendedores en alerta, alertas del centro de comandos y tickets |
 | Controller, Analista, Cliente | Se les puede asignar | Los módulos de su perfil |
 | Supervisor | No (solo entra a su portal) | — |
 
@@ -698,6 +733,33 @@ botón del panel (con la cantidad de piezas) o `/lienzo`.
   leyenda solo con 2 o más series, una sola escala por gráfico, «destacar» con el resto en gris, línea de meta y
   tooltips con todas las series. Cada pieza trae **Datos** (la tabla, ordenable), descarga en **CSV** y en **PNG**.
 - Las tablas del chat se ven ordenadas (números a la derecha) y se pueden **ampliar en el lienzo**.
+
+### Modo auditor (investigación de auditoría)
+
+Quien tiene la utilidad **Auditoría de ventas** (el auditor, el superadmin, el analista…) puede convertir una conversación
+en una **investigación** con un **informe destino**:
+
+- **Cómo se entra:** desde el panel (chip **Modo auditor** del compositor o la tarjeta «Investigación de auditoría» de la
+  bienvenida), desde un informe con **Investigar con Voi** (abre Voi con ese informe como destino, en una conversación
+  nueva si la actual ya tenía mensajes) o lo activa **Voi** con su herramienta `modo_auditor` cuando el usuario empieza
+  una investigación o se lo pide. Se elige el informe (en Borrador o En revisión), se trabaja sin destino o se le pide a
+  Voi que **prepare uno nuevo** (queda como destino solo).
+- **Se ve:** el panel, el lienzo y el botón de Voi llevan un **borde fino que pasa despacio por los colores de
+  Voicenter** (de a uno, con un brillo leve) y una franja «Modo auditor» con el informe destino, **Cambiar** y
+  **Salir**. Todo lo demás conserva la paleta neutra de la plataforma (botones, modales y tarjetas iguales al resto).
+  Quien pidió menos movimiento ve el borde fijo.
+- **Voi pregunta siempre:** cada mensaje le recuerda el modo y el destino; cada vez que muestra algo en el lienzo llama
+  a `proponer_evidencia` y aparece una **tarjeta con una casilla por pieza** (todas, algunas o ninguna), con el título
+  y la lectura editables. Solo se suma lo elegido (el servidor valida que la elección sea un subconjunto de lo
+  propuesto); «No sumar nada» no suma nada. La tarjeta muestra después con qué número quedó cada figura.
+- **Desde el lienzo, directo:** cada pieza (y **cada parte de un tablero**) tiene **Al informe**; abajo, una barra con lo
+  elegido y **Sumar al informe** abre una hoja para retocar título y lectura y elegir el **hallazgo** que respaldan.
+  Las piezas que ya están en el informe muestran «Figura N» (no se duplican).
+- **Confidencialidad:** nunca se suma una pieza de otra persona ni una de una conversación que usó **Facturación**
+  (queda marcada «Confidencial» y el servidor la rechaza): el informe de auditoría lo ven perfiles sin Facturación.
+- El estado vive en su propia columna (`asistente_conversaciones.investigacion`) y llega al navegador por el mismo
+  canal en vivo (evento `investigacion`). Todo queda en el registro de auditoría (`asistente_modo_auditor`,
+  `asistente_evidencia_informe`) y en la bitácora del informe.
 
 ### Base de conocimiento con citas
 
@@ -779,7 +841,8 @@ Data Retention*); la plataforma guarda su propia copia para la consola.
 ### Desarrollo y pruebas
 
 - `ASISTENTE_SIMULADOR=true` usa un motor que imita a Managed Agents (mismos eventos y formas de datos, reglas simples
-  por palabras clave: consultas, lienzo, documentos con citas, facturación y acciones) sin llamar a Anthropic; en
+  por palabras clave: consultas, lienzo y tableros, documentos con citas, facturación, acciones y modo auditor con su
+  tarjeta de evidencia) sin llamar a Anthropic; en
   producción se ignora. `ASISTENTE_SIMULADOR_DEMORA` regula la velocidad.
 - `tests/test_asistente.py`: permisos y modo auditoría, publicación con versiones, ciclo completo de una conversación,
   confirmación (doble clic, cancelar, seguir escribiendo), memoria, topes, stream en vivo, recuperación después de un
@@ -788,6 +851,10 @@ Data Retention*); la plataforma guarda su propia copia para la consola.
   secciones, archivos rotos y entidades XML), búsqueda y citas con alcance por permisos (subir, desactivar, reemplazar,
   borrar, descargar), Facturación solo para superadmin y Sub gerente, lienzo en una conversación y las acciones nuevas
   (seguimiento de tickets, comentar el informe diario, preparar auditorías y agregar hallazgos).
+- `tests/test_auditoria_evidencias.py`: imágenes sin metadatos (EXIF y GPS) y rechazos, imágenes en el disco persistente
+  servidas solo con Auditoría, edición, orden, figuras fijas al cerrar y borrado de archivos; modo auditor (quién lo
+  activa, informe destino, contexto para Voi), la tarjeta con elección (inválida, ninguna, una con título retocado),
+  el camino desde el lienzo, el índice del informe y el bloqueo de piezas con datos de Facturación.
 
 ### API
 
@@ -798,9 +865,11 @@ Data Retention*); la plataforma guarda su propia copia para la consola.
 | `GET/PATCH/DELETE /conversaciones/{id}` | Transcripción (con las piezas del lienzo) / renombrar o fijar / quitar de la lista |
 | `POST /conversaciones/{id}/mensajes` · `/detener` | Mensaje (con la pantalla) / detener la respuesta |
 | `GET /conversaciones/{id}/eventos` | Eventos en vivo (SSE) |
-| `POST /acciones/{id}/confirmar` · `/cancelar` | Resolver una acción pendiente |
+| `POST /acciones/{id}/confirmar` · `/cancelar` | Resolver una acción pendiente (`ajustes`: lo que el usuario eligió en la tarjeta, p. ej. qué piezas suma al informe) |
 | `GET /memoria` · `DELETE /memoria/{id}` | Memoria del usuario |
 | `GET /citas/{fragmento}` · `GET /documentos/{id}/archivo` | Pasaje de una cita / descarga del documento (si está a su alcance) |
+| `POST /conversaciones/{id}/investigacion` | Modo auditor: activar (con `auditoria_id`, id o código AUD-…) o desactivar |
+| `POST /evidencias` | Sumar piezas del lienzo (o partes de un tablero) como figuras de un informe de auditoría |
 | `POST /webhooks/anthropic` | Webhook firmado de Anthropic (opcional) |
 | `GET /admin/estado` · `PUT /admin/config` · `POST /admin/publicar` · `POST /admin/probar` | Consola: estado, configuración (topes y razonamiento), publicación y prueba |
 | `GET /admin/consumo` · `/admin/conversaciones` · `/admin/conversaciones/{id}` · `/admin/acciones` | Consola: consumo, conversaciones (lectura auditada) y acciones |

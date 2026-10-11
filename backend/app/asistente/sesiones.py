@@ -17,6 +17,7 @@ from ..api.deps import CurrentUser
 from ..core.operativas import OPERATIVAS
 from ..core.perfiles import perfil_name
 from . import config, consumidor, consumo, definicion, memoria, publicacion
+from . import investigacion as investigacion_svc
 from .cliente import cliente
 from .herramientas import para_usuario
 from .models import AsistenteConversacion
@@ -56,7 +57,8 @@ def _modulos(user: CurrentUser) -> str:
     return "; ".join(nombres) or "ninguno"
 
 
-def contexto_texto(user: CurrentUser, modo: str, pantalla: dict[str, Any] | None) -> str:
+def contexto_texto(user: CurrentUser, modo: str, pantalla: dict[str, Any] | None,
+                   investigacion: dict[str, Any] | None = None) -> str:
     ahora = config.ahora_local()
     lineas = [
         "Contexto de la plataforma para este mensaje (no lo repitas salvo que haga falta):",
@@ -67,6 +69,7 @@ def contexto_texto(user: CurrentUser, modo: str, pantalla: dict[str, Any] | None
     if pantalla and pantalla.get("ruta"):
         titulo = f" — {str(pantalla['titulo'])[:200]}" if pantalla.get("titulo") else ""
         lineas.append(f"- Está viendo la pantalla {str(pantalla['ruta'])[:200]}{titulo}.")
+    lineas.extend(investigacion_svc.contexto_lineas(investigacion))
     return "\n".join(lineas)
 
 
@@ -192,7 +195,8 @@ async def enviar(db: AsyncSession, conv: AsistenteConversacion, user: CurrentUse
     """Manda el mensaje del usuario (y el contexto). Si había acciones esperando confirmación, se cancelan: el usuario
     siguió la conversación sin confirmarlas."""
     previos, canceladas = await consumidor.cancelar_pendientes(db, conv, "el usuario siguió la conversación sin confirmarla")
-    await _enviar_eventos(conv.session_id, previos, texto, contexto_texto(user, modo_de(user), pantalla))
+    await _enviar_eventos(conv.session_id, previos, texto,
+                          contexto_texto(user, modo_de(user), pantalla, investigacion_svc.estado(conv)))
     await consumidor.marcar_respondidas(db, canceladas)
     conv = await db.get(AsistenteConversacion, conv.id)
     if conv.mensajes == 0 and conv.titulo == "Nueva conversación":

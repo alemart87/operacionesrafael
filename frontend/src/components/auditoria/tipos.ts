@@ -1,5 +1,6 @@
 /** Contratos y catálogos de Auditoría de Ventas (Televentas CLARO). */
 
+import type { PiezaVoi } from "@/components/voi/lienzo/tipos";
 import type { ReglasAuditoria } from "./guia/datos";
 
 export const AUD_API = "/api/v1/televentas-claro/auditoria";
@@ -177,13 +178,44 @@ export interface Seguimiento {
   id: string;
   auditoria_id: string;
   hallazgo_id: string | null;
-  tipo: "nota" | "estado" | "hallazgo";
+  tipo: "nota" | "estado" | "hallazgo" | "evidencia";
   texto: string;
   created_by: string;
   created_at: string;
 }
 
 export interface GraficoElegido { key: string; titulo?: string; nota?: string }
+
+/** Figura de la evidencia visual: una pieza del lienzo de Voi (gráfico, tabla, indicadores) o una imagen subida. */
+export interface Evidencia {
+  id: string;
+  auditoria_id: string;
+  orden: number;
+  tipo: "grafico" | "imagen";
+  titulo: string;
+  nota: string | null;
+  hallazgo_id: string | null;
+  /** Pieza del lienzo congelada (tipo «grafico»). */
+  spec: PiezaVoi | null;
+  archivo_nombre: string | null;
+  bytes: number;
+  ancho: number | null;
+  alto: number | null;
+  /** voi: la sumó Voi con la elección del usuario · lienzo: el usuario desde el lienzo · subida: imagen subida. */
+  origen: "voi" | "lienzo" | "subida";
+  conversacion_id: string | null;
+  artefacto_id: string | null;
+  created_by: string;
+  created_at: string;
+  updated_by: string | null;
+  updated_at: string | null;
+  /** Imagen: el archivo está en el disco persistente (si el almacenamiento se perdió, queda la ficha). */
+  disponible: boolean;
+}
+
+export const ORIGEN_EVIDENCIA: Record<Evidencia["origen"], string> = {
+  voi: "Gráfico de Voi", lienzo: "Del lienzo de Voi", subida: "Imagen aportada",
+};
 
 export interface AuditoriaResumen {
   id: string;
@@ -214,6 +246,8 @@ export interface AuditoriaDetalle extends AuditoriaResumen {
   historial: { fecha: string; usuario: string; accion: string; detalle: string | null }[];
   hallazgos: Hallazgo[];
   seguimientos: Seguimiento[];
+  /** Evidencia visual numerada (figuras): piezas del lienzo de Voi e imágenes subidas, en el orden del informe. */
+  evidencias: Evidencia[];
   usuarios: Record<string, string>;
   editable: boolean;
   con_seguimiento: boolean;

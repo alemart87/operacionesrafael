@@ -50,6 +50,11 @@ class Herramienta:
     # Al crear la sesión: la descripción para esta persona (p. ej. con los documentos que puede consultar) o None para
     # no darle la herramienta (no hay nada que consultar).
     preparar: Optional[Callable[[AsyncSession, CurrentUser], Awaitable[Optional[str]]]] = None
+    # Para acciones con elección (nivel 3): lo que muestra la tarjeta además del resumen (p. ej. las piezas propuestas)…
+    tarjeta: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None
+    # …y cómo se aplica lo que el usuario eligió en ella al confirmar (devuelve la entrada final, o None si no eligió
+    # nada). Solo puede achicar o retocar lo propuesto; ErrorHerramienta si lo elegido no es válido.
+    ajustar: Optional[Callable[[dict[str, Any], dict[str, Any]], Optional[dict[str, Any]]]] = None
 
     def disponible(self, user: CurrentUser, modo: str) -> bool:
         return (modo in self.modos

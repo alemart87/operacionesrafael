@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..api.deps import CurrentUser, bearer, get_current_user
 from ..core.config import settings
 from ..core.database import get_db, session_scope
-from . import config, consumidor, consumo, difusion, memoria, publicacion, sesiones, transcripcion
+from . import config, consumidor, consumo, difusion, investigacion, memoria, publicacion, sesiones, transcripcion
 from .cliente import NoConfigurado
 from .herramientas.base import TC
 from .models import AsistenteAccion, AsistenteConversacion
@@ -93,6 +93,7 @@ async def estado(user: CurrentUser = Depends(usuario_voi), db: AsyncSession = De
         "herramientas": [{"nombre": h.nombre, "etiqueta": h.etiqueta, "nivel": h.nivel} for h in herramientas],
         "sugerencias": sugerencias(user, modo), "privacidad": PRIVACIDAD,
         "confirma_borradores": not cfg.get("autonomia", {}).get("borradores_sin_confirmar", True),
+        "modo_auditor": investigacion.puede_investigar(user),
     }
 
 
@@ -306,11 +307,20 @@ async def _accion_propia(db: AsyncSession, aid: str, user: CurrentUser) -> Asist
     return a
 
 
+class ConfirmarPayload(BaseModel):
+    # Lo que el usuario eligió en la tarjeta (p. ej. qué piezas sumar al informe y con qué título).
+    ajustes: Optional[dict[str, Any]] = None
+
+
 @router.post("/acciones/{aid}/confirmar")
-async def confirmar(aid: str, user: CurrentUser = Depends(usuario_voi), db: AsyncSession = Depends(get_db)) -> dict:
+async def confirmar(aid: str, payload: Optional[ConfirmarPayload] = None, user: CurrentUser = Depends(usuario_voi),
+                    db: AsyncSession = Depends(get_db)) -> dict:
     await _accion_propia(db, aid, user)
     try:
-        a = await consumidor.resolver(db, aid, confirmar=True)
+        a = await consumidor.resolver(db, aid, confirmar=True, ajustes=payload.ajustes if payload else None)
+    except consumidor.AjusteInvalido as exc:
+        await db.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         log.exception("No se pudo confirmar la acción %s", aid)
         await db.rollback()

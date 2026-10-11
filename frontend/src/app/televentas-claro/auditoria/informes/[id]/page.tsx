@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EvidenciaTab, esperarImagenes } from "@/components/auditoria/Evidencia";
 import { GraficoAuditoria, tituloGrafico } from "@/components/auditoria/GraficoAuditoria";
 import { Hallazgos } from "@/components/auditoria/Hallazgos";
 import { InformeEjecutivo } from "@/components/auditoria/InformeEjecutivo";
@@ -16,9 +17,12 @@ import {
   type AuditoriaDetalle, type EstadoAuditoria, type GraficoElegido,
 } from "@/components/auditoria/tipos";
 import { Tabs } from "@/components/ventas-netas/ui";
+import { VoiIsotipo } from "@/components/voi/VoiIsotipo";
+import { useVoi } from "@/components/voi/VoiProvider";
 import { apiFetch } from "@/lib/api";
 
-type Vista = "resumen" | "hallazgos" | "graficos" | "seguimiento" | "redaccion" | "informe";
+type Vista = "resumen" | "hallazgos" | "evidencia" | "graficos" | "seguimiento" | "redaccion" | "informe";
+const VISTAS: Vista[] = ["resumen", "hallazgos", "evidencia", "graficos", "seguimiento", "redaccion", "informe"];
 const ESTADO_CLS: Record<EstadoAuditoria, string> = { borrador: "badge-cyan", en_revision: "badge-primary", cerrado: "badge-success", archivado: "badge-neutral" };
 
 export default function InformeAuditoriaPage() {
@@ -32,9 +36,21 @@ export default function InformeAuditoriaPage() {
 function Informe() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const voi = useVoi();
   const [a, setA] = useState<AuditoriaDetalle | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [vista, setVista] = useState<Vista>("resumen");
+  // La pestaña se puede abrir con un enlace (…/informes/<id>#evidencia), p. ej. desde Voi.
+  const [vista, setVistaState] = useState<Vista>("resumen");
+  useEffect(() => {
+    const leer = () => { const h = window.location.hash.slice(1) as Vista; if (VISTAS.includes(h)) setVistaState(h); };
+    leer();
+    window.addEventListener("hashchange", leer);
+    return () => window.removeEventListener("hashchange", leer);
+  }, []);
+  const setVista = useCallback((v: Vista) => {
+    setVistaState(v);
+    try { window.history.replaceState(null, "", v === "resumen" ? window.location.pathname : `#${v}`); } catch { /* sin historial */ }
+  }, []);
   const [transicion, setTransicion] = useState<EstadoAuditoria | null>(null);
   const [nota, setNota] = useState("");
   const [ocupado, setOcupado] = useState(false);
@@ -57,10 +73,11 @@ function Informe() {
       await load();
     } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
   };
-  const imprimir = (m: "ejecutivo" | "extenso") => {
+  const imprimir = async (m: "ejecutivo" | "extenso") => {
     setModo(m);
     setVista("informe");
-    setTimeout(() => window.print(), 600);
+    await esperarImagenes();        // las figuras con imágenes tienen que estar cargadas antes de imprimir
+    window.print();
   };
   const actualizarDatos = async () => {
     setOcupado(true);
@@ -97,6 +114,11 @@ function Informe() {
                 {ACCION_ESTADO[t][a.status]}
               </button>
             ))}
+            {voi?.habilitado && a.editable && (
+              <button onClick={() => voi.investigarInforme(a.id).catch((e: any) => setError(e.message))} className="btn-secondary" title="Abrir Voi en modo auditor con este informe como destino">
+                <VoiIsotipo size={16} /> Investigar con Voi
+              </button>
+            )}
             <button onClick={() => setVista("informe")} className="btn-secondary">Informe PDF</button>
             {a.puede_eliminar && <button onClick={() => setEliminar(true)} className="btn-ghost text-brand-primary">Eliminar</button>}
           </div>
@@ -120,6 +142,7 @@ function Informe() {
           items={[
             { value: "resumen", label: "Resumen", hint: "Riesgos y ranking" },
             { value: "hallazgos", label: `Hallazgos (${n(a.hallazgos.length)})`, hint: `${n(a.hallazgos_abiertos)} abiertos` },
+            { value: "evidencia", label: `Evidencia (${n(a.evidencias.length)})`, hint: "Figuras e imágenes" },
             { value: "graficos", label: `Gráficos (${n(a.graficos.length)})`, hint: "Elegidos para el informe" },
             { value: "seguimiento", label: "Seguimiento", hint: `${n(a.seguimientos.length)} movimientos` },
             { value: "redaccion", label: "Redacción", hint: "Alcance · resumen · conclusiones" },
@@ -130,6 +153,7 @@ function Informe() {
 
       {vista === "resumen" && <RiesgosView s={a.snapshot} />}
       {vista === "hallazgos" && <Hallazgos a={a} onChange={load} />}
+      {vista === "evidencia" && <EvidenciaTab a={a} onChange={load} />}
       {vista === "graficos" && <Graficos a={a} onChange={load} />}
       {vista === "seguimiento" && <Seguimiento a={a} onChange={load} />}
       {vista === "redaccion" && <Redaccion a={a} onChange={load} />}
@@ -137,8 +161,8 @@ function Informe() {
         <>
           <div className="grid md:grid-cols-2 gap-4 mb-5 no-print">
             {([
-              ["ejecutivo", "Informe ejecutivo", "Para la Gerencia: resumen del auditor, indicadores, hallazgos, gráficos con tus comentarios, vendedores críticos, conclusiones y recomendaciones.", ["Resumen", "Indicadores", "Hallazgos", "Gráficos y comentarios", "Críticos", "Conclusiones"]],
-              ["extenso", "Informe extenso", "Con todas las detecciones: datos llamativos, hallazgos con su evidencia línea por línea, vendedores riesgosos, bitácora de seguimiento y anexo completo.", ["Todo el ejecutivo", "Datos llamativos", "Evidencia completa", "Vendedores riesgosos", "Seguimiento", "Anexo"]],
+              ["ejecutivo", "Informe ejecutivo", "Para la Gerencia: resumen del auditor, indicadores, hallazgos, evidencia visual, gráficos con tus comentarios, vendedores críticos, conclusiones y recomendaciones.", ["Resumen", "Indicadores", "Hallazgos", "Evidencia visual", "Gráficos", "Críticos", "Conclusiones"]],
+              ["extenso", "Informe extenso", "Con todas las detecciones: datos llamativos, hallazgos con su evidencia línea por línea, índice de figuras, vendedores riesgosos, bitácora de seguimiento y anexo completo.", ["Todo el ejecutivo", "Datos llamativos", "Índice de figuras", "Evidencia completa", "Vendedores riesgosos", "Seguimiento", "Anexo"]],
             ] as const).map(([m, titulo, texto, chips]) => (
               <div key={m} role="button" tabIndex={0} onClick={() => setModo(m)} onKeyDown={(e) => e.key === "Enter" && setModo(m)}
                 className={`card p-5 cursor-pointer transition-all border-2 ${modo === m ? "border-brand-primary shadow-elevated" : "border-transparent hover:border-brand-border"}`}>

@@ -200,6 +200,7 @@ class _Sesion:
     uso: dict[str, float] = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0,
                                                            "cache_read_input_tokens": 0, "active_seconds": 0.0})
     costo: int = 0
+    contexto: str = ""                      # el último system.message (p. ej. «MODO AUDITOR ACTIVO»)
 
 
 class _Stream:
@@ -240,6 +241,8 @@ class _Eventos:
         for e in evs:
             ev = self.sim.emitir(s, {**e})
             enviados.append(ev)
+            if e["type"] == "system.message":
+                s.contexto = " ".join(b.get("text", "") for b in e.get("content") or [] if isinstance(b, dict))
             if e["type"] == "user.message":
                 s.cola.put_nowait(("mensaje", ev))
             elif e["type"] == "user.custom_tool_result":
@@ -481,7 +484,7 @@ class ClienteSimulado:
             return [("memoria", "/mnt/memory/voi/preferencias.md", f"- {nota[:300]}"),
                     ("mensaje", f"Listo, lo anoté en mi memoria: «{nota[:200]}». Lo voy a tener en cuenta en las "
                                 "próximas conversaciones.")]
-        plan = self._plan_fase2(texto, n, h)
+        plan = self._plan_fase2(texto, n, h, "MODO AUDITOR ACTIVO" in s.contexto)
         if plan:
             return plan
         if "ticket" in n and re.search(r"\b(envi|mand|cre|abr|gener|deriv)", n) and \
@@ -508,9 +511,15 @@ class ClienteSimulado:
         return [("mensaje", _ayuda(h))]
 
 
-    def _plan_fase2(self, texto: str, n: str, h: set[str]) -> Optional[list[tuple]]:
-        """Lienzo, documentos con citas, facturación y las acciones de seguimiento."""
+    def _plan_fase2(self, texto: str, n: str, h: set[str], auditor: bool = False) -> Optional[list[tuple]]:
+        """Modo auditor, lienzo, documentos con citas, facturación y las acciones de seguimiento."""
         numero = re.search(r"\b(\d{1,6})\b", n)
+        if "modo_auditor" in h and re.search(r"modo auditor|investigaci", n):
+            if re.search(r"\b(sal|desactiv|termin|cerr)", n):
+                return [("herramienta", "modo_auditor", {"accion": "desactivar"}), ("mensaje", _final)]
+            codigo = re.search(r"aud-\d{4}-\d{1,4}", n)
+            entrada = {"accion": "activar", **({"auditoria": codigo.group(0).upper()} if codigo else {})}
+            return [("herramienta", "modo_auditor", entrada), ("mensaje", _final)]
         # Seguimiento de un ticket ya enviado (antes que «enviar ticket»: «reabrí» contiene «abr»).
         if "ticket" in n and numero and "seguimiento_ticket" in h and re.search(r"\b(coment|reabr|cancel|reasign)", n):
             accion = next(a for k, a in (("reabr", "reabrir"), ("cancel", "cancelar"), ("reasign", "reasignar"),
@@ -563,13 +572,21 @@ class ClienteSimulado:
                 nombre, entrada = fuente
                 if nombre in HERRAMIENTAS_CON_FECHA:
                     entrada = {**entrada, "fecha": ahora_local().date().isoformat()}
-                return [("herramienta", nombre, entrada),
-                        ("herramienta", "mostrar_en_lienzo", lambda rs: _spec_lienzo(rs)),
-                        ("mensaje", _final_lienzo)]
+                if (mes := re.search(r"\b(20\d\d-\d\d)\b", n)) and nombre in HERRAMIENTAS_CON_MES:
+                    entrada = {**entrada, "mes": mes.group(1)}
+                armar = _spec_tablero if "tablero" in n else _spec_lienzo
+                pasos = [("herramienta", nombre, entrada),
+                         ("herramienta", "mostrar_en_lienzo", lambda rs: armar(rs))]
+                if auditor and "proponer_evidencia" in h:
+                    # En modo auditor: después de mostrar, pregunta qué sumar al informe (la tarjeta con casillas).
+                    pasos.append(("herramienta", "proponer_evidencia", lambda rs: _entrada_evidencia(rs)))
+                    return [*pasos, ("mensaje", _final_evidencia)]
+                return [*pasos, ("mensaje", _final_lienzo)]
         return None
 
 
 HERRAMIENTAS_CON_FECHA = {"productividad_del_dia", "ventas_del_dia", "coaching_del_dia"}
+HERRAMIENTAS_CON_MES = {"ventas_del_mes", "supervision_del_mes"}
 REGLAS: list[tuple[tuple[str, ...], str, dict[str, Any]]] = [     # de lo más específico a lo más general
     (("auditor",), "auditorias_de_ventas", {}),
     (("ticket",), "tickets_de_revision", {"vista": "abiertos"}),
@@ -641,6 +658,14 @@ def _entrada_hallazgo(rs: list[dict[str, Any]], texto: str) -> Optional[dict[str
             "categoria": "otro", "descripcion": texto.strip()[:500]}
 
 
+def _entrada_evidencia(rs: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    d = _datos(rs[-1]) if rs else None
+    if not isinstance(d, dict) or not d.get("artefacto_id"):
+        return None
+    return {"piezas": [{"artefacto_id": d["artefacto_id"], "titulo": "Lo que muestra el lienzo",
+                        "nota": "Lectura del auditor sugerida por Voi (simulador)."}]}
+
+
 def _numero(v: Any) -> Optional[float]:
     from .herramientas.lienzo import _num
     return _num(v)
@@ -702,6 +727,36 @@ def _spec_lienzo(rs: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     return {"tipo": "kpis", "titulo": "Indicadores principales", "kpis": kpis}
 
 
+def _spec_tablero(rs: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Un tablero con lo que trajo la consulta: indicadores (si hay) y el gráfico."""
+    grafico = _spec_lienzo(rs)
+    if not grafico:
+        return None
+    widgets = [grafico]
+    d = _datos(rs[-1]) if rs else None
+    plano = _buscar(d, lambda v: isinstance(v, dict) and sum(
+        isinstance(x, (int, float)) and not isinstance(x, bool) for x in v.values()) >= 2)
+    kpis = [{"titulo": k.replace("_", " ").capitalize(), "valor": v} for k, v in (plano or {}).items()
+            if isinstance(v, (int, float)) and not isinstance(v, bool)][:4]
+    if kpis and grafico["tipo"] != "kpis":
+        widgets.insert(0, {"tipo": "kpis", "titulo": "Indicadores principales", "kpis": kpis})
+    return {"tipo": "tablero", "titulo": "Tablero de la consulta", "widgets": widgets}
+
+
+def _final_evidencia(rs: list[dict[str, Any]]) -> str:
+    """Después de la tarjeta de evidencia: qué figuras quedaron en el informe (o que no se sumó nada)."""
+    r = rs[-1] if rs else None
+    if not r or r["error"]:
+        return _final(rs)
+    d = _datos(r) or {}
+    figuras = d.get("agregadas") or []
+    if not figuras:
+        return d.get("mensaje") or "No se sumó nada nuevo al informe."
+    lista = "\n".join(f"- **Figura {f.get('figura')}** · {f.get('titulo')}" for f in figuras)
+    return (f"Listo: {d.get('mensaje')}\n\n{lista}\n\nEl informe {d.get('informe')} tiene ahora {d.get('total_figuras')} "
+            f"figuras. [Ver la evidencia del informe]({d.get('pantalla')})")
+
+
 def _final_lienzo(rs: list[dict[str, Any]]) -> str:
     r = rs[-1] if rs else None
     if not r or r["error"]:
@@ -740,7 +795,7 @@ def _final(rs: list[dict[str, Any]]) -> str:
     h = obtener(r["nombre"])
     etiqueta = (h.etiqueta if h else r["nombre"]).lower()
     if r["error"]:
-        if "cancel" in r["texto"].lower() or "no realizada" in r["texto"].lower():
+        if any(k in r["texto"].lower() for k in ("cancel", "no realizada", "no eligió")):
             return "Entendido: no lo hice. Si querés, lo vemos de otra manera."
         return f"No pude completar eso ({etiqueta}): {r['texto'][:400]}"
     d = _datos(r)

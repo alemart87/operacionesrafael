@@ -1,4 +1,4 @@
-"""API de Auditoría de Ventas — Televentas Claro.
+"""API de Auditoría de Ventas — Televentas Claro (la evidencia visual de cada informe, en `evidencias.py`).
 
 Permiso: `televentas_claro.auditoria` (Analista por defecto; el superadmin lo
 asigna a otros perfiles). Quien lo tiene ve y trabaja todos los informes de
@@ -29,6 +29,7 @@ from .schemas import (
     AuditoriaCreate, AuditoriaDetalle, AuditoriaLista, AuditoriaResumen, AuditoriaUpdate, EstadoRequest,
     FuenteDisponible, HallazgoCreate, HallazgoRead, HallazgoUpdate, RiesgosRequest, SeguimientoCreate, SeguimientoRead,
 )
+from . import evidencias
 from .snapshot import construir_snapshot, hallazgos_automaticos, parametros, resumen_automatico
 
 PERM = "televentas_claro.auditoria"
@@ -121,8 +122,9 @@ async def _detalle(db: AsyncSession, a: Auditoria, user: CurrentUser) -> Auditor
     seguimientos = (await db.execute(
         select(AuditoriaSeguimiento).where(AuditoriaSeguimiento.auditoria_id == a.id).order_by(AuditoriaSeguimiento.created_at.desc())
     )).scalars().all()
+    figuras = await evidencias.listar(db, a.id)
     ids = {a.created_by, a.updated_by, a.closed_by} | {h.created_by for h in hallazgos} | {h.updated_by for h in hallazgos} \
-        | {s.created_by for s in seguimientos} | {h.get("usuario") for h in (a.historial or [])}
+        | {s.created_by for s in seguimientos} | {h.get("usuario") for h in (a.historial or [])} | {f.created_by for f in figuras}
     base = AuditoriaResumen.model_validate(a).model_dump(exclude={"hallazgos_total", "hallazgos_abiertos", "hallazgos_alta"})
     return AuditoriaDetalle(
         **base,
@@ -132,6 +134,7 @@ async def _detalle(db: AsyncSession, a: Auditoria, user: CurrentUser) -> Auditor
         alcance=a.alcance, resumen=a.resumen, conclusiones=a.conclusiones, recomendaciones=a.recomendaciones,
         snapshot=a.snapshot or {}, graficos=a.graficos or [], historial=a.historial or [],
         hallazgos=[HallazgoRead.model_validate(h) for h in hallazgos],
+        evidencias=[evidencias.evidencia_read(f) for f in figuras],
         seguimientos=[SeguimientoRead.model_validate(s) for s in seguimientos],
         usuarios=await _nombres(db, ids),
         editable=a.status in ESTADOS_EDITABLES,
@@ -339,6 +342,7 @@ async def eliminar(auditoria_id: str, request: Request, user: CurrentUser = Depe
         await db.delete(h)
     for s in (await db.execute(select(AuditoriaSeguimiento).where(AuditoriaSeguimiento.auditoria_id == a.id))).scalars().all():
         await db.delete(s)
+    await evidencias.borrar_todas(db, a.id)          # figuras y su carpeta de imágenes en el disco
     await db.delete(a)
     await db.commit()
     await record_action(db, user_id=user.id, action="delete_auditoria", resource_type="auditoria", resource_id=auditoria_id,
