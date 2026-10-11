@@ -48,7 +48,7 @@ function Panel() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link href={`${AUD_HREF}/guia`} className="btn-secondary">Guía del auditor</Link>
-          <Link href={`${AUD_HREF}/riesgos`} className="btn-primary">Nuevo informe de auditoría</Link>
+          <Link href={`${AUD_HREF}/riesgos`} data-voi="nuevo" className="btn-primary">Nuevo informe de auditoría</Link>
         </div>
       </div>
 

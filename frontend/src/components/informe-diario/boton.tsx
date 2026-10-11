@@ -26,7 +26,7 @@ export function PrepararInforme({ fecha, className = "btn-primary", children, on
     }
   };
   return (
-    <button type="button" className={className} onClick={abrir} disabled={ocupado}>
+    <button type="button" data-voi="preparar" className={className} onClick={abrir} disabled={ocupado}>
       {ocupado ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <ClipboardPenLine size={18} aria-hidden />}
       {children ?? "Preparar informe diario"}
     </button>

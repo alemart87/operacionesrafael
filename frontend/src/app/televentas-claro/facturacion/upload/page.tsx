@@ -78,7 +78,7 @@ export default function FacturacionUploadPage() {
       </div>
 
       <form onSubmit={onSubmit} className="card p-7 max-w-3xl space-y-5">
-        <div>
+        <div data-voi="archivo" className="rounded-lg">
           <label className="label">Archivo de liquidación (.txt)</label>
           <input
             type="file"
@@ -104,7 +104,7 @@ export default function FacturacionUploadPage() {
           </div>
         )}
 
-        <button type="submit" disabled={submitting || !!uploadId} className="btn-primary text-base">
+        <button type="submit" data-voi="procesar" disabled={submitting || !!uploadId} className="btn-primary text-base">
           {submitting ? "Subiendo…" : "Procesar liquidación"}
         </button>
       </form>

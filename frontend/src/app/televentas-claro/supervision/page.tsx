@@ -161,7 +161,7 @@ function Resumen() {
                     </button>
                   </div>
                 ) : (
-                  <button type="button" className="btn-secondary" onClick={editar}><Target size={16} /> Cargar objetivos</button>
+                  <button type="button" data-voi="objetivos" className="btn-secondary" onClick={editar}><Target size={16} /> Cargar objetivos</button>
                 )
               )}
             </div>

@@ -272,7 +272,9 @@ async def test_conversacion_consulta_y_respuesta(simulador):
         assert r.status_code == 200, r.text
         await _esperar(cid)
         t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=coord)).json()
-        assert [i["tipo"] for i in t["items"]].count("usuario") == 2 and "Soy **Voi**" in t["items"][-1]["texto"]
+        assert [i["tipo"] for i in t["items"]].count("usuario") == 2
+        assert "Soy **Voi**" in [i for i in t["items"] if i["tipo"] == "voi"][-1]["texto"]
+        assert t["items"][-1]["tipo"] == "opciones" and 2 <= len(t["items"][-1]["opciones"]) <= 4   # botones para elegir
 
         # Lista, renombrar, fijar y quitar (la copia queda para el superadmin).
         lista = (await ac.get(f"{BASE}/conversaciones", headers=coord)).json()["items"]
@@ -283,7 +285,8 @@ async def test_conversacion_consulta_y_respuesta(simulador):
         assert (await ac.delete(f"{BASE}/conversaciones/{cid}", headers=coord)).status_code == 200
         assert (await ac.get(f"{BASE}/conversaciones", headers=coord)).json()["items"] == []
         adm = (await ac.get(f"{BASE}/admin/conversaciones", headers=admin, params={"usuario": coord_id})).json()
-        assert adm["total"] == 1 and adm["items"][0]["oculta"] and adm["items"][0]["consultas"] == 1
+        # Dos consultas: la productividad y los botones de opciones que acompañan a «qué podés hacer».
+        assert adm["total"] == 1 and adm["items"][0]["oculta"] and adm["items"][0]["consultas"] == 2
 
         # El superadmin lee la conversación completa (con el contexto) y queda auditado.
         full = (await ac.get(f"{BASE}/admin/conversaciones/{cid}", headers=admin)).json()
@@ -359,7 +362,9 @@ async def test_acciones_con_confirmacion(simulador):
         assert r.status_code == 200, r.text
         await _esperar(cid3, hasta=("idle",))
         async with AsyncSessionLocal() as db:
-            a3 = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid3))).scalar_one()
+            # («¿qué podés hacer?» suma los botones de opciones: la acción que importa es la del borrador.)
+            a3 = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid3,
+                                                                 AsistenteAccion.herramienta == "preparar_informe_diario"))).scalar_one()
             assert a3.estado == "cancelada" and a3.respondida_at is not None
         await ac.put(f"{BASE}/admin/config", headers=admin, json={"autonomia": {"borradores_sin_confirmar": True}})
 

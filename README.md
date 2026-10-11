@@ -664,11 +664,13 @@ Todo el código vive en `backend/app/operativas/televentas_claro/facturacion/`.
 ## Voi · el agente de la plataforma (Claude Managed Agents)
 
 **Voi · Powered by Claude** es el agente de IA de la plataforma, en un panel lateral disponible en todas las pantallas
-(botón **Voi** en la cabecera o **Ctrl/⌘ + K**). Consulta y explica los datos de los módulos que el usuario ya ve, los
-muestra en un **lienzo** (gráficos, tablas y tableros), responde con lo que dicen los **documentos** que sube el
-superadmin (con citas), prepara borradores y propone acciones que el usuario confirma. Corre sobre **Claude Managed
-Agents** (Anthropic) con el modelo **Claude Sonnet 5.5**: Anthropic aloja el bucle del agente y su contenedor; la
-plataforma le da las herramientas, los permisos, la memoria y los topes.
+(botón **AI VOI** en la cabecera o **Ctrl/⌘ + K**). **Guía por toda la plataforma**: abre las pantallas por el usuario,
+lo lleva paso a paso (con una guía flotante que marca dónde tocar) y le ofrece opciones con botones para elegir o
+aprobar con un toque. Consulta y explica los datos de los módulos que el usuario ya ve, los muestra en un **lienzo**
+(gráficos, tablas y tableros), responde con lo que dicen los **documentos** que sube el superadmin (con citas), prepara
+borradores y propone acciones que el usuario aprueba. Corre sobre **Claude Managed Agents** (Anthropic) con el modelo
+**Claude Sonnet 5.5**: Anthropic aloja el bucle del agente y su contenedor; la plataforma le da las herramientas, los
+permisos, la memoria y los topes.
 
 ### Quién lo usa
 
@@ -711,13 +713,14 @@ Navegador ─► panel de Voi (SSE) ─► FastAPI /api/v1/asistente ─► Clau
   1. **Consultar** (corre sola): estado de los datos, productividad del día y por rango, ventas del día y del mes, SPH,
      objetivos y proyección, centro de comandos, tickets, coaching, buscar personas, informes diarios (propios) y, para
      el superadmin, el **seguimiento de los informes de todo el equipo**, auditorías, **buscar en los documentos**,
-     **mostrar en el lienzo** y, solo con Facturación, **liquidaciones, comparativos, calidad por fecha, criterios y
-     simulador** Pospago/GPON.
+     **mostrar en el lienzo**, las de guía (**abrir una pantalla**, **guiar paso a paso** y **ofrecer opciones** con
+     botones) y, solo con Facturación, **liquidaciones, comparativos, calidad por fecha, criterios y simulador**
+     Pospago/GPON.
   2. **Lo propio** (corre sola y queda registrada; el superadmin puede pedir confirmación): preparar el **borrador** del
      informe diario con datos importados y el **seguimiento de sus compromisos**; preparar un **informe de auditoría**
      en borrador (con los cortes de Ventas Netas de los meses pedidos) y **agregarle hallazgos**. Voi nunca firma ni
      cierra.
-  3. **Afecta a otros** (tarjeta con **Confirmar / Cancelar**): enviar un ticket de revisión y darle **seguimiento**
+  3. **Afecta a otros** (tarjeta con **Aprobar / Cancelar**): enviar un ticket de revisión y darle **seguimiento**
      (comentar, reabrir, cancelar, reasignar); tomar, descartar o derivar una alerta del centro de comandos; **comentar
      un informe diario** (el superadmin, que además lo deja revisado).
   Todo lo que Voi hace queda en la auditoría general (`asistente_accion`, «vía Voi»).
@@ -727,8 +730,8 @@ Navegador ─► panel de Voi (SSE) ─► FastAPI /api/v1/asistente ─► Clau
   sin confirmar, la acción pendiente se cancela.
 - **En vivo:** `consumidor.py` escucha el stream de la sesión (con vista previa del texto), repasa la lista de eventos
   para no perder nada, guarda cada evento una sola vez y lo reparte al navegador por SSE. El panel se reconecta solo.
-- **Contexto:** cada mensaje lleva quién es el usuario, la fecha y la pantalla en la que está (el chip de la pantalla se
-  puede apagar).
+- **Contexto:** cada mensaje lleva quién es el usuario, la fecha y la pantalla en la que está, con qué es esa pantalla
+  según el catálogo (el chip de la pantalla se puede apagar).
 
 ### El lienzo
 
@@ -818,16 +821,50 @@ preferencias (cómo le gusta ver los datos, qué métricas sigue), su equipo y o
 llena cuando el usuario dice «Recordá que…» o cuando Voi aprende algo útil (y lo avisa: «Lo anoto para la próxima»). Es
 **privada** (solo esa persona y sus conversaciones) y cada nota se puede borrar desde el panel.
 
+### Voi como guía de la plataforma
+
+Voi no solo responde: **maneja la plataforma con el usuario**. La fuente única es el **catálogo de pantallas y guías**
+(`backend/app/asistente/pantallas.py`): cada pantalla con su ruta, qué hace, qué utilidad exige, cómo la nombra la gente
+(«subir corte», «centro de comandos», «mi perfil»), qué elementos se pueden resaltar y la **pista** que Voi sugiere ahí;
+y cada **guía** paso a paso (subir el corte de Claro, subir cortes de llamadas, publicar, calcular el SPH, preparar y
+firmar el informe diario, enviar un ticket, trabajar alertas, crear un informe de auditoría, subir evidencia, armar
+equipos, cargar objetivos, vincular operadores, subir una liquidación, cambiar la foto o la contraseña, subir un
+documento a la base de conocimiento). Todo se filtra por los **permisos reales** del usuario: Voi nunca lleva a nadie a
+una pantalla que no puede ver y, si no puede, le dice qué utilidad le falta y quién la asigna. Las frases se comparan en
+forma canónica (sin tildes, verbos en infinitivo, sin palabras vacías): «¿cómo subo el corte?» encuentra la guía de
+subir el corte.
+
+- **`abrir_pantalla`**: Voi navega por el usuario (evento `navegar` por SSE) y puede resaltar un botón o una zona. En
+  la plataforma aparece un aviso «Voi abrió … · Volver»; en el teléfono el panel se cierra para que se vea la
+  pantalla. Acepta rutas exactas que devolvió otra herramienta (con id o pestaña). En el chat queda la tarjeta «Abrí …
+  · Abrir de nuevo».
+- **`guiar`**: abre la pantalla donde se hace la tarea y muestra la **guía flotante** (Paso n de N · Anterior ·
+  Siguiente · Listo) que resalta con un anillo cyan el elemento de cada paso (los marcados con `data-voi="…"`: archivo,
+  procesar, publicar, calcular, preparar, enviar, crear, subir, capturar, objetivos, asignar, vincular, foto,
+  contraseña, documento, coaching). La guía sigue al usuario si cambia de pantalla («Volver a la pantalla de la guía»)
+  y queda en el chat para volver a abrirla. Subir archivos lo hace siempre el usuario; Voi le marca dónde.
+- **`ofrecer_opciones`**: una pregunta con **2 a 4 botones**; tocar uno manda su mensaje (y abre su pantalla, si
+  trae). Sirve para aprobar un paso puntual («¿Lo preparo?» → «Sí, preparalo»), elegir un camino o, cuando la persona
+  no sabe qué hacer, las tres cosas más útiles para su perfil y su pantalla. Después de responder quedan apagados con
+  la elegida marcada. Las acciones que afectan a otros siguen pidiendo su tarjeta de **Aprobar**.
+- **Botón «AI VOI» y burbuja:** el botón de la cabecera **late** suave mientras está cerrado (naranja y más rápido
+  cuando espera una aprobación, con el subtítulo «Esperá tu OK») y, al llegar a una pantalla, debajo aparece una
+  **burbuja** con la pista de Voi para esa pantalla («¿Te guío para subir el corte de Claro?» con un botón que manda
+  la pregunta), una vez por pantalla y sesión, nunca mientras hay una guía o Voi acaba de navegar. La bienvenida del
+  panel ofrece primero las sugerencias de la pantalla actual. Quien pidió menos movimiento ve halos fijos.
+- `GET /asistente/pantallas` devuelve al navegador las pantallas que esa persona puede abrir con su pista, sus
+  sugerencias, sus guías y sus anclas.
+
 ### El panel
 
-- Botón **Voi** en la cabecera y **Ctrl/⌘ + K**. En pantallas anchas se acopla a la derecha y corre la página (la
+- Botón **AI VOI** en la cabecera y **Ctrl/⌘ + K**. En pantallas anchas se acopla a la derecha y corre la página (la
   cabecera se compacta); en el teléfono ocupa toda la pantalla. Vive en la raíz de la app: sigue abierto al navegar.
 - El **isotipo de Voicenter redibujado en SVG** (los mismos 25 puntos): quieto, **pensando** (una onda recorre los
   puntos) o **hablando** (más rápida). Quien pidió menos movimiento lo ve quieto.
-- Respuesta en vivo, pasos de lo que consultó, tarjetas de acción, piezas del lienzo, citas, enlaces que navegan dentro
-  de la plataforma, historial (fijar, renombrar, quitar), memoria, sugerencias según el perfil y comandos con `/`
-  (`/nueva`, `/historial`, `/lienzo`, `/memoria`, `/ayuda`). El botón avisa si llegó una respuesta o si una acción
-  espera confirmación.
+- Respuesta en vivo, pasos de lo que consultó, tarjetas de acción (**Aprobar / Cancelar**), botones de opciones,
+  guías y pantallas abiertas, piezas del lienzo, citas, enlaces que navegan dentro de la plataforma, historial (fijar,
+  renombrar, quitar), memoria, sugerencias según la pantalla y el perfil y comandos con `/` (`/nueva`, `/historial`,
+  `/lienzo`, `/memoria`, `/ayuda`). El botón avisa si llegó una respuesta o si una acción espera aprobación.
 
 ### Consola del superadmin (`/admin/asistente`)
 
@@ -862,9 +899,9 @@ Data Retention*); la plataforma guarda su propia copia para la consola.
 ### Desarrollo y pruebas
 
 - `ASISTENTE_SIMULADOR=true` usa un motor que imita a Managed Agents (mismos eventos y formas de datos, reglas simples
-  por palabras clave: consultas, lienzo y tableros, documentos con citas, facturación, acciones y modo auditor con su
-  tarjeta de evidencia) sin llamar a Anthropic; en
-  producción se ignora. `ASISTENTE_SIMULADOR_DEMORA` regula la velocidad.
+  por palabras clave: consultas, lienzo y tableros, documentos con citas, facturación, acciones, modo auditor con su
+  tarjeta de evidencia, y la guía: «llevame a…», «¿cómo subo…?» y «¿qué puedo hacer?» con botones) sin llamar a
+  Anthropic; en producción se ignora. `ASISTENTE_SIMULADOR_DEMORA` regula la velocidad.
 - `tests/test_asistente.py`: permisos y modo auditoría, publicación con versiones, ciclo completo de una conversación,
   confirmación (doble clic, cancelar, seguir escribiendo), memoria, topes, stream en vivo, recuperación después de un
   corte, webhook firmado, simulador apagado en producción y consola.
@@ -872,6 +909,10 @@ Data Retention*); la plataforma guarda su propia copia para la consola.
   secciones, archivos rotos y entidades XML), búsqueda y citas con alcance por permisos (subir, desactivar, reemplazar,
   borrar, descargar), Facturación solo para superadmin y Sub gerente, lienzo en una conversación y las acciones nuevas
   (seguimiento de tickets, comentar el informe diario, preparar auditorías y agregar hallazgos).
+- `tests/test_asistente_guia.py`: el catálogo de pantallas y guías por permiso (qué ve cada perfil, búsqueda con las
+  palabras de la gente, rutas dinámicas e inválidas, anclas que existen), la validación de destinos y opciones, y el
+  ciclo completo con el simulador: abrir una pantalla, la guía paso a paso, los botones de opciones (elegir uno manda
+  su mensaje), el rechazo sin permiso y lo que ve el superadmin en la consola.
 - `tests/test_auditoria_evidencias.py`: imágenes sin metadatos (EXIF y GPS) y rechazos, imágenes en el disco persistente
   servidas solo con Auditoría, edición, orden, figuras fijas al cerrar y borrado de archivos; modo auditor (quién lo
   activa, informe destino, contexto para Voi), la tarjeta con elección (inválida, ninguna, una con título retocado),
@@ -882,6 +923,7 @@ Data Retention*); la plataforma guarda su propia copia para la consola.
 | Endpoint (`/api/v1/asistente…`) | Qué hace |
 |---|---|
 | `GET /estado` | Disponibilidad, modo, herramientas y sugerencias del usuario |
+| `GET /pantallas` | Las pantallas que el usuario puede abrir, con la pista de Voi, las sugerencias, las guías y las anclas de cada una |
 | `GET/POST /conversaciones` | Lista / nueva (con el primer mensaje) |
 | `GET/PATCH/DELETE /conversaciones/{id}` | Transcripción (con las piezas del lienzo) / renombrar o fijar / quitar de la lista |
 | `POST /conversaciones/{id}/mensajes` · `/detener` | Mensaje (con la pantalla) / detener la respuesta |

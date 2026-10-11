@@ -35,8 +35,8 @@ type Props = { children?: ReactNode; className?: string; title?: string; tabInde
 export function BotonCoaching({ children = "Hacer coaching", className = "", title, tabIndex, ...p }: Props) {
   const contenido = <><MessageSquareText size={20} aria-hidden strokeWidth={2.4} /> {children}</>;
   const cls = `btn-coaching print:hidden ${className}`;
-  if (p.href) return <Link href={p.href} className={cls} title={title} tabIndex={tabIndex}>{contenido}</Link>;
-  return <button type="button" onClick={p.onClick} className={cls} title={title} tabIndex={tabIndex}>{contenido}</button>;
+  if (p.href) return <Link href={p.href} data-voi="coaching" className={cls} title={title} tabIndex={tabIndex}>{contenido}</Link>;
+  return <button type="button" data-voi="coaching" onClick={p.onClick} className={cls} title={title} tabIndex={tabIndex}>{contenido}</button>;
 }
 
 /**

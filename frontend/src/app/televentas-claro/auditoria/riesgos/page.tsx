@@ -103,7 +103,7 @@ function Riesgos() {
           <h2 className="font-display text-lg text-brand-ink uppercase">Fuentes</h2>
           <div className="flex gap-2">
             <button onClick={analizar} disabled={sel.size === 0 || analizando || conflicto} className="btn-secondary">{analizando ? "Analizando…" : `Analizar ${sel.size} fuente${sel.size === 1 ? "" : "s"}`}</button>
-            <button onClick={abrirCrear} disabled={sel.size === 0 || conflicto} className="btn-primary">Crear informe de auditoría</button>
+            <button data-voi="crear" onClick={abrirCrear} disabled={sel.size === 0 || conflicto} className="btn-primary">Crear informe de auditoría</button>
           </div>
         </div>
         {!fuentes ? (

@@ -13,9 +13,9 @@ import { Trabajando, VoiMarkdown, VoiMensajes } from "./VoiMensajes";
 import { useVoi } from "./VoiProvider";
 
 const MODO_TEXTO = {
-  superadmin: "Veo toda la plataforma. Preguntame por cualquier módulo, te explico los datos o preparo lo que necesites.",
-  gestion: "Consulto y explico los datos de tus módulos, preparo borradores y te propongo acciones que vos confirmás.",
-  auditor: "En tu perfil trabajo con auditoría de ventas y alertas: informes de auditoría, vendedores en alerta y tickets.",
+  superadmin: "Veo toda la plataforma: te abro pantallas, te guío paso a paso, explico los datos y preparo lo que necesites.",
+  gestion: "Te abro las pantallas, te guío paso a paso, explico los datos de tus módulos y hago cosas por vos: vos aprobás con un botón.",
+  auditor: "En tu perfil trabajo con auditoría de ventas y alertas: te abro las pantallas, te guío y busco lo que no cierra.",
 } as const;
 
 const COMANDOS = [
@@ -187,6 +187,9 @@ function Chat() {
             onNavegar={navegar}
             artefactos={chat.artefactos}
             codigoInforme={voi.investigacion?.codigo ?? null}
+            onElegir={voi.elegirOpcion}
+            onVerGuia={voi.abrirGuia}
+            onAbrirRuta={voi.navegarA}
           />
         )}
         {mostrarTrabajando && <Trabajando />}
@@ -216,7 +219,9 @@ function Bienvenida() {
   const voi = useVoi()!;
   const { estado, usuario, investigacion: inv } = voi;
   const nombre = (usuario?.full_name ?? "").split(" ")[0];
-  const sugerencias = inv ? SUGERENCIAS_AUDITOR : estado?.sugerencias ?? [];
+  // Primero lo que conviene en la pantalla en la que está; después las sugerencias generales de su perfil.
+  const sugerencias = inv ? SUGERENCIAS_AUDITOR
+    : Array.from(new Set([...(voi.pantallaActual?.sugerencias ?? []), ...(estado?.sugerencias ?? [])])).slice(0, 4);
   return (
     <div className="h-full flex flex-col items-center text-center pt-6 pb-2">
       <div className="voi-flota"><VoiIsotipo size={68} /></div>

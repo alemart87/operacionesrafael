@@ -546,12 +546,12 @@ export function EvidenciaTab({ a, onChange }: { a: AuditoriaDetalle; onChange: (
             </button>
           )}
           {editable && puedeCapturar && (
-            <button type="button" onClick={capturar} disabled={capturando} className="btn-secondary" title="Captura una ventana (p. ej. el CRM) y la suma como figura, sin buscar archivos">
+            <button type="button" data-voi="capturar" onClick={capturar} disabled={capturando} className="btn-secondary" title="Captura una ventana (p. ej. el CRM) y la suma como figura, sin buscar archivos">
               {capturando ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />} Capturar pantalla
             </button>
           )}
           {editable && (
-            <button type="button" onClick={elegir} className="btn-primary">
+            <button type="button" data-voi="subir" onClick={elegir} className="btn-primary">
               <ImagePlus size={16} /> Subir imágenes
             </button>
           )}

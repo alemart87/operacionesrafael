@@ -81,7 +81,7 @@ function Informes() {
         {gestion && (
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <Link href={`${SPH_HREF}/vinculos`} className="btn-secondary"><Link2 size={16} /> Vínculos</Link>
-            <div className="flex w-full sm:w-auto items-stretch rounded-md overflow-hidden shadow-soft" role="group" aria-label="Calcular SPH">
+            <div data-voi="calcular" className="flex w-full sm:w-auto items-stretch rounded-md overflow-hidden shadow-soft" role="group" aria-label="Calcular SPH">
               <span className="flex items-center gap-1.5 bg-brand-primary text-white text-xs font-semibold uppercase tracking-wider2 px-3">
                 <Calculator size={15} /><span className="hidden sm:inline">Calcular SPH</span>
               </span>

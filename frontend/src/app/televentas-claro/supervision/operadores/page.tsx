@@ -177,7 +177,7 @@ function Maestro() {
                       <div className="flex items-center gap-1.5 flex-wrap justify-end">
                         {CRUCE[o.cruce].pendiente && (
                           <>
-                            <button type="button" className="btn-secondary px-3 py-1.5 text-xs" onClick={() => setVincular(o)}><Link2 size={13} /> Vincular</button>
+                            <button type="button" data-voi="vincular" className="btn-secondary px-3 py-1.5 text-xs" onClick={() => setVincular(o)}><Link2 size={13} /> Vincular</button>
                             <button type="button" className="btn-ghost text-xs" disabled={ocupado}
                               onClick={() => accion(() => post(o, "confirmar"), `${o.nombre}: ${o.agente ? "confirmado que no vende" : "confirmado que solo vende"}.`)}>
                               <UserCheck size={13} /> {o.agente ? "No vende" : "Solo ventas"}

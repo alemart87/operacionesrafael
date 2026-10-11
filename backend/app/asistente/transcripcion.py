@@ -12,7 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .consumidor import AVISOS_FIN, ERRORES, accion_dict, etiqueta_espacio, texto_de
-from .herramientas import obtener
+from .herramientas import ErrorHerramienta, obtener
+from .herramientas.guia import normalizar_opciones
 from .herramientas.lienzo import artefacto_dict
 from .models import (EJECUTADA, FALLIDA, PENDIENTE, AsistenteAccion, AsistenteArtefacto, AsistenteConversacion,
                      AsistenteEvento)
@@ -44,6 +45,14 @@ def _recortar(texto: str, n: int = 4000) -> str:
     return texto if len(texto) <= n else texto[:n] + f"… ({len(texto) - n} caracteres más)"
 
 
+def _opciones(entrada: Any) -> dict[str, Any] | None:
+    """La pregunta y los botones tal como se mostraron (si la entrada no era válida, no hubo botones)."""
+    try:
+        return normalizar_opciones(entrada if isinstance(entrada, dict) else {})
+    except ErrorHerramienta:
+        return None
+
+
 async def construir(db: AsyncSession, conv: AsistenteConversacion, *, completo: bool = False) -> dict[str, Any]:
     eventos = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == conv.id)
                                 .order_by(AsistenteEvento.id))).scalars().all()
@@ -63,9 +72,17 @@ async def construir(db: AsyncSession, conv: AsistenteConversacion, *, completo: 
             items.append({"tipo": "voi", "id": e.evento_id, "texto": texto_de(d.get("content")), "at": at})
         elif t == "agent.custom_tool_use":
             a = acciones.get(e.evento_id)
-            h = obtener(d.get("name") or "")
+            nombre = d.get("name") or ""
+            h = obtener(nombre)
+            res = a.resultado if a is not None and isinstance(a.resultado, dict) else {}
             if e.evento_id in por_evento:          # lo que se mostró en el lienzo
                 item = {"tipo": "lienzo", "id": e.evento_id, "artefacto": artefacto_dict(por_evento[e.evento_id]), "at": at}
+            elif nombre == "ofrecer_opciones" and (op := _opciones(d.get("input"))):   # botones para elegir
+                item = {"tipo": "opciones", "id": e.evento_id, "at": at, **op}
+            elif nombre == "guiar" and isinstance(res.get("guia"), dict):              # la guía paso a paso
+                item = {"tipo": "guia", "id": e.evento_id, "guia": res["guia"], "at": at}
+            elif nombre == "abrir_pantalla" and res.get("ruta"):                       # la pantalla que abrió
+                item = {"tipo": "pantalla", "id": e.evento_id, "ruta": res["ruta"], "titulo": res.get("titulo"), "at": at}
             elif a is not None and a.nivel > 1:
                 item = {"tipo": "accion", "id": e.evento_id, "accion": accion_dict(a), "at": at}
             else:

@@ -149,6 +149,7 @@ function Subir() {
             onDragLeave={() => setArrastrando(false)}
             onDrop={(e) => { e.preventDefault(); setArrastrando(false); agregar(e.dataTransfer.files); }}
             onClick={() => input.current?.click()}
+            data-voi="archivos"
             className={`card p-10 border-2 border-dashed cursor-pointer text-center transition-colors ${arrastrando ? "border-brand-primary bg-brand-primary-light/40" : "border-brand-border hover:border-brand-primary/60"}`}
           >
             <UploadCloud size={36} className="mx-auto text-brand-primary" />
@@ -206,7 +207,7 @@ function Subir() {
                 <span className="text-xs text-brand-slate">
                   {faltaFecha ? "Completá la fecha y hora de los archivos que no la traen en el nombre." : `${n(pendientes.length)} por subir.`}
                 </span>
-                <button type="button" onClick={subir} disabled={subiendo || !pendientes.length || faltaFecha} className="btn-primary">
+                <button type="button" data-voi="procesar" onClick={subir} disabled={subiendo || !pendientes.length || faltaFecha} className="btn-primary">
                   {subiendo ? <><Loader2 size={16} className="animate-spin" /> Procesando…</> : pendientes.some((i) => i.estado === "error") ? <><RefreshCw size={16} /> Reintentar</> : <><UploadCloud size={16} /> Procesar {n(pendientes.length)} archivo(s)</>}
                 </button>
               </div>
