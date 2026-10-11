@@ -761,7 +761,9 @@ en una **investigación** con un **informe destino**:
   cargas de Ventas Netas**: empieza con la herramienta `alertas_del_corte` (un solo llamado: el último corte publicado
   con los vendedores críticos y en alerta media, los datos llamativos y los hallazgos automáticos, ya resumidos) y
   responde con eso, corto: una línea de conclusión, de 3 a 5 alertas con cifra y vendedor, hechos separados de
-  hipótesis y un próximo paso. Solo si el auditor quiere «urgar más» sigue con `ventas_del_mes` (líneas, cargas por
+  hipótesis y un próximo paso. Si acompaña el barrido con un gráfico de netas o cargas lo decide el modelo por el
+  contexto (una evolución o una concentración que una imagen explica mejor que una cifra); si alcanza con las cifras,
+  no lo hace. Solo si el auditor quiere «urgar más» sigue con `ventas_del_mes` (líneas, cargas por
   día, un vendedor), el centro de comandos y los tickets. Se lo recuerda la plataforma en cada mensaje.
 - **Se ve:** el panel, el lienzo y el botón de Voi **brillan**: un borde que late y pasa por los colores de Voicenter de
   a uno, con resplandor; en el chat, un separador «Modo auditor activado · AUD-…»; arriba, una franja con el informe

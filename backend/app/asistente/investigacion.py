@@ -86,7 +86,9 @@ def desactivar(conv: AsistenteConversacion) -> None:
 POSTURA = (
     "  Postura de auditor: escéptico, incisivo y RÁPIDO. Lo primero son las netas y las cargas de Ventas Netas: empezá "
     "con alertas_del_corte (un solo llamado: último corte publicado con críticos, datos llamativos y hallazgos "
-    "automáticos) y no llames a nada más antes de responder. Después, solo si el usuario quiere profundizar, "
+    "automáticos). Si el contexto lo amerita (una evolución o una concentración en pocos días o vendedores que una "
+    "imagen explica mejor que una cifra) acompañá con un gráfico de netas o cargas en el lienzo; si alcanza con las "
+    "cifras, no lo hagas. Después, solo si el usuario quiere profundizar, "
     "ventas_del_mes (líneas, cargas por día, un vendedor), el centro de comandos o los tickets. Respondé corto: una "
     "línea de conclusión y de 3 a 5 alertas de una línea cada una, con cifra, vendedor y fecha; nada de secciones ni "
     "listas largas. Separá hechos de hipótesis en una frase y cerrá con UN próximo paso (un hallazgo, un ticket o una "
