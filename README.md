@@ -1042,123 +1042,23 @@ En el teléfono aparece en chico sobre el formulario.
 
 ### Transiciones (movimiento de la interfaz)
 
-- **Las pantallas aparecen** con un fundido suave y un leve movimiento hacia arriba (0,46 s, la curva de iOS), en
-  `AppShell` (`.pagina-entra`).
-- **Cambiar de pantalla pasa como una hoja**: los clics en enlaces internos van por la API de View Transitions del
-  navegador (`lib/transiciones.ts`): la pantalla que se va gira apenas desde su borde izquierdo y se funde mientras
-  entra la nueva; la cabecera y el panel de Voi tienen su propio nombre de transición y quedan quietos. Se intercepta
-  el clic en fase de captura y `preventDefault()` frena la navegación propia del `Link` de Next (que respeta
-  `defaultPrevented`) sin saltarse su `onClick`; la transición espera a que cambie la ruta (tope 700 ms). Sin la API,
-  o con «reducir movimiento», la pantalla nueva solo aparece con su fundido. Ctrl/⌘-clic, pestañas con `#`, descargas
-  y enlaces externos no se tocan.
-- **Voi entra y sale deslizándose** desde la derecha (desde abajo en el teléfono) con la misma curva, 0,42 s al entrar
-  y 0,24 s al cerrarse (sigue montado ese instante, `voi.cerrando`); la página acoplada se corre con el mismo tiempo.
+Una sola familia de curvas para todo (`--mov-entrada`, `--mov-salida`, `--mov-estandar` en `globals.css`, las de
+desaceleración, aceleración y estándar que usan los sistemas de Apple y Google): lo que entra desacelera, lo que sale
+acelera. Siempre corto (180–320 ms), plano (sin giros ni perspectiva) y con poco recorrido, para que nada parezca
+caerse ni flotar.
 
-Todo lo configura el superadmin en **Seguridad** (`/admin/seguridad`) y se hace
-cumplir en el servidor en **cada pedido** (`api/deps.py::get_current_user`), así
-que un cambio rige al instante, también para las sesiones abiertas.
-
-- **Sesiones en el servidor** (`user_sessions`): cada token lleva el id de su
-  sesión (`sid`). Se cierran solas por inactividad (60 min por defecto) y por
-  duración máxima (12 h). El superadmin ve las sesiones activas y puede cerrar una,
-  todas las de un usuario o todas menos la suya. Desactivar un usuario, resetearle
-  la contraseña o el 2FA cierra sus sesiones. El navegador avisa 2 minutos antes del
-  cierre por inactividad ("¿Seguís ahí?").
-- **Bloqueo por intentos fallidos** persistente en la base (`users.failed_attempts`,
-  `locked_until`): N intentos en una ventana bloquean la cuenta X minutos (0 =
-  hasta que el superadmin la desbloquee). Además queda un freno en memoria por IP.
-- **Política de contraseñas**: largo mínimo, mayúsculas/minúsculas, número,
-  símbolo, vencimiento, no repetir las últimas N y cambio obligatorio en el primer
-  ingreso y tras un reseteo (`/cambiar-contrasena`).
-- **Segundo factor (TOTP)** opcional y recomendado: se activa desde *Mi perfil*
-  con una app autenticadora, con 8 códigos de recuperación. El secreto se guarda
-  cifrado (Fernet derivado de `SECRET_KEY`); los códigos, hasheados. También lo
-  puede activar el superadmin de `.env`.
-- **Horarios por perfil**: franjas semanales por perfil, feriados y zona horaria.
-  Modos: *desactivado*, *solo registrar* (deja entrar y audita
-  `acceso_fuera_de_horario`) o *bloquear* (no deja ingresar y cierra la sesión al
-  terminar la franja, con aviso previo). El superadmin puede dar **excepciones**
-  por usuario con vencimiento (máx. 31 días) y motivo.
-- El **superadmin** de `.env` nunca queda afuera: está exento de horario y de
-  bloqueo de cuenta.
-- La configuración vive en la fila `security_settings` (id 1). `SECURITY_DEFAULTS`
-  (JSON parcial) permite cambiar los valores por defecto (lo usan los tests).
-- Todo queda auditado: logins, fallidos, bloqueos, 2FA, cierres de sesión,
-  excepciones, cambios de configuración, altas, bajas y reseteos.
-- Los usuarios se desactivan (baja lógica); nunca se borran, para conservar la auditoría.
-
-### Endpoints
-
-| Método | Ruta | Acceso |
-|---|---|---|
-| POST | `/api/v1/auth/login` | Público |
-| POST | `/api/v1/auth/login/2fa` | Público (desafío del login + código) |
-| POST | `/api/v1/auth/refresh` · `/logout` | Sesión vigente |
-| GET | `/api/v1/auth/politica` | Logueado (política de contraseñas) |
-| GET · POST | `/api/v1/auth/2fa` · `/2fa/iniciar` · `/2fa/activar` · `/2fa/desactivar` | Logueado |
-| GET · PATCH | `/api/v1/auth/me` | Logueado |
-| POST | `/api/v1/auth/change-password` | Logueado (no superadmin) |
-| POST | `/api/v1/auth/me/photo` | Logueado (no superadmin) |
-| GET · POST | `/api/v1/users` | Superadmin |
-| PATCH · DELETE | `/api/v1/users/{id}` | Superadmin |
-| POST | `/api/v1/users/{id}/reset-password` · `/photo` | Superadmin |
-| GET | `/api/v1/audit` · `/api/v1/audit/users-map` | Superadmin |
-| GET · PUT | `/api/v1/seguridad/config` | Superadmin |
-| GET | `/api/v1/seguridad/sesiones` · `/usuarios` | Superadmin |
-| POST | `/api/v1/seguridad/sesiones/{sid}/cerrar` · `/sesiones/cerrar-todas` | Superadmin |
-| POST | `/api/v1/seguridad/usuarios/{id}/cerrar-sesiones` · `/desbloquear` · `/reset-2fa` · `/forzar-cambio` | Superadmin |
-| PUT · DELETE | `/api/v1/seguridad/usuarios/{id}/excepcion` | Superadmin |
-| GET · PUT | `/api/v1/perfiles` · `/api/v1/perfiles/{perfil}` | Superadmin |
-| GET | `/api/v1/perfiles/catalogo` | Superadmin |
-| GET | `/api/v1/operativas` | Logueado (solo las que puede abrir) |
-| GET | `/api/v1/televentas-claro` | `televentas_claro.ver` |
-| GET | `/api/v1/televentas-claro/ventas-netas/reports[/{id}][/export.xlsx]` | `televentas_claro.ventas_netas` |
-| POST · DELETE | `/api/v1/televentas-claro/ventas-netas/uploads` · `/reports/{id}[/publish\|/unpublish\|/reprocess]` | `televentas_claro.ventas_netas_gestion` |
-| * | `/api/v1/televentas-claro/auditoria/*` (fuentes, parametros, riesgos, informes, hallazgos, seguimientos, estado) | `televentas_claro.auditoria` |
-| * | `/api/v1/televentas-claro/supervision/*` (resumen, tablero, coaching, gestion, **registro**, comando, tickets…) | `televentas_claro.supervision` (lo que cambia algo, además `supervision_gestion`, `tickets` u `operadores`) |
-| * | `/api/v1/televentas-claro/supervision/portal/*` (portal, coaching, **registro**, bitácora, tickets) | `televentas_claro.portal_supervisor` (solo lo del supervisor que entra) |
-| * | `/api/v1/televentas-claro/informe-diario/*` (preparar, guardar, importar, firmar, PDF, comentar, firma; `figuras/imagen` subir una captura o foto, `figuras/{id}` editar y quitar, `figuras/{id}/imagen` subir la captura de un gráfico y ver la imagen) | `televentas_claro.informe_diario` (cada informe: su autor y el superadmin; las figuras las cambia solo el autor del borrador) |
-| GET · PUT | `/api/v1/televentas-claro/informe-diario/seguimiento` · `/palabras` | Superadmin |
-| * | `/api/v1/televentas-claro/facturacion/*` · `/facturacion-agent/*` | Solo superadmin |
-| GET | `/health` · `/api/v1/health` | Público |
-| POST | `/api/v1/admin/migrate?token=<SECRET_KEY>` | Emergencia |
-
-La documentación interactiva queda en `http://localhost:8000/docs` al correr el backend.
-
-## Desarrollo local
-
-### Opción A: todo en Docker
-
-```bash
-cp .env.example .env
-docker compose up --build
-# http://localhost:8080  ·  admin@voicenter.com.py / CambiarEstaPassword123!
-```
-
-### Opción B: procesos separados (recarga en caliente)
-
-```bash
-# 1) Postgres (o usar SQLite cambiando DATABASE_URL en .env)
-docker compose up -d db
-cp .env.example .env
-
-# 2) Backend
-python -m venv .venv
-.venv/Scripts/activate            # Windows  (Linux/Mac: source .venv/bin/activate)
-pip install -r backend/requirements.txt
-cd backend && uvicorn app.main:app --reload --port 8000
-
-# 3) Frontend (otra terminal)
-cd frontend && npm install && npm run dev
-# http://localhost:3000
-```
-
-### Tests
-
-```bash
-cd backend && ../.venv/Scripts/python -m pytest -q
-cd frontend && npm run typecheck && npm run build
-```
+- **Las pantallas aparecen** con un fundido corto (0,24 s) en `AppShell` (`.pagina-entra`).
+- **Cambiar de pantalla** usa la API de View Transitions del navegador (`lib/transiciones.ts`) con el patrón de ejes
+  compartidos que recomienda Chrome: la pantalla que se va se funde en 100 ms y se corre 16 px a la izquierda; la
+  nueva se funde después (220 ms) mientras llega desde la derecha; 300 ms en total. La cabecera y el panel de Voi
+  tienen su propio nombre de transición y quedan quietos. Se intercepta el clic en fase de captura y
+  `preventDefault()` frena la navegación propia del `Link` de Next (que respeta `defaultPrevented`) sin saltarse su
+  `onClick`; la transición espera a que cambie la ruta (tope 700 ms). Sin la API, o con «reducir movimiento», la
+  pantalla nueva solo aparece con su fundido. Ctrl/⌘-clic, pestañas con `#`, descargas y enlaces externos no se tocan.
+- **Voi entra y sale deslizándose** desde la derecha (desde abajo en el teléfono), solo con `transform` y sin
+  fundido: 0,32 s al entrar y 0,22 s al cerrarse (sigue montado ese instante, `voi.cerrando`); la página acoplada se
+  corre con la misma curva y el mismo tiempo, así se mueven juntos. El lienzo aparece con un fundido y un leve
+  crecimiento; los diálogos y la burbuja de Voi, igual (sin desplazarse).
 
 ## Identidad visual
 
