@@ -290,7 +290,7 @@ export function AppShell({ children, workspace = false }: {
 
         {/* La pantalla: aparece con un fundido suave y, al cambiar de ruta, pasa como una hoja (View Transitions). */}
         <main
-          className={`pagina-escena ${workspace ? "flex-1 flex min-h-0 w-full" : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 py-8"}`}
+          className={`${workspace ? "flex-1 flex min-h-0 w-full" : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 py-8"}`}
           style={{ viewTransitionName: "contenido" }}
         >
           <Pagina key={pathname} ruta={pathname} className={workspace ? "flex-1 flex min-h-0 w-full" : "w-full"}>

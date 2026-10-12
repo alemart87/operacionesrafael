@@ -210,7 +210,7 @@ export function VoiLienzo() {
 
   return (
     <section
-      className={`voi-panel no-print fixed z-[45] inset-0 lg:right-[440px] bg-brand-bg flex flex-col lg:border-r border-brand-border ${inv ? (diario ? "voi-informe" : "voi-auditor") : ""}`}
+      className={`voi-lienzo-entra no-print fixed z-[45] inset-0 lg:right-[440px] bg-brand-bg flex flex-col lg:border-r border-brand-border ${inv ? (diario ? "voi-informe" : "voi-auditor") : ""}`}
       role="dialog"
       aria-label="Lienzo de Voi"
     >
