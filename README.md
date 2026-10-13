@@ -1110,6 +1110,51 @@ estructura, GPON, meses afectados y notas). Lo que difiere de los valores calibr
 marcado con ✱. Las secciones interactivas no se imprimen; resultados y EERR arrancan en hoja nueva. Componente
 `FichaSimulacion.tsx`; estilos en `globals.css` (`.ficha-impresa`, `.print-shell`, `.sim-print`).
 
+## Televentas CLARO · Integraciones (solo superadmin y Sub gerente)
+
+Claves de API de **solo lectura** para conectar herramientas de análisis (KNIME, Power BI, Python) a los datos ya
+publicados o firmados. Utilidad restringida `televentas_claro.integraciones` (`solo_perfiles: ["sub_gerente"]`): el
+sub gerente la tiene por defecto; el resto de los perfiles no la puede tener. **Facturación no tiene dataset**: queda
+fuera por diseño. Código en `backend/app/operativas/televentas_claro/integraciones/` y pantallas en
+`/televentas-claro/integraciones` (Claves de API · Registro de uso · Conectar KNIME).
+
+- **Claves**: `vcop_` + 40 hex (160 bits). Se muestran **una sola vez**; la base guarda el hash SHA-256 y un prefijo
+  visible (`vcop_xxxxxxxx…`) para reconocerlas (búsqueda por prefijo, comparación en tiempo constante). Cada clave
+  tiene nombre, dueño, **vencimiento** (hasta 730 días), **límites** por minuto (hasta 600) y por día de Asunción
+  (hasta 100.000) y, si se quiere, un subconjunto de datasets.
+- **Quién hace qué**: el sub gerente crea, ve y **bloquea las suyas**, y ve sus usos. El **superadmin tiene permiso
+  total**: ve todas, bloquea, **desbloquea**, cambia límites y **elimina**. Todo queda en la auditoría de la plataforma
+  (`integraciones_clave_creada` · `_bloqueada` · `_desbloqueada` · `_limites` · `_eliminada`).
+- **Registro de uso** (`integraciones_usos`): cada llamada con clave, atendida o no, con dataset, filas, ms, IP,
+  user agent y resultado `ok` · `limite` (429 con `Retry-After`) · `denegada` (bloqueada, vencida, desconocida o sin
+  acceso al dataset) · `error`. Los límites se cuentan sobre este registro (valen con más de una instancia). Si se
+  elimina la clave, sus usos quedan con el prefijo y el nombre.
+- **Datasets** (`GET /integraciones/datasets/{nombre}`): filas planas (sin estructuras anidadas) para JSON to Table o
+  CSV. Parámetros `desde` y `hasta` (por defecto 30 días, tope 400), `formato=json|csv` y `borradores=1`. Tope de
+  50.000 filas. El JSON trae `filas`, `columnas`, `truncado` e `items`; el CSV va en UTF-8 con BOM y `X-Filas`.
+  Catálogo en `GET /integraciones/datasets`:
+  `productividad_dias` · `productividad_agentes` · `ventas_netas_informes` · `ventas_netas_vendedores` ·
+  `sph_informes` · `sph_agentes` · `informes_diarios` (firmados, sin comentarios ni figuras) ·
+  `informes_diarios_metricas`.
+- **Autenticación de los datasets**: `Authorization: Bearer vcop_…` (lo que manda el nodo GET Request de KNIME) o
+  `X-API-Key`. También sirve la sesión de alguien con la utilidad (botón «Probar con mi sesión» de la guía); esos usos
+  no se registran como de clave.
+- **Conectar KNIME** (aplicación de escritorio): Credentials Configuration → GET Request (Authentication → Bearer; en
+  KNIME < 5.4, header `Authorization`) → JSON Path `$.items[*]` → Ungroup. La pantalla arma la URL de cada dataset,
+  el `curl` de prueba y el ejemplo en Python.
+
+| Método | Ruta (`/api/v1/televentas-claro/integraciones`) | Quién |
+|---|---|---|
+| GET | `/claves` | Sub gerente (las suyas) · superadmin (todas), con el catálogo y los máximos |
+| POST | `/claves` | Crear (devuelve `secreto` una sola vez) |
+| POST | `/claves/{id}/bloquear` · `/desbloquear` | Dueño o superadmin · solo superadmin |
+| PATCH | `/claves/{id}/limites` · DELETE `/claves/{id}` | Solo superadmin |
+| GET | `/claves/{id}/usos` · `/usos?dias=7` | Registro por clave · global (el sub gerente, el de las suyas) |
+| GET | `/datasets` · `/datasets/{nombre}` | Clave de API o sesión con la utilidad |
+
+Tests: `backend/tests/test_integraciones.py` (restricción de la utilidad, clave una sola vez, datasets JSON y CSV,
+borradores, límites 429, registro, bloqueo, desbloqueo, límites, vencimiento, eliminación y auditoría).
+
 ## Voi · el agente de la plataforma (Claude Managed Agents)
 
 **Voi · Powered by Claude** es el agente de IA de la plataforma, en un panel lateral disponible en todas las pantallas

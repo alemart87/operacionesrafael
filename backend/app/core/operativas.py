@@ -113,6 +113,12 @@ OPERATIVAS: list[dict] = [
                 "solo_perfiles": ["sub_gerente"],
             },
             {
+                "key": "integraciones",
+                "name": "Integraciones (API para KNIME y otras herramientas)",
+                "description": "Claves de API de solo lectura para conectar herramientas de análisis (KNIME, Power BI, Python) a los datos ya publicados de la operativa: productividad, ventas netas, SPH e informes diarios firmados. Cada clave tiene vencimiento y límites de uso; todo uso queda registrado. Nunca incluye Facturación. El superadmin ve, bloquea y elimina todas las claves.",
+                "solo_perfiles": ["sub_gerente"],
+            },
+            {
                 "key": "asistente",
                 "name": "Asistente IA (Voi)",
                 "description": "Voi, el agente de la plataforma: consulta y explica los datos de los módulos que el usuario ya ve, prepara borradores y propone acciones que el usuario confirma, con memoria y conversaciones guardadas. Nunca ve más que el usuario. El superadmin sigue el consumo y las conversaciones.",
