@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Clock, FileSpreadsheet, Loader2, RefreshCw, UploadCloud, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, FileSpreadsheet, Loader2, RefreshCw, UploadCloud, X, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -21,7 +21,7 @@ interface Item {
   manual: string; // 'YYYY-MM-DDTHH:MM' si el nombre no trae la marca de tiempo
   estado: "pendiente" | "subiendo" | "ok" | "error";
   error?: string;
-  resultado?: { corte: Corte; reemplazo: boolean; informe: InformeResumen | null };
+  resultado?: { corte: Corte; reemplazo: boolean; informe: InformeResumen | null; avisos?: string[] };
 }
 
 /** Misma regla que el backend: marca de tiempo Unix de 13 (ms) o 10 (s) dígitos en el nombre. */
@@ -189,6 +189,11 @@ function Subir() {
                             {it.resultado.informe && <> · borrador del día con {n(it.resultado.informe.cortes)} corte(s)</>}
                           </div>
                         )}
+                        {it.estado === "ok" && it.resultado?.avisos?.map((a, i) => (
+                          <div key={i} className="text-xs text-brand-graphite mt-1 flex gap-1.5 rounded-md border border-brand-orange/40 bg-brand-orange/10 px-2.5 py-1.5">
+                            <AlertTriangle size={14} className="text-brand-orange shrink-0 mt-0.5" aria-hidden /> <span>{a}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                     <div className="flex items-center gap-3 sm:justify-end shrink-0">

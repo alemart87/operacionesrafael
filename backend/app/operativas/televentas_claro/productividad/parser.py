@@ -91,7 +91,7 @@ def _texto(contenido: bytes) -> str:
 
 
 def parse_tiempos(contenido: bytes) -> dict[str, Any]:
-    """Reporte leído: {"filas": una por agente (tiempos en segundos, llamadas enteras y llamadas cortas
+    """Reporte leído: {"avisos": notas sobre datos raros que no invalidan el archivo, "filas": una por agente (tiempos en segundos, llamadas enteras y llamadas cortas
     por umbral), "umbrales": los segundos de cada columna Short Talk (p. ej. [10] o [10, 20, 30])}."""
     texto = _texto(contenido)
     muestra = texto[:4096]
@@ -129,6 +129,7 @@ def parse_tiempos(contenido: bytes) -> dict[str, Any]:
         )
 
     filas: list[dict[str, Any]] = []
+    excedidas: list[str] = []   # agentes con más cortas que llamadas (criterio de la plataforma, no error del archivo)
     for n, fila in enumerate(lector, start=2):
         if not any(c.strip() for c in fila):
             continue
@@ -145,7 +146,10 @@ def parse_tiempos(contenido: bytes) -> dict[str, Any]:
         for umbral, idx in cortas_cols.items():
             v = _entero(fila[idx] if idx < len(fila) else "", n, "cortas")
             if v > r["llamadas"]:
-                raise ArchivoInvalido(f"Fila {n}: hay más llamadas cortas que llamadas ({nombre}).")
+                # La plataforma cuenta «Short Talk» con otro criterio que «Out» (p. ej. intentos o reintentos) y a veces
+                # informa más cortas que llamadas. No invalida el archivo: se toman todas sus llamadas como cortas.
+                excedidas.append(f"{nombre} ({v} cortas sobre {r['llamadas']} llamadas)")
+                v = r["llamadas"]
             r["cortas_por_umbral"][umbral] = v
         if "ocupacion" in indices:
             r["ocupacion"] = _porcentaje(celda("ocupacion"))
@@ -154,7 +158,15 @@ def parse_tiempos(contenido: bytes) -> dict[str, Any]:
             raise ArchivoInvalido(f"El archivo tiene más de {MAX_FILAS} filas: no parece el reporte diario por agente.")
     if not filas:
         raise ArchivoInvalido("El archivo no tiene filas de agentes.")
-    return {"filas": filas, "umbrales": sorted(cortas_cols, key=lambda u: (u is None, u or 0))}
+    avisos: list[str] = []
+    if excedidas:
+        avisos.append(
+            f"La plataforma informa más llamadas cortas que llamadas en {len(excedidas)} agente(s): "
+            + ", ".join(excedidas[:5]) + ("…" if len(excedidas) > 5 else "")
+            + ". Se tomaron todas sus llamadas como cortas; es un criterio de la plataforma (cuenta «Short Talk» con "
+            "otra regla que «Out»), no un error del archivo."
+        )
+    return {"filas": filas, "umbrales": sorted(cortas_cols, key=lambda u: (u is None, u or 0)), "avisos": avisos}
 
 
 def corte_de_nombre(nombre_archivo: str | None) -> datetime | None:

@@ -103,7 +103,7 @@ async def _cortes_del_dia(db: AsyncSession, fecha: date) -> list[ProdCorte]:
 def _para_analisis(c: ProdCorte) -> dict[str, Any]:
     reporte = parse_tiempos(gzip.decompress(c.contenido_gz))
     return {"id": c.id, "hora": a_local(c.corte_at), "archivo": c.filename,
-            "filas": reporte["filas"], "umbrales": reporte["umbrales"]}
+            "filas": reporte["filas"], "umbrales": reporte["umbrales"], "avisos": reporte.get("avisos", [])}
 
 
 def _aplicar(informe: ProdInforme, data: dict[str, Any], user_id: str) -> None:
@@ -239,7 +239,7 @@ async def subir_corte(
                         extra={"archivo": nombre, "fecha": fecha.isoformat(), "hora": local.strftime("%H:%M"),
                                "reemplaza": bool(existente)})
     return {"corte": _corte_dict(corte), "reemplazo": bool(existente),
-            "informe": _resumen(informe) if informe else None}
+            "informe": _resumen(informe) if informe else None, "avisos": reporte.get("avisos", [])}
 
 
 @router.get("/cortes")

@@ -91,8 +91,11 @@ def test_parser_valida_el_archivo():
         parse_tiempos(b"Name,Login Time\r\n\"A, B\",01:00:00")
     with pytest.raises(ArchivoInvalido, match="Fila 2"):
         parse_tiempos(reporte([fila("A, B", H, 60, 2, 1).replace("01:00:00", "1h", 1)]))
-    with pytest.raises(ArchivoInvalido, match="más llamadas cortas"):
-        parse_tiempos(reporte([fila("A, B", H, 60, 2, 5)]))
+    # Más cortas que llamadas (criterio de la plataforma): no invalida el archivo, se acotan y queda una nota.
+    rep = parse_tiempos(reporte([fila("A, B", H, 60, 2, 5)]))
+    assert list(rep["filas"][0]["cortas_por_umbral"].values()) == [2] and len(rep["avisos"]) == 1
+    assert "más llamadas cortas que llamadas en 1 agente(s): A, B (5 cortas sobre 2 llamadas)" in rep["avisos"][0]
+    assert parse_tiempos(reporte([fila("A, B", H, 60, 2, 1)]))["avisos"] == []
     with pytest.raises(ArchivoInvalido, match="vacío"):
         parse_tiempos(b"")
     with pytest.raises(ArchivoInvalido, match="no tiene filas"):

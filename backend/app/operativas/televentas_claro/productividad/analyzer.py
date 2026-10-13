@@ -306,6 +306,10 @@ def analizar_dia(fecha: date, cortes: list[dict[str, Any]], p: dict[str, Any]) -
         )
     if prueba:
         avisos.append(f"Se excluyeron {len(prueba)} cuenta(s) de prueba: {', '.join(sorted(prueba))}.")
+    # Lo que el parser anotó de cada archivo (p. ej. más cortas que llamadas en algún agente).
+    for c in cortes:
+        for a in c.get("avisos") or []:
+            avisos.append(f"Corte de las {c['hora']:%H:%M}: {a}")
 
     modos = {m: _resumen([a for a in agentes if a["modo"] == m], p) for m in MODOS}
     turnos: dict[str, Any] = {**info_turnos}

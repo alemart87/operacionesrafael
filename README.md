@@ -241,7 +241,10 @@ totales acumulados desde las 00:00 hasta la hora del export). Código en
 - **Contacto:** llamada con 30 s o más de conversación (parámetro). Se mide con
   la columna «Short Talk < Ns» del umbral de la regla (el reporte puede traer
   varias). Si el archivo no la trae (hoy solo «< 10s»), el contacto no se muestra
-  y la pantalla indica qué hace falta.
+  y la pantalla indica qué hace falta. Si la plataforma informa **más cortas que
+  llamadas** en un agente (cuenta «Short Talk» con otra regla que «Out»), el
+  archivo no se rechaza: se toman todas sus llamadas como cortas y queda una nota
+  al subirlo y en el informe del día.
 - **Discador automático vs. manual:** se detecta por agente (con tiempo de
   tipificación = automático).
 - **Sesiones abiertas:** 12 h o más conectado = alerta; no entran en la meta ni en
