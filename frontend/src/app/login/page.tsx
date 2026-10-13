@@ -4,15 +4,8 @@ import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { LogoAnimado } from "@/components/LogoAnimado";
-import { MuralVivo } from "@/components/MuralVivo";
+import { PanelMarca } from "@/components/PanelMarca";
 import { getToken, login, login2fa, motivoSalida, type LoginResult } from "@/lib/api";
-
-const PILLARS = [
-  { title: "Expansión", sub: "Crecimiento y cobertura" },
-  { title: "Operaciones", sub: "Seguimiento diario" },
-  { title: "Indicadores", sub: "KPIs y metas" },
-  { title: "Trazabilidad", sub: "Auditoría completa" },
-];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -54,44 +47,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2">
-      {/* Panel de marca */}
-      <div
-        className="hidden lg:flex flex-col justify-between p-12 text-white relative overflow-hidden"
-        style={{ background: "linear-gradient(135deg, #B81F18 0%, #E6332A 55%, #F39200 100%)" }}
-      >
-        {/* El mural de puntos de la fachada, vivo: forma gráficos del negocio, sigue al puntero y tiene profundidad. */}
-        <MuralVivo className="absolute inset-0 w-full h-full opacity-[0.55] pointer-events-none" />
-        <div className="flex items-start justify-end relative z-10">
-          <LogoAnimado size={230} sobreRojo className="xl:w-[300px] xl:h-auto drop-shadow-[0_8px_24px_rgba(0,0,0,0.25)]" />
-        </div>
-
-        <div className="space-y-6 max-w-md relative z-10">
-          <h1 className="font-display text-5xl uppercase leading-tight">
-            Operaciones<br />
-            <span className="text-white/90">Voicenter</span>
-          </h1>
-          <div className="inline-block bg-white/15 backdrop-blur-sm rounded-md px-3 py-1.5 font-display text-lg uppercase tracking-wide">
-            Gerencia Expansión RM
-          </div>
-          <p className="text-white/90 text-base leading-relaxed">
-            Plataforma de información para la gestión y el seguimiento de la Gerencia Expansión RM.
-          </p>
-          <div className="grid grid-cols-2 gap-3 pt-4">
-            {PILLARS.map((p) => (
-              <div key={p.title} className="flex items-center gap-2.5">
-                <div className="w-1.5 h-8 bg-white/60 rounded-full" />
-                <div>
-                  <div className="font-display text-sm uppercase tracking-wider2">{p.title}</div>
-                  <div className="text-[11px] text-white/70">{p.sub}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="text-[11px] text-white/70 uppercase tracking-wider2 relative z-10">Operado por Voicenter S.A.</div>
-      </div>
+    <div className="min-h-screen grid lg:grid-cols-[1.35fr_1fr]">
+      {/* Panel de marca: titular, escenas de línea que se dibujan solas, una por módulo */}
+      <PanelMarca />
 
       {/* Formulario */}
       <div className="flex items-center justify-center px-6 py-12 bg-brand-bg-soft">
