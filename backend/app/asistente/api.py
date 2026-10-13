@@ -109,6 +109,8 @@ async def pantallas_del_usuario(user: CurrentUser = Depends(usuario_voi)) -> dic
 class Pantalla(BaseModel):
     ruta: str = Field("", max_length=300)
     titulo: Optional[str] = Field(None, max_length=200)
+    # Lo que la pantalla tiene abierto y Voi puede tocar (hoy: la simulación guardada del simulador convergente).
+    simulacion: Optional[dict] = None
 
 
 class NuevaPayload(BaseModel):

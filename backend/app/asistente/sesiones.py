@@ -76,6 +76,11 @@ def contexto_texto(user: CurrentUser, modo: str, pantalla: dict[str, Any] | None
         p = pantallas.pantalla_de_ruta(str(pantalla["ruta"]))
         que = f" Es: {p.que_hace}" if p is not None else ""
         lineas.append(f"- Está viendo la pantalla {str(pantalla['ruta'])[:200]}{titulo}.{que}")
+        sim = pantalla.get("simulacion") or {}
+        if isinstance(sim, dict) and sim.get("id"):
+            lineas.append(f"- Tiene ABIERTA la simulación guardada «{str(sim.get('nombre') or '')[:120]}» (id {str(sim['id'])[:36]}): "
+                          "los pedidos de cambiar, poner, subir o sacar algo son sobre ella (facturacion_modificar_simulacion con "
+                          "referencia «abierta»); no crees otra salvo que lo pida.")
     lineas.extend(investigacion_svc.contexto_lineas(investigacion, puede=investigacion_svc.puede_investigar(user),
                                                     puede_informe=investigacion_svc.puede_informe(user)))
     return "\n".join(lineas)

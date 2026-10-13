@@ -188,3 +188,55 @@ async def test_conversacion_simula_y_guarda_con_el_simulador(simulador):
         await _esperar(cid)
         t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=coord)).json()
         assert not [i for i in t["items"] if i["tipo"] == "paso" and str(i.get("herramienta", "")).startswith("facturacion")]
+
+
+@pytest.mark.asyncio
+async def test_modificar_la_simulacion_abierta(simulador):
+    """Voi cambia campos de la simulación que el usuario tiene abierta, sin crear otra ni perder lo cargado."""
+    from app.asistente.models import AsistenteConversacion
+
+    async with AsyncSessionLocal() as db:
+        sg = _usuario("sub_gerente")
+        texto, error = await ejecutar(obtener("facturacion_guardar_simulacion"),
+                                      {"nombre": "Base para modificar", "ventas_por_mes": [1700], "primer_mes": "2027-03",
+                                       "meses_afectados": {"5": {"porta_pct": 80}}, "gpon": {"por_asesor": 2}},
+                                      _ctx(db, sg), "gestion")
+        sid = json.loads(texto)["id"]
+        # Sin simulación abierta en la pantalla, «abierta» no resuelve.
+        conv = AsistenteConversacion(id="conv-sim", user_id=sg.id, titulo="x", estado="idle", contexto={"pantalla": {"ruta": "/inicio"}})
+        db.add(conv); await db.commit()
+        ctx = Ctx(db=db, user=sg, conversacion_id="conv-sim")
+        texto, error = await ejecutar(obtener("facturacion_modificar_simulacion"), {"ventas_por_mes": [1800]}, ctx, "gestion")
+        assert error and "abierta" in texto
+        # Con la simulación abierta en el contexto de la pantalla, los cambios van sobre ella.
+        conv.contexto = {"pantalla": {"ruta": "/televentas-claro/facturacion/simulador-anual", "simulacion": {"id": sid, "nombre": "Base para modificar"}}}
+        await db.commit()
+        texto, error = await ejecutar(obtener("facturacion_modificar_simulacion"),
+                                      {"ventas_por_mes": [1800], "cambios": {"objetivo_co": 1800}, "meses_afectados": {"7": {"gpon": {"objetivo": 350}}},
+                                       "notas": [{"texto": "Subimos a 1.800 con objetivo 1.800.", "tipo": "decision"}]},
+                                      ctx, "gestion")
+        d = json.loads(texto)
+        assert not error and d["id"] == sid and d["pantalla"].endswith(f"?abrir={sid}") and d["antes"]["resultado"] is not None
+        s = await db.get(FacturacionSimulacion, sid)
+        await db.refresh(s)
+        assert s.ventas_por_mes[0] == 1800 and s.parametros["objetivo_co"] == 1800 and s.parametros["ventas"] == 1800
+        assert s.meses_afectados["5"] == {"porta_pct": 80.0} and s.meses_afectados["7"] == {"gpon": {"objetivo": 350}}   # lo cargado sigue
+        assert s.parametros["convergente"]["por_asesor_por_mes"][0] == 2.0 and s.nombres_meses[0] == "Marzo 2027"
+        assert s.notas[-1]["tipo"] == "decision" and s.resumen["ventas"] == 1800 * 12
+        todas = (await db.execute(select(FacturacionSimulacion))).scalars().all()
+        assert len([x for x in todas if x.nombre == "Base para modificar"]) == 1
+        # Probar sin tocar: desde_guardada corre sobre la abierta y no guarda nada.
+        texto, error = await ejecutar(obtener("facturacion_simular_anual"), {"desde_guardada": "abierta", "bono_unico": True}, ctx, "gestion")
+        d = json.loads(texto)
+        assert not error and d["sobre_la_guardada"]["id"] == sid and d["escenario"]["bono_unico"] and "no se guardó" in d["nota"]
+        await db.refresh(s)
+        assert not s.parametros.get("bono_unico")
+        # Quitar un mes afectado y cambiar GPON por asesor.
+        texto, error = await ejecutar(obtener("facturacion_modificar_simulacion"),
+                                      {"referencia": "abierta", "quitar_meses_afectados": [5], "gpon": {"por_asesor": 3}}, ctx, "gestion")
+        assert not error
+        await db.refresh(s)
+        assert "5" not in s.meses_afectados and s.parametros["convergente"]["por_asesor_por_mes"][0] == 3.0
+        # La transcripción de la conversación lo cuenta como acción propia de Voi (auditada con origen voi).
+        audit = (await db.execute(select(AuditLog).where(AuditLog.resource_id == sid))).scalars().all()
+        assert sum(1 for a in audit if a.action == "update_facturacion_simulacion" and (a.extra or {}).get("origen") == "voi") >= 2

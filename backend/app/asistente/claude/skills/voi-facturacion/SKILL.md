@@ -63,6 +63,24 @@ Simulador:
 - **`facturacion_anotar_simulacion`**: suma notas (supuesto, observación, decisión, pendiente, riesgo) o el comentario.
 - Para que el usuario la vea con sus gráficos: `abrir_pantalla` con la `ruta` que devolvió la herramienta (abre la
   simulación guardada en la pantalla, con el registro del trabajo al lado).
+- **`facturacion_modificar_simulacion`**: cambia una simulación GUARDADA (por defecto la **abierta en la pantalla**:
+  el contexto de cada mensaje te dice cuál es). Aplica encima de lo guardado solo lo que mandás y vuelve a correr el
+  motor; la pantalla abierta se actualiza sola. `desde_guardada: "abierta"` en `facturacion_simular_anual` prueba
+  cambios sobre ella **sin tocarla** (para un «¿y si…?» antes de decidir).
+
+## Trabajar sobre la simulación abierta (lo más habitual)
+
+Cuando el usuario tiene una simulación abierta (el contexto dice «Tiene ABIERTA la simulación guardada …») y pide
+**cambiar, poner, subir, bajar, sacar o agregar algo** («subí las ventas a 1.800», «poné 2,5 GPON por asesor», «en julio
+el objetivo es 1.900», «sacá el bono único», «cambiá la comisión a 110.000»), **modificá esa misma simulación** con
+`facturacion_modificar_simulacion` (referencia «abierta») y contá el antes y el después (resultado, margen, con cola).
+No corras `facturacion_simular_anual` desde cero ni crees una nueva: perderías lo que ya estaba cargado (ventas por mes,
+meses afectados, GPON, notas). Si el usuario quiere **comparar sin tocarla**, usá `desde_guardada: "abierta"`. Creá una
+nueva solo cuando pida «guardá como…», «otro escenario» o «una copia». Mapeo de pedidos a campos: ventas → `ventas_por_mes`
+(un número = todos los meses; una lista = mes a mes); objetivo CO, efectividad, porta, legajos, recupero, zafra, escalas,
+costos (comisión, plus, ventas por vendedor…) → `cambios`; «en el mes N …» → `meses_afectados` (`{"N": {...}}`; GPON
+dentro de `gpon`); GPON por asesor u objetivo GPON → `gpon`; 18 meses → `horizonte`; bono único / optimizar → sus
+flags; nombres de meses → `primer_mes` o `nombres_meses`.
 
 ## Cómo manejar el simulador (el flujo de un experto)
 

@@ -413,6 +413,39 @@ async def anotar_simulacion_registro(db: AsyncSession, user: CurrentUser, s: Fac
     return s
 
 
+_CAMPOS_ESCENARIO = ("horizonte", "parametros", "ventas_por_mes", "meses_afectados", "bonos_adicionales_por_mes",
+                     "nombres_meses", "resumen", "comentario")
+
+
+async def actualizar_simulacion_registro(db: AsyncSession, user: CurrentUser, s: FacturacionSimulacion,
+                                         campos: dict, ip: str | None, origen: str = "pantalla") -> FacturacionSimulacion:
+    """Cambia el escenario de una simulación guardada (parámetros, ventas, meses afectados, bonos, nombres, horizonte,
+    comentario, foto del resultado). Marcas, post-its y notas quedan como están. Lo usa Voi; la pantalla usa el PATCH."""
+    cambiados = []
+    for k in _CAMPOS_ESCENARIO:
+        if k in campos and campos[k] is not None:
+            v = campos[k]
+            if k == "horizonte" and v not in (12, 18):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "El horizonte debe ser 12 o 18 meses.")
+            if k == "ventas_por_mes" and not v:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Faltan las ventas por mes.")
+            if k == "nombres_meses":
+                v = [str(x or "")[:40] for x in v]
+            if k == "comentario":
+                v = str(v).strip() or None
+            setattr(s, k, v)
+            cambiados.append(k)
+    if not cambiados:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No hay cambios para aplicar.")
+    s.updated_by_nombre = user.full_name
+    await db.commit()
+    await db.refresh(s)
+    await record_action(db, user_id=user.id, action="update_facturacion_simulacion",
+                        resource_type="facturacion_simulacion", resource_id=s.id, ip=ip,
+                        extra={"campos": cambiados, "origen": origen})
+    return s
+
+
 def simulacion_dict(s: FacturacionSimulacion, detalle: bool = True) -> dict:
     """La simulación guardada como la ve la pantalla (también para Voi)."""
     return _simulacion_out(s, detalle)

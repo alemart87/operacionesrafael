@@ -329,6 +329,13 @@ h3,
   .sim-print .card { break-inside: auto; page-break-inside: auto; }
   .sim-print .recharts-wrapper, .sim-print tr, .sim-print .grid > div { break-inside: avoid; page-break-inside: avoid; }
   .sim-print .no-print-band, .sim-print [class*="border-l-4"] { break-after: avoid; page-break-after: avoid; }
+  /* Tablas anchas del simulador (EERR, bonos mes a mes): nada de scroll al imprimir; se escalan para que entren
+     todos los meses en la hoja (12 meses ≈ 0,82; 18 meses ≈ 0,6). */
+  .sim-print .overflow-x-auto { overflow: visible !important; }
+  .sim-print .overflow-x-auto table { min-width: 0 !important; width: 100% !important; font-size: 8.5px !important; }
+  .sim-print .overflow-x-auto th, .sim-print .overflow-x-auto td { padding: 2px 3px !important; white-space: nowrap; }
+  .sim-print .sim-tabla-12 { zoom: 0.78; }
+  .sim-print .sim-tabla-18 { zoom: 0.55; }
   .print-shell { display: table !important; width: 100% !important; table-layout: fixed !important; font-size: 1rem !important; }
   .print-shell > tbody > tr > td { width: 100%; max-width: 100%; overflow: hidden; }
   .print-shell > .print-shell-head { display: table-header-group !important; }

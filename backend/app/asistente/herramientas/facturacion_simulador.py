@@ -24,6 +24,7 @@ from ...operativas.televentas_claro.facturacion.analyzers.presets import (
 from ...operativas.televentas_claro.facturacion.analyzers.simulador import PARAMETROS_DEFAULT
 from ...operativas.televentas_claro.facturacion.models.simulacion import FacturacionSimulacion
 from ...operativas.televentas_claro.facturacion.schemas import SimulacionCreate
+from ..models import AsistenteConversacion
 from .base import CONSULTAR, PROPIO, Ctx, ErrorHerramienta, Herramienta, compactar, esquema, llamar, registrar, texto
 from .facturacion import CONFIDENCIAL, MODOS_FACT, P_FACT, PANTALLA, _numero, validar_cambios
 
@@ -430,6 +431,14 @@ async def _simular_anual(ctx: Ctx, e: dict[str, Any]) -> Any:
                 "escenarios": {n: compactar({k: v for k, v in res.items() if k != "conclusion"}, max_lista=18) for n, res in resumenes},
                 "conclusiones": {n: res["conclusion"] for n, res in resumenes},
                 "pantalla": PANTALLA_ANUAL, "importante": CONFIDENCIAL}
+    if e.get("desde_guardada") is not None:
+        s = await _buscar_guardada(ctx, e.get("desde_guardada"))
+        ent = _entrada_sobre_guardada(s, e)
+        res = resumen(ent, correr(ent))
+        return {**compactar(res, max_lista=18), "sobre_la_guardada": {"id": s.id, "nombre": s.nombre},
+                "nota": "Es una prueba sobre la simulación guardada: no se guardó nada. Para dejar estos cambios en ella usá "
+                        "facturacion_modificar_simulacion con los mismos campos.",
+                "pantalla": _pantalla_abrir(s.id), "importante": CONFIDENCIAL}
     ent = entrada_anual(e)
     res = resumen(ent, correr(ent))
     return {**compactar(res, max_lista=18), "entrada_normalizada": _entrada_para_reusar(ent),
@@ -511,10 +520,84 @@ def _pantalla_abrir(sid: str) -> str:
     return f"{PANTALLA_ANUAL}?abrir={sid}"
 
 
+ABIERTA = frozenset({"", "abierta", "actual", "activa", "la abierta", "esta", "la actual", "en pantalla"})
+
+
+async def _id_abierta(ctx: Ctx) -> str | None:
+    """La simulación guardada que el usuario tiene abierta en la pantalla (la pantalla lo manda con cada mensaje)."""
+    conv = await ctx.db.get(AsistenteConversacion, ctx.conversacion_id)
+    pant = ((conv.contexto if conv else None) or {}).get("pantalla") or {}
+    sim = pant.get("simulacion") or {}
+    if sim.get("id"):
+        return str(sim["id"])
+    ruta = str(pant.get("ruta") or "")
+    if "abrir=" in ruta:
+        return ruta.split("abrir=", 1)[1].split("&", 1)[0][:36] or None
+    return None
+
+
+def _entrada_sobre_guardada(s: FacturacionSimulacion, e: dict[str, Any]) -> dict[str, Any]:
+    """Lo guardado como base y, encima, lo que pide Voi (cambios, ventas, meses afectados, GPON…). Lo que no se
+    menciona queda como estaba."""
+    params = copy.deepcopy(s.parametros or {})
+    cv = params.pop("convergente", None) or {}
+    h = _horizonte(e.get("horizonte") or s.horizonte)
+    cambios = validar_cambios(e.get("cambios"), PARAMETROS_DEFAULT)
+    params = aplicar_preset(params, cambios)
+    if e.get("bono_unico") is True:
+        params = aplicar_bono_unico(params)
+    if e.get("optimizar") is True and "ajuste_comisiones_pct" not in cambios:
+        params["ajuste_comisiones_pct"] = AJUSTE_OPTIMIZAR_PCT
+    ventas = _lista_numeros("ventas_por_mes", e.get("ventas_por_mes"), h, 0, 100000)
+    if not ventas and e.get("ventas") is not None:
+        ventas = [_numero("ventas", e.get("ventas"), 0.0)]
+    if not ventas:
+        ventas = [float(x) for x in (s.ventas_por_mes or [])][:h] or [float(params.get("ventas") or PARAMETROS_DEFAULT["ventas"])]
+    while len(ventas) < h:
+        ventas.append(ventas[-1])
+    params["ventas"] = ventas[0]
+    bonos_ad = _lista_numeros("bonos_adicionales_por_mes", e.get("bonos_adicionales_por_mes"), h, 0, 1e11)
+    if not bonos_ad:
+        bonos_ad = [float(x) for x in (s.bonos_adicionales_por_mes or [])][:h]
+    while bonos_ad and len(bonos_ad) < h:
+        bonos_ad.append(0.0)
+    nombres = _nombres_meses(e, h) or [str(x or "") for x in (s.nombres_meses or [])][:h]
+    afectados = {k: v for k, v in (s.meses_afectados or {}).items() if str(k).isdigit() and 2 <= int(k) <= h}
+    for m, ov in _afectados(e.get("meses_afectados"), h).items():
+        afectados[m] = {**afectados.get(m, {}), **ov}
+    for m in (e.get("quitar_meses_afectados") or []):
+        afectados.pop(str(m), None)
+    g = e.get("gpon") if isinstance(e.get("gpon"), dict) else {}
+    activo = bool(g["activo"]) if g and "activo" in g else (bool(cv.get("activo", True)) if cv else True)
+    por_asesor = _lista_numeros("gpon.por_asesor", g.get("por_asesor", g.get("por_asesor_por_mes")), h, 0, 20) if g else []
+    if not por_asesor:
+        por_asesor = [float(x) for x in (cv.get("por_asesor_por_mes") or [GPON_POR_ASESOR_IDEAL])][:h]
+    while len(por_asesor) < h:
+        por_asesor.append(por_asesor[-1])
+    pg = aplicar_preset(copy.deepcopy(cv.get("parametros_gpon") or PARAMETROS_GPON_DEFAULT),
+                        validar_cambios(g.get("cambios"), PARAMETROS_GPON_DEFAULT) if g else {})
+    objetivo_auto = bool(cv.get("objetivo_auto", True)) if cv else True
+    if g and g.get("objetivo") is not None:
+        pg["objetivo"] = _numero("objetivo", g.get("objetivo"), PARAMETROS_GPON_DEFAULT["objetivo"])
+        objetivo_auto = False
+    af_movil, af_gpon = _separar_afectados(afectados)
+    return {
+        "horizonte": h, "preset": "guardada", "bono_unico": bool(params.get("bono_unico")), "optimizar": bool(e.get("optimizar")),
+        "parametros": params, "cambios": cambios, "ventas_por_mes": ventas, "bonos_adicionales_por_mes": bonos_ad,
+        "nombres_meses": nombres, "meses_afectados": afectados, "meses_afectados_movil": af_movil,
+        "gpon": {"activo": activo, "por_asesor_por_mes": por_asesor, "parametros": pg, "cambios": {}, "objetivo_auto": objetivo_auto,
+                 "bonos_adicionales_por_mes": [], "meses_afectados": af_gpon},
+    }
+
+
 async def _buscar_guardada(ctx: Ctx, referencia: Any) -> FacturacionSimulacion:
     ref = str(referencia or "").strip()
-    if not ref:
-        raise ErrorHerramienta("Indicá la simulación guardada: su id o parte del nombre.")
+    if ref.lower() in ABIERTA:
+        abierta = await _id_abierta(ctx)
+        if not abierta:
+            raise ErrorHerramienta("No hay una simulación guardada abierta en la pantalla. Indicá cuál (id o parte del nombre) o "
+                                   "pedí la lista con facturacion_simulaciones_guardadas.")
+        ref = abierta
     s = await ctx.db.get(FacturacionSimulacion, ref)
     if s:
         return s
@@ -622,6 +705,37 @@ async def _anotar(ctx: Ctx, e: dict[str, Any]) -> Any:
             "importante": CONFIDENCIAL}
 
 
+async def _modificar(ctx: Ctx, e: dict[str, Any]) -> Any:
+    s = await _buscar_guardada(ctx, e.get("referencia"))
+    ent = _entrada_sobre_guardada(s, e)
+    r = correr(ent)
+    campos = {"horizonte": ent["horizonte"], "parametros": _parametros_para_guardar(ent), "ventas_por_mes": ent["ventas_por_mes"],
+              "meses_afectados": ent["meses_afectados"], "bonos_adicionales_por_mes": ent["bonos_adicionales_por_mes"],
+              "nombres_meses": ent["nombres_meses"], "resumen": _foto(ent, r)}
+    if e.get("comentario") is not None:
+        campos["comentario"] = texto(e.get("comentario"), "el comentario", 0, 4000)
+    antes = dict(s.resumen or {})
+    s = await llamar(fact_api.actualizar_simulacion_registro, db=ctx.db, user=ctx.user, s=s, campos=campos, ip=None, origen="voi")
+    notas = _notas(e.get("notas"))
+    if notas:
+        s = await llamar(fact_api.anotar_simulacion_registro, db=ctx.db, user=ctx.user, s=s, notas_nuevas=notas, comentario=None,
+                         ip=None, origen="voi")
+    res = resumen(ent, r, con_meses=False)
+    return {"ok": True, "id": s.id, "nombre": s.nombre, "pantalla": _pantalla_abrir(s.id),
+            "cambios_aplicados": {k: v for k, v in e.items() if k not in ("referencia", "notas", "comentario")},
+            "antes": {k: antes.get(k) for k in ("ingreso_neto", "costos", "resultado", "margen_pct", "resultado_con_cola")},
+            "resultado": compactar({k: res[k] for k in ("anual", "por_negocio", "escenario", "estructura_mes_1")}, max_lista=12),
+            "conclusion": r["conclusion"],
+            "siguiente_paso": "La simulación guardada quedó actualizada; si el usuario la tiene abierta, la pantalla se refresca sola.",
+            "importante": CONFIDENCIAL}
+
+
+async def _resumen_modificar(ctx: Ctx, e: dict[str, Any]) -> str:
+    ref = str(e.get("referencia") or "abierta")
+    que = ", ".join(k for k in e if k not in ("referencia", "notas", "comentario")) or "sin cambios"
+    return f"Modificar la simulación guardada «{ref[:60]}» ({que})"
+
+
 async def _resumen_anotar(ctx: Ctx, e: dict[str, Any]) -> str:
     n = len(e.get("notas") or []) if isinstance(e.get("notas"), list) else (1 if e.get("notas") else 0)
     return f"Anotar {n} nota(s) en la simulación guardada «{str(e.get('referencia') or '')[:60]}»"
@@ -645,8 +759,24 @@ _h(nombre="facturacion_simular_anual", etiqueta="Corriendo el simulador converge
                "diferencias. Usá `preset: ideal` para el IDEAL, `bono_unico` y `optimizar` para la propuesta 2027.",
    esquema=esquema({**_PROPS, "escenarios": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": "object"},
                                             "description": "Escenarios a comparar: [{nombre, …mismos campos que arriba}]. Lo de "
-                                                           "afuera es común; cada escenario lo sobreescribe."}}),
+                                                           "afuera es común; cada escenario lo sobreescribe."},
+                    "desde_guardada": {"type": "string", "description": "Probar cambios SOBRE una simulación guardada sin tocarla: id, "
+                                                                        "parte del nombre o «abierta». Lo guardado es la base; lo demás "
+                                                                        "se aplica encima."}}),
    fn=_simular_anual)
+
+_h(nombre="facturacion_modificar_simulacion", etiqueta="Modificando la simulación guardada", nivel=PROPIO,
+   descripcion="Cambia una simulación GUARDADA (por defecto la que el usuario tiene abierta en la pantalla): aplica encima de lo "
+               "guardado los campos que mandes (cambios de parámetros, ventas_por_mes, meses_afectados, quitar_meses_afectados, "
+               "gpon, horizonte, bono_unico, optimizar, nombres_meses, bonos_adicionales_por_mes, comentario, notas), vuelve a "
+               "correr el motor, guarda el nuevo escenario con su resultado y queda auditado; lo que no mencionás queda igual. La "
+               "pantalla abierta se actualiza sola. Usala cuando el usuario pide «cambiá», «poné», «subí», «sacá» sobre la "
+               "simulación que está trabajando; NO crees una nueva con facturacion_guardar_simulacion salvo que lo pida.",
+   esquema=esquema({"referencia": {"type": "string", "description": "Id, parte del nombre, o «abierta» (por defecto: la abierta en pantalla)."},
+                    "quitar_meses_afectados": {"type": "array", "items": {"type": "integer"}},
+                    "comentario": {"type": "string"}, "notas": {"type": "array", "maxItems": 20, "items": {"type": "object"}},
+                    **_PROPS}),
+   fn=_modificar, resumen=_resumen_modificar)
 
 _h(nombre="facturacion_simulaciones_guardadas", etiqueta="Consultando las simulaciones guardadas", nivel=CONSULTAR,
    descripcion="Las simulaciones guardadas en el registro del trabajo del simulador convergente (nombre, autor, fecha, "
@@ -657,7 +787,8 @@ _h(nombre="facturacion_simulacion_guardada", etiqueta="Abriendo una simulación 
    descripcion="Una simulación guardada a fondo: ventas por mes, qué parámetros difieren de los calibrados, zafra, GPON, "
                "meses afectados, notas y el resultado guardado. Con `recalcular: true` la vuelve a correr con el motor "
                "actual y devuelve el resultado completo (para comparar o explicar). `referencia`: id o parte del nombre.",
-   esquema=esquema({"referencia": {"type": "string"}, "recalcular": {"type": "boolean"}}, ["referencia"]), fn=_guardada)
+   esquema=esquema({"referencia": {"type": "string", "description": "Id, parte del nombre o «abierta» (la de la pantalla)."},
+                    "recalcular": {"type": "boolean"}}), fn=_guardada)
 
 _h(nombre="facturacion_guardar_simulacion", etiqueta="Guardando la simulación en el registro del trabajo", nivel=PROPIO,
    descripcion="Guarda un escenario del simulador convergente en el registro del trabajo (como el botón «Guardar simulación»): "
@@ -673,7 +804,7 @@ _h(nombre="facturacion_guardar_simulacion", etiqueta="Guardando la simulación e
 _h(nombre="facturacion_anotar_simulacion", etiqueta="Anotando la simulación guardada", nivel=PROPIO,
    descripcion="Suma notas (supuesto, observación, decisión, pendiente, riesgo; opcionalmente de un mes) o cambia el comentario "
                "de una simulación guardada. Las notas quedan firmadas por el usuario y salen en el PDF. No borra nada.",
-   esquema=esquema({"referencia": {"type": "string", "description": "Id o parte del nombre de la simulación guardada."},
+   esquema=esquema({"referencia": {"type": "string", "description": "Id, parte del nombre o «abierta» (la de la pantalla)."},
                     "notas": {"type": "array", "maxItems": 20, "items": {"type": "object"}},
-                    "comentario": {"type": "string"}}, ["referencia"]),
+                    "comentario": {"type": "string"}}),
    fn=_anotar, resumen=_resumen_anotar)

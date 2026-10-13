@@ -13,7 +13,7 @@ import { ApiError, CurrentUserInfo, getToken } from "@/lib/api";
 import { OPERATIVA_ROUTES, isNavActive, operativaFromPath, submoduloFromPath } from "@/lib/operativas";
 import {
   AccionVoi, AjustesEvidencia, ConexionVoi, ConversacionVoi, DestinoModo, EstadoVoi, EventoVoi, GuiaVoi, InvestigacionVoi, ItemVoi,
-  OpcionVoi, Pantalla, PantallaVoi, TipoModo, avisarHash, avisarInformeCambiado, ddmm, escucharConversacion, pantallaDeRuta, voiApi,
+  OpcionVoi, Pantalla, PantallaVoi, TipoModo, avisarHash, avisarInformeCambiado, avisarSimulacionCambiada, ddmm, escucharConversacion, pantallaDeRuta, voiApi,
 } from "@/lib/voi";
 import { SelectorAuditor } from "./VoiAuditor";
 import { AvisoVoi, GuiaFlotante, Resalte } from "./VoiGuia";
@@ -363,6 +363,7 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
         if (ev.tipo === "accion" && ev.accion.estado === "ejecutada") {
           if (ev.accion.herramienta === "proponer_evidencia") window.dispatchEvent(new CustomEvent("voi:figuras"));
           avisarInformeCambiado(ev.accion.pantalla, ev.accion.herramienta);
+          avisarSimulacionCambiada(ev.accion.pantalla, ev.accion.herramienta);
         }
         if (ev.tipo === "mensaje" && !abiertoRef.current) setNoLeidos((n) => n + 1);
         // Lo nuevo del lienzo se abre solo en pantallas anchas (al lado del chat); en el teléfono queda la tarjeta.
@@ -476,10 +477,19 @@ export function VoiProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", f);
   }, [habilitado]);
 
+  // La simulación guardada abierta en el simulador convergente (la pantalla lo avisa con «voi:simulacion-abierta»).
+  const [simAbierta, setSimAbierta] = useState<{ id: string; nombre: string } | null>(null);
+  useEffect(() => {
+    const f = (e: Event) => setSimAbierta((e as CustomEvent).detail ?? null);
+    window.addEventListener("voi:simulacion-abierta", f);
+    return () => window.removeEventListener("voi:simulacion-abierta", f);
+  }, []);
+  useEffect(() => { if (!pathname?.includes("/facturacion/simulador-anual")) setSimAbierta(null); }, [pathname]);
+
   const pantalla = useMemo<Pantalla | null>(() => {
     if (!pathname) return null;
-    return { ruta: pathname, titulo: etiquetaPantalla(pathname) || null };
-  }, [pathname]);
+    return { ruta: pathname, titulo: etiquetaPantalla(pathname) || null, simulacion: simAbierta };
+  }, [pathname, simAbierta]);
 
   const enviar = useCallback(async (texto: string) => {
     const limpio = texto.trim();

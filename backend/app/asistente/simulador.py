@@ -605,8 +605,11 @@ class ClienteSimulado:
                                                                    "bono")):
             negocio = "gpon" if "gpon" in n else "pospago"
             if "facturacion_simular_anual" in h and any(k in n for k in ("anual", "convergente", "escenario", "12 meses", "18 meses",
-                                                                          "guarda", "balance")):
+                                                                          "guarda", "balance", "cambia", "modific", "actualiz")):
                 ventas = [int(numero.group(1))] if numero else []
+                if "facturacion_modificar_simulacion" in h and any(k in n for k in ("cambi", "modific", "actualiz", "ajust", "pone")):
+                    cambios = {"ventas_por_mes": ventas} if ventas else {"cambios": {"porta_pct": 85}}
+                    return [("herramienta", "facturacion_modificar_simulacion", {"referencia": "abierta", **cambios}), ("mensaje", _final)]
                 if "facturacion_guardar_simulacion" in h and "guard" in n:
                     nombre = re.sub(r"^.*?(?:guard\w*)\s*(?:la\s+)?(?:simulaci[oó]n\s*)?(?:como\s+)?", "", texto.strip(), flags=re.I).strip(" .«»\"'") or "Simulación de Voi"
                     return [("herramienta", "facturacion_guardar_simulacion",

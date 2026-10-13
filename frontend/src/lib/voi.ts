@@ -224,6 +224,8 @@ export interface MemoriaVoi {
 export interface Pantalla {
   ruta: string;
   titulo?: string | null;
+  /** Lo que la pantalla tiene abierto y Voi puede tocar: la simulación guardada del simulador convergente. */
+  simulacion?: { id: string; nombre: string } | null;
 }
 
 export const voiApi = {
@@ -382,6 +384,13 @@ export function cuando(iso: string | null | undefined): string {
 export function avisarInformeCambiado(ruta: string | null | undefined, herramienta?: string): void {
   const m = /\/televentas-claro\/informe-diario\/([0-9a-f-]{36})/.exec(ruta ?? "");
   if (m) window.dispatchEvent(new CustomEvent("voi:informe", { detail: { id: m[1], herramienta: herramienta ?? null } }));
+}
+
+/** Voi guardó, modificó o anotó una simulación del simulador convergente (la ruta del resultado lo nombra): se avisa con
+ * «voi:simulacion» y el id para que la pantalla, si la tiene abierta, la vuelva a cargar sin recargar. */
+export function avisarSimulacionCambiada(ruta: string | null | undefined, herramienta?: string): void {
+  const m = /simulador-anual\?abrir=([0-9a-f-]{36})/.exec(ruta ?? "");
+  if (m) window.dispatchEvent(new CustomEvent("voi:simulacion", { detail: { id: m[1], herramienta: herramienta ?? null } }));
 }
 
 /** La pantalla del catálogo a la que pertenece una ruta (la de prefijo más largo), como lo resuelve el backend. */

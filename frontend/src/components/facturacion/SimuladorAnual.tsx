@@ -492,10 +492,33 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
     apiFetch<any>(`/api/v1/televentas-claro/facturacion/simulaciones/${abrirId}`).then((s) => {
       if (((s?.negocio === "GPON") ? "gpon" : "movil") !== negocio) return;
       abrirSimulacion(s); setActual(s); setBarra(window.innerWidth >= 1280);
-      window.history.replaceState(null, "", window.location.pathname);
     }).catch((e) => setError(`No se pudo abrir la simulación guardada: ${e.message}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirId, p]);
+
+  // Voi sabe qué simulación guardada está abierta (va en el contexto de cada mensaje) y la URL la refleja (?abrir=<id>).
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("voi:simulacion-abierta", { detail: actual ? { id: actual.id, nombre: actual.nombre } : null }));
+    const url = actual ? `${window.location.pathname}?abrir=${actual.id}` : window.location.pathname;
+    if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, "", url);
+    return () => { window.dispatchEvent(new CustomEvent("voi:simulacion-abierta", { detail: null })); };
+  }, [actual?.id, actual?.nombre]);
+
+  // Voi guardó, modificó o anotó una simulación: si es la abierta (o no hay ninguna), se vuelve a cargar sin recargar.
+  useEffect(() => {
+    const f = async (e: Event) => {
+      const id = (e as CustomEvent).detail?.id as string | undefined;
+      if (!id || (actual && actual.id !== id)) return;
+      try {
+        const s = await apiFetch<any>(`/api/v1/televentas-claro/facturacion/simulaciones/${id}`);
+        if (((s?.negocio === "GPON") ? "gpon" : "movil") !== negocio) return;
+        abrirSimulacion(s); setActual(s);
+      } catch { /* la pantalla sigue como estaba */ }
+    };
+    window.addEventListener("voi:simulacion", f);
+    return () => window.removeEventListener("voi:simulacion", f);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actual?.id, negocio]);
 
   return (
     <AppShell>
@@ -1118,9 +1141,9 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
               )}
 
 
-              <Bloque titulo={`Estado de resultados a ${horizonte} meses (EERR)`} abierto envuelto={false} hint="liquidación mes a mes · estructura fija del mes 1">
+              <Bloque titulo={`Estado de resultados a ${horizonte} meses (EERR)`} abierto envuelto={false} hint="liquidación mes a mes · estructura fija del mes 1" sinImprimir>
               {/* ===== EERR anual ===== */}
-              <section className="card overflow-x-auto sim-impreso-inicio">
+              <section className={`card overflow-x-auto sim-impreso-inicio sim-tabla-${horizonte}`}>
                 <div className="px-4 pt-4">
                   <h2 className="font-display text-xl text-brand-ink uppercase">Estado de resultados a {horizonte} meses (EERR)</h2>
                   <p className="text-xs text-brand-slate mb-2">Liquidación mes a mes con estructura fija del mes 1. Cada columna es un mes calendario; la última, el total del período.</p>
@@ -1234,7 +1257,7 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
                 </table>
               </section>
               {gponOn && (
-                <section className="card overflow-x-auto mt-4">
+                <section className={`card overflow-x-auto mt-4 sim-tabla-${horizonte}`}>
                   <div className="px-4 pt-4">
                     <h2 className="font-display text-lg text-brand-ink uppercase">Bono fijo GPON mes a mes</h2>
                     <p className="text-xs text-brand-slate mb-2">Cumplimiento del objetivo GPON ({formatInt(Number(gponReq?.parametros?.objetivo ?? 0))} líneas{gponObjetivoAuto ? " = vendedores × 3" : ""}) y escalón del bono fijo. Bono GPON del período: {formatGs(a.bonos_gpon ?? 0)} · recálculo al mes 6 {formatGs(Math.abs(a.gpon_recalculo ?? 0))} · líneas en mora al cierre {formatInt(a.gpon_lineas_en_mora_final ?? 0)}.</p>
