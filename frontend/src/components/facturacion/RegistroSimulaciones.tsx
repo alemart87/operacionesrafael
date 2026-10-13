@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch } from "@/lib/api";
 import { formatGs, formatInt } from "@/lib/format";
 import { NotasSimulacion, type Nota } from "./NotasSimulacion";
@@ -86,6 +87,10 @@ export function RegistroSimulaciones({ abierta, setAbierta, listo, getSnapshot, 
   const [piItem, setPiItem] = useState("");
   const skipSync = useRef(false);
 
+  // En el body: dentro de <main> (que forma su propio contexto de apilamiento por la transición de hoja) la barra
+  // quedaría debajo de la cabecera de la app. El portal la saca de ahí; hasta montar no se dibuja (hidratación).
+  const [montado, setMontado] = useState(false);
+  useEffect(() => setMontado(true), []);
   const esDelNegocio = (s: any) => ((s?.negocio === "GPON" || s?.parametros?.negocio === "GPON") ? "gpon" : "movil") === negocio;
   const cargarLista = () => apiFetch<any>("/api/v1/televentas-claro/facturacion/simulaciones").then((d) => setLista((d.simulaciones ?? []).filter(esDelNegocio))).catch(() => setLista([]));
   useEffect(() => { cargarLista(); }, []);
@@ -198,8 +203,9 @@ export function RegistroSimulaciones({ abierta, setAbierta, listo, getSnapshot, 
   const listaFiltrada = lista.filter((s) => !filtro.trim() || `${s.nombre} ${s.comentario ?? ""}`.toLowerCase().includes(filtro.toLowerCase()));
 
   // Pestaña para reabrir la barra cuando está oculta.
+  if (!montado) return null;
   if (!abierta) {
-    return (
+    return createPortal(
       <>
         <button onClick={() => setAbierta(true)} title="Mostrar el registro del trabajo"
           className="no-print hidden sm:block fixed right-0 top-1/2 -translate-y-1/2 z-50 rounded-l-md bg-brand-ink text-white shadow-lg px-2 py-4 [writing-mode:vertical-rl] rotate-180 text-[11px] font-bold uppercase tracking-wider2 hover:bg-brand-graphite">
@@ -211,11 +217,12 @@ export function RegistroSimulaciones({ abierta, setAbierta, listo, getSnapshot, 
           {sinGuardar && <span className="w-2.5 h-2.5 rounded-full bg-brand-orange" title="cambios sin guardar" />}
           {(marcas.length + postits.length + notas.length) > 0 && <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">{marcas.length + postits.length + notas.length}</span>}
         </button>
-      </>
+      </>,
+      document.body,
     );
   }
 
-  return (
+  return createPortal(
     <>
       <style>{`@media (max-width: 639px) { .rs-aside input, .rs-aside textarea, .rs-aside select { font-size: 16px; } }`}</style>
       <div className="no-print sm:hidden fixed inset-0 z-40 bg-brand-ink/40" onClick={() => setAbierta(false)} />
@@ -441,6 +448,7 @@ export function RegistroSimulaciones({ abierta, setAbierta, listo, getSnapshot, 
         <button onClick={() => setAbierta(false)} className="btn-primary w-full !py-3 text-base">Ver la proyección ›</button>
       </div>
     </aside>
-    </>
+    </>,
+    document.body,
   );
 }

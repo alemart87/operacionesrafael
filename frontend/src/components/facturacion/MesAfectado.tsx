@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { formatInt } from "@/lib/format";
 import { NumeroInput } from "./NumeroInput";
 import { recalcSegunZafra } from "./VariablesNegocio";
@@ -150,7 +151,9 @@ export function MesAfectadoEditor({ mes, nombre, nombres, horizonte, base, venta
   const cantidad = contar(ov) + contar(ov.gpon) + (mixOn ? 1 : 0);
   const grupos = Array.from(new Set(campos.map((c) => c.grupo)));
 
-  return (
+  // En el body, como el registro: fuera del contexto de apilamiento de <main>, sobre la cabecera de la app.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-brand-ink/40 sm:p-4 no-print" onClick={onCerrar}>
       <div className="w-full max-w-3xl max-h-[94dvh] sm:max-h-[92vh] overflow-y-auto rounded-t-xl sm:rounded-lg bg-white shadow-2xl border-t-8 border-brand-purple" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 pt-5 pb-3 flex flex-wrap items-start justify-between gap-3 border-b border-brand-border">
@@ -240,6 +243,7 @@ export function MesAfectadoEditor({ mes, nombre, nombres, horizonte, base, venta
         </div>
       </div>
     </div>
+    , document.body,
   );
 }
 
