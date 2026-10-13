@@ -90,6 +90,9 @@ export default function FacturacionReportPage() {
         <Kpi label="Ventas (activaciones)" value={r.ventas_activaciones.toLocaleString("es-PY")} sub={`Ticket ${gs(ventas.ticket || 0)}`} />
       </div>
 
+      {/* Gross y netas con el criterio de Claro */}
+      <GrossCard g={d.gross} />
+
       {/* Análisis rápido */}
       {d.analisis_rapido?.length > 0 && (
         <div className="card p-5 mb-6">
@@ -174,6 +177,70 @@ function Kpi({ label, value, sub, accent, color }: { label: string; value: strin
       <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">{label}</div>
       <div className={`font-display text-2xl mt-1 ${color || "text-brand-ink"}`}>{value}</div>
       {sub && <div className="text-xs text-brand-slate mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+/** Desc Gross / Netas / %Gross tal como los grafica Claro ("Ventas Móv", "Netas Móv", "%Gross/Vta"):
+ *  bajas del mes de cualquier cohorte (CANCELACIONES, sin port out) contra las ventas del mes. */
+function GrossCard({ g }: { g: any }) {
+  if (!g || !g.activaciones) {
+    return (
+      <div className="card p-4 mb-6 text-xs text-brand-slate">
+        <b className="text-brand-ink">Gross y netas (criterio Claro):</b> este reporte se procesó antes de incorporar la métrica. Volvé a subir el archivo de la liquidación para calcularla.
+      </div>
+    );
+  }
+  const n = (v: number) => (v ?? 0).toLocaleString("es-PY");
+  const edadMax = Math.max(...(g.por_edad || []).map((e: any) => e.lineas), 1);
+  const edad13 = (g.por_edad || []).filter((e: any) => e.meses >= 1 && e.meses <= 3).reduce((s: number, e: any) => s + e.lineas, 0);
+  const pct13 = g.desc_gross ? Math.round((edad13 / g.desc_gross) * 100) : 0;
+  return (
+    <div className="card p-5 mb-6">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
+        <h2 className="font-display text-lg text-brand-ink uppercase">Gross y netas · criterio Claro</h2>
+        <span className="text-[11px] text-brand-slate">Netas = ventas − Desc Gross · %Gross/Vta = Desc Gross ÷ ventas</span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+        <Kpi label="Ventas (activaciones)" value={n(g.activaciones)} />
+        <Kpi label="Desc Gross" value={n(g.desc_gross)} sub={`bajas del mes sin port out · PFI ${n(g.pfi)}`} color="text-brand-primary" />
+        <Kpi label="Netas" value={n(g.netas)} color="text-emerald-700" />
+        <Kpi label="%Gross / Vta" value={`${String(g.pct_gross).replace(".", ",")}%`} accent sub="otros calls: 12% a 27%" />
+        <Kpi label="Port out (no cuentan)" value={n(g.port_out)} sub={`${n(g.cancelaciones)} cancelaciones en total`} />
+      </div>
+      <div className="grid md:grid-cols-2 gap-5">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate mb-1">Antigüedad de las líneas dadas de baja</div>
+          <div className="space-y-1">
+            {(g.por_edad || []).map((e: any) => (
+              <div key={e.meses} className="flex items-center gap-2 text-xs">
+                <span className="w-24 text-brand-slate">{e.meses === 0 ? "mismo mes" : `${e.meses} ${e.meses === 1 ? "mes" : "meses"}`}</span>
+                <div className="flex-1 bg-brand-bg rounded h-3 overflow-hidden">
+                  <div className={`h-full rounded ${e.meses >= 1 && e.meses <= 3 ? "bg-brand-primary/70" : "bg-brand-slate/40"}`} style={{ width: `${(e.lineas / edadMax) * 100}%` }} />
+                </div>
+                <span className="w-10 text-right tabular-nums">{n(e.lineas)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-brand-slate mt-2">
+            El {pct13}% de las bajas son ventas de 1 a 3 meses antes (el PFI pega a los 60 días). Por eso el %Gross del mes mide la caja del mes, no la calidad de las ventas del mes: en un mes de ventas bajas el porcentaje salta aunque la venta no haya empeorado.
+          </p>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate mb-1">Razón de la baja</div>
+          <table className="w-full text-sm">
+            <tbody>
+              {(g.por_razon || []).map((r: any) => (
+                <tr key={r.razon} className={`border-b border-brand-border/40 ${r.cuenta ? "" : "text-brand-slate"}`}>
+                  <td className="py-1.5">{r.texto}{!r.cuenta && <span className="ml-1 text-[10px] uppercase">· no cuenta</span>}</td>
+                  <td className="py-1.5 text-right text-brand-slate text-xs">{r.razon}</td>
+                  <td className="py-1.5 text-right tabular-nums">{n(r.lineas)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

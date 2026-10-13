@@ -150,6 +150,17 @@ function CompareResult({ result }: { result: any }) {
     return row;
   });
 
+  // Gross y netas (criterio Claro): bajas del mes sin port out contra ventas del mes.
+  const gross = result.gross || {};
+  const grossSerie = labels.map((label, i) => ({
+    label,
+    Ventas: ventas[i] ?? 0,
+    Netas: gross.netas?.[i] ?? null,
+    "Desc Gross": gross.desc_gross?.[i] ?? null,
+    "%Gross/Vta": gross.pct_gross?.[i] ?? null,
+  }));
+  const pctFmt = (v: number | null) => (v == null ? "—" : `${String(v).replace(".", ",")}%`);
+
   return (
     <div className="space-y-6">
       {/* KPIs ejecutivos */}
@@ -193,6 +204,47 @@ function CompareResult({ result }: { result: any }) {
           </ResponsiveContainer>
         </ChartCard>
       </div>
+
+      {/* Gross y netas con el criterio de Claro */}
+      {gross.disponible && (
+        <ChartCard title="Gross y netas · criterio Claro"
+          subtitle="Barras: ventas del mes y netas (ventas − Desc Gross). Línea: %Gross/Vta. Desc Gross = bajas del mes de cualquier cohorte, sin port out; ~85% son ventas de 1 a 3 meses antes. Otros calls: 12% a 27%.">
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={grossSerie} margin={{ top: 8, right: 12, left: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eef0f2" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} />
+              <YAxis yAxisId="n" tick={{ fontSize: 11, fill: "#64748b" }} width={42} allowDecimals={false} />
+              <YAxis yAxisId="p" orientation="right" domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: "#64748b" }} width={42} />
+              <Tooltip formatter={(v: any, k: any) => [k === "%Gross/Vta" ? pctFmt(v) : Number(v).toLocaleString("es-PY"), k]} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar yAxisId="n" dataKey="Ventas" fill="#0f172a" radius={[3, 3, 0, 0]} barSize={18} />
+              <Bar yAxisId="n" dataKey="Netas" fill="#E6332A" radius={[3, 3, 0, 0]} barSize={18} />
+              <Line yAxisId="p" dataKey="%Gross/Vta" type="monotone" stroke="#0f172a" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+            </ComposedChart>
+          </ResponsiveContainer>
+          <div className="overflow-x-auto mt-3">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
+                  <th className="px-4 py-2"> </th>
+                  {cols.map((c: any) => <th key={c.id} className="px-4 py-2 text-right">{c.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-brand-border/50"><td className="px-4 py-2">Ventas (activaciones)</td>{ventas.map((v, i) => <td key={i} className="px-4 py-2 text-right">{v.toLocaleString("es-PY")}</td>)}</tr>
+                <tr className="border-b border-brand-border/50"><td className="px-4 py-2">Desc Gross (bajas sin port out)</td>{(gross.desc_gross || []).map((v: number | null, i: number) => <td key={i} className="px-4 py-2 text-right text-brand-primary">{v == null ? "—" : v.toLocaleString("es-PY")}</td>)}</tr>
+                <tr className="border-b border-brand-border/50"><td className="px-4 py-2 text-brand-slate">de las cuales PFI</td>{(gross.pfi || []).map((v: number | null, i: number) => <td key={i} className="px-4 py-2 text-right text-brand-slate">{v == null ? "—" : v.toLocaleString("es-PY")}</td>)}</tr>
+                <tr className="border-b border-brand-border/50"><td className="px-4 py-2 text-brand-slate">Port out (no cuentan)</td>{(gross.port_out || []).map((v: number | null, i: number) => <td key={i} className="px-4 py-2 text-right text-brand-slate">{v == null ? "—" : v.toLocaleString("es-PY")}</td>)}</tr>
+                <tr className="border-b border-brand-border/50 font-semibold"><td className="px-4 py-2">Netas</td>{(gross.netas || []).map((v: number | null, i: number) => <td key={i} className="px-4 py-2 text-right text-emerald-700">{v == null ? "—" : v.toLocaleString("es-PY")}</td>)}</tr>
+                <tr className="font-semibold"><td className="px-4 py-2">%Gross / Vta</td>{(gross.pct_gross || []).map((v: number | null, i: number) => <td key={i} className={`px-4 py-2 text-right ${v != null && v > 27 ? "text-brand-primary" : ""}`}>{pctFmt(v)}</td>)}</tr>
+              </tbody>
+            </table>
+            {(gross.desc_gross || []).some((v: number | null) => v == null) && (
+              <p className="text-[11px] text-brand-slate px-4 pt-2">Los meses con "—" se procesaron antes de incorporar la métrica: volvé a subir esas liquidaciones.</p>
+            )}
+          </div>
+        </ChartCard>
+      )}
 
       {/* Descomposición del cambio (lo más importante) */}
       {decomp.length > 0 && (

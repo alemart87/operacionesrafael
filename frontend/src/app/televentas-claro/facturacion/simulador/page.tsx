@@ -257,7 +257,7 @@ export default function SimuladorFacturacionPage() {
                     { label: "Previsión de aguinaldo (÷ 12)", v: [c.aguinaldo, c.aguinaldo, c.aguinaldo], tipo: "costo" },
                     { label: `Vendedores — plus por venta (${formatInt(d.activaciones)} × ${formatGs(c.vendedor.plus_por_venta)}, sin cargas)`, v: [c.plus_vendedores, c.plus_vendedores, c.plus_vendedores], tipo: "costo" },
                     { label: "Logística — entregas", v: [c.logistica_entregas, c.logistica_entregas, c.logistica_entregas], tipo: "costo" },
-                    { label: "Logística — premios", v: [c.logistica_premios, c.logistica_premios, c.logistica_premios], tipo: "costo" },
+                    { label: "Cobertura adicional interior", v: [c.logistica_premios, c.logistica_premios, c.logistica_premios], tipo: "costo" },
                     { label: "Costos operativos", v: [c.operativos, c.operativos, c.operativos], tipo: "costo" },
                     { label: "TOTAL COSTOS", v: [c.total, c.total, c.total], tipo: "sub" },
                     { label: "RESULTADO (MARGEN)", v: [res.margen.mes0, res.margen.meses6, res.margen.meses12], tipo: "total" },
@@ -514,7 +514,7 @@ export default function SimuladorFacturacionPage() {
                   <Lectura>
                     La línea negra es el porcentaje de la cohorte que sigue activa cada mes; las barras, cuántas líneas
                     son. El punto rojo en M2 es la PFI (primera factura impaga): la suspensión penalizable a los ~60 días,
-                    medida en 28,7% de las ventas por cohorte, que se lleva cuota 1, un residual y el plus porta de cada línea.
+                    medida en 27% a 38% de las ventas según el mes (31% ponderado en 2026), que se lleva cuota 1, un residual y el plus porta de cada línea.
                     Cada escalón hacia abajo antes de la línea naranja (fin del chargeback) genera devoluciones; después
                     solo deja de cobrarse el residual. La caída del mes 1 es la primera factura impaga: la palanca más grande.
                   </Lectura>
@@ -530,7 +530,7 @@ export default function SimuladorFacturacionPage() {
                     <p><b>Bono efectividad (1891)</b>: por venta entregada (activación cuota 1) según la efectividad de entregas; escala por tramos (bajo el mínimo, 0). Se descuenta en las líneas penalizadas.</p>
                     <p><b>Cuota 2</b>: al mes +3, líneas activas al día 90 (zafra M3); legajo incompleto cobra el 50%; legajo no presentado descuenta la cuota 1.</p>
                     <p><b>Residual</b>: {p.residual_pct}% del abono acreditado ({p.pct_abono_acreditado}% del abono del plan) por línea activa, durante {p.residual_meses} liquidaciones.</p>
-                    <p><b>Costos</b>: vendedores = ventas ÷ ventas por vendedor; 1 supervisor cada {p.costos.supervisor_cada_vendedores} vendedores; 1 backoffice cada {p.costos.backoffice_cada_ventas} ventas; operador {formatGs(p.costos.salario_hora)}/h × {p.costos.horas_dia} h × {p.costos.dias_mes} días; comisión al vendedor {formatGs(p.costos.comision_por_venta)} por venta (con IPS y aguinaldo) + plus {formatGs(p.costos.plus_por_venta)} por venta (sin cargas); IPS {p.costos.ips_pct}% sobre todo el RRHH y aguinaldo = RRHH ÷ 12 por mes (sin IPS); logística {formatGs(p.costos.logistica_central)} Central / {formatGs(p.costos.logistica_interior)} Interior ({p.costos.logistica_interior_pct}% Interior) + premios fijos; {formatGs(p.costos.operativo_por_venta)} operativos por venta. Margen = facturación que queda − costo de la estructura del mes.</p>
+                    <p><b>Costos</b>: vendedores = ventas ÷ ventas por vendedor; 1 supervisor cada {p.costos.supervisor_cada_vendedores} vendedores; 1 backoffice cada {p.costos.backoffice_cada_ventas} ventas; operador {formatGs(p.costos.salario_hora)}/h × {p.costos.horas_dia} h × {p.costos.dias_mes} días; comisión al vendedor {formatGs(p.costos.comision_por_venta)} por venta (con IPS y aguinaldo) + plus {formatGs(p.costos.plus_por_venta)} por venta (sin cargas); IPS {p.costos.ips_pct}% sobre todo el RRHH y aguinaldo = RRHH ÷ 12 por mes (sin IPS); logística {formatGs(p.costos.logistica_central)} Central / {formatGs(p.costos.logistica_interior)} Interior ({p.costos.logistica_interior_pct}% Interior) + cobertura adicional interior (fijo mensual); {formatGs(p.costos.operativo_por_venta)} operativos por venta. Margen = facturación que queda − costo de la estructura del mes.</p>
                     <p><b>Chargeback</b>: las líneas que caen dentro de los {p.chargeback_meses} meses (según la zafra) devuelven cuota 1{p.clawback_incluye_residual ? " + un residual" : ""}, el plus de portabilidad y el bono efectividad, neto del recupero por reconexión.</p>
                   </div>
                 </section>

@@ -12,7 +12,9 @@ import { recalcSegunZafra } from "./VariablesNegocio";
 export type Variaciones = Record<string, any>;
 export type Afectados = Record<string, Variaciones>;   // {"7": {...}}
 
-export type CampoDef = { key: string; label: string; suffix?: string; step?: number; grupo: string; costo?: boolean; bool?: boolean };
+/** `negocio: "gpon"` = campo del negocio GPON dentro del simulador convergente: se guarda en `ov.gpon` (y `ov.gpon.costos`)
+ *  y se lee de `base.gpon`, así un mes puede tener variaciones propias de pospago y de GPON a la vez. */
+export type CampoDef = { key: string; label: string; suffix?: string; step?: number; grupo: string; costo?: boolean; bool?: boolean; negocio?: "gpon" };
 
 export const CAMPOS_AFECTABLES: CampoDef[] = [
   { key: "porta_pct", label: "Portabilidad", suffix: "%", step: 1, grupo: "Ventas del mes" },
@@ -26,6 +28,7 @@ export const CAMPOS_AFECTABLES: CampoDef[] = [
   { key: "legajo_no_presentado_pct", label: "Legajos no presentados", suffix: "%", step: 0.5, grupo: "Calidad y caídas" },
   { key: "pct_caidas_penalizables", label: "Caídas penalizables", suffix: "%", step: 5, grupo: "Calidad y caídas" },
   { key: "recupero_pct", label: "Recupero por reconexión", suffix: "%", step: 5, grupo: "Calidad y caídas" },
+  { key: "pct_bajas_gross", label: "Caídas que terminan en baja (Gross Claro)", suffix: "%", step: 5, grupo: "Calidad y caídas" },
   { key: "pct_recalculo_productividad", label: "Líneas castigadas en el recálculo", suffix: "%", step: 1, grupo: "Calidad y caídas" },
   { key: "migracion_negocio_pct", label: "Migración de negocio", suffix: "%", step: 0.1, grupo: "Calidad y caídas" },
   { key: "comision_por_venta", label: "Comisión al vendedor por venta", step: 1000, grupo: "Costos variables", costo: true },
@@ -42,7 +45,8 @@ export const CAMPOS_AFECTABLES_GPON: CampoDef[] = [
   { key: "bonos_activos", label: "Bonos activos", grupo: "Comisiones y bonos", bool: true },
   { key: "cuota2_pct_lineas", label: "Líneas que cobran cuota 2", suffix: "%", step: 1, grupo: "Calidad y mora" },
   { key: "cuota2_pct_completa", label: "Cuota 2 completa", suffix: "%", step: 1, grupo: "Calidad y mora" },
-  { key: "legajo_pct", label: "Documentación faltante", suffix: "%", step: 0.5, grupo: "Calidad y mora" },
+  { key: "legajo_no_presentado_pct", label: "Legajos no presentados (100%)", suffix: "%", step: 0.5, grupo: "Calidad y mora" },
+  { key: "legajo_pct", label: "Legajos incompletos (50%)", suffix: "%", step: 0.5, grupo: "Calidad y mora" },
   { key: "mora_pct_lineas", label: "Líneas en mora", suffix: "%", step: 1, grupo: "Calidad y mora" },
   { key: "mora_penalidad_pct", label: "Penalidad de mora que se pierde", suffix: "%", step: 5, grupo: "Calidad y mora" },
   { key: "pct_recalculo", label: "Líneas castigadas en el recálculo", suffix: "%", step: 1, grupo: "Calidad y mora" },
@@ -50,13 +54,34 @@ export const CAMPOS_AFECTABLES_GPON: CampoDef[] = [
   { key: "plus_por_venta", label: "Plus al vendedor por venta", step: 1000, grupo: "Costos variables", costo: true },
   { key: "operativo_por_venta", label: "Costo operativo por venta", step: 500, grupo: "Costos variables", costo: true },
 ];
+/** Convergente: los campos de pospago más los de GPON (prefijados), para editar un mes de los dos negocios. */
+export const CAMPOS_AFECTABLES_CONVERGENTE: CampoDef[] = [
+  ...CAMPOS_AFECTABLES,
+  ...CAMPOS_AFECTABLES_GPON.map((c) => ({ ...c, negocio: "gpon" as const, label: `GPON · ${c.label}`, grupo: `GPON · ${c.grupo}` })),
+];
+
+/** Separa las variaciones de un mes en pospago y GPON (para el pedido al motor convergente). */
+export function separarAfectados(afectados: Afectados): { movil: Afectados; gpon: Afectados } {
+  const movil: Afectados = {}, gpon: Afectados = {};
+  for (const [m, ov] of Object.entries(afectados || {})) {
+    const { gpon: g, ...resto } = (ov || {}) as any;
+    if (Object.keys(resto).length) movil[m] = resto;
+    if (g && Object.keys(g).length) gpon[m] = g;
+  }
+  return { movil, gpon };
+}
+
 const nombrePlan = (pl: any) => String(pl?.plan ?? pl?.nombre ?? "");
 
 const valorBase = (base: any, c: CampoDef) => {
+  if (c.negocio === "gpon") return c.costo ? base?.gpon?.costos?.[c.key] : base?.gpon?.[c.key];
   if (c.key === "pct_recalculo_productividad" && base?.pct_recalculo_productividad == null) return recalcSegunZafra(base);
   return c.costo ? base?.costos?.[c.key] : base?.[c.key];
 };
-const valorOv = (ov: Variaciones | undefined, c: CampoDef) => (c.costo ? ov?.costos?.[c.key] : ov?.[c.key]);
+const valorOv = (ov: Variaciones | undefined, c: CampoDef) => {
+  const o = c.negocio === "gpon" ? ov?.gpon : ov;
+  return c.costo ? o?.costos?.[c.key] : o?.[c.key];
+};
 const fmtV = (v: any, c?: CampoDef) => (typeof v === "boolean" ? (v ? "sí" : "no") : v == null ? "—" : `${typeof v === "number" ? formatInt(v) : v}${c?.suffix ?? ""}`);
 
 /** Texto corto de las variaciones de un mes: "porta 45% → 30% · efectividad 89% → 85%". */
@@ -105,13 +130,16 @@ export function MesAfectadoEditor({ mes, nombre, nombres, horizonte, base, venta
 
   const setCampo = (c: CampoDef, v: any) => setOv((prev) => {
     const next = { ...prev };
+    const target: Variaciones = c.negocio === "gpon" ? { ...(next.gpon ?? {}) } : next;
     if (c.costo) {
-      const costos = { ...(next.costos ?? {}) };
+      const costos = { ...(target.costos ?? {}) };
       if (v === undefined) delete costos[c.key]; else costos[c.key] = v;
-      if (Object.keys(costos).length) next.costos = costos; else delete next.costos;
-    } else if (v === undefined) delete next[c.key]; else next[c.key] = v;
+      if (Object.keys(costos).length) target.costos = costos; else delete target.costos;
+    } else if (v === undefined) delete target[c.key]; else target[c.key] = v;
+    if (c.negocio === "gpon") { if (Object.keys(target).length) next.gpon = target; else delete next.gpon; }
     return next;
   });
+  const contar = (o: Variaciones | undefined) => (o ? Object.keys(o).filter((k) => k !== "costos" && k !== "gpon").length + Object.keys(o.costos ?? {}).length : 0);
 
   const mixTotal = Object.values(mix).reduce((s, v) => s + Number(v || 0), 0);
   const armar = (): Variaciones => {
@@ -119,7 +147,7 @@ export function MesAfectadoEditor({ mes, nombre, nombres, horizonte, base, venta
     if (mixOn) out.planes = Object.entries(mix).map(([plan, mix_pct]) => ({ plan, mix_pct: Number(mix_pct) }));
     return out;
   };
-  const cantidad = Object.keys(ov).filter((k) => k !== "costos").length + Object.keys(ov.costos ?? {}).length + (mixOn ? 1 : 0);
+  const cantidad = contar(ov) + contar(ov.gpon) + (mixOn ? 1 : 0);
   const grupos = Array.from(new Set(campos.map((c) => c.grupo)));
 
   return (
@@ -133,6 +161,7 @@ export function MesAfectadoEditor({ mes, nombre, nombres, horizonte, base, venta
               Este mes se comporta distinto. Lo que cargues acá pisa la base solo para las ventas de este mes: su facturación,
               sus bonos y sus ajustes posteriores (cuota 2, residual, caídas) se calculan con estas variaciones. La estructura
               fija y las ventas del mes no cambian desde acá.
+              {campos.some((c) => c.negocio === "gpon") && <> Los grupos <b>GPON ·</b> aplican a las activaciones GPON de este mes (por ejemplo, legajos no presentados).</>}
             </p>
           </div>
           <button onClick={onCerrar} className="text-brand-slate hover:text-brand-ink text-xl leading-none">✕</button>

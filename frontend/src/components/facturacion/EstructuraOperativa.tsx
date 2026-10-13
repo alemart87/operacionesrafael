@@ -170,8 +170,10 @@ function FactoresVPH({ vph, ventasVend, ventas, vendedores, horasMes }: { vph: n
 /** Estructura operativa necesaria: cuadros de headcount (vendedores, supervisores, backoffice…),
  *  remuneración promedio del vendedor y costo total de la estructura. Compartido por el simulador
  *  mensual (sección propia) y el anual (bloque colapsable, estructura fija del mes 1). */
-export function EstructuraOperativa({ costos, p, ventas, sinCard = false, titulo = "Estructura operativa necesaria", intro }: {
-  costos: any; p: any; ventas: number; sinCard?: boolean; titulo?: string; intro?: string;
+export function EstructuraOperativa({ costos, p, ventas, ventasGpon = 0, sinCard = false, titulo = "Estructura operativa necesaria", intro }: {
+  costos: any; p: any; ventas: number;
+  /** Convergente: activaciones GPON del mes vendidas por los mismos asesores; entran en la velocidad de ventas (VPH). */
+  ventasGpon?: number; sinCard?: boolean; titulo?: string; intro?: string;
 }) {
   if (!costos?.headcount) return null;
   const hc = costos.headcount;
@@ -188,7 +190,12 @@ export function EstructuraOperativa({ costos, p, ventas, sinCard = false, titulo
   // Velocidad de ventas: VPH = ventas por vendedor por mes ÷ horas trabajadas en el mes.
   const horasDia = Number(p.costos.horas_dia) || 0, diasMes = Number(p.costos.dias_mes) || 0;
   const horasMes = horasDia * diasMes;
-  const ventasVend = hc.vendedores > 0 ? ventas / hc.vendedores : 0;
+  // Convergente: el mismo vendedor vende pospago y GPON → la velocidad se mide sobre las ventas totales.
+  const gpon = Math.max(Number(ventasGpon) || 0, 0);
+  const ventasTot = ventas + gpon;
+  const ventasVend = hc.vendedores > 0 ? ventasTot / hc.vendedores : 0;
+  const ventasVendPos = hc.vendedores > 0 ? ventas / hc.vendedores : 0;
+  const ventasVendGpon = hc.vendedores > 0 ? gpon / hc.vendedores : 0;
   const vph = horasMes > 0 ? ventasVend / horasMes : 0;
   const vpd = diasMes > 0 ? ventasVend / diasMes : 0;
   const f2 = (x: number) => x.toLocaleString("es-PY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -210,8 +217,12 @@ export function EstructuraOperativa({ costos, p, ventas, sinCard = false, titulo
       </div>
       <div className="mt-4 rounded-md border border-brand-border bg-white p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-          <div className="text-[10px] uppercase tracking-wider2 text-brand-slate font-bold">Velocidad de ventas · VPH</div>
-          <div className="text-[10px] text-brand-slate">{formatInt(ventas)} ventas del mes ÷ {formatInt(hc.vendedores)} vendedores = {f1(ventasVend)} ventas por vendedor</div>
+          <div className="text-[10px] uppercase tracking-wider2 text-brand-slate font-bold">Velocidad de ventas · VPH{gpon > 0 ? " · pospago + GPON" : ""}</div>
+          <div className="text-[10px] text-brand-slate">
+            {gpon > 0
+              ? <>{formatInt(ventas)} pospago + {formatInt(gpon)} GPON = <b className="text-brand-ink">{formatInt(ventasTot)}</b> ventas del mes ÷ {formatInt(hc.vendedores)} vendedores = <b className="text-brand-ink">{f1(ventasVend)}</b> ventas por vendedor ({f1(ventasVendPos)} pospago + {f1(ventasVendGpon)} GPON)</>
+              : <>{formatInt(ventas)} ventas del mes ÷ {formatInt(hc.vendedores)} vendedores = {f1(ventasVend)} ventas por vendedor</>}
+          </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="rounded-md border border-brand-primary/40 bg-brand-primary/5 p-3 text-center">
@@ -235,7 +246,7 @@ export function EstructuraOperativa({ costos, p, ventas, sinCard = false, titulo
             <div className="text-[10px] text-brand-slate mt-1">{horasDia} h × {diasMes} días al mes</div>
           </div>
         </div>
-        <FactoresVPH vph={vph} ventasVend={ventasVend} ventas={ventas} vendedores={hc.vendedores} horasMes={horasMes} />
+        <FactoresVPH vph={vph} ventasVend={ventasVend} ventas={ventasTot} vendedores={hc.vendedores} horasMes={horasMes} />
       </div>
       {v && (
         <div className="mt-4 rounded-md border border-brand-border bg-brand-bg-soft p-4">
