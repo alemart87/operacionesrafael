@@ -31,7 +31,7 @@ DEFAULT_PERMISSIONS: dict[str, list[str]] = {
     "sub_gerente": [f"{_TC}.{u}" for u in _TODAS_TC],
     # El informe diario lo preparan el coordinador y el sub gerente (y el superadmin); el controller no, salvo que se le asigne.
     # El asistente (Voi) arranca con sub gerente, coordinador y auditor; al resto se le puede asignar.
-    "controller": [f"{_TC}.{u}" for u in _TODAS_TC if u not in ("facturacion", "informe_diario", "asistente")],
+    "controller": [f"{_TC}.{u}" for u in _TODAS_TC if u not in ("facturacion", "informe_diario", "asistente", "integraciones")],
     "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad", "sph", "supervision",
                                             "supervision_gestion", "tickets", "operadores", "informe_diario", "asistente")],
     # El supervisor solo entra a su portal (ver core/operativas.PERFILES_SOLO_PORTAL).

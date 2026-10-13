@@ -30,6 +30,9 @@ export interface OperativaInfo {
 
 /** Utilidad Facturación de Televentas CLARO: exclusiva del superadmin (no asignable a perfiles). */
 export const PERM_FACTURACION = "televentas_claro.facturacion";
+/** Integraciones: claves de API de solo lectura para KNIME y otras herramientas. Solo sub gerente y superadmin. */
+export const PERM_INTEGRACIONES = "televentas_claro.integraciones";
+export const INTEGRACIONES_HREF = "/televentas-claro/integraciones";
 /** Ventas Netas: ver informes publicados / gestión (subir, publicar, reemplazar, eliminar). */
 export const PERM_VENTAS_NETAS = "televentas_claro.ventas_netas";
 export const PERM_VENTAS_NETAS_GESTION = "televentas_claro.ventas_netas_gestion";
@@ -200,6 +203,19 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
           { href: "/televentas-claro/auditoria", label: "Informes de auditoría", exact: true },
           { href: "/televentas-claro/auditoria/riesgos", label: "Riesgos" },
           { href: "/televentas-claro/auditoria/guia", label: "Guía del auditor" },
+        ],
+      },
+      {
+        utilidad: "integraciones", // sub gerente y superadmin
+        label: "Integraciones",
+        href: "/televentas-claro/integraciones",
+        descripcion: "Claves de API de solo lectura para conectar KNIME, Power BI o Python a los datos ya publicados: productividad, ventas netas, SPH e informes diarios. Con vencimiento, límites y registro de cada uso. Nunca Facturación.",
+        contenido: ["Claves con vencimiento y límites", "Datasets planos en JSON o CSV", "Registro de cada uso", "Bloqueo y eliminación", "Guía para KNIME"],
+        acceso: "Claves de API",
+        nav: [
+          { href: "/televentas-claro/integraciones", label: "Claves de API", exact: true },
+          { href: "/televentas-claro/integraciones/usos", label: "Registro de uso" },
+          { href: "/televentas-claro/integraciones/knime", label: "Conectar KNIME" },
         ],
       },
       {
