@@ -240,6 +240,42 @@ h3,
 .print-header-kicker { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #64748b; }
 .print-header-title { font-family: "Barlow Condensed", Impact, sans-serif; margin: 8px 0 2px; font-size: 24px; text-transform: uppercase; color: #0f172a; font-weight: 700; }
 .print-header-sub { font-size: 12px; color: #64748b; }
+/* ===== Ficha impresa de la simulación (solo impresión; en pantalla manda .print-only) ===== */
+.ficha-impresa { font-size: 10.5px; color: #0f172a; }
+.ficha-impresa .fi-head { display: flex; justify-content: space-between; gap: 18px; border-top: 4px solid #E6332A; padding-top: 8px; margin-bottom: 8px; }
+.ficha-impresa .fi-kicker { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #64748b; font-weight: 700; }
+.ficha-impresa .fi-title { font-family: "Barlow Condensed", Impact, sans-serif; font-size: 26px; line-height: 1.05; text-transform: uppercase; margin: 2px 0 4px; }
+.ficha-impresa .fi-comentario { font-size: 11px; color: #334155; white-space: pre-line; max-width: 150mm; }
+.ficha-impresa .fi-meta { text-align: right; font-size: 10px; color: #334155; line-height: 1.5; min-width: 70mm; }
+.ficha-impresa .fi-leyenda { color: #64748b; margin-top: 4px; }
+.ficha-impresa .fi-mod { color: #E6332A; font-weight: 700; margin-left: 2px; }
+.ficha-impresa .fi-escenario { border: 1px solid #E6332A; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; background: #fff5f5; }
+.ficha-impresa .fi-escenario ul { margin: 2px 0 0 14px; padding: 0; font-size: 11px; font-weight: 600; }
+.ficha-impresa .fi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+.ficha-impresa .fi-span2 { grid-column: span 2; }
+.ficha-impresa .fi-block { break-inside: auto; }
+.ficha-impresa .fi-block h3 { break-after: avoid; }
+.ficha-impresa h3 { font-family: "Barlow Condensed", Impact, sans-serif; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; margin: 6px 0 3px; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; }
+.ficha-impresa .fi-tabla { width: 100%; border-collapse: collapse; font-size: 9.5px !important; }
+.ficha-impresa .fi-tabla th { text-align: left; font-weight: 700; color: #475569; background: #f1f5f9; padding: 2px 4px; border-bottom: 1px solid #cbd5e1; font-size: 9px; text-transform: uppercase; letter-spacing: .3px; }
+.ficha-impresa .fi-tabla td { padding: 2px 4px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.ficha-impresa .fi-tabla tr.fi-total td { font-weight: 700; background: #f8fafc; }
+.ficha-impresa .fi-kv td.fi-k { width: 46%; color: #334155; }
+.ficha-impresa .fi-kv td.fi-v { font-weight: 600; }
+.ficha-impresa .fi-hint { color: #94a3b8; font-weight: 400; }
+.ficha-impresa .fi-meses td, .ficha-impresa .fi-meses th, .ficha-impresa .fi-zafra td, .ficha-impresa .fi-zafra th { text-align: right; white-space: nowrap; }
+.ficha-impresa .fi-meses td:first-child, .ficha-impresa .fi-meses th:first-child, .ficha-impresa .fi-zafra td:first-child, .ficha-impresa .fi-zafra th:first-child { text-align: left; }
+.ficha-impresa .fi-nombre { font-size: 8.5px; color: #64748b; white-space: normal; }
+.ficha-impresa .fi-tipo { text-transform: capitalize; font-weight: 700; color: #475569; }
+.ficha-impresa .fi-bad { color: #E6332A; }
+.ficha-impresa .fi-nota { font-size: 9.5px; color: #475569; margin: 3px 0 0; line-height: 1.4; }
+/* Tabla envolvente de las pantallas con encabezado corrido: en pantalla es transparente (bloques); al imprimir es una
+   tabla cuyo <thead> Chrome repite en cada hoja. */
+.print-shell, .print-shell > tbody, .print-shell > tbody > tr, .print-shell > tbody > tr > td { display: block; width: 100%; }
+.print-shell { border-collapse: collapse; font-size: inherit; }
+.print-shell-head { display: none; }
+.print-running { display: flex; justify-content: space-between; font-size: 9px; color: #64748b; letter-spacing: .5px; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 2px; margin-bottom: 6px; }
+
 @media print {
   /* Horizontal: los dashboards (tablas anchas, gráficos apilados) entran mucho mejor */
   @page { size: A4 landscape; margin: 10mm; }
@@ -284,6 +320,22 @@ h3,
   .informe-impreso .tabla-evidencia table { font-size: 9px !important; }
   .informe-impreso .tabla-evidencia th, .informe-impreso .tabla-evidencia td { padding: 2px 4px !important; white-space: normal !important; }
   .informe-anexo { break-before: page; page-break-before: always; }
+  /* Simulador convergente: la ficha de datos va en hoja propia después de la portada; resultados y EERR arrancan en hoja nueva */
+  .ficha-impresa { break-before: page; page-break-before: always; break-after: page; page-break-after: always; display: block !important; }
+  .sim-impreso-inicio { break-before: page; page-break-before: always; }
+  /* En el simulador las tarjetas pueden fluir entre hojas (si no, cada gráfico con su explicación ocupa una hoja casi
+     vacía); lo que no se parte es cada gráfico, cada fila y cada bloque de indicadores. Las bandas de título no quedan
+     solas al pie. */
+  .sim-print .card { break-inside: auto; page-break-inside: auto; }
+  .sim-print .recharts-wrapper, .sim-print tr, .sim-print .grid > div { break-inside: avoid; page-break-inside: avoid; }
+  .sim-print .no-print-band, .sim-print [class*="border-l-4"] { break-after: avoid; page-break-after: avoid; }
+  .print-shell { display: table !important; width: 100% !important; table-layout: fixed !important; font-size: 1rem !important; }
+  .print-shell > tbody > tr > td { width: 100%; max-width: 100%; overflow: hidden; }
+  .print-shell > .print-shell-head { display: table-header-group !important; }
+  .print-shell > tbody { display: table-row-group !important; }
+  .print-shell > tbody > tr { display: table-row !important; break-inside: auto !important; page-break-inside: auto !important; }
+  .print-shell > tbody > tr > td, .print-shell > .print-shell-head > tr > td { display: table-cell !important; padding: 0 !important; }
+  .ficha-impresa .fi-tabla { break-inside: avoid; page-break-inside: avoid; }
   /* Guía del auditor: cada sección arranca en hoja nueva (sin títulos huérfanos al pie) */
   .guia-seccion { break-before: page; page-break-before: always; }
 

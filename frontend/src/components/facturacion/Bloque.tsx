@@ -5,8 +5,8 @@ import { useState } from "react";
 /** Sección plegable del simulador: se abre al tocar el título. En la impresión
  *  siempre sale abierta. `envuelto=false` deja el contenido fuera de la tarjeta
  *  (para bloques que ya son tarjetas: gráficos, EERR). */
-export function Bloque({ titulo, hint, abierto = false, envuelto = true, accent = "ink", children }: {
-  titulo: string; hint?: React.ReactNode; abierto?: boolean; envuelto?: boolean;
+export function Bloque({ titulo, hint, abierto = false, envuelto = true, accent = "ink", sinImprimir = false, children }: {
+  titulo: string; hint?: React.ReactNode; abierto?: boolean; envuelto?: boolean; sinImprimir?: boolean;   // la banda no sale en el PDF
   accent?: "ink" | "primary" | "purple" | "orange"; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(abierto);
@@ -32,7 +32,7 @@ export function Bloque({ titulo, hint, abierto = false, envuelto = true, accent 
   }
   return (
     <div className="space-y-4">
-      <div className="card overflow-hidden">{header}</div>
+      <div className={`card overflow-hidden print:break-after-avoid ${sinImprimir ? "no-print" : ""}`}>{header}</div>
       <div className={`${cuerpo} space-y-6`}>{children}</div>
     </div>
   );

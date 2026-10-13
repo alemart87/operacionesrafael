@@ -24,6 +24,7 @@ import { apiFetch } from "@/lib/api";
 import { formatGs, formatInt } from "@/lib/format";
 import { dominiosAlineados } from "@/components/facturacion/ejes";
 import { EstructuraOperativa } from "@/components/facturacion/EstructuraOperativa";
+import { FichaSimulacion } from "@/components/facturacion/FichaSimulacion";
 
 const M = (v: number) => `${Math.round(v / 1e6)}M`;
 
@@ -335,6 +336,9 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
     setAfectados((prev) => { const n = { ...prev }; for (const m of meses) n[String(m)] = JSON.parse(JSON.stringify(ov)); return n; });
   const quitarAfectado = (mes: number) => setAfectados((prev) => { const n = { ...prev }; delete n[String(mes)]; return n; });
   useEffect(() => { setBarra(window.innerWidth >= 1280); }, []);
+  // ?abrir=<id>: abre una simulación guardada al entrar (Voi guarda y abre la pantalla con esta ruta; también sirve como enlace).
+  const [abrirId] = useState<string | null>(() => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("abrir")));
+  const abierta = useRef(false);
   const esMarcado = (key: string) => marcas.some((m) => m.key === key);
   const toggleMarca = (key: string, label: string) =>
     setMarcas((prev) => (prev.some((m) => m.key === key) ? prev.filter((m) => m.key !== key) : [...prev, { key, label }]));
@@ -482,8 +486,26 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
     setSeteado(true);
   };
 
+  useEffect(() => {
+    if (!abrirId || !p || abierta.current) return;
+    abierta.current = true;
+    apiFetch<any>(`/api/v1/televentas-claro/facturacion/simulaciones/${abrirId}`).then((s) => {
+      if (((s?.negocio === "GPON") ? "gpon" : "movil") !== negocio) return;
+      abrirSimulacion(s); setActual(s); setBarra(window.innerWidth >= 1280);
+      window.history.replaceState(null, "", window.location.pathname);
+    }).catch((e) => setError(`No se pudo abrir la simulación guardada: ${e.message}`));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirId, p]);
+
   return (
     <AppShell>
+      {/* Al imprimir, la tabla envolvente repite su <thead> en cada hoja: un encabezado corrido sin pisar el contenido. */}
+      <table className="print-shell"><thead className="print-shell-head"><tr><td>
+        <div className="print-running">
+          <span>{cfg.titulo}{actual ? ` · ${actual.nombre}` : ""}</span>
+          <span>{horizonte} meses · Operaciones Voicenter · {new Date().toLocaleDateString("es-PY")}</span>
+        </div>
+      </td></tr></thead><tbody><tr><td>
       <PrintCover titulo={`${cfg.titulo} · ${horizonte} meses`}
         periodo={a ? `${formatInt(a.ventas)} ${cfg.unidad}${gponOn ? ` + ${formatInt(a.ventas_gpon ?? 0)} GPON (${a.gpon_por_asesor ?? 0} por asesor)` : ""} en ${horizonte} meses · ingreso neto ${formatGs(a.ingreso_neto)} · resultado ${formatGs(a.resultado)} (${a.margen_pct}%)${p?.bonos_activos === false ? " · SIN BONOS" : ""}${bonoUnico ? " · BONO ÚNICO PROPUESTO" : sinDescProd || sinDescEfec ? ` · SIN DESCUENTO SOBRE BONO ${[sinDescProd && "PRODUCTIVIDAD", sinDescEfec && "LOGÍSTICA"].filter(Boolean).join(" Y ")}` : ""}${Number(p?.ajuste_comisiones_pct || 0) ? ` · COMISIONES ${Number(p.ajuste_comisiones_pct) > 0 ? "+" : ""}${Number(p.ajuste_comisiones_pct)}%` : ""} · ${cfg.nombre}` : undefined} />
 
@@ -491,7 +513,7 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
         <Link href="/televentas-claro/facturacion" className="hover:text-brand-primary">Facturación</Link>
         <span className="mx-2">/</span><span className="text-brand-ink font-semibold">{cfg.titulo}</span>
       </div>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3 no-print">
         <div>
           <h1 className="font-display text-3xl sm:text-4xl text-brand-ink uppercase">{cfg.titulo}</h1>
           <p className="text-sm text-brand-slate mt-1 max-w-3xl">{cfg.intro}</p>
@@ -514,17 +536,12 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
         <RegistroSimulaciones abierta={barra} setAbierta={setBarra} listo={seteado && !!res} getSnapshot={getSnapshot} onAbrir={abrirSimulacion}
           actual={actual} setActual={setActual} marcas={marcas} setMarcas={setMarcas} postits={postits} setPostits={setPostits} notas={notas} setNotas={setNotas} nombresMeses={ventas.map((_, i) => nombreMes(i))} negocio={negocio} />
       )}
-      {actual && (
-        <div className="print-only card p-4 mb-4">
-          <div className="text-[10px] uppercase tracking-wider2 font-bold text-brand-slate">Simulación guardada</div>
-          <div className="font-display text-xl text-brand-ink uppercase">{actual.nombre}</div>
-          {actual.comentario && <p className="text-sm text-brand-ink mt-1 whitespace-pre-line">{actual.comentario}</p>}
-          <div className="text-[11px] text-brand-slate mt-1">Guardada por {actual.created_by_nombre || "—"} el {new Date(actual.created_at).toLocaleDateString("es-PY")}{marcas.length ? ` · marcados: ${marcas.map((m) => m.label).join(", ")}` : ""}</div>
-        </div>
-      )}
+      <FichaSimulacion negocio={negocio} p={p} defaults={defaults} pg={pg} pgDefaults={pgDefaults} gponOn={gponOn} gponAsesor={gponAsesor}
+        gponObjetivoAuto={gponObjetivoAuto} horizonte={horizonte} ventas={ventas} nombres={nombres} bonosAd={bonosAd} afectados={afectados}
+        actual={actual} notas={notas} res={res} />
 
       {/* ===== Lienzo de trabajo: los post-its flotan sobre él; deja lugar a la barra cuando está abierta ===== */}
-      <div className={`relative transition-[padding] ${barra ? "xl:pr-[384px]" : ""}`}>
+      <div className={`relative transition-[padding] sim-print ${barra ? "xl:pr-[384px]" : ""}`}>
       <PostitsLienzo postits={postits} setPostits={setPostits} marcas={marcas} />
 
       {/* ===== Paso 1: setear el mes 1 ===== */}
@@ -590,7 +607,7 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
       {/* ===== Paso 2: ventas por mes + resultados ===== */}
       {p && seteado && (
         <div className="space-y-6">
-          <section className="card p-5">
+          <section className="card p-5 no-print">
             <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
               <div>
                 <div className="text-[10px] uppercase tracking-wider2 font-bold text-brand-slate">Mes 1 seteado · estructura fija</div>
@@ -726,9 +743,9 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
           )}
           {res && a && (
             <div>
-            <Bloque titulo="Gráficos del período" abierto envuelto={false} hint="resultado mes a mes · ventas vs estructura · ola de la zafra en rojo">
+            <Bloque titulo="Gráficos del período" abierto envuelto={false} hint="resultado mes a mes · ventas vs estructura · ola de la zafra en rojo" sinImprimir>
             <div className="grid xl:grid-cols-2 gap-6 print:block">
-              <section className="card p-5 print:mb-5">
+              <section className="card p-5 print:mb-5 sim-impreso-inicio">
                 <h2 className="font-display text-lg text-brand-ink uppercase mb-1">Resultado mes a mes</h2>
                 <p className="text-xs text-brand-slate mb-3">Ingreso neto liquidado (con ajustes de cohortes anteriores) vs costos; barras de resultado y línea de margen del mes (%, eje derecho). El área roja es la ola: las devoluciones que las cohortes anteriores ya dejaron comprometidas para ese mes, venda lo que venda.</p>
                 <ResponsiveContainer width="100%" height={260}>
@@ -795,7 +812,6 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
             </div>
           )}
 
-          <NotasSimulacion notas={notas} setNotas={setNotas} nombres={ventas.map((_, i) => nombreMes(i))} guardaSola={!!actual} soloImpresion />
           {editandoMes != null && (
             <MesAfectadoEditor mes={editandoMes} nombre={nombreMes(editandoMes - 1)} nombres={nombres.map((_, i) => nombreMes(i))} horizonte={horizonte} base={baseMes} ventas={ventas[editandoMes - 1] ?? 0}
               actual={afectados[String(editandoMes)]}
@@ -1104,7 +1120,7 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
 
               <Bloque titulo={`Estado de resultados a ${horizonte} meses (EERR)`} abierto envuelto={false} hint="liquidación mes a mes · estructura fija del mes 1">
               {/* ===== EERR anual ===== */}
-              <section className="card overflow-x-auto">
+              <section className="card overflow-x-auto sim-impreso-inicio">
                 <div className="px-4 pt-4">
                   <h2 className="font-display text-xl text-brand-ink uppercase">Estado de resultados a {horizonte} meses (EERR)</h2>
                   <p className="text-xs text-brand-slate mb-2">Liquidación mes a mes con estructura fija del mes 1. Cada columna es un mes calendario; la última, el total del período.</p>
@@ -1254,6 +1270,7 @@ export function SimuladorAnual({ negocio }: { negocio: Negocio }) {
         </div>
       )}
       </div>
+      </td></tr></tbody></table>
     </AppShell>
   );
 }

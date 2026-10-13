@@ -1079,6 +1079,34 @@ staff es convergente, cada asesor vende pospago y GPON. Motor en `analyzers/conv
 - Tests: `backend/tests/test_facturacion_simulador.py` (invariantes del motor, aditividad al guaraní, calibración),
   `test_facturacion_simulaciones.py` (registro del trabajo) y `test_facturacion_gross.py` (Desc Gross / netas).
 
+### 6. Voi maneja el simulador
+
+Voi (el agente de la plataforma) es experto en este negocio y maneja el simulador convergente de punta a punta, con el
+mismo motor y los mismos valores iniciales que la pantalla. Solo para quien tiene Facturación (superadmin y Sub gerente);
+la habilidad `voi-facturacion` lleva el modelo del negocio y, en `referencia/modelo-de-liquidacion.md`, esta misma
+documentación completa.
+
+| Herramienta | Qué hace |
+|---|---|
+| `facturacion_simular_anual` | Corre el simulador convergente (12 o 18 meses): ventas por mes, `preset` (`inicial` = valores iniciales de la dirección con la zafra real; `ideal` = botón IDEAL; `real` = calibrados), `bono_unico` y `optimizar` (propuesta 2027), `cambios` de cualquier parámetro (incluidas zafra, escalas de bonos, mix de planes y costos), `meses_afectados` (pospago y GPON), `gpon` (por asesor, objetivo, variables). Con `escenarios` (2 a 4) devuelve la comparación con las diferencias contra la base. |
+| `facturacion_simulaciones_guardadas` · `facturacion_simulacion_guardada` | El registro del trabajo: lista y detalle (qué difiere de lo calibrado, zafra, GPON, notas); `recalcular: true` la vuelve a correr. |
+| `facturacion_guardar_simulacion` | Acción propia (nivel 2, auditada con origen `voi`): guarda el escenario con nombre, comentario, notas y la foto del resultado, exactamente como el botón «Guardar simulación». Devuelve `/televentas-claro/facturacion/simulador-anual?abrir=<id>`, que `abrir_pantalla` usa para abrirla en la pantalla con sus gráficos y el registro al lado. |
+| `facturacion_anotar_simulacion` | Suma notas (supuesto, observación, decisión, pendiente, riesgo; opcionalmente de un mes) o cambia el comentario de una simulación guardada. |
+
+Los presets de la pantalla (`frontend/src/components/facturacion/presets.ts`) tienen su espejo en
+`backend/app/operativas/televentas_claro/facturacion/analyzers/presets.py`: si cambia uno, cambia el otro. Tests:
+`backend/tests/test_asistente_facturacion_simulador.py`.
+
+### 7. Impresión del simulador
+
+«Imprimir / Guardar PDF» arma un informe con portada, un **encabezado corrido** en cada hoja (simulador, nombre de la
+simulación, horizonte y fecha) y, antes de los resultados, la **ficha de la simulación**: todos los datos con los que se
+simuló (ventas por mes y GPON por asesor, la zafra cargada contra la ideal y la real, las tarifas de Claro por plan con
+cuota 1 upfront, cuota 2, plus porta y abono, bonos y reglas de liquidación, chargeback y recupero, residual, costos de la
+estructura, GPON, meses afectados y notas). Lo que difiere de los valores calibrados con las liquidaciones reales va
+marcado con ✱. Las secciones interactivas no se imprimen; resultados y EERR arrancan en hoja nueva. Componente
+`FichaSimulacion.tsx`; estilos en `globals.css` (`.ficha-impresa`, `.print-shell`, `.sim-print`).
+
 ## Voi · el agente de la plataforma (Claude Managed Agents)
 
 **Voi · Powered by Claude** es el agente de IA de la plataforma, en un panel lateral disponible en todas las pantallas
@@ -1132,12 +1160,12 @@ Navegador ─► panel de Voi (SSE) ─► FastAPI /api/v1/asistente ─► Clau
      objetivos y proyección, centro de comandos, tickets, coaching, buscar personas, informes diarios (propios) y, para
      el superadmin, el **seguimiento de los informes de todo el equipo**, auditorías, **buscar en los documentos**,
      **mostrar en el lienzo**, las de guía (**abrir una pantalla**, **guiar paso a paso** y **ofrecer opciones** con
-     botones) y, solo con Facturación, **liquidaciones, comparativos, calidad por fecha, criterios y simulador**
-     Pospago/GPON.
+     botones) y, solo con Facturación, **liquidaciones, comparativos, calidad por fecha, criterios, el simulador**
+     Pospago/GPON y **el simulador convergente** (escenarios, comparaciones, simulaciones guardadas).
   2. **Lo propio** (corre sola y queda registrada; el superadmin puede pedir confirmación): preparar el **borrador** del
      informe diario con datos importados y el **seguimiento de sus compromisos**; preparar un **informe de auditoría**
-     en borrador (con los cortes de Ventas Netas de los meses pedidos) y **agregarle hallazgos**. Voi nunca firma ni
-     cierra.
+     en borrador (con los cortes de Ventas Netas de los meses pedidos) y **agregarle hallazgos**; **guardar y anotar
+     simulaciones** de Facturación en el registro del trabajo. Voi nunca firma ni cierra.
   3. **Afecta a otros** (tarjeta con **Aprobar / Cancelar**): enviar un ticket de revisión y darle **seguimiento**
      (comentar, reabrir, cancelar, reasignar); tomar, descartar o derivar una alerta del centro de comandos; **comentar
      un informe diario** (el superadmin, que además lo deja revisado).
