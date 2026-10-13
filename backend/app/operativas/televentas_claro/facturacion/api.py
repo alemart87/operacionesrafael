@@ -368,21 +368,13 @@ def _simulacion_out(s: FacturacionSimulacion, detalle: bool = True) -> dict:
     return base
 
 
-@router.get("/simulaciones")
-async def listar_simulaciones(user: CurrentUser = Depends(require_facturacion_access),
-                              db: AsyncSession = Depends(get_db)) -> dict:
-    rows = (await db.execute(
-        select(FacturacionSimulacion).order_by(FacturacionSimulacion.created_at.desc()).limit(200)
-    )).scalars().all()
-    return {"simulaciones": [_simulacion_out(s, detalle=False) for s in rows]}
-
-
-@router.post("/simulaciones", status_code=status.HTTP_201_CREATED)
-async def crear_simulacion(payload: SimulacionCreate, request: Request,
-                           user: CurrentUser = Depends(require_facturacion_access),
-                           db: AsyncSession = Depends(get_db)) -> dict:
+async def crear_simulacion_registro(db: AsyncSession, user: CurrentUser, payload: SimulacionCreate,
+                                    ip: str | None, origen: str = "pantalla") -> FacturacionSimulacion:
+    """Crea una simulación guardada (registro del trabajo). Lo usan la pantalla y Voi: mismas reglas y auditoría."""
     if payload.horizonte not in (12, 18):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "El horizonte debe ser 12 o 18 meses.")
+    if not payload.nombre.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "La simulación necesita un nombre.")
     s = FacturacionSimulacion(
         nombre=payload.nombre.strip(), comentario=(payload.comentario or "").strip() or None,
         horizonte=payload.horizonte, parametros=payload.parametros, ventas_por_mes=payload.ventas_por_mes,
@@ -396,8 +388,50 @@ async def crear_simulacion(payload: SimulacionCreate, request: Request,
     await db.commit()
     await db.refresh(s)
     await record_action(db, user_id=user.id, action="create_facturacion_simulacion",
-                        resource_type="facturacion_simulacion", resource_id=s.id,
-                        ip=client_ip(request), extra={"nombre": s.nombre, "horizonte": s.horizonte})
+                        resource_type="facturacion_simulacion", resource_id=s.id, ip=ip,
+                        extra={"nombre": s.nombre, "horizonte": s.horizonte, "origen": origen})
+    return s
+
+
+async def anotar_simulacion_registro(db: AsyncSession, user: CurrentUser, s: FacturacionSimulacion,
+                                     notas_nuevas: list[dict], comentario: str | None, ip: str | None,
+                                     origen: str = "pantalla") -> FacturacionSimulacion:
+    """Suma notas (firmadas por quien las carga) y, si viene, reemplaza el comentario. No borra nada."""
+    nuevas = _notas_con_autor(notas_nuevas, user)
+    if not nuevas and comentario is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No hay nada para anotar.")
+    s.notas = [*(s.notas or []), *nuevas]
+    if comentario is not None:
+        s.comentario = comentario.strip() or None
+    s.updated_by_nombre = user.full_name
+    await db.commit()
+    await db.refresh(s)
+    await record_action(db, user_id=user.id, action="update_facturacion_simulacion",
+                        resource_type="facturacion_simulacion", resource_id=s.id, ip=ip,
+                        extra={"campos": [k for k, v in (("notas", nuevas), ("comentario", comentario)) if v],
+                               "notas_nuevas": len(nuevas), "origen": origen})
+    return s
+
+
+def simulacion_dict(s: FacturacionSimulacion, detalle: bool = True) -> dict:
+    """La simulación guardada como la ve la pantalla (también para Voi)."""
+    return _simulacion_out(s, detalle)
+
+
+@router.get("/simulaciones")
+async def listar_simulaciones(user: CurrentUser = Depends(require_facturacion_access),
+                              db: AsyncSession = Depends(get_db)) -> dict:
+    rows = (await db.execute(
+        select(FacturacionSimulacion).order_by(FacturacionSimulacion.created_at.desc()).limit(200)
+    )).scalars().all()
+    return {"simulaciones": [_simulacion_out(s, detalle=False) for s in rows]}
+
+
+@router.post("/simulaciones", status_code=status.HTTP_201_CREATED)
+async def crear_simulacion(payload: SimulacionCreate, request: Request,
+                           user: CurrentUser = Depends(require_facturacion_access),
+                           db: AsyncSession = Depends(get_db)) -> dict:
+    s = await crear_simulacion_registro(db, user, payload, client_ip(request))
     return _simulacion_out(s)
 
 

@@ -327,7 +327,7 @@ async def test_facturacion_se_revisa_al_ejecutar_y_simula(simulador):
         assert "confidenciales" in d["importante"]
         texto, error = await ejecutar(obtener("facturacion_simular"), {"negocio": "pospago", "cambios": {"planes": []}},
                                       Ctx(db=db, user=sg, conversacion_id="x"), "gestion")
-        assert error and "no editable" in texto
+        assert error and "planes" in texto            # el mix y las tarifas se editan por plan; una lista vacía no vale
         texto, error = await ejecutar(obtener("facturacion_criterios"), {"negocio": "pospago", "concepto": "diferido"},
                                       Ctx(db=db, user=sg, conversacion_id="x"), "gestion")
         d = json.loads(texto)

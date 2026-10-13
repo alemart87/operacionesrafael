@@ -221,8 +221,12 @@ PANTALLAS: tuple[Pantalla, ...] = (
     Pantalla("/televentas-claro/facturacion/simulador", f"{_FACT} · Simulador", _FACT,
              "Simular la liquidación móvil.", permisos=_p("facturacion"), confidencial=True,
              claves=("simulador", "simular comisiones", "simular facturacion")),
-    Pantalla("/televentas-claro/facturacion/simulador-anual", f"{_FACT} · Simulador anual", _FACT,
-             "Simular el año.", permisos=_p("facturacion"), confidencial=True, claves=("simulador anual", "anual")),
+    Pantalla("/televentas-claro/facturacion/simulador-anual", f"{_FACT} · Simulador convergente", _FACT,
+             "El simulador convergente: balance a 12 o 18 meses del pospago y el GPON vendidos por la misma estructura, "
+             "con el registro del trabajo (simulaciones guardadas, notas, marcas y post-its). Con ?abrir=<id> abre una "
+             "simulación guardada.", permisos=_p("facturacion"), confidencial=True,
+             claves=("simulador anual", "anual", "simulador convergente", "convergente", "escenario", "simulacion guardada",
+                     "registro del trabajo", "balance anual", "zafra", "bono unico")),
     Pantalla("/televentas-claro/facturacion/gpon", f"{_FACT} · Simulador GPON", _FACT,
              "Simular la liquidación de GPON.", permisos=_p("facturacion"), confidencial=True, claves=("simulador gpon",)),
     Pantalla("/televentas-claro/facturacion/criterios", f"{_FACT} · Criterios", _FACT,

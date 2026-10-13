@@ -604,6 +604,20 @@ class ClienteSimulado:
         if "facturacion_liquidacion" in h and any(k in n for k in ("factur", "liquidac", "comision", "simul", "chargeback",
                                                                    "bono")):
             negocio = "gpon" if "gpon" in n else "pospago"
+            if "facturacion_simular_anual" in h and any(k in n for k in ("anual", "convergente", "escenario", "12 meses", "18 meses",
+                                                                          "guarda", "balance")):
+                ventas = [int(numero.group(1))] if numero else []
+                if "facturacion_guardar_simulacion" in h and "guard" in n:
+                    nombre = re.sub(r"^.*?(?:guard\w*)\s*(?:la\s+)?(?:simulaci[oó]n\s*)?(?:como\s+)?", "", texto.strip(), flags=re.I).strip(" .«»\"'") or "Simulación de Voi"
+                    return [("herramienta", "facturacion_guardar_simulacion",
+                             {"nombre": nombre[:160], "ventas_por_mes": ventas, "notas": [{"texto": "Guardada desde la conversación.", "tipo": "supuesto"}]}),
+                            ("mensaje", _final)]
+                entrada = {"ventas_por_mes": ventas, "horizonte": 18 if "18" in n else 12}
+                if "ideal" in n:
+                    entrada["preset"] = "ideal"
+                if "bono unico" in n or "bono único" in n:
+                    entrada["bono_unico"] = True
+                return [("herramienta", "facturacion_simular_anual", entrada), ("mensaje", _final)]
             if "simul" in n:
                 cambios = {"ventas": int(numero.group(1))} if numero else {}
                 return [("herramienta", "facturacion_simular", {"negocio": negocio, "cambios": cambios}),

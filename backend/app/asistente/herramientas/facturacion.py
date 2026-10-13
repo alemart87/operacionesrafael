@@ -191,14 +191,73 @@ def _numero(nombre: str, v: Any, defecto: Any) -> Any:
     return int(n) if isinstance(defecto, int) and n.is_integer() else n
 
 
+_LISTAS_PCT = {"zafra_pct": 13, "residual_curva_pct": 12, "residual_cobrabilidad_pct": 12, "mora_curva_pct": None}
+_ESCALAS = ("escala_productividad", "escala_efectividad", "escala_bono")
+_PLANES_CAMPOS = ("mix_pct", "cuota1", "cuota2", "porta_plus", "abono", "penalidad_mora")
+
+
+def _lista_pct(nombre: str, v: Any, largo: int | None) -> list[float]:
+    if not isinstance(v, list) or not v:
+        raise ErrorHerramienta(f"«{nombre}» va como lista de porcentajes" + (f" ({largo} valores: M0 a M{largo - 1})" if largo else ""))
+    if largo and len(v) != largo:
+        raise ErrorHerramienta(f"«{nombre}» necesita exactamente {largo} valores (M0 a M{largo - 1}); llegaron {len(v)}")
+    out = []
+    for x in v[:24]:
+        try:
+            n = float(x)
+        except (TypeError, ValueError) as exc:
+            raise ErrorHerramienta(f"«{nombre}» tiene un valor que no es número") from exc
+        if not math.isfinite(n) or not 0 <= n <= 100:
+            raise ErrorHerramienta(f"«{nombre}»: cada valor va de 0 a 100")
+        out.append(n)
+    return out
+
+
+def _escala_valida(nombre: str, v: Any) -> list[dict[str, float]]:
+    if not isinstance(v, list) or not v:
+        raise ErrorHerramienta(f"«{nombre}» va como lista de tramos [{{desde_pct, monto}}]")
+    out = []
+    for tramo in v[:8]:
+        if not isinstance(tramo, dict) or "desde_pct" not in tramo or "monto" not in tramo:
+            raise ErrorHerramienta(f"«{nombre}»: cada tramo lleva desde_pct y monto")
+        out.append({"desde_pct": _numero("desde_pct", tramo["desde_pct"], 0.0),
+                    "monto": _numero("monto", tramo["monto"], 0.0)})
+    return sorted(out, key=lambda x: -x["desde_pct"])
+
+
+def _planes(v: Any, defectos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Edita planes existentes por nombre (mix y tarifas); no crea planes nuevos."""
+    if not isinstance(v, list) or not v:
+        raise ErrorHerramienta("«planes» va como lista [{plan, mix_pct, cuota1, cuota2, porta_plus, abono}] con los planes existentes")
+    clave = "plan" if defectos and "plan" in defectos[0] else "nombre"
+    por_nombre = {str(d.get(clave)).upper(): dict(d) for d in defectos}
+    for e in v[:10]:
+        if not isinstance(e, dict):
+            raise ErrorHerramienta("«planes»: cada elemento es un objeto")
+        nombre = str(e.get(clave) or e.get("plan") or e.get("nombre") or "").upper()
+        if nombre not in por_nombre:
+            raise ErrorHerramienta(f"Plan desconocido «{nombre}»; los que existen: {', '.join(por_nombre)}")
+        for ck, cv in e.items():
+            if ck in (clave, "plan", "nombre"):
+                continue
+            if ck not in _PLANES_CAMPOS or ck not in por_nombre[nombre]:
+                raise ErrorHerramienta(f"«planes.{ck}» no es editable")
+            por_nombre[nombre][ck] = _numero(ck, cv, por_nombre[nombre][ck])
+    mix = sum(float(x.get("mix_pct") or 0) for x in por_nombre.values())
+    if not 99.0 <= mix <= 101.0:
+        raise ErrorHerramienta(f"El mix de planes tiene que sumar 100 % (suma {mix:g})")
+    return list(por_nombre.values())
+
+
 def validar_cambios(cambios: Any, defectos: dict[str, Any]) -> dict[str, Any]:
-    """Solo los parámetros numéricos o de sí/no que existen en el simulador (y los de costos)."""
+    """Solo los parámetros que existen en el simulador: números, sí/no, los costos, y las listas conocidas
+    (zafra, curvas del residual y la mora, escalas de bonos, planes). `pct_recalculo_productividad` acepta null («según zafra»)."""
     if not cambios:
         return {}
     if not isinstance(cambios, dict):
         raise ErrorHerramienta("«cambios» va como objeto {parámetro: valor}")
     salida: dict[str, Any] = {}
-    for k, v in list(cambios.items())[:30]:
+    for k, v in list(cambios.items())[:40]:
         if k == "costos" and isinstance(v, dict):
             salida["costos"] = {}
             for ck, cv in list(v.items())[:30]:
@@ -206,9 +265,20 @@ def validar_cambios(cambios: Any, defectos: dict[str, Any]) -> dict[str, Any]:
                     raise ErrorHerramienta(f"Parámetro de costos desconocido: «{ck}»")
                 salida["costos"][ck] = _numero(ck, cv, defectos["costos"][ck])
             continue
-        if k not in defectos or isinstance(defectos[k], (list, dict, str)):
-            raise ErrorHerramienta(f"Parámetro desconocido o no editable desde Voi: «{k}»")
-        salida[k] = _numero(k, v, defectos[k])
+        if k not in defectos:
+            raise ErrorHerramienta(f"Parámetro desconocido: «{k}»")
+        if k in _LISTAS_PCT:
+            salida[k] = _lista_pct(k, v, _LISTAS_PCT[k])
+        elif k in _ESCALAS:
+            salida[k] = _escala_valida(k, v)
+        elif k == "planes":
+            salida[k] = _planes(v, defectos["planes"])
+        elif k == "pct_recalculo_productividad" and (v is None or str(v).strip().lower() in ("", "zafra", "segun zafra", "según zafra", "null")):
+            salida[k] = None
+        elif isinstance(defectos[k], (list, dict, str)) or defectos[k] is None:
+            raise ErrorHerramienta(f"Parámetro no editable desde Voi: «{k}»")
+        else:
+            salida[k] = _numero(k, v, defectos[k])
     return salida
 
 
