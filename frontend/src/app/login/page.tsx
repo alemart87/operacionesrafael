@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { LogoAnimado, MuralPuntos } from "@/components/LogoAnimado";
+import { LogoAnimado } from "@/components/LogoAnimado";
+import { MuralVivo } from "@/components/MuralVivo";
 import { getToken, login, login2fa, motivoSalida, type LoginResult } from "@/lib/api";
 
 const PILLARS = [
@@ -59,8 +60,8 @@ export default function LoginPage() {
         className="hidden lg:flex flex-col justify-between p-12 text-white relative overflow-hidden"
         style={{ background: "linear-gradient(135deg, #B81F18 0%, #E6332A 55%, #F39200 100%)" }}
       >
-        {/* El mural de puntos de la fachada, tenue, y el logo en movimiento. */}
-        <MuralPuntos className="absolute inset-0 w-full h-full opacity-[0.16] pointer-events-none" />
+        {/* El mural de puntos de la fachada, vivo: forma gráficos del negocio, sigue al puntero y tiene profundidad. */}
+        <MuralVivo className="absolute inset-0 w-full h-full opacity-[0.55] pointer-events-none" />
         <div className="flex items-start justify-end relative z-10">
           <LogoAnimado size={230} sobreRojo className="xl:w-[300px] xl:h-auto drop-shadow-[0_8px_24px_rgba(0,0,0,0.25)]" />
         </div>
