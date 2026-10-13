@@ -292,6 +292,7 @@ h3,
 .mm-blanco { fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .mm-cifra { font: 600 22px Manrope, system-ui, sans-serif; fill: #0F1116; letter-spacing: -0.02em; }
 .mm-etiqueta { font: 500 11px Manrope, system-ui, sans-serif; fill: #5B6275; letter-spacing: 0.02em; }
+.mm-registro { font: 500 12.5px Manrope, system-ui, sans-serif; fill: #2A2F3A; }
 
 .mm-draw { stroke-dasharray: 1 1; stroke-dashoffset: 1; animation: mm-draw 1.3s cubic-bezier(.65,0,.35,1) forwards; }
 .mm-draw.mm-lento { animation-duration: 2.2s; }
