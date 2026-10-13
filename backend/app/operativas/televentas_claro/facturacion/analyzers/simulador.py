@@ -40,6 +40,12 @@ ZAFRA_DEFAULT = [99.9, 82.6, 58.5, 53.8, 53.1, 49.2, 51.1, 46.2, 41.9, 40.7, 40.
 # no lo cobra toda línea activa sino la que tiene monto acreditado; medido sobre 7 liquidaciones
 # reales (383-389, nov-2025 a may-2026, 146.000 filas de RESIDUAL).
 RESIDUAL_CURVA_DEFAULT = [91.3, 63.7, 53.8, 51.7, 50.9, 49.5, 46.6, 43.7, 42.4, 39.6, 35.7, 32.4]
+# Cobrabilidad del residual: el residual del mes k lo generan las líneas ACTIVAS AL CIERRE DEL MES ANTERIOR
+# (zafra[k−1]) que pagaron su factura. Cobrabilidad[k] = curva real de líneas que cobran residual ÷ zafra real del
+# mes anterior, con tope 100 %. Así el residual SIGUE a la zafra: si la zafra mejora, el residual sube. El mes 2 es
+# bajo (77 %) porque las líneas que caen por PFI no pagaron la primera factura; del mes 3 al 10 pagan 91–100 %; al
+# final (meses 11 y 12) baja a 89 y 80 % porque parte de las activas ya no tiene abono acreditado.
+RESIDUAL_COBRABILIDAD_DEFAULT = [min(round(rc / z * 100, 2), 100.0) for rc, z in zip(RESIDUAL_CURVA_DEFAULT, ZAFRA_DEFAULT[0:12])]
 
 PARAMETROS_DEFAULT: dict[str, Any] = {
     # ---- entrada principal ----
@@ -49,6 +55,12 @@ PARAMETROS_DEFAULT: dict[str, Any] = {
     "objetivo_co": 1750,            # objetivo mensual de líneas CO (lo comunica Claro)
     "pct_estado_a": 99.5,           # activaciones en estado A (no S/P/C) al liquidar
     "bonos_activos": True,          # False = simular SIN bonos (productividad y efectividad en 0)
+    # Escenarios de negociación con Claro: False = Claro NO descuenta ese bono en las caídas.
+    "devolver_bono_productividad": True,   # False = sin RECALCULO INCENTIVO PRODUCTIVIDAD (1871) al mes 6
+    "devolver_bono_efectividad": True,     # False = sin DESCUENTO INCENTIVOS POR PENALIDAD (471) del bono efectividad/logística
+    # Propuesta 2027 "bono único" (marca informativa: el frontend carga en escala_productividad la escala
+    # ≥110% 55.000 · ≥100% 50.000 · ≥95% 35.000 · ≥90% 25.000, anula el bono efectividad y apaga los descuentos).
+    "bono_unico": False,
     "bono_adicional": 0.0,          # BONO ADICIONAL a mano (Gs totales del mes): campañas, premios o acuerdos puntuales
     "ajuste_comisiones_pct": 0.0,   # ajuste negociado sobre cuota 1, cuota 2 y plus de portabilidad (+5 = mejora 5%)
     # ---- tarifas por plan (Gs sin IVA) y mix ----
@@ -67,7 +79,9 @@ PARAMETROS_DEFAULT: dict[str, Any] = {
     "residual_pct": 14.5,           # sobre el abono ACREDITADO (exacto en todas las filas RESIDUAL)
     "pct_abono_acreditado": 48.0,   # acreditado promedio de las líneas que pagan ÷ abono del plan (real: ~89.000 / 184.000)
     "residual_meses": 12,
-    "residual_curva_pct": list(RESIDUAL_CURVA_DEFAULT),   # % de líneas que pagan residual por mes de antigüedad
+    "residual_curva_pct": list(RESIDUAL_CURVA_DEFAULT),   # % de líneas que pagan residual por mes de antigüedad (curva FIJA, solo si residual_segun_zafra = False)
+    "residual_segun_zafra": True,                          # True: líneas que pagan residual en el mes k = zafra[k−1] × cobrabilidad[k] (el residual sigue a la zafra)
+    "residual_cobrabilidad_pct": list(RESIDUAL_COBRABILIDAD_DEFAULT),
     # ---- bonos (escalas editables) ----
     # Escala VIGENTE comunicada por Claro (tabla ">= / Cuota"): ≥110% 120.000 · ≥105% 115.000 ·
     # ≥100% 105.000 · ≥95% 40.000; bajo el 95% no se cobra. Historial liquidado: 2025 pagó 95.000 al
@@ -100,6 +114,11 @@ PARAMETROS_DEFAULT: dict[str, Any] = {
     # Calibrado con 7 liquidaciones reales (383-389): 21,0 · 14,4 · 3,0 · 9,2 · 6,5 · 9,9 · 21,2% → ponderado 12,1%.
     "recupero_pct": 12.0,
     "clawback_incluye_residual": True,  # suspensión penalizable = cuota 1 + 1 residual (214.431)
+    # Gross con el criterio de Claro ("Desc Gross", "Netas Móv", "%Gross/Vta"): de cada 100 líneas que
+    # caen según la zafra, cuántas Claro registra como BAJA por su razón (PFI, falta de pago, fraude), sin
+    # port out, un mes después de la caída (la suspensión se cancela a los ~30 días). Real 2026 por
+    # cohorte: bajas 29–38% de las ventas contra 48,9% de caídas de la zafra a 6 meses → 60–75%.
+    "pct_bajas_gross": 60.0,
     # ---- COSTOS de la estructura (el indicador principal: ventas por vendedor) ----
     "costos": {
         "ventas_por_vendedor": 20,          # 1.900 ventas → 95 vendedores
@@ -119,7 +138,7 @@ PARAMETROS_DEFAULT: dict[str, Any] = {
         "ips_pct": 16.5,                    # sobre todos los costos de RRHH
         "aguinaldo": True,                  # previsión mensual: RRHH ÷ 12 (sin IPS)
         "logistica_central": 55000, "logistica_interior": 80000, "logistica_interior_pct": 60.0,
-        "logistica_premios": 20000000,      # premios a logística (fijo mensual)
+        "logistica_premios": 20000000,      # cobertura adicional interior (fijo mensual)
         "operativo_por_venta": 12500,       # costos operativos adicionales por venta
     },
 }
@@ -210,11 +229,18 @@ def simular_facturacion(params: dict | None = None) -> dict[str, Any]:
     while len(z) < 13:
         z.append(z[-1] if z else 0.0)
     # Curva de líneas que pagan residual (mes 1..12); si no viene, cae en la zafra.
-    rc = [min(max(float(v), 0), 100) / 100.0 for v in (p.get("residual_curva_pct") or [])]
-    if not rc:
-        rc = z[1:13]
-    while len(rc) < 12:
-        rc.append(rc[-1])
+    if p.get("residual_segun_zafra", True):
+        # El residual sigue a la zafra: líneas que pagan en el mes k = activas al cierre del mes k−1 × cobrabilidad[k].
+        cob = [max(float(v), 0) / 100.0 for v in (p.get("residual_cobrabilidad_pct") or RESIDUAL_COBRABILIDAD_DEFAULT)]
+        while len(cob) < 12:
+            cob.append(cob[-1] if cob else 1.0)
+        rc = [min(z[k - 1] * cob[k - 1], 1.0) for k in range(1, 13)]
+    else:
+        rc = [min(max(float(v), 0), 100) / 100.0 for v in (p.get("residual_curva_pct") or [])]
+        if not rc:
+            rc = z[1:13]
+        while len(rc) < 12:
+            rc.append(rc[-1])
     chb = int(p["chargeback_meses"])
     pen = min(max(float(p["pct_caidas_penalizables"]), 0), 100) / 100.0
     recupero = min(max(float(p["recupero_pct"]), 0), 100) / 100.0
@@ -239,14 +265,15 @@ def simular_facturacion(params: dict | None = None) -> dict[str, Any]:
             caidas = act * max(0.0, z[k - 1] - z[k])
             row["caidas"] = caidas
             row["clawbacks"] = -caidas * clawback_linea_base * (1 - recupero)
-            row["clawback_bonos"] = -caidas * pct_bef * monto_efect * (1 - recupero)
+            if p.get("devolver_bono_efectividad", True):
+                row["clawback_bonos"] = -caidas * pct_bef * monto_efect * (1 - recupero)
         if k == int(p.get("migracion_mes") or 3) and migr > 0:
             # Migración de negocio: pierde la cuota 1 completa, sin recupero (la línea deja el pospago).
             row["clawbacks"] += -act * migr * cuota1_w
         if k == int(p["cuota2_mes"]):
             # Cuota 2: línea activa al día 90; legajo incompleto cobra la mitad y legajo no presentado cobra 0.
             row["cuota2"] = act * z[k] * cuota2_w * (1 - leg_inc / 2 - leg_np)
-        if k == int(p["recalculo_productividad_mes"]):
+        if k == int(p["recalculo_productividad_mes"]) and p.get("devolver_bono_productividad", True):
             # Recálculo: % de líneas castigadas medido en las liquidaciones (las suspendidas sin cancelar cuentan activas).
             row["recalculo_productividad"] = -act_a * monto_prod * pct_recalc
         row["neto_mes"] = (row["residual"] + row["cuota2"] + row["legajos"] + row["clawbacks"]
@@ -346,13 +373,14 @@ def simular_facturacion(params: dict | None = None) -> dict[str, Any]:
                                 "detalle": f"Si el mes cierra {dist_prod['margen_unidades'] + 1} activaciones abajo, el bono productividad cae a "
                                            f"{gs(float(inferior[0]['monto'])) if inferior else 'Gs 0'}/línea: {gs(perdida)} menos de facturación."})
     # PFI (primera factura impaga, razón P9-735): la suspensión penalizable llega a los ~60 días, así que en
-    # la zafra vive en las caídas acumuladas de los dos primeros meses (1 − z[2]). Real por cohorte
-    # (nov-25 a mar-26): 26,9 · 27,3 · 26,9 · 28,5 · 34,1% → 28,7% de las ventas; el 16% se reconecta.
+    # la zafra vive en las caídas acumuladas de los dos primeros meses (1 − z[2]). Real por mes de venta
+    # (8 liquidaciones 2026): ene 26,9 · feb 28,5 · mar 28,7 · abr 35,3 · may 37,6% → 31,4% de las ventas
+    # en cohortes maduras; el 16% se reconecta.
     caida_2 = 1 - z[2]
     if caida_2 > 0.12:
         valor_pt = act * 0.01 * clawback_linea_base * (1 - recupero)
         recomendaciones.append({"severidad": "alert", "titulo": f"PFI: los dos primeros meses se llevan el {caida_2 * 100:.0f}% de las líneas",
-                                "detalle": f"La zafra pierde {(1 - z[1]) * 100:.0f}% en el mes 1 y otro {(z[1] - z[2]) * 100:.0f}% en el mes 2, donde cae la suspensión por primera factura impaga (P9-735), medida en 28,7% de las ventas por cohorte. "
+                                "detalle": f"La zafra pierde {(1 - z[1]) * 100:.0f}% en el mes 1 y otro {(z[1] - z[2]) * 100:.0f}% en el mes 2, donde cae la suspensión por primera factura impaga (P9-735), medida en 27% a 38% de las ventas según el mes (31% ponderado en 2026). "
                                            f"Cada punto de retención en esos dos meses vale {gs(valor_pt)} de devoluciones evitadas. La palanca: calidad de venta y cobranza de la primera factura."})
     exp_porta = act * porta * porta_w * (1 - z[chb]) * (1 - recupero)
     recomendaciones.append({"severidad": "info", "titulo": f"Portabilidad: {gs(mes0['portabilidad'])} en el mes, {gs(exp_porta)} vuelven en chargeback",
@@ -379,6 +407,7 @@ def simular_facturacion(params: dict | None = None) -> dict[str, Any]:
             "ajuste_comisiones_pct": float(p.get("ajuste_comisiones_pct") or 0),
             "cuota1_ponderada": round(cuota1_w), "cuota2_ponderada": round(cuota2_w),
             "porta_plus_ponderado": round(porta_w), "residual_por_linea": round(residual_linea),
+            "residual_curva_efectiva": [round(x * 100, 1) for x in rc],   # % de líneas que pagan residual, mes 1..12
             "clawback_por_linea": round(clawback_linea_base),
         },
         "mes0": {k: round(v) for k, v in mes0.items()},
@@ -474,10 +503,13 @@ def _costos_y_margen(c: dict, act: float, mes0: dict, bruto_mes0: float,
     logistica_entregas = act * (interior * float(c["logistica_interior"]) + (1 - interior) * float(c["logistica_central"]))
     logistica_premios = float(c["logistica_premios"])
     operativos = act * float(c["operativo_por_venta"])
+    # Recupero de documentación por venta (GPON: 55.000 por activación; pospago: 0). Sin cargas sociales.
+    documentacion = act * float(c.get("documentacion_por_venta") or 0)
     # Total sobre componentes redondeados: la tabla de costos debe ser aditiva al guaraní.
     rrhh_base, ips, aguinaldo, plus_vendedores = round(rrhh_base), round(ips), round(aguinaldo), round(plus_vendedores)
     logistica_entregas, logistica_premios, operativos = round(logistica_entregas), round(logistica_premios), round(operativos)
-    total = rrhh_base + ips + aguinaldo + plus_vendedores + logistica_entregas + logistica_premios + operativos
+    documentacion = round(documentacion)
+    total = rrhh_base + ips + aguinaldo + plus_vendedores + logistica_entregas + logistica_premios + operativos + documentacion
     carga = 1 + float(c["ips_pct"]) / 100.0 + (1 / 12 if c.get("aguinaldo", True) else 0)
     variable_vendedores = rrhh["operadores_comisiones"] + plus_vendedores          # comisión + plus (sin cargas)
 
@@ -492,6 +524,7 @@ def _costos_y_margen(c: dict, act: float, mes0: dict, bruto_mes0: float,
         "plus_vendedores": plus_vendedores,
         "logistica_entregas": round(logistica_entregas), "logistica_premios": round(logistica_premios),
         "operativos": round(operativos),
+        "documentacion": documentacion,
         "total": round(total),
         "costo_por_venta": round(total / act) if act else 0,
         "facturacion_por_venta": round(bruto_mes0 / act) if act else 0,
@@ -605,8 +638,13 @@ def _aplicar_afectado(base: dict, ov: dict | None) -> dict:
 
 def simular_anual(params: dict | None, ventas_por_mes: list[float], horizonte: int = 12,
                   meses_afectados: dict | None = None, bonos_adicionales_por_mes: list[float] | None = None,
-                  nombres_meses: list[str] | None = None) -> dict[str, Any]:
+                  nombres_meses: list[str] | None = None, aporte_externo_por_mes: list[float] | None = None) -> dict[str, Any]:
     """Balance de 12 o 18 meses con estructura FIJA seteada en el mes 1.
+
+    `aporte_externo_por_mes` (simulador CONVERGENTE): resultado que otro negocio vendido por la
+    MISMA estructura (GPON) deja cada mes. No entra en los flujos de pospago; solo se suma al
+    calcular las ventas mínimas del mes (ventas_equilibrio) y los meses en riesgo, porque la
+    estructura fija se cubre con los dos negocios juntos.
 
     - El mes 1 define objetivo CO, tarifas, zafra, escalas y la estructura
       (vendedores, supervisores, backoffice, coordinación, controllers).
@@ -639,6 +677,35 @@ def simular_anual(params: dict | None, ventas_por_mes: list[float], horizonte: i
     cohortes = [simular_facturacion({**_aplicar_afectado(base, afectados.get(t)), "ventas": v,
                                      "bono_adicional": bonos_ad[t], "_sin_breakeven": True})
                 for t, v in enumerate(ventas)]
+
+    # ---- Gross con el criterio de Claro: bajas del mes de cualquier cohorte, sin port out ----
+    # Las bajas de la cohorte a la edad k son las caídas de la zafra a la edad k−1 (la suspensión se
+    # cancela ~30 días después) por `pct_bajas_gross`. Antes del mes 1 se asume régimen: cohortes
+    # previas iguales a las ventas del mes 1 con la zafra base, para que el mes 1 no muestre 0 bajas.
+    rho = min(max(float(base.get("pct_bajas_gross") or 0), 0), 100) / 100.0
+    chb_g = int(base["chargeback_meses"])
+
+    def _zafra_de(pm: dict) -> list[float]:
+        z = [min(max(float(v), 0), 100) / 100.0 for v in pm["zafra_pct"]]
+        while len(z) < 14:
+            z.append(z[-1] if z else 0.0)
+        return z
+
+    def _bajas_edad(pm: dict, v: float, edad: int) -> float:
+        if edad < 2 or edad > chb_g + 1:
+            return 0.0
+        z = _zafra_de(pm)
+        return v * rho * max(0.0, z[edad - 2] - z[edad - 1])
+
+    def bajas_gross_mes(t: int) -> tuple[float, float]:
+        propias, heredadas = 0.0, 0.0
+        for m in range(t - chb_g - 1, t + 1):
+            edad = t - m
+            if m >= 0:
+                propias += _bajas_edad(cohortes[m]["parametros"], ventas[m], edad)
+            else:
+                heredadas += _bajas_edad(base, ventas[0], edad)
+        return propias, heredadas
 
     meses: list[dict] = []
     acumulado = 0
@@ -690,11 +757,15 @@ def simular_anual(params: dict | None, ventas_por_mes: list[float], horizonte: i
         # estructura fija (bisección sobre v; los bonos hacen escalones, se busca el primer v que cierra).
         pm_t = _aplicar_afectado(base, afectados.get(t))
 
+        aportes = list(aporte_externo_por_mes or [])
+        aporte_t = float(aportes[t] or 0.0) if t < len(aportes) else 0.0
+        fila["aporte_externo"] = round(aporte_t)
+
         def _resultado_con(v: float) -> float:
             c2 = simular_facturacion({**pm_t, "ventas": v, "bono_adicional": bonos_ad[t], "_sin_breakeven": True})
             cst, _ = _costos_y_margen(c2["parametros"]["costos"], v, c2["mes0"], c2["bruto_mes0"],
                                       c2["neto_6"], c2["neto_12"], headcount=headcount)
-            return c2["bruto_mes0"] + fila["ajustes"] - cst["total"]
+            return c2["bruto_mes0"] + fila["ajustes"] + aporte_t - cst["total"]
         hi = max(ventas[t] * 3, 500.0)
         if _resultado_con(0.0) >= 0:
             fila["ventas_equilibrio"] = 0
@@ -710,6 +781,12 @@ def simular_anual(params: dict | None, ventas_por_mes: list[float], horizonte: i
                     lo = mid
             fila["ventas_equilibrio"] = int(math.ceil(up))
         fila["en_riesgo"] = fila["ventas_equilibrio"] is None or ventas[t] < fila["ventas_equilibrio"]
+        # Gross / netas / %Gross del mes (criterio Claro).
+        propias, heredadas = bajas_gross_mes(t)
+        fila["bajas_gross"] = round(propias + heredadas)
+        fila["bajas_gross_regimen"] = round(heredadas)      # parte que viene del arranque en régimen (cohortes previas al mes 1)
+        fila["netas_gross"] = fila["ventas"] - fila["bajas_gross"]
+        fila["pct_gross"] = round(fila["bajas_gross"] / fila["ventas"] * 100, 1) if fila["ventas"] else 0.0
         meses.append(fila)
 
     # Cola después del horizonte: flujos de las cohortes que caen fuera de él.
@@ -764,6 +841,13 @@ def simular_anual(params: dict | None, ventas_por_mes: list[float], horizonte: i
         "ola_maxima_mes": min(meses, key=lambda f: f["ola_devoluciones"])["mes"],
         "meses_en_riesgo": [f["mes"] for f in meses if f["en_riesgo"]],
         "ventas_equilibrio_max": max((f["ventas_equilibrio"] or 0) for f in meses),
+        # Gross (criterio Claro): promedio del período, máximo y meses fuera de la banda de referencia 22–27%.
+        "bajas_gross": round(tot("bajas_gross")),
+        "netas_gross": round(tot("ventas") - tot("bajas_gross")),
+        "pct_gross": round(tot("bajas_gross") / tot("ventas") * 100, 1) if tot("ventas") else 0.0,
+        "pct_gross_max": max(f["pct_gross"] for f in meses),
+        "pct_gross_max_mes": max(meses, key=lambda f: f["pct_gross"])["mes"],
+        "meses_gross_sobre_banda": [f["mes"] for f in meses if f["pct_gross"] > 27],
     }
 
     def gs(v: float) -> str:

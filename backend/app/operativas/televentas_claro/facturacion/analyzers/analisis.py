@@ -87,6 +87,17 @@ def analyze_facturacion(parsed: dict[str, Any]) -> dict[str, Any]:
             f"({_fmt_gs(rent['ticket'])}/activación)."
         )
 
+    # Desc Gross / Netas (criterio Claro): bajas del mes de cualquier cohorte, sin port out.
+    gross = parsed.get("gross") or {}
+    if gross.get("activaciones"):
+        edad13 = sum(e["lineas"] for e in gross.get("por_edad", []) if 1 <= e["meses"] <= 3)
+        pct13 = round(edad13 / gross["desc_gross"] * 100) if gross.get("desc_gross") else 0
+        analisis.append(
+            f"Gross (criterio Claro): {gross['desc_gross']:,} bajas en el mes sin port out → netas "
+            f"{gross['netas']:,} de {gross['activaciones']:,} ventas ({gross['pct_gross']}% Gross/Vta). "
+            f"El {pct13}% de las bajas son ventas de 1 a 3 meses antes: mide caja del mes, no la calidad de la venta del mes.".replace(",", ".")
+        )
+
     kpis = {
         "nro_liquidacion": parsed["nro_liquidacion"],
         "periodo": parsed.get("periodo"),
@@ -96,6 +107,9 @@ def analyze_facturacion(parsed: dict[str, Any]) -> dict[str, Any]:
         "ventas_activaciones": ventas["activaciones"],
         "ticket": ventas["ticket"],
         "total_rows": parsed["total_rows"],
+        "desc_gross": gross.get("desc_gross"),
+        "netas": gross.get("netas"),
+        "pct_gross": gross.get("pct_gross"),
     }
 
     return {
@@ -108,6 +122,7 @@ def analyze_facturacion(parsed: dict[str, Any]) -> dict[str, Any]:
         "doc_faltante": doc,
         "plan_mix": plan_mix,
         "planes_rentables": planes_rentables,
+        "gross": gross,
         "cohorte_calidad": parsed.get("cohorte_calidad", {}),
         "analisis_rapido": analisis,
     }

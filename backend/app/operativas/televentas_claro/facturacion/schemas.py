@@ -88,6 +88,20 @@ class SimuladorAnualRequest(BaseModel):
     nombres_meses: List[str] = Field(default_factory=list)                 # nombres editables de los meses
 
 
+class ConvergenteGpon(BaseModel):
+    """GPON dentro del simulador convergente: lo vende la misma estructura de pospago."""
+    activo: bool = True
+    parametros: dict[str, Any] = Field(default_factory=dict)          # variables GPON (planes, cuota 2, mora, bono fijo…)
+    por_asesor_por_mes: List[float] = Field(default_factory=list)     # GPON por asesor y mes (ideal 3) → activaciones = vendedores × k
+    bonos_adicionales_por_mes: List[float] = Field(default_factory=list)
+    meses_afectados: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class ConvergenteAnualRequest(SimuladorAnualRequest):
+    """Simulación convergente: pospago (como el anual) + GPON vendido por los mismos asesores."""
+    gpon: ConvergenteGpon = Field(default_factory=ConvergenteGpon)
+
+
 class SimulacionCreate(BaseModel):
     """Simulación anual guardada: registro del trabajo (nombre, comentario, marcas, post-its)."""
     nombre: str = Field(min_length=1, max_length=160)
@@ -126,6 +140,7 @@ class CompareResponse(BaseModel):
     creditos: list[float]
     debitos: list[float]
     ventas: list[int]
+    gross: dict[str, Any] = Field(default_factory=dict)   # Desc Gross / Netas / %Gross por mes (criterio Claro)
     variaciones: list[Optional[float]]
     drivers: list[dict[str, Any]]
     descomposicion: list[dict[str, Any]] = []

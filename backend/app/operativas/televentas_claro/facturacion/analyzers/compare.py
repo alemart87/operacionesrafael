@@ -154,6 +154,20 @@ def compare_facturacion(reports: list[dict[str, Any]]) -> dict[str, Any]:
     debitos = [round(kpi(r, "debitos"), 2) for r in reps]
     ventas = [int(kpi(r, "ventas_activaciones") or 0) for r in reps]
 
+    # Desc Gross / Netas / %Gross (criterio Claro) por liquidación; None si el reporte es
+    # anterior a esta métrica (hay que reprocesar el archivo).
+    def gross_of(r: dict) -> dict:
+        return (r.get("data") or {}).get("gross") or {}
+    gross = {
+        "ventas": ventas,
+        "desc_gross": [gross_of(r).get("desc_gross") for r in reps],
+        "netas": [gross_of(r).get("netas") for r in reps],
+        "pct_gross": [gross_of(r).get("pct_gross") for r in reps],
+        "port_out": [gross_of(r).get("port_out") for r in reps],
+        "pfi": [gross_of(r).get("pfi") for r in reps],
+        "disponible": any(gross_of(r).get("activaciones") for r in reps),
+    }
+
     # Variaciones mes a mes (sobre el total)
     variaciones = [None]
     for i in range(1, len(totales)):
@@ -218,6 +232,7 @@ def compare_facturacion(reports: list[dict[str, Any]]) -> dict[str, Any]:
         "creditos": creditos,
         "debitos": debitos,
         "ventas": ventas,
+        "gross": gross,                   # Desc Gross / Netas / %Gross por mes (criterio Claro)
         "variaciones": variaciones,
         "drivers": drivers,
         "descomposicion": descomposicion,   # delta por concepto (último vs anterior)

@@ -10,6 +10,7 @@ resultado debe ser pequeño. Todas las descripciones de concepto se incluyen.
 """
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from typing import Any
 
@@ -29,7 +30,80 @@ _DESC_CANCELACIONES = "CANCELACIONES"
 # Conceptos que representan "mala calidad" de la venta (penalidades imputables a la línea).
 _PENALIDADES_CALIDAD = {_DESC_SUSPENSIONES, _DESC_DOC_FALTANTE, _DESC_CANCELACIONES}
 
+_COL_LINEA = 6            # NroCelularGestion
+_COL_FECHA_GESTION = 15   # fecha del evento (cancelación, suspensión…)
+
 _MAX_ROWS = 500_000  # guarda de seguridad
+
+# Razones de cancelación (columna Observaciones: "... Razón: P9-735 - Primer factura Impaga").
+_RAZON_RE = re.compile(r"Raz.{1,2}n:\s*([A-Z0-9\-]+)")
+_RAZON_PFI = "P9-735"
+_RAZON_PORT_OUT = "PNPOUT"
+_RAZON_TXT = {
+    "P9-735": "Primera factura impaga (PFI)", "P7": "Falta de pago", "P9-722": "Contratación dudosa",
+    "P9-723": "Contratación dudosa", "P9-787": "Usurpación de identidad", "PNPOUT": "Port out",
+    "A7": "Cancelación presuspendida", "A1": "Cancelación administrativa", "COMPET": "Competencia",
+    "FALLEC": "Fallecimiento", "PROCOS": "Problema de costos",
+}
+
+
+def _razon(obs: str) -> str:
+    o = obs.strip().strip('"')
+    m = _RAZON_RE.search(o)
+    if m:
+        return m.group(1)
+    if "PORT OUT" in o.upper():
+        return _RAZON_PORT_OUT
+    return "(sin razón)"
+
+
+def _meses_entre(fa: str, fg: str) -> int | None:
+    """Antigüedad de la línea al momento del evento, en meses calendario."""
+    a, g = _year_month(fa), _year_month(fg)
+    if not a or not g:
+        return None
+    return (int(g[:4]) * 12 + int(g[5:7])) - (int(a[:4]) * 12 + int(a[5:7]))
+
+
+def _gross(activaciones: int, canc: dict[str, tuple[str, int | None, str | None]]) -> dict[str, Any]:
+    """Desc Gross y Netas con el criterio de Claro (gráficos "Ventas Móv / Netas Móv / %Gross/Vta").
+
+    Desc Gross = líneas dadas de baja EN EL MES (concepto CANCELACIONES, una vez por línea), de
+    cualquier cohorte, por razón de Claro (PFI, falta de pago, fraude…), sin los port out.
+    Netas = activaciones del mes − Desc Gross. %Gross/Vta = Desc Gross ÷ activaciones.
+    Es un dato de caja del mes: ~85% de las bajas son ventas de 1 a 3 meses antes.
+    """
+    por_razon: dict[str, int] = defaultdict(int)
+    por_edad: dict[int, int] = defaultdict(int)
+    por_cohorte: dict[str, int] = defaultdict(int)
+    port_out = 0
+    desc_gross = 0
+    for _lin, (razon, edad, cohorte) in canc.items():
+        por_razon[razon] += 1
+        if razon == _RAZON_PORT_OUT:
+            port_out += 1
+            continue
+        desc_gross += 1
+        if edad is not None:
+            por_edad[max(edad, 0)] += 1
+        if cohorte:
+            por_cohorte[cohorte] += 1
+    netas = activaciones - desc_gross
+    return {
+        "activaciones": activaciones,
+        "cancelaciones": len(canc),
+        "port_out": port_out,
+        "desc_gross": desc_gross,
+        "pfi": por_razon.get(_RAZON_PFI, 0),
+        "netas": netas,
+        "pct_gross": round(desc_gross / activaciones * 100, 1) if activaciones else 0.0,
+        "por_razon": [
+            {"razon": r, "texto": _RAZON_TXT.get(r, r), "lineas": n, "cuenta": r != _RAZON_PORT_OUT}
+            for r, n in sorted(por_razon.items(), key=lambda kv: -kv[1])
+        ],
+        "por_edad": [{"meses": e, "lineas": n} for e, n in sorted(por_edad.items())],
+        "por_cohorte": [{"mes": c, "lineas": n} for c, n in sorted(por_cohorte.items())],
+    }
 
 
 def _to_float(raw: str) -> float:
@@ -111,6 +185,7 @@ def parse_facturacion(path: str) -> dict[str, Any]:
     ventas_por_dia: dict[str, list] = defaultdict(lambda: [0, 0.0])   # fecha venta -> [activaciones, prima]
     susp_por_dia: dict[str, list] = defaultdict(lambda: [0, 0.0])     # fecha venta -> [susp, monto]
     penal_por_dia: dict[str, list] = defaultdict(lambda: [0, 0.0])    # fecha venta -> [penalidades, monto] (calidad)
+    canc_lineas: dict[str, tuple[str, int | None, str | None]] = {}   # línea -> (razón, edad meses, cohorte) · Desc Gross
 
     with open(path, encoding="cp1252", errors="replace") as fh:
         header = fh.readline()  # descartar cabecera
@@ -169,6 +244,13 @@ def parse_facturacion(path: str) -> dict[str, Any]:
                 motivo = _motivo_doc(parts[_COL_OBS]) if len(parts) > _COL_OBS else "(sin dato)"
                 doc_por_motivo[motivo][0] += 1
                 doc_por_motivo[motivo][1] += importe
+
+            if desc == _DESC_CANCELACIONES:
+                lin = parts[_COL_LINEA].strip() if len(parts) > _COL_LINEA else ""
+                if lin and lin not in canc_lineas:
+                    fg = parts[_COL_FECHA_GESTION].strip() if len(parts) > _COL_FECHA_GESTION else ""
+                    obs = parts[_COL_OBS] if len(parts) > _COL_OBS else ""
+                    canc_lineas[lin] = (_razon(obs), _meses_entre(fa, fg), ym)
 
             # Penalidades de calidad (suspensiones, documentación, cancelaciones) por fecha de
             # venta de la línea → insumo para el cruce de "calidad por fecha" entre liquidaciones.
@@ -238,6 +320,8 @@ def parse_facturacion(path: str) -> dict[str, Any]:
             "por_motivo": doc_motivo_list,
         },
         "plan_mix": plan_mix_list,
+        # Desc Gross / Netas / %Gross con el criterio de Claro (bajas del mes, sin port out).
+        "gross": _gross(ventas_n, canc_lineas),
         # Insumo para "calidad por fecha de venta" (se cruza entre liquidaciones):
         "cohorte_calidad": {
             "ventas_por_dia": {k: [v[0], round(v[1], 2)] for k, v in ventas_por_dia.items()},

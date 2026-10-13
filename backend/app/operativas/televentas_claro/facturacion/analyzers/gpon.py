@@ -34,10 +34,12 @@ from typing import Any
 
 from .simulador import _costos_y_margen, _escala
 
+# GPON = FIBRA (Negocio IF). IPTV no cuenta como GPON y no se simula: en las liquidaciones son ~14 líneas por
+# cada 100 GPON (124 de 168 en la misma cuenta que una fibra), sin bono, y dejan ~3,6 % del neto GPON.
+# Mezcla real ene–jun 2026 (1.193 activaciones IF): 400.000 (IF60 / BAF7 / BAFE7) 74 % · 325.000 (IF30 / IF40 / BAF3) 26 %.
 PLANES_GPON_DEFAULT = [
-    {"nombre": "Fibra 60 (IF60 / BAF7)", "cuota1": 400000, "cuota2": 280000, "penalidad_mora": 520000, "mix_pct": 70.0},
-    {"nombre": "Fibra 30 (IF30 / BAF3)", "cuota1": 325000, "cuota2": 200000, "penalidad_mora": 430000, "mix_pct": 18.0},
-    {"nombre": "TV (TVP / TVA)", "cuota1": 120000, "cuota2": 120000, "penalidad_mora": 160000, "mix_pct": 12.0},
+    {"nombre": "Fibra 60 (IF60 / BAF7)", "cuota1": 400000, "cuota2": 280000, "penalidad_mora": 520000, "mix_pct": 74.0},
+    {"nombre": "Fibra 30/40 (IF30 / IF40 / BAF3)", "cuota1": 325000, "cuota2": 200000, "penalidad_mora": 430000, "mix_pct": 26.0},
 ]
 
 # Curva acumulada de la mora NETA (líneas que quedan penalizadas sin reverso) por mes de
@@ -47,28 +49,40 @@ MORA_CURVA_DEFAULT = [0.0, 3.0, 22.0, 52.0, 78.0, 95.0, 100.0]
 
 PARAMETROS_GPON_DEFAULT: dict[str, Any] = {
     "negocio": "GPON",
-    "ventas": 230,                       # activaciones del mes (real ene–may: 188–239)
-    "objetivo": 230,                     # objetivo mensual de líneas para el bono fijo
+    "ventas": 200,                       # activaciones GPON (fibra) del mes (real ene–jun 2026: 166–218)
+    "objetivo": 200,                     # objetivo mensual de líneas IF para el bono fijo ("Obj IF: 200" en las liquidaciones)
     "pct_estado_a": 100.0,               # activaciones que cuentan para el objetivo
     "planes": copy.deepcopy(PLANES_GPON_DEFAULT),
     # ---- cuota 2 y legajos ----
-    "cuota2_mes": 2,                     # liquidación del mes 2 (día 59–91, mediana 73)
-    "cuota2_pct_lineas": 90.0,           # líneas que cobran cuota 2 (real 86–97%)
-    "cuota2_pct_completa": 82.0,         # de las que cobran, % con importe completo; el resto cobra la mitad
-    "legajo_pct": 11.0,                  # líneas con documentación faltante (mes 1)
-    "legajo_pct_cuota1": 50.0,           # descuento = % de la cuota 1
+    "cuota2_mes": 2,                     # liquidación del mes 2 (día 62–86, mediana 73)
+    "cuota2_pct_lineas": 96.0,           # de las líneas CON legajo presentado, % que cobra cuota 2 (0 = "línea inactiva al día 60")
+    "cuota2_pct_completa": 92.0,         # de las que cobran, % con importe completo; el resto cobra la mitad (legajo incompleto)
+    # Legajos (día 30–55 desde la venta), dos casos distintos en la liquidación:
+    #  - LEGAJO NO PRESENTADO: Claro descuenta el 100 % de la cuota 1, la línea no cobra cuota 2 (0) y no genera mora
+    #    (real ene–abr 2026: 2,8 % de las líneas IF; no hay devolución posterior en 6 meses).
+    #  - LEGAJO INCOMPLETO U OBSERVADO: descuenta el 50 % de la cuota 1 y la cuota 2 se cobra a la mitad
+    #    (real ene–abr: 7,7 %; enero 21 %).
+    "legajo_no_presentado_pct": 0.0,     # por defecto 0: se carga por mes con "meses afectados" (real ene–abr 2026: 2,8 %)
+    "legajo_pct": 8.0,                   # líneas con legajo incompleto u observado (mes 1)
+    "legajo_pct_cuota1": 50.0,           # descuento del incompleto = % de la cuota 1 (200.000 sobre 400.000)
     # ---- bono fijo (escala vigente comunicada por Claro) ----
     "escala_bono": [
         {"desde_pct": 110, "monto": 130000}, {"desde_pct": 105, "monto": 125000},
         {"desde_pct": 100, "monto": 120000}, {"desde_pct": 95, "monto": 40000},
     ],
-    "pct_bono_cobrado": 91.0,            # activaciones que cobran el bono (real 218/239, 215/238)
+    # El bono se liquida en TODAS las líneas IF en estado A cuando se llega al objetivo (218 de 218, 215 de 215);
+    # el 91 % anterior salía de contar IPTV en la base. Las liquidaciones ene–jun 2026 pagaron con la escala
+    # anterior: 100.000 (≥100 %), 50.000 (95–100 %), 0 (82–83 %).
+    "pct_bono_cobrado": 100.0,
     "recalculo_mes": 6,
-    "pct_recalculo": 25.0,               # líneas caídas al día 180 que devuelven el 100% del bono (real 23–26%)
+    "pct_recalculo": 25.0,               # líneas caídas al día 155–179 que devuelven el 100% del bono (cohortes con bono: 23–26 %)
     "bonos_activos": True,
     "bono_adicional": 0,
     # ---- mora (penalización por deuda neta de reversos) ----
-    "mora_pct_lineas": 26.0,             # líneas de la cohorte que quedan con deuda neta a los 6 meses
+    # Claro penaliza al suspender por deuda (P7, tabla por plan: 630.000 / 475.000) y REVIERTE si el cliente paga
+    # (R7). Solo pesa la neta: 27 % de la cohorte de enero sigue con deuda a los 5 meses (24 % feb, 18 % mar a 3 meses),
+    # ~520.000 por línea en mora (mediana 630.000, con pagos parciales).
+    "mora_pct_lineas": 28.0,             # líneas de la cohorte que quedan con deuda neta a los 6 meses
     "mora_curva_pct": list(MORA_CURVA_DEFAULT),
     "mora_penalidad_pct": 100.0,         # % de la penalidad tabulada que se pierde (100 = tabla completa)
     "chargeback_meses": 6,
@@ -86,6 +100,7 @@ PARAMETROS_GPON_DEFAULT: dict[str, Any] = {
         "subgerencia_salario": 0, "ips_pct": 16.5, "aguinaldo": True,
         "logistica_central": 0, "logistica_interior": 0, "logistica_interior_pct": 0.0, "logistica_premios": 0,
         "operativo_por_venta": 12500,
+        "documentacion_por_venta": 55000,   # recupero de documentación: 55.000 por cada venta GPON (sin cargas)
     },
 }
 
@@ -137,10 +152,14 @@ def simular_gpon(params: dict | None = None) -> dict[str, Any]:
     while len(curva) < 13:
         curva.append(curva[-1] if curva else 1.0)
     chb = int(p["chargeback_meses"])
-    mora_lineas = act * _pct(p["mora_pct_lineas"], 26)
+    # Legajo no presentado: pierde el 100 % de la cuota 1, no cobra cuota 2 y no genera mora (sin servicio).
+    leg_np = _pct(p.get("legajo_no_presentado_pct"), 3)
+    leg_inc = _pct(p["legajo_pct"], 8)
+    con_legajo = act * (1 - leg_np)
+    mora_lineas = con_legajo * _pct(p["mora_pct_lineas"], 28)
     mora_por_linea = pen_w * _pct(p["mora_penalidad_pct"], 100)
-    c2_lineas = _pct(p["cuota2_pct_lineas"], 90)
-    c2_completa = _pct(p["cuota2_pct_completa"], 82)
+    c2_lineas = _pct(p["cuota2_pct_lineas"], 96)
+    c2_completa = _pct(p["cuota2_pct_completa"], 92)
     cuota2_factor = c2_lineas * (c2_completa + (1 - c2_completa) * 0.5)
 
     meses = [{"mes": 0, "cuota2": 0.0, "legajos": 0.0, "mora": 0.0, "recalculo": 0.0, "otros": 0.0,
@@ -149,10 +168,10 @@ def simular_gpon(params: dict | None = None) -> dict[str, Any]:
     for k in range(1, 13):
         row = {"mes": k, "cuota2": 0.0, "legajos": 0.0, "mora": 0.0, "recalculo": 0.0, "otros": 0.0}
         if k == 1:
-            row["legajos"] = -act * _pct(p["legajo_pct"], 11) * cuota1_w * _pct(p["legajo_pct_cuota1"], 50)
+            row["legajos"] = -act * (leg_np * cuota1_w + leg_inc * cuota1_w * _pct(p["legajo_pct_cuota1"], 50))
             row["otros"] = -act * _pct(p["otros_pct"], 0.5) * cuota1_w
         if k == int(p["cuota2_mes"]):
-            row["cuota2"] = act * cuota2_factor * cuota2_w
+            row["cuota2"] = con_legajo * cuota2_factor * cuota2_w
         if k <= chb:
             nuevas = mora_lineas * max(0.0, curva[k] - curva[k - 1])
             row["mora"] = -nuevas * mora_por_linea
@@ -172,7 +191,7 @@ def simular_gpon(params: dict | None = None) -> dict[str, Any]:
     dev_12 = sum(m["legajos"] + m["mora"] + m["recalculo"] + m["otros"] for m in meses[1:])
     cob_12 = sum(m["cuota2"] for m in meses[1:])
     por_linea = {
-        "cuota1": round(cuota1_w), "cuota2_esperada": round(cuota2_factor * cuota2_w), "bono": round(pct_bono * monto_bono),
+        "cuota1": round(cuota1_w), "cuota2_esperada": round((1 - leg_np) * cuota2_factor * cuota2_w), "bono": round(pct_bono * monto_bono),
         "legajos": round(meses[1]["legajos"] / act) if act else 0, "mora": round(sum(m["mora"] for m in meses) / act) if act else 0,
         "recalculo": round(sum(m["recalculo"] for m in meses) / act) if act else 0,
         "neto_12": round(neto_12 / act) if act else 0, "costo": costos["costo_por_venta"],
@@ -233,14 +252,20 @@ def _aplicar_afectado(base: dict, ov: dict | None) -> dict:
 
 def simular_gpon_anual(params: dict | None, ventas_por_mes: list[float], horizonte: int = 12,
                        bonos_adicionales_por_mes: list[float] | None = None, nombres_meses: list[str] | None = None,
-                       meses_afectados: dict | None = None) -> dict[str, Any]:
+                       meses_afectados: dict | None = None, headcount_costos: dict | None = None,
+                       vendedores_compartidos: int | None = None) -> dict[str, Any]:
     """Proyección ANUAL GPON, igual que pospago: el mes 1 fija la estructura (headcount) y cada
     mes se superponen los flujos de todas las cohortes anteriores (cuota 2, legajos, mora,
     recálculo). Aditiva al guaraní. Después del horizonte queda la cola (cuota 2 por cobrar,
     mora y recálculo por devolver). La salida usa las MISMAS claves que el anual de pospago
     (clawbacks = mora + otros reversos, recalculo_productividad = recálculo del bono fijo,
     bono_productividad = bono fijo, residual / portabilidad / bono_efectividad = 0) para que
-    el simulador anual, la historia y el cierre sean los mismos."""
+    el simulador anual, la historia y el cierre sean los mismos.
+
+    `headcount_costos`: estructura con la que se calculan los costos (simulador CONVERGENTE: la
+    dotación es la de pospago, así que GPON corre con headcount 0 y solo paga comisión, plus,
+    operativos y logística por venta). `vendedores_compartidos`: vendedores reales de esa
+    estructura, para informar activaciones GPON por asesor."""
     base = parametros_gpon(params)
     h = int(horizonte) if int(horizonte) in (12, 18, 24) else 12
     ventas = [max(float(v or 0), 0) for v in (ventas_por_mes or [])][:h]
@@ -259,7 +284,8 @@ def simular_gpon_anual(params: dict | None, ventas_por_mes: list[float], horizon
     for t in range(h):
         pm = _aplicar_afectado(base, afectados.get(t))
         cohortes.append(simular_gpon({**pm, "ventas": ventas[t], "bono_adicional": bonos_ad[t]}))
-    headcount = cohortes[0]["costos"]["headcount"]
+    headcount = headcount_costos or cohortes[0]["costos"]["headcount"]
+    vendedores_info = vendedores_compartidos if vendedores_compartidos is not None else headcount["vendedores"]
     filas: list[dict] = []
     acum = 0
     for t in range(h):
@@ -273,7 +299,7 @@ def simular_gpon_anual(params: dict | None, ventas_por_mes: list[float], horizon
                 "activaciones_cuota1": c["mes0"]["activaciones_cuota1"], "portabilidad": 0,
                 "bono_productividad": c["mes0"]["bono_fijo"], "bono_fijo": c["mes0"]["bono_fijo"], "bono_efectividad": 0,
                 "bono_adicional": c["mes0"]["bono_adicional"], "facturacion_bruta": c["bruto_mes0"],
-                "ventas_por_vendedor": round(ventas[t] / headcount["vendedores"], 1) if headcount["vendedores"] else 0}
+                "ventas_por_vendedor": round(ventas[t] / vendedores_info, 2) if vendedores_info else 0}
         for f in _FLUJOS:
             fila[f] = sum(cohortes[s]["meses"][t - s][f] for s in range(t) if t - s < len(cohortes[s]["meses"]))
         fila["residual"] = 0
@@ -329,7 +355,8 @@ def simular_gpon_anual(params: dict | None, ventas_por_mes: list[float], horizon
     resultado = tot("resultado")
     ingreso_neto = tot("ingreso_neto")
     chb, rec_mes, c2_mes = int(base["chargeback_meses"]), int(base["recalculo_mes"]), int(base["cuota2_mes"])
-    fijo = filas[0]["costo_total"] - filas[0]["costos"]["rrhh"]["operadores_comisiones"] - filas[0]["costos"]["plus_vendedores"] - filas[0]["costos"]["operativos"] - filas[0]["costos"]["logistica_entregas"]
+    fijo = (filas[0]["costo_total"] - filas[0]["costos"]["rrhh"]["operadores_comisiones"] - filas[0]["costos"]["plus_vendedores"]
+            - filas[0]["costos"]["operativos"] - filas[0]["costos"]["logistica_entregas"] - filas[0]["costos"].get("documentacion", 0))
     final = resultado + cola_cobros + cola_dev
     anual = {
         "ventas": round(sum(ventas)), "facturacion_bruta": tot("facturacion_bruta"), "ajustes": tot("ajustes"),
@@ -360,8 +387,11 @@ def simular_gpon_anual(params: dict | None, ventas_por_mes: list[float], horizon
     gs = lambda v: "Gs " + f"{round(v):,}".replace(",", ".")  # noqa: E731
     n = lambda v: f"{round(v):,}".replace(",", ".")  # noqa: E731
     partes = [
-        f"{h} meses GPON con estructura fija del mes 1 ({headcount['vendedores']} vendedores, {headcount['supervisores']} supervisores, "
-        f"{headcount['backoffice']} backoffice; costo fijo {gs(fijo)}/mes) y objetivo de {n(float(base['objetivo']))} líneas.",
+        (f"{h} meses GPON vendidos por la estructura de pospago ({n(vendedores_info)} vendedores, sin dotación propia: solo comisión, "
+         f"plus, operativos y logística por venta GPON) y objetivo de {n(float(base['objetivo']))} líneas."
+         if headcount_costos is not None else
+         f"{h} meses GPON con estructura fija del mes 1 ({headcount['vendedores']} vendedores, {headcount['supervisores']} supervisores, "
+         f"{headcount['backoffice']} backoffice; costo fijo {gs(fijo)}/mes) y objetivo de {n(float(base['objetivo']))} líneas."),
         f"Activaciones del período: {n(anual['ventas'])}. Facturación bruta {gs(anual['facturacion_bruta'])}; con cuota 2, legajos, mora y recálculo "
         f"el ingreso neto liquidado es {gs(ingreso_neto)}. Costos {gs(anual['costos'])}. Resultado del período {gs(resultado)} ({anual['margen_pct']}%).",
     ]

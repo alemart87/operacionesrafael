@@ -1,5 +1,5 @@
 """Simulador de facturación (Televentas Claro): invariantes del motor."""
-from app.operativas.televentas_claro.facturacion.analyzers.simulador import PARAMETROS_DEFAULT, simular_facturacion
+from app.operativas.televentas_claro.facturacion.analyzers.simulador import PARAMETROS_DEFAULT, simular_anual, simular_facturacion
 
 
 def test_mes0_y_retencion_a_6_y_12_meses():
@@ -328,8 +328,8 @@ def test_calibracion_con_liquidaciones_reales():
     cuota1 = r["derivados"]["cuota1_ponderada"]
     # residual: sigue la curva de líneas que pagan, no la zafra (mes 12: 32,4% de las líneas)
     res_linea = r["derivados"]["residual_por_linea"]
-    assert abs(m[12]["residual"] - 1000 * 0.324 * res_linea) <= 200
-    assert abs(m[1]["residual"] - 1000 * 0.913 * res_linea) <= 500
+    assert abs(m[12]["residual"] - 1000 * 0.324 * res_linea) <= 2000     # zafra × cobrabilidad reproduce la curva real (±0,01 pt)
+    assert abs(m[1]["residual"] - 1000 * 0.913 * res_linea) <= 2000
     # recálculo del bono: regla de Claro, 100% del bono de las líneas caídas al día 180 (100 − zafra[6] = 48,9%)
     assert r["derivados"]["pct_recalculo_efectivo"] == 48.9
     assert m[6]["recalculo_productividad"] == -round(1000 * 0.995 * r["derivados"]["monto_bono_productividad"] * 0.489)
@@ -374,3 +374,64 @@ def test_ola_de_devoluciones_y_ventas_de_equilibrio():
     if eq:
         r2 = simular_anual({"objetivo_co": 1750}, ventas[:8] + [eq] + ventas[9:])
         assert r2["meses"][8]["resultado"] >= -1
+
+
+def test_gross_criterio_claro_en_la_anual():
+    """Bajas del mes = caídas de la zafra un mes antes × pct_bajas_gross, de cualquier cohorte (arranque en régimen)."""
+    r = simular_anual({"objetivo_co": 1750}, [1900] * 12)
+    m = r["meses"]
+    # Con ventas constantes y régimen, el Gross es estable desde el mes 1 y netas = ventas − bajas.
+    assert all(f["netas_gross"] == f["ventas"] - f["bajas_gross"] for f in m)
+    assert max(f["pct_gross"] for f in m) - min(f["pct_gross"] for f in m) < 0.2
+    # Zafra real: 60% de las caídas a 6 meses (48,9%) ≈ 29–31% de las ventas, como los meses estables de Claro (28–32%).
+    assert 28 <= m[0]["pct_gross"] <= 32
+    # Zafra ideal (M2 75 … M12 49): entra en la banda de referencia 22–27%.
+    ideal = simular_anual({"objetivo_co": 1700, "zafra_pct": [99.9, 82.6, 75, 70, 67, 63, 60, 58, 56, 54, 53, 51, 49]}, [1700] * 12)
+    assert 22 <= ideal["meses"][5]["pct_gross"] <= 27
+    assert ideal["anual"]["meses_gross_sobre_banda"] == []
+    # Mes de ventas bajas: las bajas vienen de los meses anteriores y el % salta (el artefacto de agosto).
+    caida = simular_anual({"objetivo_co": 1750}, [1900] * 7 + [1400] + [1900] * 4)
+    assert caida["meses"][7]["pct_gross"] > caida["meses"][6]["pct_gross"] + 8
+    assert caida["anual"]["pct_gross_max_mes"] == 8
+    # Sin bajas gross si el parámetro es 0.
+    assert simular_anual({"pct_bajas_gross": 0}, [1900] * 12)["anual"]["bajas_gross"] == 0
+
+
+def test_sin_descuento_sobre_bonos():
+    """Escenarios de negociación: Claro no descuenta el bono productividad (1871) y/o el bono efectividad (471)."""
+    base = simular_anual({"objetivo_co": 1750}, [1900] * 12)
+    sin_prod = simular_anual({"objetivo_co": 1750, "devolver_bono_productividad": False}, [1900] * 12)
+    sin_efec = simular_anual({"objetivo_co": 1750, "devolver_bono_efectividad": False}, [1900] * 12)
+    sin_ambos = simular_anual({"objetivo_co": 1750, "devolver_bono_productividad": False, "devolver_bono_efectividad": False}, [1900] * 12)
+    assert base["anual"]["devolucion_bonos"] < 0
+    assert all(f["recalculo_productividad"] == 0 for f in sin_prod["meses"]) and any(f["clawback_bonos"] < 0 for f in sin_prod["meses"])
+    assert all(f["clawback_bonos"] == 0 for f in sin_efec["meses"]) and any(f["recalculo_productividad"] < 0 for f in sin_efec["meses"])
+    assert sin_ambos["anual"]["devolucion_bonos"] == 0
+    # Lo que deja de devolverse pasa íntegro al resultado (los costos no cambian).
+    assert sin_ambos["anual"]["costos"] == base["anual"]["costos"]
+    assert sin_ambos["anual"]["resultado"] - base["anual"]["resultado"] == -base["anual"]["devolucion_bonos"]
+    assert sin_prod["anual"]["resultado"] > base["anual"]["resultado"] and sin_efec["anual"]["resultado"] > base["anual"]["resultado"]
+    # Los bonos cobrados en el mes 0 no cambian: solo se apaga el descuento.
+    assert sin_ambos["anual"]["bonos"] == base["anual"]["bonos"]
+
+
+def test_residual_sigue_a_la_zafra():
+    """Líneas que pagan residual = zafra × cobrabilidad. Con la zafra real reproduce la curva medida; con la
+    zafra Ideal el residual sube; con la curva fija (residual_segun_zafra False) no cambia con la zafra."""
+    from app.operativas.televentas_claro.facturacion.analyzers.simulador import RESIDUAL_COBRABILIDAD_DEFAULT, RESIDUAL_CURVA_DEFAULT
+    assert PARAMETROS_DEFAULT["residual_segun_zafra"] is True and len(RESIDUAL_COBRABILIDAD_DEFAULT) == 12
+    real = simular_facturacion({"ventas": 1000, "objetivo_co": 900})
+    assert all(abs(a - b) <= 0.6 for a, b in zip(real["derivados"]["residual_curva_efectiva"], RESIDUAL_CURVA_DEFAULT))   # zafra real × cobrabilidad ≈ curva real (tope 100 %)
+    fija = simular_facturacion({"ventas": 1000, "objetivo_co": 900, "residual_segun_zafra": False})
+    res_real, res_fija = sum(m["residual"] for m in real["meses"]), sum(m["residual"] for m in fija["meses"])
+    assert abs(res_real - res_fija) / res_fija < 0.005                                 # misma curva, salvo redondeo y el tope del 100 %
+    ideal = [99.9, 82.6, 75, 70, 67, 63, 60, 58, 56, 54, 53, 51, 49]
+    r_ideal = simular_facturacion({"ventas": 1000, "objetivo_co": 900, "zafra_pct": ideal})
+    assert sum(m["residual"] for m in r_ideal["meses"]) > sum(m["residual"] for m in real["meses"]) * 1.15
+    assert r_ideal["derivados"]["residual_curva_efectiva"][11] > 32.4                  # mes 12: 51 % (activas al cierre del mes 11) × 80 % ≈ 41 %
+    f_ideal = simular_facturacion({"ventas": 1000, "objetivo_co": 900, "zafra_pct": ideal, "residual_segun_zafra": False})
+    assert sum(m["residual"] for m in f_ideal["meses"]) == res_fija                    # curva fija: no cambia con la zafra
+    # en el anual también: el Ideal mejora el residual del período
+    a_real = simular_anual({"objetivo_co": 1750}, [1900] * 12)["anual"]
+    a_ideal = simular_anual({"objetivo_co": 1750, "zafra_pct": ideal}, [1900] * 12)["anual"]
+    assert a_ideal["cobros_periodo"] > a_real["cobros_periodo"]
