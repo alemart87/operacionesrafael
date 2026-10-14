@@ -188,6 +188,11 @@ def _agrupar(filas: list[dict[str, Any]], clave: str) -> dict[str, list[dict[str
 
 def resumen_para_modelo(data: dict[str, Any]) -> dict[str, Any]:
     k = data["kpis"]
+    regiones = {z["region"]: {"n": z["n"], "dias_prom": z["dias_prom"], "dias_max": z["dias_max"],
+                              "vencidos_6": sum(v for t, v in z["tramos"].items() if t in ("6-10", "11+"))}
+                for z in data["pendientes"]["por_zona"]}
+    for r in data["regiones"]:
+        regiones.setdefault(r, {"n": 0, "dias_prom": None, "dias_max": None, "vencidos_6": 0})
     return {"pedidos": k["pedidos"], "entregados": k["entregados"], "en_gestion": k["en_gestion"], "devueltos": k["devueltos"],
             "pct_entregados": k["pct_entregados"] or 0.0, "demora_prom": k["demora"]["dias_prom"], "demora_max": k["demora"]["dias_max"],
-            "fecha_dato": k["hasta"], "periodo": data["periodo"], "version": data["version"]}
+            "demora_regiones": regiones, "fecha_dato": k["hasta"], "periodo": data["periodo"], "version": data["version"]}

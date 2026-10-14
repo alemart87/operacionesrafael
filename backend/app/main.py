@@ -65,6 +65,8 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE asistente_artefactos ADD COLUMN IF NOT EXISTS confidencial BOOLEAN NOT NULL DEFAULT FALSE",
     # v1.1 · Informe diario con figuras del lienzo de Voi (modo informe diario)
     "ALTER TABLE informes_diarios ADD COLUMN IF NOT EXISTS figuras JSON",
+    # v0.9 · logística: demora de los pendientes por región, para la lista
+    "ALTER TABLE logistica_informes ADD COLUMN IF NOT EXISTS demora_regiones JSON",
 ]
 
 

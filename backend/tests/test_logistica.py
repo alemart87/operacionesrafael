@@ -144,6 +144,8 @@ async def test_api_borrador_publicacion_unica_reemplazo_y_permisos():
         inf = r.json()["informe"]
         assert inf["status"] == "draft" and inf["periodo"] == "2026-10" and inf["pedidos"] == 8 and inf["fecha_corte"] == "2026-10-10"
         assert inf["fecha_dato"] == "2026-10-08" and inf["demora_prom"] == 7.0 and r.json()["avisos"]
+        assert inf["demora_regiones"] == {"CENTRAL": {"n": 1, "dias_prom": 4.0, "dias_max": 4, "vencidos_6": 0},
+                                          "INTERIOR": {"n": 2, "dias_prom": 8.5, "dias_max": 9, "vencidos_6": 2}}
         # Errores claros.
         r = await ac.post(f"{BASE}/uploads", headers=analista, files={"file": ("pedidos.txt", b"x", "text/plain")})
         assert r.status_code == 400

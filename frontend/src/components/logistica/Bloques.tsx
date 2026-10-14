@@ -39,6 +39,48 @@ export function FiltroEstado({ estados, valor, onChange, kpis }: { estados: stri
   );
 }
 
+// ------------------------------------------------------------------ demora por región, de un vistazo
+const COLOR_TRAMO: Record<string, string> = { "0-2": "#00B2BF", "3-5": "#F39200", "6-10": "#E6332A", "11+": "#662483" };
+
+export function DemoraPorRegion({ d }: { d: DatosLogistica }) {
+  const zonas = d.regiones.map((r) => d.pendientes.por_zona.find((z) => z.region === r) ?? { region: r, n: 0, dias_prom: null, dias_max: null, tramos: {}, departamentos: [] });
+  const entregados = (r: string) => d.por_region.find((x) => x.region === r);
+  return (
+    <Seccion titulo="Demora de entregas por región" id="demora"
+      sub={<>Pedidos <b>en gestión</b> y los días que llevan desde la venta hasta el corte del {fechaCorta(d.fecha_corte)}, por región. Los entregados no traen fecha de entrega en el archivo: su tiempo no se puede medir.</>}>
+      <div className={`grid gap-3 ${zonas.length > 2 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+        {zonas.map((z) => {
+          const e = entregados(z.region);
+          const vencidos = (z.tramos["6-10"] ?? 0) + (z.tramos["11+"] ?? 0);
+          const alerta = (z.dias_prom ?? 0) >= 6 || vencidos > 0;
+          return (
+            <div key={z.region} className={`rounded-lg border p-4 ${alerta ? "border-brand-primary/40 bg-brand-primary-light/20" : "border-brand-border bg-white"}`}>
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="font-display text-xl uppercase text-brand-ink">{z.region}</div>
+                <div className="text-xs text-brand-slate">{e ? <>{n(e.total)} pedidos · <b className="text-brand-graphite">{pct(e.pct[ENTREGADO])}</b> entregados</> : null}</div>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <div><div className="text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold">Pendientes</div><div className="font-display text-2xl text-brand-ink tabular-nums">{n(z.n)}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold">Demora prom.</div><div className={`font-display text-2xl tabular-nums ${(z.dias_prom ?? 0) >= 6 ? "text-brand-primary" : "text-brand-ink"}`}>{dias(z.dias_prom)}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold">Máximo</div><div className="font-display text-2xl text-brand-ink tabular-nums">{dias(z.dias_max)}</div></div>
+              </div>
+              {z.n > 0 && (
+                <>
+                  <div className="mt-3 h-2 rounded-full bg-brand-bg overflow-hidden flex">{TRAMOS.map((t) => <div key={t} style={{ width: `${((z.tramos[t] ?? 0) / z.n) * 100}%`, background: COLOR_TRAMO[t] }} />)}</div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-brand-slate">
+                    {TRAMOS.map((t) => <span key={t} className="inline-flex items-center gap-1 tabular-nums"><span className="w-2 h-2 rounded-full" style={{ background: COLOR_TRAMO[t] }} />{t} d: <b className="text-brand-graphite">{n(z.tramos[t] ?? 0)}</b></span>)}
+                    {vencidos > 0 && <span className="ml-auto rounded-full bg-brand-primary-light text-brand-primary-dark px-2 font-semibold">{n(vencidos)} con 6 días o más</span>}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Seccion>
+  );
+}
+
 // ------------------------------------------------------------------ tabla estado × zona (cantidad y %)
 function TablaDesglose({ filas, clave, estados, filtro, titulo, extra }: {
   filas: Desglose[]; clave: string; estados: string[]; filtro: Filtro; titulo: string; extra?: (f: Desglose) => ReactNode;
@@ -174,7 +216,7 @@ function DetalleSerie({ active, payload, estados }: { active?: boolean; payload?
 export function Pendientes({ d }: { d: DatosLogistica }) {
   const p = d.pendientes;
   const [abierto, setAbierto] = useState<string | null>(null);
-  const colorTramo: Record<string, string> = { "0-2": "#00B2BF", "3-5": "#F39200", "6-10": "#E6332A", "11+": "#662483" };
+  const colorTramo = COLOR_TRAMO;
   const Barra = ({ tramos, total }: { tramos: Record<string, number>; total: number }) => (
     <div className="h-2 rounded-full bg-brand-bg overflow-hidden flex" title={TRAMOS.map((t) => `${t} días: ${tramos[t] ?? 0}`).join(" · ")}>
       {TRAMOS.map((t) => <div key={t} style={{ width: `${total ? ((tramos[t] ?? 0) / total) * 100 : 0}%`, background: colorTramo[t] }} />)}

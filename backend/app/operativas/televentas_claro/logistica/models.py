@@ -56,5 +56,7 @@ class LogisticaInforme(Base):
     pct_entregados: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     demora_prom: Mapped[Optional[float]] = mapped_column(Float, nullable=True)    # días promedio de los pendientes
     demora_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Demora de los pendientes por región, para verla de un vistazo en la lista: {region: {n, dias_prom, dias_max, vencidos_6}}
+    demora_regiones: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

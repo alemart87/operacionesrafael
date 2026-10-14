@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { KpiCard } from "@/components/KpiCard";
-import { DataCompleta, EstadoPorZona, FiltroEstado, LineaTiempo, Motivos, Pendientes, Vendedores } from "@/components/logistica/Bloques";
+import { DataCompleta, DemoraPorRegion, EstadoPorZona, FiltroEstado, LineaTiempo, Motivos, Pendientes, Vendedores } from "@/components/logistica/Bloques";
 import { usePublicarLogistica } from "@/components/logistica/PublicarLogistica";
 import {
   EN_GESTION, ESTADO_LABEL, LOG_API, LOG_HREF, VERSION_ANALISIS, dias, fechaCorta, fechaHora, n, nombrePeriodo, pct,
@@ -47,6 +47,7 @@ function Informe() {
   const k = d.kpis;
   const desactualizado = (r.version ?? 0) < VERSION_ANALISIS;
   const nombre = (uid: string | null) => (uid && r.usuarios[uid]) || "—";
+  const r2 = (region: string) => r.demora_regiones?.[region]?.dias_prom ?? null;
   const estadoCls = r.status === "published" ? "badge-success" : r.status === "replaced" ? "badge-neutral line-through" : "badge-cyan";
 
   return (
@@ -84,8 +85,10 @@ function Informe() {
         <KpiCard label="Entregados" value={pct(k.pct_entregados)} hint={`${n(k.entregados)} pedidos`} accent="cyan" />
         <KpiCard label="En gestión" value={n(k.en_gestion)} hint={`${pct(k.pct_en_gestion)} · demora prom. ${dias(k.demora.dias_prom)}`} accent="orange" />
         <KpiCard label="Devueltos" value={n(k.devueltos)} hint={pct(k.pct_devueltos)} accent="danger" />
-        <KpiCard label="Más demorado" value={dias(k.demora.dias_max)} hint={`${n(d.pendientes.vencidos_6)} pendientes con 6 días o más`} accent={d.pendientes.vencidos_6 ? "danger" : "neutral"} href="#pendientes" cta="Ver pendientes" />
+        <KpiCard label="Demora por región" value={d.regiones.map((rg) => dias(r2(rg))).join(" · ")} hint={`${d.regiones.map((rg) => rg.charAt(0) + rg.slice(1).toLowerCase()).join(" · ")} · máx ${dias(k.demora.dias_max)} · ${n(d.pendientes.vencidos_6)} con 6 días o más`} accent={d.pendientes.vencidos_6 ? "danger" : "neutral"} href="#demora" cta="Ver por región" />
       </div>
+
+      <div className="mb-5"><DemoraPorRegion d={d} /></div>
 
       <div className="card p-3 mb-5 sticky top-[64px] z-20">
         <FiltroEstado estados={d.estados} valor={filtro} onChange={setFiltro} kpis={k} />
