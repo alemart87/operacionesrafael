@@ -176,8 +176,10 @@ export function VisionNegocio({ d, hrefSinUso }: { d: InformeData; hrefSinUso?: 
             <div className="rounded-md border border-brand-border p-4 col-span-2">
               <div className="text-[10px] uppercase tracking-wider2 text-brand-slate">Finalizadas sin activar</div>
               <div className="flex items-baseline gap-3">
-                <div className="font-display text-3xl text-brand-ink mt-1">{n(k.finalizadas_sin_activar)}</div>
-                <div className="text-xs text-brand-slate">cargas finalizadas del mes que no figuran en DDI ni en PORTABILIDAD (detalle en la visión operativa)</div>
+                <div className="font-display text-3xl text-brand-ink mt-1">{k.finalizadas_sin_activar === null ? "—" : n(k.finalizadas_sin_activar)}</div>
+                <div className="text-xs text-brand-slate">{k.finalizadas_sin_activar === null
+                  ? "no se puede calcular: la hoja CARGAS de este archivo no trae SDS_NUMBER para cruzar cada carga con su activación"
+                  : "cargas finalizadas del mes que no figuran en DDI ni en PORTABILIDAD (detalle en la visión operativa)"}</div>
               </div>
             </div>
           </div>

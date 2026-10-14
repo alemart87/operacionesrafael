@@ -14,35 +14,42 @@ from openpyxl import Workbook
 
 from app.core.database import Base, engine
 from app.main import app
-from app.operativas.televentas_claro.logistica.analyzer import analizar
+from app.operativas.televentas_claro.logistica.analyzer import analizar, dias_habiles
 from app.operativas.televentas_claro.logistica.parser import ArchivoInvalido, estado_canonico, parse_logistica
+from app.operativas.televentas_claro.logistica.proyeccion import proyectar
 
 TC = "televentas_claro"
 BASE = "/api/v1/televentas-claro/logistica"
 CAB = ["Nro. Formulario", "LINEA_ORIG", "Nro. Documento Cliente", "Nombre Completa", "Ciudad Cliente", "Departamento", "REGION",
-       "Fecha Venta", "Ven_Nombre Completo", "Promoción", "ESTADO", "MOTIVO"]
+       "Fecha Venta", "Ven_Nombre Completo", "Promoción", "ESTADO", "MOTIVO", "FECHA DE ENTREGA"]
 
 
-def fila(form, cliente, ciudad, depto, region, fecha, vendedor, estado, motivo=None, promo="PORTABILIDAD", linea=None, doc=1234567):
-    return [form, linea, doc, cliente, ciudad, depto, region, datetime(fecha.year, fecha.month, fecha.day), vendedor, promo, estado, motivo]
+def fila(form, cliente, ciudad, depto, region, fecha, vendedor, estado, motivo=None, promo="PORTABILIDAD", linea=None, doc=1234567, entrega=None):
+    return [form, linea, doc, cliente, ciudad, depto, region, datetime(fecha.year, fecha.month, fecha.day), vendedor, promo, estado, motivo,
+            datetime(entrega.year, entrega.month, entrega.day) if entrega else None]
 
 
 PEDIDOS = [
-    fila("F1", "AGUILERA, GUSTAVO", "SAN LORENZO", "CENTRAL", "CENTRAL", date(2026, 10, 1), "SALINAS, BRANDON", "ENTREGADO", "ENTREGADO"),
-    fila("F2", "ALCARAZ, FRANCISCO", "ASUNCION", "CENTRAL", "CENTRAL", date(2026, 10, 1), "NUÑEZ, EVELYN", "ENTREGADO", "ENTREGADO", linea="F2"),
+    # Entregas: F1 el sábado 3/10 (2 días hábiles), F2 el martes 6/10 (4: el domingo 4 no cuenta), F6 el mismo día (0), F7 sin fecha.
+    fila("F1", "AGUILERA, GUSTAVO", "SAN LORENZO", "CENTRAL", "CENTRAL", date(2026, 10, 1), "SALINAS, BRANDON", "ENTREGADO", "ENTREGADO", entrega=date(2026, 10, 3)),
+    fila("F2", "ALCARAZ, FRANCISCO", "ASUNCION", "CENTRAL", "CENTRAL", date(2026, 10, 1), "NUÑEZ, EVELYN", "ENTREGADO", "ENTREGADO", linea="F2", entrega=date(2026, 10, 6)),
     fila("F3", "ALDERETE, CESAR", "CIUDAD DEL ESTE", "ALTO PARANA", "INTERIOR", date(2026, 10, 1), "PANIAGUA, OLGA", "EN GESTION", "EN GESTION"),
     fila("F4", "BENITEZ, ROSA", "ENCARNACION", "ITAPUA", "INTERIOR", date(2026, 10, 2), "NUÑEZ, EVELYN", "EN GESTIÓN", "INCONTACTABLE LLAMADAS Y WHATSAPP"),
     fila("F5", "CACERES, ANA", "LUQUE", "CENTRAL", "CENTRAL", date(2026, 10, 3), "SALINAS, BRANDON", "DEVUELTO", "RECHAZADO EAPN POR TITULARIDAD"),
     fila("F6", "DUARTE, LUIS", "LUQUE", "CENTRAL", "CENTRAL", date(2026, 10, 6), "SALINAS, BRANDON", "EN GESTION", None),
-    fila("F6", "DUARTE, LUIS", "LUQUE", "CENTRAL", "CENTRAL", date(2026, 10, 6), "SALINAS, BRANDON", "ENTREGADO", "ENTREGADO", promo="PLAN CONTROL"),
+    fila("F6", "DUARTE, LUIS", "LUQUE", "CENTRAL", "CENTRAL", date(2026, 10, 6), "SALINAS, BRANDON", "ENTREGADO", "ENTREGADO", promo="PLAN CONTROL", entrega=date(2026, 10, 6)),
     fila("F7", "ESQUIVEL, JUAN", "CAPIATA", "CENTRAL", "CENTRAL", date(2026, 10, 8), "NUÑEZ, EVELYN", "ENTREGADO", None),
 ]
 
 
-def xlsx(filas=PEDIDOS, cab=CAB, titulo=None) -> bytes:
+def xlsx(filas=PEDIDOS, cab=CAB, titulo=None, hoja_resumen=False) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "Hoja1"
+    if hoja_resumen:   # como el corte de octubre 2026: una hoja «resumen» con tablas dinámicas antes de la base
+        ws.title = "resumen"
+        ws.append([None, None, "ESTADO", "EN GESTION"]); ws.append(["Cantidad", "REGION"]); ws.append(["CENTRAL", 16])
+        ws = wb.create_sheet("base")
     if titulo:
         ws.append([titulo]); ws.append([])
     ws.append(cab)
@@ -98,6 +105,29 @@ def test_parser_reconoce_columnas_estados_y_fechas():
         parse_logistica(xlsx([["X1", None, None, "C", "A", "D", "R", "sin fecha", "V", "P", "ENTREGADO", None]]))
 
 
+def test_sin_fecha_de_entrega_y_hoja_resumen_primero():
+    # Formato anterior (sin FECHA DE ENTREGA): el tiempo de entrega no está y se avisa; lo demás sigue igual.
+    sin = parse_logistica(xlsx(cab=CAB[:-1], filas=[f[:-1] for f in PEDIDOS]))
+    assert "fecha_entrega" not in sin["columnas"]
+    d = analizar(sin["filas"], date(2026, 10, 10))
+    assert not d["entregas"]["disponible"] and d["entregas"]["sin_fecha"] == 4 and d["kpis"]["entrega"] is None
+    assert d["pedidos"][0]["dias"] == 8 and d["pedidos"][0]["hasta"] == "corte" and d["pendientes"]["dias_prom"] == 6.3
+    assert any("no trae FECHA DE ENTREGA" in a for a in d["avisos"])
+    # Con una hoja «resumen» antes de la base (corte de octubre 2026) se toma la hoja con los encabezados.
+    r = parse_logistica(xlsx(hoja_resumen=True))
+    assert r["hoja"] == "base" and len(r["filas"]) == 8 and "fecha_entrega" in r["columnas"]
+
+
+def test_demora_en_dias_habiles_sin_domingos():
+    # Octubre 2026: el 10 es sábado, el 11 domingo, el 14 miércoles.
+    assert dias_habiles(date(2026, 10, 10), date(2026, 10, 14)) == 3      # lun, mar y mié: el domingo 11 no cuenta
+    assert dias_habiles(date(2026, 10, 10), date(2026, 10, 11)) == 0      # solo pasó un domingo
+    assert dias_habiles(date(2026, 10, 5), date(2026, 10, 12)) == 6       # una semana completa menos el domingo
+    assert dias_habiles(date(2026, 10, 14), date(2026, 10, 14)) == 0      # vendido el día del corte
+    assert dias_habiles(date(2026, 10, 15), date(2026, 10, 14)) == 0      # nunca negativo
+    assert dias_habiles(date(2026, 9, 28), date(2026, 10, 14)) == 14      # 16 corridos menos los domingos 4 y 11
+
+
 def test_analisis_estado_region_motivos_serie_y_pendientes():
     d = analizar(parse_logistica(xlsx())["filas"], date(2026, 10, 10))
     k = d["kpis"]
@@ -114,16 +144,50 @@ def test_analisis_estado_region_motivos_serie_y_pendientes():
     assert [s["fecha"] for s in d["serie"]] == ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-06", "2026-10-08"]
     assert d["serie"][0]["estados"] == {"ENTREGADO": 2, "EN GESTION": 1, "DEVUELTO": 0}
     assert d["serie"][-1]["acumulado"] == {"ENTREGADO": 4, "EN GESTION": 3, "DEVUELTO": 1} and d["serie"][-1]["acumulado_total"] == 8
-    # Pendientes: demora desde la venta hasta el corte (10/10), por zona y en tramos.
+    # Pendientes: demora en días hábiles desde la venta hasta el corte (sábado 10/10): el domingo 4/10 no cuenta.
+    # F3 (1/10) → 8, F4 (2/10) → 7, F6 (6/10) → 4.
     p = d["pendientes"]
-    assert p["n"] == 3 and p["dias_max"] == 9 and p["dias_prom"] == 7.0 and p["tramos"] == {"0-2": 0, "3-5": 1, "6-10": 2, "11+": 0}
-    assert [(z["region"], z["n"], z["dias_max"]) for z in p["por_zona"]] == [("CENTRAL", 1, 4), ("INTERIOR", 2, 9)]
+    assert k["metodo_demora"].startswith("días hábiles")
+    assert p["n"] == 3 and p["dias_max"] == 8 and p["dias_prom"] == 6.3 and p["tramos"] == {"0-2": 0, "3-5": 1, "6-10": 2, "11+": 0}
+    assert [(z["region"], z["n"], z["dias_max"]) for z in p["por_zona"]] == [("CENTRAL", 1, 4), ("INTERIOR", 2, 8)]
     assert p["por_zona"][1]["departamentos"][0]["departamento"] in ("ALTO PARANA", "ITAPUA")
-    assert p["lista"][0]["formulario"] == "F3" and p["lista"][0]["dias"] == 9 and p["vencidos_6"] == 2
+    assert p["lista"][0]["formulario"] == "F3" and p["lista"][0]["dias"] == 8 and p["lista"][0]["dias_corridos"] == 9 and p["vencidos_6"] == 2
     assert d["vendedores"][0]["vendedor"] == "SALINAS, BRANDON" and d["vendedores"][0]["estados"]["EN GESTION"] == 1
     assert d["promociones"][1]["promocion"] == "PLAN CONTROL"
-    assert len(d["pedidos"]) == 8 and d["pedidos"][0]["dias"] == 9
+    # Los entregados con fecha de entrega llevan los días hasta la entrega, no hasta el corte.
+    assert d["pedidos"][0]["formulario"] == "F1" and d["pedidos"][0]["dias"] == 2 and d["pedidos"][0]["dias_corridos"] == 2 and d["pedidos"][0]["hasta"] == "entrega"
+    assert len(d["pedidos"]) == 8 and d["pedidos"][2]["formulario"] == "F3" and d["pedidos"][2]["dias"] == 8 and d["pedidos"][2]["hasta"] == "corte"
+    # Tiempo de entrega (fecha de entrega − venta, días hábiles): F1 → 2, F2 → 4, F6 → 0; F7 entregado sin fecha.
+    e = d["entregas"]
+    assert e["disponible"] and e["n"] == 3 and e["sin_fecha"] == 1 and e["dias_prom"] == 2.0 and e["dias_max"] == 4
+    assert e["tramos"] == {"0-2": 2, "3-5": 1, "6-10": 0, "11+": 0} and e["pct_hasta_2"] == 66.7 and e["mismo_dia"] == 1 and e["en_6_o_mas"] == 0
+    assert [(z["region"], z["n"], z["dias_prom"], z["dias_max"]) for z in e["por_zona"]] == [("CENTRAL", 3, 2.0, 4)]
+    assert [(x["fecha"], x["n"]) for x in e["por_dia"]] == [("2026-10-03", 1), ("2026-10-06", 2)]
+    assert e["lista"][0]["formulario"] == "F2" and e["lista"][0]["dias"] == 4 and e["lista"][0]["fecha_entrega"] == "2026-10-06"
+    assert k["entrega"]["n"] == 3 and k["metodo_entrega"].startswith("días hábiles")
+    assert any("1 pedido(s) entregado(s) sin fecha de entrega" in a for a in d["avisos"])
     assert any("F6" in a for a in d["avisos"]) and any("sin motivo" in a for a in d["avisos"])
+
+
+def test_proyeccion_a_fin_de_mes_con_el_ritmo_de_los_dias_en_la_media_o_mas():
+    # Octubre 2026: arranque lento (1/10 jue, 2 vie, 3 sáb) y después toma ritmo; sin domingos.
+    por_dia = {"2026-10-01": 10, "2026-10-02": 12, "2026-10-03": 8, "2026-10-05": 40, "2026-10-06": 44, "2026-10-07": 36,
+               "2026-10-08": 42, "2026-10-09": 38, "2026-10-10": 20, "2026-10-12": 50}
+    pedidos = [{"fecha": f, "region": "CENTRAL" if i % 3 else "INTERIOR"} for f, k in por_dia.items() for i in range(k)]
+    p = proyectar(pedidos, "2026-10", 90.0)
+    assert p["disponible"] and p["acumulado"] == 300 and p["dias_con_ventas"] == 10 and p["dias_laborables"] == [0, 1, 2, 3, 4, 5]
+    assert p["media_diaria"] == 30.0 and p["dias_en_ritmo"] == ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-12"]
+    assert p["ritmo"] == 41.7 and p["dias_restantes"] == 17   # del 13 al 31 sin los domingos 18 y 25
+    assert p["proyeccion"] == 300 + round(250 / 6 * 17) and p["intervalo_95"]["bajo"] < p["proyeccion"] < p["intervalo_95"]["alto"]
+    assert p["rango"]["conservador"] == 300 + 30 * 17 and p["rango"]["tendencia"] > p["proyeccion"]
+    assert p["entregas_esperadas"] == round(p["proyeccion"] * 0.9) and set(p["por_region"]) == {"CENTRAL", "INTERIOR"}
+    assert p["serie"][9]["acumulado"] == 300 and p["serie"][-1]["fecha"] == "2026-10-31" and p["serie"][-1]["proyectado"] == p["proyeccion"]
+    assert sum(r["proyeccion"] for r in p["por_region"].values()) == pytest.approx(p["proyeccion"], abs=3)
+    # Pocos días: no hay proyección, con el motivo. Mes completo: tampoco.
+    assert proyectar(pedidos[:12], "2026-10", 90.0)["disponible"] is False
+    assert "días con ventas" in proyectar([{"fecha": "2026-10-01", "region": "CENTRAL"}], "2026-10", None)["motivo"]
+    cerrado = proyectar([{"fecha": f"2026-09-{d:02d}", "region": "CENTRAL"} for d in (28, 29, 30)], "2026-09", None)
+    assert cerrado["disponible"] is False and "completo" in cerrado["motivo"]
 
 
 # ============================ API ============================
@@ -143,9 +207,11 @@ async def test_api_borrador_publicacion_unica_reemplazo_y_permisos():
         assert r.status_code == 201, r.text
         inf = r.json()["informe"]
         assert inf["status"] == "draft" and inf["periodo"] == "2026-10" and inf["pedidos"] == 8 and inf["fecha_corte"] == "2026-10-10"
-        assert inf["fecha_dato"] == "2026-10-08" and inf["demora_prom"] == 7.0 and r.json()["avisos"]
+        assert inf["fecha_dato"] == "2026-10-08" and inf["demora_prom"] == 6.3 and r.json()["avisos"]
+        assert inf["proyeccion"] and inf["proyeccion"] > 8 and inf["version"] == 4
+        assert inf["entrega_prom"] == 2.0 and inf["entrega_max"] == 4 and inf["entrega_regiones"]["CENTRAL"]["n"] == 3
         assert inf["demora_regiones"] == {"CENTRAL": {"n": 1, "dias_prom": 4.0, "dias_max": 4, "vencidos_6": 0},
-                                          "INTERIOR": {"n": 2, "dias_prom": 8.5, "dias_max": 9, "vencidos_6": 2}}
+                                          "INTERIOR": {"n": 2, "dias_prom": 7.5, "dias_max": 8, "vencidos_6": 2}}
         # Errores claros.
         r = await ac.post(f"{BASE}/uploads", headers=analista, files={"file": ("pedidos.txt", b"x", "text/plain")})
         assert r.status_code == 400
@@ -160,6 +226,7 @@ async def test_api_borrador_publicacion_unica_reemplazo_y_permisos():
         assert (await ac.get(f"{BASE}/informes/{inf['id']}", headers=auditor)).status_code == 404
         r = await ac.get(f"{BASE}/informes/{inf['id']}", headers=analista)
         assert r.status_code == 200 and r.json()["data"]["kpis"]["pedidos"] == 8 and len(r.json()["data"]["pedidos"]) == 8
+        assert r.json()["data"]["proyeccion"]["disponible"] is True and r.json()["data"]["proyeccion"]["proyeccion"] == inf["proyeccion"]
 
         # Publicar: una por mes; la segunda pide confirmación y reemplaza.
         r = await ac.post(f"{BASE}/informes/{inf['id']}/publicar", headers=analista, json={})
@@ -190,4 +257,4 @@ async def test_api_borrador_publicacion_unica_reemplazo_y_permisos():
         r = await ac.get("/api/v1/televentas-claro/integraciones/datasets/logistica_pedidos?desde=2026-10-01&hasta=2026-10-31", headers=admin)
         assert r.status_code == 200 and r.json()["filas"] == 8
         f = r.json()["items"][0]
-        assert f["formulario"] == "F1" and f["estado"] == "ENTREGADO" and f["dias"] == 9 and "motivo_informado" not in f
+        assert f["formulario"] == "F1" and f["estado"] == "ENTREGADO" and f["dias"] == 2 and f["fecha_entrega"] == "2026-10-03" and "motivo_informado" not in f

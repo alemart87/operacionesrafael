@@ -58,5 +58,10 @@ class LogisticaInforme(Base):
     demora_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Demora de los pendientes por región, para verla de un vistazo en la lista: {region: {n, dias_prom, dias_max, vencidos_6}}
     demora_regiones: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    proyeccion: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # pedidos proyectados a fin de mes
+    # Tiempo de entrega de los entregados (fecha de entrega − venta, días hábiles): promedio, máximo y por región
+    entrega_prom: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    entrega_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    entrega_regiones: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

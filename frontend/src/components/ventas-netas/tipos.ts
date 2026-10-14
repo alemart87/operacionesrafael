@@ -137,7 +137,8 @@ export interface Kpis {
   vendedores_alerta: number;
   cargas: number;
   cargas_finalizadas: number;
-  finalizadas_sin_activar: number;
+  /** null cuando CARGAS viene sin SDS_NUMBER (formato de octubre 2026): no se puede cruzar con las activaciones. */
+  finalizadas_sin_activar: number | null;
   pendientes: number;
   pendientes_portacion: number;
   pendientes_mas_de_7_dias: number;
@@ -232,6 +233,8 @@ export interface SaliHablando {
 }
 
 export interface InformeData {
+  /** Notas sobre el archivo (p. ej. CARGAS sin SDS_NUMBER). Ausente en informes anteriores. */
+  avisos?: string[];
   /** Ausente en informes anteriores a la versión 5. */
   sali_hablando?: SaliHablando;
   /** Versión del análisis con que se generó. Sin ella o menor a la actual: informe de una versión anterior. */

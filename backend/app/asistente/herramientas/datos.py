@@ -253,12 +253,18 @@ async def _logistica(ctx: Ctx, a: dict[str, Any]) -> Any:
     rep = await llamar(log_api.ver, informe_id=elegido["id"], user=ctx.user, db=ctx.db)
     d = rep.get("data") or {}
     pend = d.get("pendientes") or {}
+    ent = d.get("entregas") or {}
     estado = a.get("estado")
     motivos = d.get("motivos") or {}
     return compactar({
         "informe": seleccionar(elegido, ("periodo", "fecha_corte", "fecha_dato", "status")),
         "kpis": d.get("kpis"), "por_region": d.get("por_region"),
+        "proyeccion_fin_de_mes": {k: v for k, v in (d.get("proyeccion") or {}).items() if k not in ("serie", "metodo")},
         "motivos": motivos.get(estado) if estado and estado in motivos else motivos.get("todos"),
+        "tiempo_de_entrega": ({k: ent.get(k) for k in ("metodo", "n", "sin_fecha", "dias_prom", "dias_max", "tramos", "pct_hasta_2", "en_6_o_mas", "mismo_dia")}
+                              if ent.get("disponible") else "el archivo no trae fecha de entrega"),
+        "tiempo_de_entrega_por_zona": [seleccionar(z, ("region", "n", "dias_prom", "dias_max", "tramos", "pct_hasta_2", "en_6_o_mas")) for z in ent.get("por_zona") or []],
+        "entregas_mas_lentas": (ent.get("lista") or [])[:10],
         "pendientes": {k: pend.get(k) for k in ("n", "dias_prom", "dias_max", "tramos", "vencidos_6", "vencidos_11", "por_motivo")},
         "pendientes_por_zona": [seleccionar(z, ("region", "n", "dias_prom", "dias_max", "tramos")) for z in pend.get("por_zona") or []],
         "pedidos_mas_demorados": (pend.get("lista") or [])[:12],
@@ -271,8 +277,11 @@ registrar(Herramienta(
     nombre="logistica_del_mes", etiqueta="Consultando la logística de entregas",
     descripcion=("Logística de entregas de los pedidos del mes (del corte publicado más reciente): entregados, en gestión y "
                  "devueltos con porcentajes, por región; motivos por región (de todos o de un estado); la línea de tiempo "
-                 "por fecha de venta; los pedidos pendientes con su demora en días por zona y en tramos, los más demorados "
-                 "y los vendedores con más pendientes. Usala para preguntas de entregas, pedidos pendientes, devoluciones o demoras."),
+                 "por fecha de venta; la proyección a fin de mes (ritmo con los días en la media o por encima, intervalo del 95 %, "
+                 "por región); el tiempo de entrega de los entregados (días hábiles desde la venta hasta la fecha de entrega, sin domingos) "
+                 "por zona, en tramos y las entregas más lentas; los pedidos pendientes con su demora en días hábiles (sin contar domingos) por zona y en tramos, los más demorados y los "
+                 "vendedores con más pendientes. Usala para preguntas de entregas, pedidos pendientes, devoluciones, demoras o "
+                 "cuántas ventas van a cerrar a fin de mes o cuánto tarda la entrega."),
     esquema=esquema({"periodo": {"type": "string", "description": "AAAA-MM del mes (por defecto, el informe más reciente)."},
                      "estado": {"type": "string", "enum": ["ENTREGADO", "EN GESTION", "DEVUELTO"],
                                 "description": "Para ver los motivos de un solo estado."}}),

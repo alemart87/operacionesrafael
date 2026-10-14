@@ -17,7 +17,7 @@ export default function LogisticaPage() {
   );
 }
 
-/** La demora de los pendientes, de un vistazo y por región: promedio, máximo y cuántos llevan 6 días o más. */
+/** La demora de los pendientes, de un vistazo y por región: promedio, máximo y cuántos llevan 6 días hábiles o más (sin domingos). */
 function DemoraPorRegion({ r }: { r: InformeResumen }) {
   const regiones = Object.entries(r.demora_regiones ?? {});
   if (!r.en_gestion) return <span className="text-xs text-brand-mist">Sin pendientes</span>;
@@ -30,6 +30,25 @@ function DemoraPorRegion({ r }: { r: InformeResumen }) {
           <b className={`${(d.dias_prom ?? 0) >= 6 ? "text-brand-primary" : "text-brand-graphite"}`}>{dias(d.dias_prom)}</b>
           <span className="text-brand-slate">· máx {d.dias_max ?? "—"} · {n(d.n)} pend.</span>
           {d.vencidos_6 > 0 && <span className="rounded-full bg-brand-primary-light text-brand-primary-dark px-1.5 font-semibold">{n(d.vencidos_6)} de 6+ d</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** El tiempo de entrega de los entregados (fecha de entrega − venta, días hábiles sin domingos), por región. */
+function EntregaPorRegion({ r }: { r: InformeResumen }) {
+  if (r.entrega_prom === null || r.entrega_prom === undefined) return <span className="text-xs text-brand-mist" title="El archivo no trae fecha de entrega">Sin fecha de entrega</span>;
+  const regiones = Object.entries(r.entrega_regiones ?? {});
+  return (
+    <div className="text-xs space-y-0.5 whitespace-nowrap">
+      <div className="tabular-nums"><b className="text-brand-ink">{dias(r.entrega_prom)}</b> <span className="text-brand-slate">prom. · máx {r.entrega_max ?? "—"} · {n(r.entregados)} entregas</span></div>
+      {regiones.map(([region, d]) => (
+        <div key={region} className="tabular-nums flex items-center gap-1.5">
+          <span className="inline-block w-16 text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold">{region}</span>
+          <b className={`${(d.dias_prom ?? 0) >= 3 ? "text-brand-orange" : "text-brand-graphite"}`}>{dias(d.dias_prom)}</b>
+          <span className="text-brand-slate">· {pct(d.pct_hasta_2)} en ≤2 d · {n(d.n)}</span>
+          {d.en_6_o_mas > 0 && <span className="rounded-full bg-brand-primary-light text-brand-primary-dark px-1.5 font-semibold">{n(d.en_6_o_mas)} de 6+ d</span>}
         </div>
       ))}
     </div>
@@ -103,13 +122,13 @@ function Informes() {
                 {m.masNuevo && <span className="badge-primary">Hay un corte más reciente sin publicar</span>}
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[860px]">
+                <table className="w-full text-sm min-w-[1040px]">
                   <thead>
                     <tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
                       <th className="px-5 py-2.5">Corte</th><th className="px-3 py-2.5">Estado</th>
                       <th className="px-3 py-2.5 text-right">Pedidos</th><th className="px-3 py-2.5 text-right">Entregados</th>
                       <th className="px-3 py-2.5 text-right">En gestión</th><th className="px-3 py-2.5 text-right">Devueltos</th>
-                      <th className="px-3 py-2.5">Demora de pendientes</th><th className="px-3 py-2.5">Generado</th>
+                      <th className="px-3 py-2.5">Tiempo de entrega</th><th className="px-3 py-2.5">Demora de pendientes</th><th className="px-3 py-2.5 text-right">Proyección fin de mes</th><th className="px-3 py-2.5">Generado</th>
                       <th className="px-5 py-2.5 text-right">Acciones</th>
                     </tr>
                   </thead>
@@ -127,7 +146,9 @@ function Informes() {
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.entregados)} <span className="text-brand-slate">({pct(r.pct_entregados)})</span></td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.en_gestion)}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.devueltos)}</td>
+                        <td className="px-3 py-2.5"><EntregaPorRegion r={r} /></td>
                         <td className="px-3 py-2.5"><DemoraPorRegion r={r} /></td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">{r.proyeccion ? <><b className="text-brand-ink">{n(r.proyeccion)}</b><div className="text-[11px] text-brand-slate">pedidos al cierre</div></> : <span className="text-brand-mist text-xs">—</span>}</td>
                         <td className="px-3 py-2.5 text-xs text-brand-slate">{nombre(r.generated_by)}<br />{fechaHora(r.generated_at)}</td>
                         <td className="px-5 py-2.5 text-right whitespace-nowrap text-xs font-semibold">
                           <Link href={`${LOG_HREF}/informes/${r.id}`} className="text-brand-primary mr-3">Ver</Link>

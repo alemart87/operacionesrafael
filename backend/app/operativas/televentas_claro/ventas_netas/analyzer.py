@@ -92,8 +92,19 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
 
     ddi_all = parsed.get("ddi", [])
     cargas_all = parsed.get("cargas", [])
+    # Formato sin SDS_NUMBER en CARGAS (octubre 2026): las cargas no se cruzan con su activación.
+    sin_sds = any(c.get("sin_sds") for c in cargas_all)
+    avisos: list[str] = []
+    if sin_sds:
+        avisos.append("La hoja CARGAS de este archivo no trae SDS_NUMBER: cada fila cuenta como una venta cargada, pero no se "
+                      "puede cruzar con su activación (no hay «finalizadas sin activar», uso por carga ni comentario).")
+        expandidas = sum(1 for c in cargas_all if isinstance(c.get("cantidad"), (int, float)) and c["cantidad"] > 1)
+        if expandidas:
+            avisos.append(f"{expandidas} fila(s) de CARGAS con CANTIDAD mayor que 1 se contaron una vez por unidad.")
+        if any(c.get("fecha_actualizacion") for c in cargas_all):
+            avisos.append("La fecha del corte se tomó de FECHA_ACTUALIZACION de la hoja CARGAS.")
     # Venta cargada de cada línea (hoja CARGAS): fecha de venta, legajo y riesgo para el detalle de netas.
-    carga_por_sds = {c["sds_number"]: c for c in cargas_all if c.get("sds_number")}
+    carga_por_sds = {c["sds_number"]: c for c in cargas_all if c.get("sds_number") and not c.get("sin_sds")}
     por_all = parsed.get("portabilidad", [])
 
     fechas_dato = [d for r in cargas_all if (d := _to_date(r.get("fecha_dato")))]
@@ -207,7 +218,7 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
     finalizadas = [r for r in cargas if r.get("sds_estado") == ESTADO_FINALIZADA]
     pend = [r for r in cargas if r.get("sds_estado") != ESTADO_FINALIZADA]
     sds_netas = {r["sds_number"] for r in ddi} | {r["sds_number"] for r in por_all}
-    finalizadas_sin_activar = [r for r in finalizadas if r["sds_number"] not in sds_netas]
+    finalizadas_sin_activar = [] if sin_sds else [r for r in finalizadas if r["sds_number"] not in sds_netas]
 
     detalle_pend = []
     for r in pend:
@@ -293,7 +304,7 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "vendedores_alerta": len(alertas),
         "cargas": len(cargas),
         "cargas_finalizadas": len(finalizadas),
-        "finalizadas_sin_activar": len(finalizadas_sin_activar),
+        "finalizadas_sin_activar": None if sin_sds else len(finalizadas_sin_activar),
         "pendientes": len(pend),
         "pendientes_portacion": pendientes["portacion"],
         "pendientes_mas_de_7_dias": pendientes["mas_de_7_dias"],
@@ -305,6 +316,7 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "kpis": kpis,
+        "avisos": avisos,
         "por_producto": por_producto,
         "por_plan": por_plan,
         "por_dia": por_dia,

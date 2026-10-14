@@ -171,6 +171,16 @@ Ventas cerradas del mes a partir del **corte diario** que envía Claro: un
 | Subir corte | `…/upload` | Sube el `.xlsx`; se procesa en cola y genera un borrador |
 | Informe | `…/reports/{id}` | **Visión Negocio** (netas, gerencial), **Productividad** (evolutivo de cargas, estados, Pospago vs Internet, zonas, vendedores) y **Visión Operativa** (planillas, críticos, ficha por vendedor, descargable) |
 
+**Formatos del archivo** (`parser.py`): la fila de encabezados de cada hoja se reconoce por sus columnas clave en
+cualquier orden (DDI y PORTABILIDAD: `FECHA_ACTIVACION` + `TIPO_PRODUCTO`; CARGAS: `SDS_ESTADO` + `TIPO_PRODUCTO`),
+así que tolera títulos arriba y cambios de orden. Desde **octubre 2026** CARGAS viene sin `SDS_NUMBER`,
+`SDS_FORMULARIO`, `LINEA_ORIG`, `FECHA_ACTIVACION`, `VENDEDOR_*`, `COMENTARIO` ni `FECHA_DATO`, y con `FECHA_VENTA`,
+`REGION`, `FECHA_ACTUALIZACION` y `CANTIDAD`. El parser lo acepta: cada fila es una venta cargada (`sin_sds`, id
+sintético `CARGA-n`, repetida según `CANTIDAD`), las fechas se normalizan a ISO (`DD/MM/YYYY`, `14 Oct 2026 09:06`) y
+el corte sale de `FECHA_ACTUALIZACION`. Lo que no se puede calcular sin el cruce carga ↔ activación queda explícito:
+`finalizadas_sin_activar` es `null`, las finalizadas Pospago quedan «sin dato de uso» y el informe muestra las notas
+(`data.avisos`). Netas, sin uso, vendedores, pendientes, productividad diaria, SPH e informe diario siguen igual.
+
 Reglas del análisis (`analyzer.py`):
 
 - **Netas** = filas de DDI del período. El **período es el mes de la fecha de
@@ -1118,22 +1128,49 @@ defecto el sub gerente y el controller tienen las dos, el analista las dos, el c
 Código en `backend/app/operativas/televentas_claro/logistica/` y pantallas en `/televentas-claro/logistica`.
 
 - **Archivo** (`parser.py`): columnas Nro. Formulario, LINEA_ORIG, Nro. Documento Cliente, Nombre Completa, Ciudad
-  Cliente, Departamento, REGION, Fecha Venta, Ven_Nombre Completo, Promoción, ESTADO y MOTIVO. Los encabezados se
-  reconocen sin tildes ni mayúsculas y con alias; la fila de encabezados se busca entre las primeras 20. Estado
+  Cliente, Departamento, REGION, Fecha Venta, Ven_Nombre Completo, Promoción, ESTADO, MOTIVO y, desde octubre 2026,
+  **FECHA DE ENTREGA** (opcional: la traen los entregados). Los encabezados se reconocen sin tildes ni mayúsculas y
+  con alias; la fila de encabezados se busca entre las primeras 20 de cada hoja y vale la primera hoja que la tenga
+  (el archivo puede traer antes una hoja «resumen» con tablas dinámicas). Estado
   canónico ENTREGADO · EN GESTION · DEVUELTO (otros se conservan y se avisan); sin motivo, se toma el estado.
-- **Subir** (`POST /uploads`, multipart `file` + `fecha_corte` opcional, por defecto hoy): se lee y analiza en el
-  mismo pedido y queda el **borrador** del mes (el mes con más pedidos). Las filas leídas se guardan comprimidas para
-  recalcular. La **fecha del corte** es desde donde se mide la demora.
+- **Subir** (`POST /uploads`, multipart `file` + `fecha_corte` opcional, por defecto hoy en Paraguay): se lee y analiza
+  en el mismo pedido y queda el **borrador** del mes (el mes con más pedidos). Las filas leídas se guardan comprimidas
+  para recalcular. La **fecha del corte** es el día en que se bajó el reporte (el archivo no la trae; la pantalla la
+  propone en hoy y no admite futuras) y es desde donde se mide la demora.
 - **Informe** (`analyzer.py`, versionado): KPIs por estado con %, **estado × zona** (región, departamento, ciudad)
   en cantidad y %, **motivos × región** para todos y para cada estado, **línea de tiempo** por fecha de venta (del día
-  y acumulado, por estado), **pendientes y demora por zona** (EN GESTION: días desde la venta al corte, promedio,
-  máximo y tramos 0-2 · 3-5 · 6-10 · 11+ por región → departamento → ciudad, por motivo y la lista del más demorado
-  al más nuevo), vendedores, promociones y el **detalle completo** (todos los pedidos con sus días).
+  y acumulado, por estado), **pendientes y demora por zona** (EN GESTION: **días hábiles** desde la venta al corte,
+  promedio, máximo y tramos 0-2 · 3-5 · 6-10 · 11+ por región → departamento → ciudad, por motivo y la lista del más
+  demorado al más nuevo), vendedores, promociones y el **detalle completo** (todos los pedidos con sus días).
+- **Tiempo de entrega** (`entregas`, v4 del análisis): para cada **entregado** con fecha de entrega, los días hábiles
+  desde la venta hasta la **fecha de entrega** del archivo (`hasta: "entrega"`); promedio, máximo, tramos, mismo día,
+  % en 2 días o menos y cuántos tardaron 6 o más, por región → departamento → ciudad, por día de entrega (con el
+  desglose por región), por vendedor y la lista de las entregas más lentas (hasta 300). Entregados sin fecha no entran
+  y se avisan; una fecha de entrega anterior a la venta cuenta 0 y se avisa. Sin la columna, `disponible: false`, se
+  avisa y solo se mide la demora de los pendientes. `entrega_prom`, `entrega_max` y `entrega_regiones` quedan
+  desnormalizados para la lista; Voi los devuelve en `logistica_del_mes` (`tiempo_de_entrega`, por zona y las más lentas).
+- **Cómo se cuentan los días** (`dias_habiles`): los días posteriores a la venta hasta la entrega (entregados) o hasta
+  el corte (los demás, `hasta: "corte"`), inclusive, **sin los domingos** (la logística no entrega ese día). Vendido el
+  sábado 10 y entregado el lunes 12 → 1 día; vendido el sábado 10 y corte el miércoles 14 → 3 días; vendido y entregado
+  el mismo día → 0. Cada pedido guarda también `dias_corridos` (calendario). Los tramos 0-2 · 3-5 · 6-10 · 11+ y la
+  alerta de 6 días o más se aplican sobre los días hábiles. Los informes generados con una versión anterior muestran
+  «Actualizar análisis» y se recalculan con las filas guardadas, sin volver a subir.
+- **Proyección a fin de mes** (`proyeccion.py`, estadística descriptiva): serie diaria de pedidos del mes por fecha
+  de venta; los días laborables se infieren del archivo (los días de la semana con ventas; en Voicenter, lunes a
+  sábado). **Ritmo** = promedio de los días con ventas en la media o por encima (el arranque lento del mes no cuenta;
+  si quedan menos de dos, se usan todos). **Proyección** = acumulado + ritmo × días laborables restantes después del
+  último día con ventas. **Intervalo del 95 %** = proyección ± 1,96 · s · √(días restantes), con el desvío de los días
+  del ritmo. **Rango de referencia**: conservador (media de todos los días) y tendencia (recta de mínimos cuadrados si
+  la pendiente es positiva). Lo mismo por región; **entregas esperadas** = proyección × % entregados. Hace falta al
+  menos 3 días con ventas; con el mes completo no se proyecta y se explica. La lista muestra la proyección de cada
+  corte; el informe abre con la tarjeta, el gráfico (acumulado real, proyección punteada y banda del 95 %), la tabla
+  por región y «Cómo se calcula». Voi la devuelve en `logistica_del_mes`.
 - **Demora por región de un vistazo**: la lista muestra, por corte, la demora promedio y máxima de los pendientes y
   cuántos llevan 6 días o más, discriminado Central / Interior (`demora_regiones`, desnormalizado en el informe);
   el informe abre con una tarjeta por región (pendientes, promedio, máximo, tramos y % entregados).
-- **Pantalla**: KPIs, **filtro dinámico por estado** (Todos · Entregado · En gestión · Devuelto) que recorta todas las
-  secciones, tablas con conmutador cantidad/%, gráfico de línea de tiempo (Recharts), pendientes desplegables por
+- **Pantalla**: KPIs (con el tiempo de entrega y la demora de pendientes por región), **Tiempo de entrega por región**
+  (tarjetas por región, zona desplegable, entregas por día y las más lentas), **filtro dinámico por estado** (Todos ·
+  Entregado · En gestión · Devuelto) que recorta todas las secciones, tablas con conmutador cantidad/%, gráfico de línea de tiempo (Recharts), pendientes desplegables por
   zona, vendedores y la data completa con búsqueda, filtro por región y descarga CSV.
 - **Publicación**: misma lógica que Ventas Netas: `draft` → `published` (uno por mes; reemplazar pide confirmación y
   el anterior queda `replaced`), `despublicar`, `recalcular`, eliminar (solo no publicados). Quien no gestiona ve solo
