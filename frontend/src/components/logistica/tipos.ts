@@ -1,7 +1,7 @@
 export const LOG_API = "/api/v1/televentas-claro/logistica";
 export const LOG_HREF = "/televentas-claro/logistica";
 /** Debe coincidir con VERSION_ANALISIS del backend (analyzer.py). */
-export const VERSION_ANALISIS = 1;
+export const VERSION_ANALISIS = 2;
 
 export type EstadoInforme = "draft" | "published" | "replaced";
 export const ESTADO_LABEL: Record<EstadoInforme, string> = { draft: "Borrador", published: "Publicado", replaced: "Reemplazado" };
@@ -43,6 +43,8 @@ export interface InformeResumen {
   demora_max: number | null;
   /** Demora de los pendientes por región: {CENTRAL: {n, dias_prom, dias_max, vencidos_6}, …} */
   demora_regiones: Record<string, DemoraRegion>;
+  /** Pedidos proyectados a fin de mes con el ritmo actual (null si no se puede proyectar). */
+  proyeccion: number | null;
   version_actual: number;
 }
 export interface DemoraRegion { n: number; dias_prom: number | null; dias_max: number | null; vencidos_6: number }
@@ -91,6 +93,14 @@ export interface DatosLogistica {
   promociones: (Desglose & { promocion: string })[];
   pedidos: Pedido[];
   avisos: string[];
+  proyeccion?: Proyeccion;
+}
+export interface ProyeccionSerie { acumulado: number; dias_con_ventas: number; media_diaria: number; ritmo: number; desvio: number; dias_en_ritmo: string[]; dias_restantes: number; proyeccion: number; intervalo_95: { bajo: number; alto: number }; rango: { conservador: number; tendencia: number }; pendiente_diaria: number }
+export interface Proyeccion extends Partial<ProyeccionSerie> {
+  disponible: boolean; mes: string; fin_mes: string; dias_con_ventas: number; acumulado: number; motivo: string | null;
+  ultimo_dia?: string; dias_laborables?: number[]; dias_transcurridos?: number; fecha_fin_proyeccion?: string;
+  entregas_esperadas?: number | null; por_region?: Record<string, ProyeccionSerie>;
+  serie?: { fecha: string; real?: number; acumulado?: number; proyectado?: number; bajo?: number; alto?: number }[]; metodo?: string;
 }
 export interface InformeDetalle extends InformeResumen { data: DatosLogistica; usuarios: Record<string, string> }
 

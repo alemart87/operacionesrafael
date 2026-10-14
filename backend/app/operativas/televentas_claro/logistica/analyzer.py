@@ -16,8 +16,9 @@ from datetime import date
 from typing import Any
 
 from .parser import DEVUELTO, EN_GESTION, ENTREGADO, ESTADOS
+from .proyeccion import proyectar
 
-VERSION_ANALISIS = 1
+VERSION_ANALISIS = 2
 TRAMOS = (("0-2", 0, 2), ("3-5", 3, 5), ("6-10", 6, 10), ("11+", 11, 10**6))
 REGIONES_ORDEN = ("CENTRAL", "INTERIOR")
 MAX_CIUDADES = 20
@@ -168,7 +169,7 @@ def analizar(filas: list[dict[str, Any]], fecha_corte: date) -> dict[str, Any]:
 
     return {
         "version": VERSION_ANALISIS, "periodo": periodo, "fecha_corte": corte, "estados": estados, "regiones": regiones,
-        "kpis": kpis,
+        "kpis": kpis, "proyeccion": proyectar(pedidos, periodo, kpis["pct_entregados"]),
         "por_region": _desglose(pedidos, "region", estados, orden=regiones),
         "por_departamento": _desglose(pedidos, "departamento", estados, extra={"region": "region"}),
         "por_ciudad": _desglose(pedidos, "ciudad", estados, extra={"region": "region", "departamento": "departamento"}, tope=MAX_CIUDADES),
@@ -195,4 +196,5 @@ def resumen_para_modelo(data: dict[str, Any]) -> dict[str, Any]:
         regiones.setdefault(r, {"n": 0, "dias_prom": None, "dias_max": None, "vencidos_6": 0})
     return {"pedidos": k["pedidos"], "entregados": k["entregados"], "en_gestion": k["en_gestion"], "devueltos": k["devueltos"],
             "pct_entregados": k["pct_entregados"] or 0.0, "demora_prom": k["demora"]["dias_prom"], "demora_max": k["demora"]["dias_max"],
-            "demora_regiones": regiones, "fecha_dato": k["hasta"], "periodo": data["periodo"], "version": data["version"]}
+            "demora_regiones": regiones, "fecha_dato": k["hasta"], "periodo": data["periodo"], "version": data["version"],
+            "proyeccion": (data.get("proyeccion") or {}).get("proyeccion")}

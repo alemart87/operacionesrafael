@@ -16,6 +16,7 @@ from app.core.database import Base, engine
 from app.main import app
 from app.operativas.televentas_claro.logistica.analyzer import analizar
 from app.operativas.televentas_claro.logistica.parser import ArchivoInvalido, estado_canonico, parse_logistica
+from app.operativas.televentas_claro.logistica.proyeccion import proyectar
 
 TC = "televentas_claro"
 BASE = "/api/v1/televentas-claro/logistica"
@@ -126,6 +127,27 @@ def test_analisis_estado_region_motivos_serie_y_pendientes():
     assert any("F6" in a for a in d["avisos"]) and any("sin motivo" in a for a in d["avisos"])
 
 
+def test_proyeccion_a_fin_de_mes_con_el_ritmo_de_los_dias_en_la_media_o_mas():
+    # Octubre 2026: arranque lento (1/10 jue, 2 vie, 3 sáb) y después toma ritmo; sin domingos.
+    por_dia = {"2026-10-01": 10, "2026-10-02": 12, "2026-10-03": 8, "2026-10-05": 40, "2026-10-06": 44, "2026-10-07": 36,
+               "2026-10-08": 42, "2026-10-09": 38, "2026-10-10": 20, "2026-10-12": 50}
+    pedidos = [{"fecha": f, "region": "CENTRAL" if i % 3 else "INTERIOR"} for f, k in por_dia.items() for i in range(k)]
+    p = proyectar(pedidos, "2026-10", 90.0)
+    assert p["disponible"] and p["acumulado"] == 300 and p["dias_con_ventas"] == 10 and p["dias_laborables"] == [0, 1, 2, 3, 4, 5]
+    assert p["media_diaria"] == 30.0 and p["dias_en_ritmo"] == ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-12"]
+    assert p["ritmo"] == 41.7 and p["dias_restantes"] == 17   # del 13 al 31 sin los domingos 18 y 25
+    assert p["proyeccion"] == 300 + round(250 / 6 * 17) and p["intervalo_95"]["bajo"] < p["proyeccion"] < p["intervalo_95"]["alto"]
+    assert p["rango"]["conservador"] == 300 + 30 * 17 and p["rango"]["tendencia"] > p["proyeccion"]
+    assert p["entregas_esperadas"] == round(p["proyeccion"] * 0.9) and set(p["por_region"]) == {"CENTRAL", "INTERIOR"}
+    assert p["serie"][9]["acumulado"] == 300 and p["serie"][-1]["fecha"] == "2026-10-31" and p["serie"][-1]["proyectado"] == p["proyeccion"]
+    assert sum(r["proyeccion"] for r in p["por_region"].values()) == pytest.approx(p["proyeccion"], abs=3)
+    # Pocos días: no hay proyección, con el motivo. Mes completo: tampoco.
+    assert proyectar(pedidos[:12], "2026-10", 90.0)["disponible"] is False
+    assert "días con ventas" in proyectar([{"fecha": "2026-10-01", "region": "CENTRAL"}], "2026-10", None)["motivo"]
+    cerrado = proyectar([{"fecha": f"2026-09-{d:02d}", "region": "CENTRAL"} for d in (28, 29, 30)], "2026-09", None)
+    assert cerrado["disponible"] is False and "completo" in cerrado["motivo"]
+
+
 # ============================ API ============================
 @pytest.mark.asyncio
 async def test_api_borrador_publicacion_unica_reemplazo_y_permisos():
@@ -144,6 +166,7 @@ async def test_api_borrador_publicacion_unica_reemplazo_y_permisos():
         inf = r.json()["informe"]
         assert inf["status"] == "draft" and inf["periodo"] == "2026-10" and inf["pedidos"] == 8 and inf["fecha_corte"] == "2026-10-10"
         assert inf["fecha_dato"] == "2026-10-08" and inf["demora_prom"] == 7.0 and r.json()["avisos"]
+        assert inf["proyeccion"] and inf["proyeccion"] > 8 and inf["version"] == 2
         assert inf["demora_regiones"] == {"CENTRAL": {"n": 1, "dias_prom": 4.0, "dias_max": 4, "vencidos_6": 0},
                                           "INTERIOR": {"n": 2, "dias_prom": 8.5, "dias_max": 9, "vencidos_6": 2}}
         # Errores claros.
@@ -160,6 +183,7 @@ async def test_api_borrador_publicacion_unica_reemplazo_y_permisos():
         assert (await ac.get(f"{BASE}/informes/{inf['id']}", headers=auditor)).status_code == 404
         r = await ac.get(f"{BASE}/informes/{inf['id']}", headers=analista)
         assert r.status_code == 200 and r.json()["data"]["kpis"]["pedidos"] == 8 and len(r.json()["data"]["pedidos"]) == 8
+        assert r.json()["data"]["proyeccion"]["disponible"] is True and r.json()["data"]["proyeccion"]["proyeccion"] == inf["proyeccion"]
 
         # Publicar: una por mes; la segunda pide confirmación y reemplaza.
         r = await ac.post(f"{BASE}/informes/{inf['id']}/publicar", headers=analista, json={})

@@ -67,6 +67,7 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE informes_diarios ADD COLUMN IF NOT EXISTS figuras JSON",
     # v0.9 · logística: demora de los pendientes por región, para la lista
     "ALTER TABLE logistica_informes ADD COLUMN IF NOT EXISTS demora_regiones JSON",
+    "ALTER TABLE logistica_informes ADD COLUMN IF NOT EXISTS proyeccion INTEGER",
 ]
 
 

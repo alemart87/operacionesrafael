@@ -109,7 +109,7 @@ function Informes() {
                       <th className="px-5 py-2.5">Corte</th><th className="px-3 py-2.5">Estado</th>
                       <th className="px-3 py-2.5 text-right">Pedidos</th><th className="px-3 py-2.5 text-right">Entregados</th>
                       <th className="px-3 py-2.5 text-right">En gestión</th><th className="px-3 py-2.5 text-right">Devueltos</th>
-                      <th className="px-3 py-2.5">Demora de pendientes</th><th className="px-3 py-2.5">Generado</th>
+                      <th className="px-3 py-2.5">Demora de pendientes</th><th className="px-3 py-2.5 text-right">Proyección fin de mes</th><th className="px-3 py-2.5">Generado</th>
                       <th className="px-5 py-2.5 text-right">Acciones</th>
                     </tr>
                   </thead>
@@ -128,6 +128,7 @@ function Informes() {
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.en_gestion)}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.devueltos)}</td>
                         <td className="px-3 py-2.5"><DemoraPorRegion r={r} /></td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">{r.proyeccion ? <><b className="text-brand-ink">{n(r.proyeccion)}</b><div className="text-[11px] text-brand-slate">pedidos al cierre</div></> : <span className="text-brand-mist text-xs">—</span>}</td>
                         <td className="px-3 py-2.5 text-xs text-brand-slate">{nombre(r.generated_by)}<br />{fechaHora(r.generated_at)}</td>
                         <td className="px-5 py-2.5 text-right whitespace-nowrap text-xs font-semibold">
                           <Link href={`${LOG_HREF}/informes/${r.id}`} className="text-brand-primary mr-3">Ver</Link>

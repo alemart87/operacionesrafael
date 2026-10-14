@@ -258,6 +258,7 @@ async def _logistica(ctx: Ctx, a: dict[str, Any]) -> Any:
     return compactar({
         "informe": seleccionar(elegido, ("periodo", "fecha_corte", "fecha_dato", "status")),
         "kpis": d.get("kpis"), "por_region": d.get("por_region"),
+        "proyeccion_fin_de_mes": {k: v for k, v in (d.get("proyeccion") or {}).items() if k not in ("serie", "metodo")},
         "motivos": motivos.get(estado) if estado and estado in motivos else motivos.get("todos"),
         "pendientes": {k: pend.get(k) for k in ("n", "dias_prom", "dias_max", "tramos", "vencidos_6", "vencidos_11", "por_motivo")},
         "pendientes_por_zona": [seleccionar(z, ("region", "n", "dias_prom", "dias_max", "tramos")) for z in pend.get("por_zona") or []],
@@ -271,8 +272,10 @@ registrar(Herramienta(
     nombre="logistica_del_mes", etiqueta="Consultando la logística de entregas",
     descripcion=("Logística de entregas de los pedidos del mes (del corte publicado más reciente): entregados, en gestión y "
                  "devueltos con porcentajes, por región; motivos por región (de todos o de un estado); la línea de tiempo "
-                 "por fecha de venta; los pedidos pendientes con su demora en días por zona y en tramos, los más demorados "
-                 "y los vendedores con más pendientes. Usala para preguntas de entregas, pedidos pendientes, devoluciones o demoras."),
+                 "por fecha de venta; la proyección a fin de mes (ritmo con los días en la media o por encima, intervalo del 95 %, "
+                 "por región); los pedidos pendientes con su demora en días por zona y en tramos, los más demorados y los "
+                 "vendedores con más pendientes. Usala para preguntas de entregas, pedidos pendientes, devoluciones, demoras o "
+                 "cuántas ventas van a cerrar a fin de mes."),
     esquema=esquema({"periodo": {"type": "string", "description": "AAAA-MM del mes (por defecto, el informe más reciente)."},
                      "estado": {"type": "string", "enum": ["ENTREGADO", "EN GESTION", "DEVUELTO"],
                                 "description": "Para ver los motivos de un solo estado."}}),

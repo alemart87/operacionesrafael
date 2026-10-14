@@ -1129,6 +1129,16 @@ Código en `backend/app/operativas/televentas_claro/logistica/` y pantallas en `
   y acumulado, por estado), **pendientes y demora por zona** (EN GESTION: días desde la venta al corte, promedio,
   máximo y tramos 0-2 · 3-5 · 6-10 · 11+ por región → departamento → ciudad, por motivo y la lista del más demorado
   al más nuevo), vendedores, promociones y el **detalle completo** (todos los pedidos con sus días).
+- **Proyección a fin de mes** (`proyeccion.py`, estadística descriptiva): serie diaria de pedidos del mes por fecha
+  de venta; los días laborables se infieren del archivo (los días de la semana con ventas; en Voicenter, lunes a
+  sábado). **Ritmo** = promedio de los días con ventas en la media o por encima (el arranque lento del mes no cuenta;
+  si quedan menos de dos, se usan todos). **Proyección** = acumulado + ritmo × días laborables restantes después del
+  último día con ventas. **Intervalo del 95 %** = proyección ± 1,96 · s · √(días restantes), con el desvío de los días
+  del ritmo. **Rango de referencia**: conservador (media de todos los días) y tendencia (recta de mínimos cuadrados si
+  la pendiente es positiva). Lo mismo por región; **entregas esperadas** = proyección × % entregados. Hace falta al
+  menos 3 días con ventas; con el mes completo no se proyecta y se explica. La lista muestra la proyección de cada
+  corte; el informe abre con la tarjeta, el gráfico (acumulado real, proyección punteada y banda del 95 %), la tabla
+  por región y «Cómo se calcula». Voi la devuelve en `logistica_del_mes`.
 - **Demora por región de un vistazo**: la lista muestra, por corte, la demora promedio y máxima de los pendientes y
   cuántos llevan 6 días o más, discriminado Central / Interior (`demora_regiones`, desnormalizado en el informe);
   el informe abre con una tarjeta por región (pendientes, promedio, máximo, tramos y % entregados).

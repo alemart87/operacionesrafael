@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { KpiCard } from "@/components/KpiCard";
-import { DataCompleta, DemoraPorRegion, EstadoPorZona, FiltroEstado, LineaTiempo, Motivos, Pendientes, Vendedores } from "@/components/logistica/Bloques";
+import { DataCompleta, DemoraPorRegion, EstadoPorZona, FiltroEstado, LineaTiempo, Motivos, Pendientes, ProyeccionFinDeMes, Vendedores } from "@/components/logistica/Bloques";
 import { usePublicarLogistica } from "@/components/logistica/PublicarLogistica";
 import {
   EN_GESTION, ESTADO_LABEL, LOG_API, LOG_HREF, VERSION_ANALISIS, dias, fechaCorta, fechaHora, n, nombrePeriodo, pct,
@@ -80,14 +80,16 @@ function Informe() {
         </details>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-5">
         <KpiCard label="Pedidos" value={n(k.pedidos)} hint={`${n(k.vendedores)} vendedores · ${n(k.regiones)} regiones`} accent="secondary" />
+        <KpiCard label="Proyección fin de mes" value={d.proyeccion?.disponible ? n(d.proyeccion.proyeccion) : "—"} hint={d.proyeccion?.disponible ? `ritmo ${n(d.proyeccion.ritmo)} /día · ${n(d.proyeccion.dias_restantes)} días laborables` : "sin proyección"} accent="primary" href="#proyeccion" cta="Ver proyección" />
         <KpiCard label="Entregados" value={pct(k.pct_entregados)} hint={`${n(k.entregados)} pedidos`} accent="cyan" />
         <KpiCard label="En gestión" value={n(k.en_gestion)} hint={`${pct(k.pct_en_gestion)} · demora prom. ${dias(k.demora.dias_prom)}`} accent="orange" />
         <KpiCard label="Devueltos" value={n(k.devueltos)} hint={pct(k.pct_devueltos)} accent="danger" />
         <KpiCard label="Demora por región" value={d.regiones.map((rg) => dias(r2(rg))).join(" · ")} hint={`${d.regiones.map((rg) => rg.charAt(0) + rg.slice(1).toLowerCase()).join(" · ")} · máx ${dias(k.demora.dias_max)} · ${n(d.pendientes.vencidos_6)} con 6 días o más`} accent={d.pendientes.vencidos_6 ? "danger" : "neutral"} href="#demora" cta="Ver por región" />
       </div>
 
+      <div className="mb-5"><ProyeccionFinDeMes d={d} /></div>
       <div className="mb-5"><DemoraPorRegion d={d} /></div>
 
       <div className="card p-3 mb-5 sticky top-[64px] z-20">

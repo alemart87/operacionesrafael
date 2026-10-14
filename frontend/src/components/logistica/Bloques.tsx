@@ -81,6 +81,79 @@ export function DemoraPorRegion({ d }: { d: DatosLogistica }) {
   );
 }
 
+// ------------------------------------------------------------------ proyección a fin de mes
+export function ProyeccionFinDeMes({ d }: { d: DatosLogistica }) {
+  const p = d.proyeccion;
+  if (!p) return null;
+  if (!p.disponible) {
+    return (
+      <Seccion titulo="Proyección a fin de mes" id="proyeccion" sub="Cuántos pedidos se cerrarían en el mes con el ritmo actual.">
+        <div className="text-sm text-brand-slate">Sin proyección: {p.motivo}</div>
+      </Seccion>
+    );
+  }
+  const serie = (p.serie ?? []).map((x) => ({ ...x, etiqueta: diaMes(x.fecha) }));
+  const regiones = Object.entries(p.por_region ?? {});
+  const pctAvance = p.proyeccion ? Math.round((p.acumulado / p.proyeccion) * 100) : 0;
+  return (
+    <Seccion titulo="Proyección a fin de mes" id="proyeccion"
+      sub={<>Con el <b>ritmo actual</b> (promedio de los días con ventas en la media o por encima: el arranque lento no cuenta) y los {n(p.dias_restantes)} días laborables que faltan hasta el {fechaCorta(p.fin_mes)}. Intervalo del 95 % con el desvío de esos días.</>}>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <div className="rounded-lg border-l-[3px] border-l-brand-ink card p-4"><div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">Proyección al cierre</div><div className="font-display text-3xl text-brand-ink tabular-nums">{n(p.proyeccion)}</div><div className="text-xs text-brand-slate mt-1">entre {n(p.intervalo_95?.bajo)} y {n(p.intervalo_95?.alto)} (95 %)</div></div>
+        <div className="rounded-lg border-l-[3px] border-l-brand-cyan card p-4"><div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">Acumulado</div><div className="font-display text-3xl text-brand-ink tabular-nums">{n(p.acumulado)}</div><div className="text-xs text-brand-slate mt-1">{pctAvance}% de la proyección · {n(p.dias_transcurridos)} días con ventas</div></div>
+        <div className="rounded-lg border-l-[3px] border-l-brand-orange card p-4"><div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">Ritmo actual</div><div className="font-display text-3xl text-brand-ink tabular-nums">{n(p.ritmo)}<span className="text-base font-sans text-brand-slate"> /día</span></div><div className="text-xs text-brand-slate mt-1">media de todos los días: {n(p.media_diaria)} /día</div></div>
+        <div className="rounded-lg border-l-[3px] border-l-brand-mist card p-4"><div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">Rango de referencia</div><div className="font-display text-xl text-brand-ink tabular-nums">{n(p.rango?.conservador)} – {n(p.rango?.tendencia)}</div><div className="text-xs text-brand-slate mt-1">con la media de todos los días · si sigue la tendencia</div></div>
+        <div className="rounded-lg border-l-[3px] border-l-brand-cyan card p-4"><div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">Entregas esperadas</div><div className="font-display text-3xl text-brand-ink tabular-nums">{p.entregas_esperadas != null ? n(p.entregas_esperadas) : "—"}</div><div className="text-xs text-brand-slate mt-1">aplicando el {pct(d.kpis.pct_entregados)} de entregados</div></div>
+      </div>
+      <div className="h-72">
+        <ResponsiveContainer>
+          <ComposedChart data={serie} margin={{ left: -6, right: 12, top: 10, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke="#eef0f4" />
+            <XAxis dataKey="etiqueta" tick={EJE} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={14} />
+            <YAxis tick={EJE} axisLine={false} tickLine={false} allowDecimals={false} />
+            <Tooltip content={<DetalleProyeccion />} cursor={{ stroke: "#9CA3AF", strokeDasharray: "3 3" }} />
+            <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+            <Area type="monotone" dataKey="alto" name="Intervalo 95 %" stroke="none" fill="#0F1116" fillOpacity={0.06} isAnimationActive={false} legendType="none" />
+            <Area type="monotone" dataKey="bajo" name="bajo" stroke="none" fill="#ffffff" fillOpacity={1} isAnimationActive={false} legendType="none" />
+            <Line type="monotone" dataKey="acumulado" name="Acumulado real" stroke="#0F1116" strokeWidth={2} dot={{ r: 2.5, strokeWidth: 2, fill: "#fff" }} isAnimationActive={false} />
+            <Line type="monotone" dataKey="proyectado" name="Proyección" stroke="#E6332A" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      {regiones.length > 0 && (
+        <div className="mt-4 overflow-x-auto -mx-5 px-5">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
+              <th className="py-2 pr-3">Región</th><th className="py-2 px-3 text-right">Acumulado</th><th className="py-2 px-3 text-right">Media /día</th><th className="py-2 px-3 text-right">Ritmo /día</th><th className="py-2 px-3 text-right">Días en ritmo</th><th className="py-2 px-3 text-right">Proyección</th><th className="py-2 pl-3 text-right">Intervalo 95 %</th>
+            </tr></thead>
+            <tbody>
+              {regiones.map(([r, x]) => (
+                <tr key={r} className="border-b border-brand-border/60">
+                  <td className="py-1.5 pr-3 font-semibold text-brand-ink">{r}</td><td className="py-1.5 px-3 text-right tabular-nums">{n(x.acumulado)}</td><td className="py-1.5 px-3 text-right tabular-nums">{n(x.media_diaria)}</td><td className="py-1.5 px-3 text-right tabular-nums font-semibold">{n(x.ritmo)}</td><td className="py-1.5 px-3 text-right tabular-nums">{n(x.dias_en_ritmo.length)} de {n(x.dias_con_ventas)}</td><td className="py-1.5 px-3 text-right tabular-nums font-semibold text-brand-ink">{n(x.proyeccion)}</td><td className="py-1.5 pl-3 text-right tabular-nums text-brand-slate">{n(x.intervalo_95.bajo)} – {n(x.intervalo_95.alto)}</td>
+                </tr>
+              ))}
+              <tr className="bg-brand-ink text-white font-semibold"><td className="py-2 pr-3 rounded-l-md">Total</td><td className="py-2 px-3 text-right tabular-nums">{n(p.acumulado)}</td><td className="py-2 px-3 text-right tabular-nums">{n(p.media_diaria)}</td><td className="py-2 px-3 text-right tabular-nums">{n(p.ritmo)}</td><td className="py-2 px-3 text-right tabular-nums">{n(p.dias_en_ritmo?.length)} de {n(p.dias_con_ventas)}</td><td className="py-2 px-3 text-right tabular-nums">{n(p.proyeccion)}</td><td className="py-2 pl-3 text-right tabular-nums rounded-r-md">{n(p.intervalo_95?.bajo)} – {n(p.intervalo_95?.alto)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      <details className="mt-3 text-xs text-brand-slate"><summary className="cursor-pointer font-semibold text-brand-graphite">Cómo se calcula</summary><p className="mt-1">{p.metodo} Días en ritmo: {(p.dias_en_ritmo ?? []).map(fechaCorta).join(", ")}. Días laborables detectados en el archivo: {(p.dias_laborables ?? []).map((w) => ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"][w]).join(", ")}. La proyección cuenta desde el {fechaCorta(p.ultimo_dia)} (último día con ventas) hasta el {fechaCorta(p.fecha_fin_proyeccion)}.</p></details>
+    </Seccion>
+  );
+}
+
+function DetalleProyeccion({ active, payload }: { active?: boolean; payload?: any[] }) {
+  if (!active || !payload?.length) return null;
+  const x = payload[0].payload;
+  return (
+    <div className="rounded-md border border-brand-border bg-white shadow-elevated px-3 py-2 text-xs">
+      <div className="font-semibold text-brand-ink mb-1">{fechaCorta(x.fecha)}</div>
+      {x.acumulado != null ? <><div>Del día: <b className="tabular-nums">{n(x.real)}</b></div><div>Acumulado: <b className="tabular-nums">{n(x.acumulado)}</b></div></>
+        : <><div>Proyección: <b className="tabular-nums">{n(x.proyectado)}</b></div><div className="text-brand-slate">entre {n(x.bajo)} y {n(x.alto)}</div></>}
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ tabla estado × zona (cantidad y %)
 function TablaDesglose({ filas, clave, estados, filtro, titulo, extra }: {
   filas: Desglose[]; clave: string; estados: string[]; filtro: Filtro; titulo: string; extra?: (f: Desglose) => ReactNode;
