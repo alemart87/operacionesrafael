@@ -171,6 +171,16 @@ Ventas cerradas del mes a partir del **corte diario** que envía Claro: un
 | Subir corte | `…/upload` | Sube el `.xlsx`; se procesa en cola y genera un borrador |
 | Informe | `…/reports/{id}` | **Visión Negocio** (netas, gerencial), **Productividad** (evolutivo de cargas, estados, Pospago vs Internet, zonas, vendedores) y **Visión Operativa** (planillas, críticos, ficha por vendedor, descargable) |
 
+**Formatos del archivo** (`parser.py`): la fila de encabezados de cada hoja se reconoce por sus columnas clave en
+cualquier orden (DDI y PORTABILIDAD: `FECHA_ACTIVACION` + `TIPO_PRODUCTO`; CARGAS: `SDS_ESTADO` + `TIPO_PRODUCTO`),
+así que tolera títulos arriba y cambios de orden. Desde **octubre 2026** CARGAS viene sin `SDS_NUMBER`,
+`SDS_FORMULARIO`, `LINEA_ORIG`, `FECHA_ACTIVACION`, `VENDEDOR_*`, `COMENTARIO` ni `FECHA_DATO`, y con `FECHA_VENTA`,
+`REGION`, `FECHA_ACTUALIZACION` y `CANTIDAD`. El parser lo acepta: cada fila es una venta cargada (`sin_sds`, id
+sintético `CARGA-n`, repetida según `CANTIDAD`), las fechas se normalizan a ISO (`DD/MM/YYYY`, `14 Oct 2026 09:06`) y
+el corte sale de `FECHA_ACTUALIZACION`. Lo que no se puede calcular sin el cruce carga ↔ activación queda explícito:
+`finalizadas_sin_activar` es `null`, las finalizadas Pospago quedan «sin dato de uso» y el informe muestra las notas
+(`data.avisos`). Netas, sin uso, vendedores, pendientes, productividad diaria, SPH e informe diario siguen igual.
+
 Reglas del análisis (`analyzer.py`):
 
 - **Netas** = filas de DDI del período. El **período es el mes de la fecha de

@@ -116,6 +116,12 @@ function Informe() {
       </div>
 
       {errorPublicar && <div className="card p-4 text-brand-primary mb-4">{errorPublicar}</div>}
+      {!!r.data?.avisos?.length && (
+        <details className="mb-4 rounded-md border border-brand-orange/40 bg-brand-orange/10 p-3 text-xs text-brand-graphite print:hidden">
+          <summary className="font-semibold cursor-pointer">{r.data.avisos.length} nota(s) sobre el formato del archivo</summary>
+          <ul className="mt-2 space-y-1 list-disc pl-5">{r.data.avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>
+        </details>
+      )}
       {errorActualizar && !desactualizado && <div className="card p-4 text-brand-primary mb-4">{errorActualizar}</div>}
       {desactualizado && (
         <div className="rounded-md border border-brand-orange/40 bg-brand-orange/10 text-sm text-brand-graphite p-3 mb-4 flex items-center justify-between gap-3 flex-wrap print:hidden">
