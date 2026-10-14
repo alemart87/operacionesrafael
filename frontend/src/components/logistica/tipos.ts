@@ -1,7 +1,7 @@
 export const LOG_API = "/api/v1/televentas-claro/logistica";
 export const LOG_HREF = "/televentas-claro/logistica";
 /** Debe coincidir con VERSION_ANALISIS del backend (analyzer.py). */
-export const VERSION_ANALISIS = 2;
+export const VERSION_ANALISIS = 3;
 
 export type EstadoInforme = "draft" | "published" | "replaced";
 export const ESTADO_LABEL: Record<EstadoInforme, string> = { draft: "Borrador", published: "Publicado", replaced: "Reemplazado" };
@@ -72,12 +72,14 @@ export interface ZonaPendiente extends Demora {
 export interface Pedido {
   formulario: string | null; linea: string | null; documento: string | null; cliente: string | null; ciudad: string | null;
   departamento: string | null; region: string; fecha: string; vendedor: string | null; promocion: string | null; estado: string;
-  motivo: string; dias: number; tramo: string;
+  motivo: string;
+  /** Días hábiles desde la venta hasta el corte (sin domingos); `dias_corridos` son los de calendario. */
+  dias: number; dias_corridos?: number; tramo: string;
 }
 export interface DatosLogistica {
   version: number; periodo: string; fecha_corte: string; estados: string[]; regiones: string[];
   kpis: {
-    pedidos: number; fecha_corte: string; desde: string; hasta: string; dias: number;
+    pedidos: number; fecha_corte: string; desde: string; hasta: string; dias: number; metodo_demora?: string;
     por_estado: Record<string, { n: number; pct: number | null }>;
     entregados: number; en_gestion: number; devueltos: number;
     pct_entregados: number | null; pct_en_gestion: number | null; pct_devueltos: number | null;

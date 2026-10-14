@@ -273,7 +273,7 @@ registrar(Herramienta(
     descripcion=("Logística de entregas de los pedidos del mes (del corte publicado más reciente): entregados, en gestión y "
                  "devueltos con porcentajes, por región; motivos por región (de todos o de un estado); la línea de tiempo "
                  "por fecha de venta; la proyección a fin de mes (ritmo con los días en la media o por encima, intervalo del 95 %, "
-                 "por región); los pedidos pendientes con su demora en días por zona y en tramos, los más demorados y los "
+                 "por región); los pedidos pendientes con su demora en días hábiles (sin contar domingos) por zona y en tramos, los más demorados y los "
                  "vendedores con más pendientes. Usala para preguntas de entregas, pedidos pendientes, devoluciones, demoras o "
                  "cuántas ventas van a cerrar a fin de mes."),
     esquema=esquema({"periodo": {"type": "string", "description": "AAAA-MM del mes (por defecto, el informe más reciente)."},

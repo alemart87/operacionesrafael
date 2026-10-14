@@ -17,7 +17,7 @@ export default function LogisticaPage() {
   );
 }
 
-/** La demora de los pendientes, de un vistazo y por región: promedio, máximo y cuántos llevan 6 días o más. */
+/** La demora de los pendientes, de un vistazo y por región: promedio, máximo y cuántos llevan 6 días hábiles o más (sin domingos). */
 function DemoraPorRegion({ r }: { r: InformeResumen }) {
   const regiones = Object.entries(r.demora_regiones ?? {});
   if (!r.en_gestion) return <span className="text-xs text-brand-mist">Sin pendientes</span>;

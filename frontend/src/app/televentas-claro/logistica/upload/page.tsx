@@ -61,7 +61,7 @@ export default function LogisticaUploadPage() {
         <div>
           <label className="label" htmlFor="fecha-corte">Fecha del corte</label>
           <input id="fecha-corte" type="date" className="input w-auto tabular-nums" value={fechaCorte} max={hoy()} onChange={(e) => setFechaCorte(e.target.value)} disabled={subiendo} />
-          <p className="text-[11px] text-brand-slate mt-1">El día en que se bajó el reporte. Desde ahí se mide la <b>demora</b> de los pedidos en gestión (días desde la venta).</p>
+          <p className="text-[11px] text-brand-slate mt-1">El día en que se bajó el reporte (por defecto, hoy). Desde ahí se mide la <b>demora</b> de los pedidos en gestión: días hábiles desde la venta hasta el corte, <b>sin contar los domingos</b>.</p>
         </div>
         {error && <div className="bg-brand-primary-light border border-brand-primary/30 text-brand-primary-dark text-sm rounded-md p-3">{error}</div>}
         <button type="submit" data-voi="procesar" disabled={subiendo} className="btn-primary text-base">{subiendo ? "Procesando…" : "Procesar corte"}</button>

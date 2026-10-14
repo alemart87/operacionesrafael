@@ -14,7 +14,7 @@ from openpyxl import Workbook
 
 from app.core.database import Base, engine
 from app.main import app
-from app.operativas.televentas_claro.logistica.analyzer import analizar
+from app.operativas.televentas_claro.logistica.analyzer import analizar, dias_habiles
 from app.operativas.televentas_claro.logistica.parser import ArchivoInvalido, estado_canonico, parse_logistica
 from app.operativas.televentas_claro.logistica.proyeccion import proyectar
 
@@ -99,6 +99,16 @@ def test_parser_reconoce_columnas_estados_y_fechas():
         parse_logistica(xlsx([["X1", None, None, "C", "A", "D", "R", "sin fecha", "V", "P", "ENTREGADO", None]]))
 
 
+def test_demora_en_dias_habiles_sin_domingos():
+    # Octubre 2026: el 10 es sábado, el 11 domingo, el 14 miércoles.
+    assert dias_habiles(date(2026, 10, 10), date(2026, 10, 14)) == 3      # lun, mar y mié: el domingo 11 no cuenta
+    assert dias_habiles(date(2026, 10, 10), date(2026, 10, 11)) == 0      # solo pasó un domingo
+    assert dias_habiles(date(2026, 10, 5), date(2026, 10, 12)) == 6       # una semana completa menos el domingo
+    assert dias_habiles(date(2026, 10, 14), date(2026, 10, 14)) == 0      # vendido el día del corte
+    assert dias_habiles(date(2026, 10, 15), date(2026, 10, 14)) == 0      # nunca negativo
+    assert dias_habiles(date(2026, 9, 28), date(2026, 10, 14)) == 14      # 16 corridos menos los domingos 4 y 11
+
+
 def test_analisis_estado_region_motivos_serie_y_pendientes():
     d = analizar(parse_logistica(xlsx())["filas"], date(2026, 10, 10))
     k = d["kpis"]
@@ -115,15 +125,17 @@ def test_analisis_estado_region_motivos_serie_y_pendientes():
     assert [s["fecha"] for s in d["serie"]] == ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-06", "2026-10-08"]
     assert d["serie"][0]["estados"] == {"ENTREGADO": 2, "EN GESTION": 1, "DEVUELTO": 0}
     assert d["serie"][-1]["acumulado"] == {"ENTREGADO": 4, "EN GESTION": 3, "DEVUELTO": 1} and d["serie"][-1]["acumulado_total"] == 8
-    # Pendientes: demora desde la venta hasta el corte (10/10), por zona y en tramos.
+    # Pendientes: demora en días hábiles desde la venta hasta el corte (sábado 10/10): el domingo 4/10 no cuenta.
+    # F3 (1/10) → 8, F4 (2/10) → 7, F6 (6/10) → 4.
     p = d["pendientes"]
-    assert p["n"] == 3 and p["dias_max"] == 9 and p["dias_prom"] == 7.0 and p["tramos"] == {"0-2": 0, "3-5": 1, "6-10": 2, "11+": 0}
-    assert [(z["region"], z["n"], z["dias_max"]) for z in p["por_zona"]] == [("CENTRAL", 1, 4), ("INTERIOR", 2, 9)]
+    assert k["metodo_demora"].startswith("días hábiles")
+    assert p["n"] == 3 and p["dias_max"] == 8 and p["dias_prom"] == 6.3 and p["tramos"] == {"0-2": 0, "3-5": 1, "6-10": 2, "11+": 0}
+    assert [(z["region"], z["n"], z["dias_max"]) for z in p["por_zona"]] == [("CENTRAL", 1, 4), ("INTERIOR", 2, 8)]
     assert p["por_zona"][1]["departamentos"][0]["departamento"] in ("ALTO PARANA", "ITAPUA")
-    assert p["lista"][0]["formulario"] == "F3" and p["lista"][0]["dias"] == 9 and p["vencidos_6"] == 2
+    assert p["lista"][0]["formulario"] == "F3" and p["lista"][0]["dias"] == 8 and p["lista"][0]["dias_corridos"] == 9 and p["vencidos_6"] == 2
     assert d["vendedores"][0]["vendedor"] == "SALINAS, BRANDON" and d["vendedores"][0]["estados"]["EN GESTION"] == 1
     assert d["promociones"][1]["promocion"] == "PLAN CONTROL"
-    assert len(d["pedidos"]) == 8 and d["pedidos"][0]["dias"] == 9
+    assert len(d["pedidos"]) == 8 and d["pedidos"][0]["dias"] == 8 and d["pedidos"][0]["dias_corridos"] == 9
     assert any("F6" in a for a in d["avisos"]) and any("sin motivo" in a for a in d["avisos"])
 
 
@@ -165,10 +177,10 @@ async def test_api_borrador_publicacion_unica_reemplazo_y_permisos():
         assert r.status_code == 201, r.text
         inf = r.json()["informe"]
         assert inf["status"] == "draft" and inf["periodo"] == "2026-10" and inf["pedidos"] == 8 and inf["fecha_corte"] == "2026-10-10"
-        assert inf["fecha_dato"] == "2026-10-08" and inf["demora_prom"] == 7.0 and r.json()["avisos"]
-        assert inf["proyeccion"] and inf["proyeccion"] > 8 and inf["version"] == 2
+        assert inf["fecha_dato"] == "2026-10-08" and inf["demora_prom"] == 6.3 and r.json()["avisos"]
+        assert inf["proyeccion"] and inf["proyeccion"] > 8 and inf["version"] == 3
         assert inf["demora_regiones"] == {"CENTRAL": {"n": 1, "dias_prom": 4.0, "dias_max": 4, "vencidos_6": 0},
-                                          "INTERIOR": {"n": 2, "dias_prom": 8.5, "dias_max": 9, "vencidos_6": 2}}
+                                          "INTERIOR": {"n": 2, "dias_prom": 7.5, "dias_max": 8, "vencidos_6": 2}}
         # Errores claros.
         r = await ac.post(f"{BASE}/uploads", headers=analista, files={"file": ("pedidos.txt", b"x", "text/plain")})
         assert r.status_code == 400
@@ -214,4 +226,4 @@ async def test_api_borrador_publicacion_unica_reemplazo_y_permisos():
         r = await ac.get("/api/v1/televentas-claro/integraciones/datasets/logistica_pedidos?desde=2026-10-01&hasta=2026-10-31", headers=admin)
         assert r.status_code == 200 and r.json()["filas"] == 8
         f = r.json()["items"][0]
-        assert f["formulario"] == "F1" and f["estado"] == "ENTREGADO" and f["dias"] == 9 and "motivo_informado" not in f
+        assert f["formulario"] == "F1" and f["estado"] == "ENTREGADO" and f["dias"] == 8 and f["dias_corridos"] == 9 and "motivo_informado" not in f

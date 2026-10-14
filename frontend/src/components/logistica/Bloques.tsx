@@ -47,7 +47,7 @@ export function DemoraPorRegion({ d }: { d: DatosLogistica }) {
   const entregados = (r: string) => d.por_region.find((x) => x.region === r);
   return (
     <Seccion titulo="Demora de entregas por región" id="demora"
-      sub={<>Pedidos <b>en gestión</b> y los días que llevan desde la venta hasta el corte del {fechaCorta(d.fecha_corte)}, por región. Los entregados no traen fecha de entrega en el archivo: su tiempo no se puede medir.</>}>
+      sub={<>Pedidos <b>en gestión</b> y los <b>días hábiles</b> que llevan desde la venta hasta el corte del {fechaCorta(d.fecha_corte)} (los domingos no cuentan), por región. Los entregados no traen fecha de entrega en el archivo: su tiempo no se puede medir.</>}>
       <div className={`grid gap-3 ${zonas.length > 2 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
         {zonas.map((z) => {
           const e = entregados(z.region);
@@ -297,7 +297,7 @@ export function Pendientes({ d }: { d: DatosLogistica }) {
   );
   return (
     <Seccion titulo="Pendientes y demora por zona" id="pendientes"
-      sub={<>Pedidos <b>en gestión</b> y los días que llevan desde la venta hasta el corte del {fechaCorta(d.fecha_corte)}. Tramos: {TRAMOS.map((t) => <span key={t} className="inline-flex items-center gap-1 ml-2"><span className="w-2 h-2 rounded-full" style={{ background: colorTramo[t] }} />{t} días</span>)}</>}>
+      sub={<>Pedidos <b>en gestión</b> y los <b>días hábiles</b> que llevan desde la venta hasta el corte del {fechaCorta(d.fecha_corte)}: se cuentan los días posteriores a la venta hasta el corte, sin los domingos. Tramos: {TRAMOS.map((t) => <span key={t} className="inline-flex items-center gap-1 ml-2"><span className="w-2 h-2 rounded-full" style={{ background: colorTramo[t] }} />{t} días</span>)}</>}>
       {p.n === 0 ? <div className="text-sm text-brand-mist py-3">No hay pedidos en gestión.</div> : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-4">
@@ -362,7 +362,7 @@ export function TablaPedidos({ pedidos, conDias = true, compacta = false, estado
       <table className="w-full text-xs min-w-[760px]">
         <thead><tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
           <th className="py-1.5 pr-2">Formulario</th><th className="py-1.5 pr-2">Cliente</th><th className="py-1.5 pr-2">Ciudad</th><th className="py-1.5 pr-2">Región</th>
-          <th className="py-1.5 pr-2">Venta</th>{conDias && <th className="py-1.5 pr-2 text-right">Días</th>}{estados && <th className="py-1.5 pr-2">Estado</th>}<th className="py-1.5 pr-2">Motivo</th><th className="py-1.5 pr-2">Vendedor</th><th className="py-1.5">Promoción</th>
+          <th className="py-1.5 pr-2">Venta</th>{conDias && <th className="py-1.5 pr-2 text-right" title="Días hábiles desde la venta hasta el corte, sin contar los domingos">Días háb.</th>}{estados && <th className="py-1.5 pr-2">Estado</th>}<th className="py-1.5 pr-2">Motivo</th><th className="py-1.5 pr-2">Vendedor</th><th className="py-1.5">Promoción</th>
         </tr></thead>
         <tbody>
           {lista.map((p, i) => (
@@ -372,7 +372,7 @@ export function TablaPedidos({ pedidos, conDias = true, compacta = false, estado
               <td className="py-1.5 pr-2">{p.ciudad ?? "—"}<div className="text-brand-slate">{p.departamento ?? ""}</div></td>
               <td className="py-1.5 pr-2">{p.region}</td>
               <td className="py-1.5 pr-2 tabular-nums whitespace-nowrap">{fechaCorta(p.fecha)}</td>
-              {conDias && <td className={`py-1.5 pr-2 text-right tabular-nums font-semibold ${p.dias >= 11 ? "text-brand-purple" : p.dias >= 6 ? "text-brand-primary" : p.dias >= 3 ? "text-brand-orange" : ""}`}>{p.estado === EN_GESTION ? n(p.dias) : <span className="text-brand-mist font-normal">{n(p.dias)}</span>}</td>}
+              {conDias && <td className={`py-1.5 pr-2 text-right tabular-nums font-semibold ${p.dias >= 11 ? "text-brand-purple" : p.dias >= 6 ? "text-brand-primary" : p.dias >= 3 ? "text-brand-orange" : ""}`}><span title={p.dias_corridos !== undefined ? `${n(p.dias_corridos)} días corridos` : undefined}>{p.estado === EN_GESTION ? n(p.dias) : <span className="text-brand-mist font-normal">{n(p.dias)}</span>}</span></td>}
               {estados && <td className="py-1.5 pr-2"><span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="w-2 h-2 rounded-full" style={{ background: colorEstado(p.estado, estados) }} />{etiquetaEstado(p.estado)}</span></td>}
               <td className="py-1.5 pr-2">{p.motivo}</td>
               <td className="py-1.5 pr-2">{p.vendedor ?? "—"}</td>

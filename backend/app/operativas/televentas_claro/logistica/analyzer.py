@@ -5,22 +5,25 @@ Todo lo que la pantalla muestra sale de acá y queda congelado en el informe (`d
 - `por_region` / `por_departamento` / `por_ciudad`: cantidad y % por estado en cada zona (las tablas del modelo).
 - `motivos`: motivo × región, para todos los pedidos y para cada estado (el filtro dinámico por estado).
 - `serie`: la línea de tiempo por fecha de venta: pedidos del día y acumulado, por estado.
-- `pendientes`: los pedidos EN GESTION con su demora (días desde la venta hasta el corte), por zona y en tramos.
+- `pendientes`: los pedidos EN GESTION con su demora (días hábiles desde la venta hasta el corte, sin contar los
+  domingos: la logística no entrega ese día), por zona y en tramos.
 - `vendedores`, `promociones`: el mismo desglose por estado.
 - `pedidos`: el detalle completo (una fila por pedido, con su demora) para la tabla con filtro y búsqueda.
 """
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from .parser import DEVUELTO, EN_GESTION, ENTREGADO, ESTADOS
 from .proyeccion import proyectar
 
-VERSION_ANALISIS = 2
+VERSION_ANALISIS = 3  # v3: la demora se cuenta en días hábiles (sin domingos)
 TRAMOS = (("0-2", 0, 2), ("3-5", 3, 5), ("6-10", 6, 10), ("11+", 11, 10**6))
 REGIONES_ORDEN = ("CENTRAL", "INTERIOR")
+DOMINGO = 6
+METODO_DEMORA = "días hábiles desde la venta hasta el corte, sin contar los domingos"
 MAX_CIUDADES = 20
 
 
@@ -64,6 +67,18 @@ def _tramo(dias: int) -> str:
     return TRAMOS[-1][0]
 
 
+def dias_habiles(venta: date, corte: date) -> int:
+    """Días que lleva un pedido: los días posteriores a la venta hasta el corte inclusive, sin los domingos.
+
+    Vendido el sábado 10 y corte el miércoles 14 → 3 días (lunes, martes y miércoles): el domingo no
+    cuenta porque no hay entregas. Una venta del mismo día del corte lleva 0 días."""
+    if corte <= venta:
+        return 0
+    n = (corte - venta).days
+    domingos = sum(1 for i in range(1, n + 1) if (venta + timedelta(days=i)).weekday() == DOMINGO)
+    return n - domingos
+
+
 def _demora(dias_lista: list[int]) -> dict[str, Any]:
     tramos = Counter(_tramo(d) for d in dias_lista)
     return {"n": len(dias_lista), "dias_prom": round(sum(dias_lista) / len(dias_lista), 1) if dias_lista else None,
@@ -77,8 +92,8 @@ def analizar(filas: list[dict[str, Any]], fecha_corte: date) -> dict[str, Any]:
     pedidos: list[dict[str, Any]] = []
     for f in filas:
         venta = date.fromisoformat(f["fecha"])
-        dias = max(0, (fecha_corte - venta).days)
-        pedidos.append({**f, "dias": dias, "tramo": _tramo(dias)})
+        dias = dias_habiles(venta, fecha_corte)
+        pedidos.append({**f, "dias": dias, "dias_corridos": max(0, (fecha_corte - venta).days), "tramo": _tramo(dias)})
     pedidos.sort(key=lambda p: (p["fecha"], p["region"], p["cliente"] or ""))
 
     total = len(pedidos)
@@ -97,7 +112,7 @@ def analizar(filas: list[dict[str, Any]], fecha_corte: date) -> dict[str, Any]:
         "entregados": por_estado.get(ENTREGADO, 0), "en_gestion": por_estado.get(EN_GESTION, 0), "devueltos": por_estado.get(DEVUELTO, 0),
         "pct_entregados": _pct(por_estado.get(ENTREGADO, 0), total), "pct_en_gestion": _pct(por_estado.get(EN_GESTION, 0), total),
         "pct_devueltos": _pct(por_estado.get(DEVUELTO, 0), total),
-        "demora": _demora(dias_pend), "vendedores": len({p["vendedor"] for p in pedidos if p["vendedor"]}),
+        "demora": _demora(dias_pend), "metodo_demora": METODO_DEMORA, "vendedores": len({p["vendedor"] for p in pedidos if p["vendedor"]}),
         "regiones": len(regiones), "fuera_de_periodo": sum(n for m, n in meses.items() if m != periodo),
     }
 
@@ -145,7 +160,7 @@ def analizar(filas: list[dict[str, Any]], fecha_corte: date) -> dict[str, Any]:
         "por_motivo": [{"motivo": m, "n": n, "dias_prom": round(sum(p["dias"] for p in pendientes if p["motivo"] == m) / n, 1)}
                        for m, n in motivos_pend.most_common()],
         "lista": sorted(({k: p.get(k) for k in ("formulario", "cliente", "documento", "ciudad", "departamento", "region", "fecha",
-                                                 "dias", "tramo", "vendedor", "motivo", "promocion", "linea")} for p in pendientes),
+                                                 "dias", "dias_corridos", "tramo", "vendedor", "motivo", "promocion", "linea")} for p in pendientes),
                         key=lambda p: (-p["dias"], p["region"], p["cliente"] or "")),
         "vencidos_6": sum(1 for d in dias_pend if d >= 6), "vencidos_11": sum(1 for d in dias_pend if d >= 11),
     }
