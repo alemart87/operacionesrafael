@@ -32,6 +32,9 @@ export interface OperativaInfo {
 export const PERM_FACTURACION = "televentas_claro.facturacion";
 /** Integraciones: claves de API de solo lectura para KNIME y otras herramientas. Solo sub gerente y superadmin. */
 export const PERM_INTEGRACIONES = "televentas_claro.integraciones";
+/** Logística de entregas: ver informes / gestión (subir el corte de pedidos, publicar, eliminar). */
+export const PERM_LOGISTICA = "televentas_claro.logistica";
+export const PERM_LOGISTICA_GESTION = "televentas_claro.logistica_gestion";
 export const INTEGRACIONES_HREF = "/televentas-claro/integraciones";
 /** Ventas Netas: ver informes publicados / gestión (subir, publicar, reemplazar, eliminar). */
 export const PERM_VENTAS_NETAS = "televentas_claro.ventas_netas";
@@ -164,6 +167,19 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
           { href: "/televentas-claro/supervision/operadores", label: "Operadores" },
           { href: "/televentas-claro/supervision/calendario", label: "Calendario" },
           { href: "/televentas-claro/supervision/parametros", label: "Parámetros", utilidad: "supervision_parametros" },
+        ],
+      },
+      {
+        utilidad: "logistica",
+        label: "Logística",
+        href: "/televentas-claro/logistica",
+        descripcion: "Entregas de los pedidos del mes a partir del corte de logística: entregados, en gestión y devueltos por región, motivos, línea de tiempo por estado, pendientes con su demora por zona y el detalle completo con filtro por estado.",
+        contenido: ["Estado por región, cantidad y %", "Motivos por región con filtro por estado", "Línea de tiempo por estado", "Pendientes y demora por zona", "Vendedores y promociones", "Detalle completo con búsqueda"],
+        gestion: "logistica_gestion",
+        gestionTexto: "Subir el corte de pedidos, publicar (uno por mes), reemplazar y eliminar.",
+        nav: [
+          { href: "/televentas-claro/logistica", label: "Informes", exact: true },
+          { href: "/televentas-claro/logistica/upload", label: "Subir corte", utilidad: "logistica_gestion" },
         ],
       },
       {

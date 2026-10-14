@@ -11,6 +11,7 @@ from typing import Any
 from ...operativas.televentas_claro.auditoria import api as aud_api
 from ...operativas.televentas_claro.informe_diario import api as inf_api
 from ...operativas.televentas_claro.informe_diario import importar as imp
+from ...operativas.televentas_claro.logistica import api as log_api
 from ...operativas.televentas_claro.productividad import api as prod_api
 from ...operativas.televentas_claro.sph import api as sph_api
 from ...operativas.televentas_claro.supervision import api as sup_api
@@ -25,6 +26,7 @@ P_VN, P_VN_G = f"{TC}.ventas_netas", f"{TC}.ventas_netas_gestion"
 P_SPH, P_SPH_G = f"{TC}.sph", f"{TC}.sph_gestion"
 P_SUP, P_TICKETS, P_INF, P_AUD = f"{TC}.supervision", f"{TC}.tickets", f"{TC}.informe_diario", f"{TC}.auditoria"
 P_OPER = f"{TC}.operadores"
+P_LOG, P_LOG_G = f"{TC}.logistica", f"{TC}.logistica_gestion"
 GESTION_AUD = frozenset({"superadmin", "gestion"})
 TODOS = frozenset({"superadmin", "gestion", "auditor"})
 
@@ -237,6 +239,44 @@ async def _sph(ctx: Ctx, a: dict[str, Any]) -> Any:
         "otros_informes": [seleccionar(i, ("tipo", "desde", "hasta")) for i in items[1:8]],
         "pantalla": f"/televentas-claro/sph/informes/{elegido['id']}",
     }, max_lista=35)
+
+
+async def _logistica(ctx: Ctx, a: dict[str, Any]) -> Any:
+    r = await llamar(log_api.listar, user=ctx.user, db=ctx.db)
+    items = [i for i in r.get("items", []) if i.get("status") == "published" or ctx.user.has_perm(P_LOG_G)]
+    if a.get("periodo"):
+        items = [i for i in items if i.get("periodo") == periodo(a["periodo"])] or items
+    publicados = [i for i in items if i.get("status") == "published"]
+    if not items:
+        raise ErrorHerramienta("No hay informes de logística de entregas publicados")
+    elegido = (publicados or items)[0]
+    rep = await llamar(log_api.ver, informe_id=elegido["id"], user=ctx.user, db=ctx.db)
+    d = rep.get("data") or {}
+    pend = d.get("pendientes") or {}
+    estado = a.get("estado")
+    motivos = d.get("motivos") or {}
+    return compactar({
+        "informe": seleccionar(elegido, ("periodo", "fecha_corte", "fecha_dato", "status")),
+        "kpis": d.get("kpis"), "por_region": d.get("por_region"),
+        "motivos": motivos.get(estado) if estado and estado in motivos else motivos.get("todos"),
+        "pendientes": {k: pend.get(k) for k in ("n", "dias_prom", "dias_max", "tramos", "vencidos_6", "vencidos_11", "por_motivo")},
+        "pendientes_por_zona": [seleccionar(z, ("region", "n", "dias_prom", "dias_max", "tramos")) for z in pend.get("por_zona") or []],
+        "pedidos_mas_demorados": (pend.get("lista") or [])[:12],
+        "vendedores_con_mas_pendientes": sorted(d.get("vendedores") or [], key=lambda v: -(v.get("estados") or {}).get("EN GESTION", 0))[:6],
+        "serie": d.get("serie"), "avisos": d.get("avisos"), "pantalla": f"/televentas-claro/logistica/informes/{elegido['id']}",
+    }, max_lista=14)
+
+
+registrar(Herramienta(
+    nombre="logistica_del_mes", etiqueta="Consultando la logística de entregas",
+    descripcion=("Logística de entregas de los pedidos del mes (del corte publicado más reciente): entregados, en gestión y "
+                 "devueltos con porcentajes, por región; motivos por región (de todos o de un estado); la línea de tiempo "
+                 "por fecha de venta; los pedidos pendientes con su demora en días por zona y en tramos, los más demorados "
+                 "y los vendedores con más pendientes. Usala para preguntas de entregas, pedidos pendientes, devoluciones o demoras."),
+    esquema=esquema({"periodo": {"type": "string", "description": "AAAA-MM del mes (por defecto, el informe más reciente)."},
+                     "estado": {"type": "string", "enum": ["ENTREGADO", "EN GESTION", "DEVUELTO"],
+                                "description": "Para ver los motivos de un solo estado."}}),
+    fn=_logistica, permisos=(P_LOG,), modos=GESTION_AUD))
 
 
 registrar(Herramienta(
@@ -496,4 +536,4 @@ registrar(Herramienta(
 
 # Después de responder con una de estas consultas, la plataforma ofrece sola los botones «Armar un tablero» y
 # «Ver en la pantalla» (consumidor.py): el agente no gasta una vuelta en ofrecer_opciones para eso.
-CONSULTAS = frozenset(['alertas_del_corte', 'auditorias_de_ventas', 'centro_de_comandos', 'coaching_del_dia', 'informes_diarios', 'productividad_del_dia', 'productividad_por_rango', 'seguimiento_informes_diarios', 'sph', 'supervision_del_mes', 'tickets_de_revision', 'ventas_del_dia', 'ventas_del_mes'])
+CONSULTAS = frozenset(['alertas_del_corte', 'auditorias_de_ventas', 'centro_de_comandos', 'coaching_del_dia', 'informes_diarios', 'logistica_del_mes', 'productividad_del_dia', 'productividad_por_rango', 'seguimiento_informes_diarios', 'sph', 'supervision_del_mes', 'tickets_de_revision', 'ventas_del_dia', 'ventas_del_mes'])

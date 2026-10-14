@@ -33,13 +33,14 @@ DEFAULT_PERMISSIONS: dict[str, list[str]] = {
     # El asistente (Voi) arranca con sub gerente, coordinador y auditor; al resto se le puede asignar.
     "controller": [f"{_TC}.{u}" for u in _TODAS_TC if u not in ("facturacion", "informe_diario", "asistente", "integraciones")],
     "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad", "sph", "supervision",
-                                            "supervision_gestion", "tickets", "operadores", "informe_diario", "asistente")],
+                                            "supervision_gestion", "tickets", "operadores", "informe_diario", "asistente",
+                                            "logistica")],
     # El supervisor solo entra a su portal (ver core/operativas.PERFILES_SOLO_PORTAL).
     "supervisor": [f"{_TC}.{u}" for u in ("ver", "portal_supervisor")],
     "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion", "auditoria",
                                          "productividad", "productividad_gestion", "sph", "sph_gestion",
-                                         "supervision", "operadores")],
-    "auditor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "auditoria", "supervision", "tickets", "asistente")],
+                                         "supervision", "operadores", "logistica", "logistica_gestion")],
+    "auditor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "auditoria", "supervision", "tickets", "asistente", "logistica")],
     "cliente": [f"{_TC}.{u}" for u in ("ver",)],
 }
 
