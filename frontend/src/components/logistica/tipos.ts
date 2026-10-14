@@ -41,8 +41,11 @@ export interface InformeResumen {
   pct_entregados: number;
   demora_prom: number | null;
   demora_max: number | null;
+  /** Demora de los pendientes por región: {CENTRAL: {n, dias_prom, dias_max, vencidos_6}, …} */
+  demora_regiones: Record<string, DemoraRegion>;
   version_actual: number;
 }
+export interface DemoraRegion { n: number; dias_prom: number | null; dias_max: number | null; vencidos_6: number }
 
 export interface ListaInformes { items: InformeResumen[]; total: number; usuarios: Record<string, string>; gestion: boolean }
 

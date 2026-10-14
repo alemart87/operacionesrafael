@@ -17,6 +17,25 @@ export default function LogisticaPage() {
   );
 }
 
+/** La demora de los pendientes, de un vistazo y por región: promedio, máximo y cuántos llevan 6 días o más. */
+function DemoraPorRegion({ r }: { r: InformeResumen }) {
+  const regiones = Object.entries(r.demora_regiones ?? {});
+  if (!r.en_gestion) return <span className="text-xs text-brand-mist">Sin pendientes</span>;
+  return (
+    <div className="text-xs space-y-0.5 whitespace-nowrap">
+      <div className="tabular-nums"><b className="text-brand-ink">{dias(r.demora_prom)}</b> <span className="text-brand-slate">prom. · máx {r.demora_max ?? "—"} · {n(r.en_gestion)} pendientes</span></div>
+      {regiones.map(([region, d]) => (
+        <div key={region} className="tabular-nums flex items-center gap-1.5">
+          <span className="inline-block w-16 text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold">{region}</span>
+          <b className={`${(d.dias_prom ?? 0) >= 6 ? "text-brand-primary" : "text-brand-graphite"}`}>{dias(d.dias_prom)}</b>
+          <span className="text-brand-slate">· máx {d.dias_max ?? "—"} · {n(d.n)} pend.</span>
+          {d.vencidos_6 > 0 && <span className="rounded-full bg-brand-primary-light text-brand-primary-dark px-1.5 font-semibold">{n(d.vencidos_6)} de 6+ d</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Badge({ estado }: { estado: InformeResumen["status"] }) {
   const cls = estado === "published" ? "badge-success" : estado === "replaced" ? "badge-neutral line-through" : "badge-cyan";
   return <span className={cls}>{ESTADO_LABEL[estado]}</span>;
@@ -90,7 +109,7 @@ function Informes() {
                       <th className="px-5 py-2.5">Corte</th><th className="px-3 py-2.5">Estado</th>
                       <th className="px-3 py-2.5 text-right">Pedidos</th><th className="px-3 py-2.5 text-right">Entregados</th>
                       <th className="px-3 py-2.5 text-right">En gestión</th><th className="px-3 py-2.5 text-right">Devueltos</th>
-                      <th className="px-3 py-2.5 text-right">Demora prom.</th><th className="px-3 py-2.5">Generado</th>
+                      <th className="px-3 py-2.5">Demora de pendientes</th><th className="px-3 py-2.5">Generado</th>
                       <th className="px-5 py-2.5 text-right">Acciones</th>
                     </tr>
                   </thead>
@@ -108,7 +127,7 @@ function Informes() {
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.entregados)} <span className="text-brand-slate">({pct(r.pct_entregados)})</span></td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.en_gestion)}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{n(r.devueltos)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{dias(r.demora_prom)}{r.demora_max !== null && <span className="text-brand-slate"> · máx {r.demora_max}</span>}</td>
+                        <td className="px-3 py-2.5"><DemoraPorRegion r={r} /></td>
                         <td className="px-3 py-2.5 text-xs text-brand-slate">{nombre(r.generated_by)}<br />{fechaHora(r.generated_at)}</td>
                         <td className="px-5 py-2.5 text-right whitespace-nowrap text-xs font-semibold">
                           <Link href={`${LOG_HREF}/informes/${r.id}`} className="text-brand-primary mr-3">Ver</Link>

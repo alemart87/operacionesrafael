@@ -1129,6 +1129,9 @@ Código en `backend/app/operativas/televentas_claro/logistica/` y pantallas en `
   y acumulado, por estado), **pendientes y demora por zona** (EN GESTION: días desde la venta al corte, promedio,
   máximo y tramos 0-2 · 3-5 · 6-10 · 11+ por región → departamento → ciudad, por motivo y la lista del más demorado
   al más nuevo), vendedores, promociones y el **detalle completo** (todos los pedidos con sus días).
+- **Demora por región de un vistazo**: la lista muestra, por corte, la demora promedio y máxima de los pendientes y
+  cuántos llevan 6 días o más, discriminado Central / Interior (`demora_regiones`, desnormalizado en el informe);
+  el informe abre con una tarjeta por región (pendientes, promedio, máximo, tramos y % entregados).
 - **Pantalla**: KPIs, **filtro dinámico por estado** (Todos · Entregado · En gestión · Devuelto) que recorta todas las
   secciones, tablas con conmutador cantidad/%, gráfico de línea de tiempo (Recharts), pendientes desplegables por
   zona, vendedores y la data completa con búsqueda, filtro por región y descarga CSV.
