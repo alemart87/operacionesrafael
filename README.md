@@ -1110,6 +1110,45 @@ estructura, GPON, meses afectados y notas). Lo que difiere de los valores calibr
 marcado con ✱. Las secciones interactivas no se imprimen; resultados y EERR arrancan en hoja nueva. Componente
 `FichaSimulacion.tsx`; estilos en `globals.css` (`.ficha-impresa`, `.print-shell`, `.sim-print`).
 
+## Televentas CLARO · Logística de entregas
+
+El corte de pedidos de logística (.xlsx, una fila por pedido) se convierte en el informe del mes. Utilidades
+`televentas_claro.logistica` (ver) y `logistica_gestion` (subir, publicar, reemplazar, recalcular, eliminar); por
+defecto el sub gerente y el controller tienen las dos, el analista las dos, el coordinador y el auditor solo ver.
+Código en `backend/app/operativas/televentas_claro/logistica/` y pantallas en `/televentas-claro/logistica`.
+
+- **Archivo** (`parser.py`): columnas Nro. Formulario, LINEA_ORIG, Nro. Documento Cliente, Nombre Completa, Ciudad
+  Cliente, Departamento, REGION, Fecha Venta, Ven_Nombre Completo, Promoción, ESTADO y MOTIVO. Los encabezados se
+  reconocen sin tildes ni mayúsculas y con alias; la fila de encabezados se busca entre las primeras 20. Estado
+  canónico ENTREGADO · EN GESTION · DEVUELTO (otros se conservan y se avisan); sin motivo, se toma el estado.
+- **Subir** (`POST /uploads`, multipart `file` + `fecha_corte` opcional, por defecto hoy): se lee y analiza en el
+  mismo pedido y queda el **borrador** del mes (el mes con más pedidos). Las filas leídas se guardan comprimidas para
+  recalcular. La **fecha del corte** es desde donde se mide la demora.
+- **Informe** (`analyzer.py`, versionado): KPIs por estado con %, **estado × zona** (región, departamento, ciudad)
+  en cantidad y %, **motivos × región** para todos y para cada estado, **línea de tiempo** por fecha de venta (del día
+  y acumulado, por estado), **pendientes y demora por zona** (EN GESTION: días desde la venta al corte, promedio,
+  máximo y tramos 0-2 · 3-5 · 6-10 · 11+ por región → departamento → ciudad, por motivo y la lista del más demorado
+  al más nuevo), vendedores, promociones y el **detalle completo** (todos los pedidos con sus días).
+- **Pantalla**: KPIs, **filtro dinámico por estado** (Todos · Entregado · En gestión · Devuelto) que recorta todas las
+  secciones, tablas con conmutador cantidad/%, gráfico de línea de tiempo (Recharts), pendientes desplegables por
+  zona, vendedores y la data completa con búsqueda, filtro por región y descarga CSV.
+- **Publicación**: misma lógica que Ventas Netas: `draft` → `published` (uno por mes; reemplazar pide confirmación y
+  el anterior queda `replaced`), `despublicar`, `recalcular`, eliminar (solo no publicados). Quien no gestiona ve solo
+  lo publicado. Todo auditado (`logistica_corte_subido`, `_informe_publicado`, `_reemplazado`, `_despublicado`,
+  `_recalculado`, `_eliminado`).
+- **Voi**: consulta `logistica_del_mes` (entregas, motivos, pendientes y demorados) y guía «Subir el corte de pedidos».
+- **Integraciones**: dataset `logistica_pedidos` (un pedido por fila de los cortes publicados).
+
+| Método | Ruta (`/api/v1/televentas-claro/logistica`) | Quién |
+|---|---|---|
+| POST | `/uploads` | Gestión: sube el corte y devuelve el borrador (`informe`, `avisos`) |
+| GET | `/informes` · `/informes/{id}` | Ver (solo publicados) · gestión (todos) |
+| POST | `/informes/{id}/publicar` (`confirm_replace`, `title`) · `/despublicar` · `/recalcular` | Gestión |
+| DELETE | `/informes/{id}` | Gestión (no publicados) |
+
+Tests: `backend/tests/test_logistica.py` (parser con alias y fechas en texto, análisis contra las tablas del modelo,
+API con permisos, publicación única, reemplazo, despublicación, recálculo, eliminación y dataset).
+
 ## Televentas CLARO · Integraciones (solo superadmin y Sub gerente)
 
 Claves de API de **solo lectura** para conectar herramientas de análisis (KNIME, Power BI, Python) a los datos ya

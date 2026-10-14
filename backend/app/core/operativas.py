@@ -97,6 +97,16 @@ OPERATIVAS: list[dict] = [
                 "portal": True,
             },
             {
+                "key": "logistica",
+                "name": "Logística · Ver informes",
+                "description": "Ver los informes publicados de logística de entregas: pedidos por estado (entregado, en gestión, devuelto) y región, motivos, línea de tiempo por estado, pendientes y demora por zona, vendedores y el detalle completo con filtro por estado.",
+            },
+            {
+                "key": "logistica_gestion",
+                "name": "Logística · Gestión",
+                "description": "Subir el corte de pedidos de logística (.xlsx), ver borradores, publicar (uno por mes), reemplazar, recalcular y eliminar.",
+            },
+            {
                 "key": "informe_diario",
                 "name": "Informe diario",
                 "description": "Preparar el informe diario de la operación: resultados del día (Pospago, GPON y otros), datos importados de la plataforma (llamadas, ventas del día, proyección y coaching), resumen, métricas críticas con indicador, comentario y compromiso, seguimiento de los compromisos anteriores y firma; se guarda con fecha y se descarga en PDF para enviar. El superadmin sigue los informes de todos, sus palabras clave, y los comenta.",

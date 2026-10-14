@@ -14,6 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..informe_diario.models import FIRMADO, InformeDiario
+from ..logistica.models import ESTADO_PUBLICADO as LOG_PUBLICADO
+from ..logistica.models import LogisticaInforme
 from ..productividad.models import ESTADO_PUBLICADO as PROD_PUBLICADO
 from ..productividad.models import ProdInforme
 from ..sph.models import ESTADO_PUBLICADO as SPH_PUBLICADO
@@ -186,6 +188,23 @@ async def informes_diarios_metricas(db: AsyncSession, desde: date, hasta: date, 
     return out
 
 
+# ------------------------------------------------------------------ logística de entregas
+async def logistica_pedidos(db: AsyncSession, desde: date, hasta: date, borradores: bool) -> Filas:
+    m0, m1 = _meses(desde, hasta)
+    q = select(LogisticaInforme).where(LogisticaInforme.period_month >= m0, LogisticaInforme.period_month <= m1,
+                                       LogisticaInforme.replaced_at.is_(None))
+    if not borradores:
+        q = q.where(LogisticaInforme.status == LOG_PUBLICADO)
+    rows = (await db.execute(q.order_by(LogisticaInforme.period_month, LogisticaInforme.fecha_corte))).scalars().all()
+    out: Filas = []
+    for r in rows:
+        for p in (r.data or {}).get("pedidos") or []:
+            if desde.isoformat() <= (p.get("fecha") or "") <= hasta.isoformat():
+                out.append({"informe_id": r.id, "periodo": r.periodo, "fecha_corte": _iso(r.fecha_corte), "estado_informe": r.status,
+                            **plano({k: v for k, v in p.items() if k not in ("fila", "motivo_informado")})})
+    return out
+
+
 # ------------------------------------------------------------------ catálogo
 Dataset = Callable[[AsyncSession, date, date, bool], Awaitable[Filas]]
 
@@ -224,6 +243,11 @@ CATALOGO: dict[str, dict[str, Any]] = {
         "modulo": "Informe diario", "titulo": "Informe diario · un informe por fila",
         "descripcion": "Los informes diarios firmados: autor, resultados de Pospago y GPON contra meta, resumen, cantidad de métricas críticas y compromisos. Sin comentarios ni figuras.",
         "fecha": "fecha del informe", "fn": informes_diarios,
+    },
+    "logistica_pedidos": {
+        "modulo": "Logística de entregas", "titulo": "Logística · un pedido por fila",
+        "descripcion": "Cada pedido de los cortes publicados: formulario, cliente, ciudad, departamento, región, fecha de venta, vendedor, promoción, estado, motivo y días de demora al corte.",
+        "fecha": "fecha de venta", "fn": logistica_pedidos,
     },
     "informes_diarios_metricas": {
         "modulo": "Informe diario", "titulo": "Informe diario · una métrica crítica por fila",
