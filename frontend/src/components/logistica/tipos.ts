@@ -1,7 +1,7 @@
 export const LOG_API = "/api/v1/televentas-claro/logistica";
 export const LOG_HREF = "/televentas-claro/logistica";
 /** Debe coincidir con VERSION_ANALISIS del backend (analyzer.py). */
-export const VERSION_ANALISIS = 3;
+export const VERSION_ANALISIS = 4;
 
 export type EstadoInforme = "draft" | "published" | "replaced";
 export const ESTADO_LABEL: Record<EstadoInforme, string> = { draft: "Borrador", published: "Publicado", replaced: "Reemplazado" };
@@ -46,8 +46,13 @@ export interface InformeResumen {
   /** Pedidos proyectados a fin de mes con el ritmo actual (null si no se puede proyectar). */
   proyeccion: number | null;
   version_actual: number;
+  /** Tiempo de entrega de los entregados (fecha de entrega − venta, días hábiles): null si el archivo no trae la fecha. */
+  entrega_prom?: number | null;
+  entrega_max?: number | null;
+  entrega_regiones?: Record<string, EntregaRegion> | null;
 }
 export interface DemoraRegion { n: number; dias_prom: number | null; dias_max: number | null; vencidos_6: number }
+export interface EntregaRegion { n: number; dias_prom: number | null; dias_max: number | null; pct_hasta_2: number | null; en_6_o_mas: number }
 
 export interface ListaInformes { items: InformeResumen[]; total: number; usuarios: Record<string, string>; gestion: boolean }
 
@@ -73,8 +78,15 @@ export interface Pedido {
   formulario: string | null; linea: string | null; documento: string | null; cliente: string | null; ciudad: string | null;
   departamento: string | null; region: string; fecha: string; vendedor: string | null; promocion: string | null; estado: string;
   motivo: string;
-  /** Días hábiles desde la venta hasta el corte (sin domingos); `dias_corridos` son los de calendario. */
+  /** Días hábiles sin domingos: entregados, de la venta a la entrega; los demás, de la venta al corte. `dias_corridos`: calendario. */
   dias: number; dias_corridos?: number; tramo: string;
+  fecha_entrega?: string | null; hasta?: "entrega" | "corte";
+}
+export interface ZonaEntrega extends ZonaPendiente { pct_hasta_2: number | null; en_6_o_mas: number }
+export interface Entregas extends Partial<Demora> {
+  disponible: boolean; metodo: string | null; n: number; sin_fecha: number;
+  por_zona?: ZonaEntrega[]; por_dia?: { fecha: string; n: number; dias_prom: number; regiones: Record<string, number> }[];
+  pct_hasta_2?: number | null; en_6_o_mas?: number; mismo_dia?: number; por_vendedor?: (Demora & { vendedor: string })[]; lista?: Pedido[];
 }
 export interface DatosLogistica {
   version: number; periodo: string; fecha_corte: string; estados: string[]; regiones: string[];
@@ -84,6 +96,7 @@ export interface DatosLogistica {
     entregados: number; en_gestion: number; devueltos: number;
     pct_entregados: number | null; pct_en_gestion: number | null; pct_devueltos: number | null;
     demora: Demora; vendedores: number; regiones: number; fuera_de_periodo: number;
+    entrega?: (Demora & { sin_fecha: number; pct_hasta_2: number | null; en_6_o_mas: number }) | null; metodo_entrega?: string | null;
   };
   por_region: (Desglose & { region: string })[];
   por_departamento: (Desglose & { departamento: string })[];
@@ -96,6 +109,7 @@ export interface DatosLogistica {
   pedidos: Pedido[];
   avisos: string[];
   proyeccion?: Proyeccion;
+  entregas?: Entregas;
 }
 export interface ProyeccionSerie { acumulado: number; dias_con_ventas: number; media_diaria: number; ritmo: number; desvio: number; dias_en_ritmo: string[]; dias_restantes: number; proyeccion: number; intervalo_95: { bajo: number; alto: number }; rango: { conservador: number; tendencia: number }; pendiente_diaria: number }
 export interface Proyeccion extends Partial<ProyeccionSerie> {

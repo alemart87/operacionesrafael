@@ -1128,8 +1128,10 @@ defecto el sub gerente y el controller tienen las dos, el analista las dos, el c
 Código en `backend/app/operativas/televentas_claro/logistica/` y pantallas en `/televentas-claro/logistica`.
 
 - **Archivo** (`parser.py`): columnas Nro. Formulario, LINEA_ORIG, Nro. Documento Cliente, Nombre Completa, Ciudad
-  Cliente, Departamento, REGION, Fecha Venta, Ven_Nombre Completo, Promoción, ESTADO y MOTIVO. Los encabezados se
-  reconocen sin tildes ni mayúsculas y con alias; la fila de encabezados se busca entre las primeras 20. Estado
+  Cliente, Departamento, REGION, Fecha Venta, Ven_Nombre Completo, Promoción, ESTADO, MOTIVO y, desde octubre 2026,
+  **FECHA DE ENTREGA** (opcional: la traen los entregados). Los encabezados se reconocen sin tildes ni mayúsculas y
+  con alias; la fila de encabezados se busca entre las primeras 20 de cada hoja y vale la primera hoja que la tenga
+  (el archivo puede traer antes una hoja «resumen» con tablas dinámicas). Estado
   canónico ENTREGADO · EN GESTION · DEVUELTO (otros se conservan y se avisan); sin motivo, se toma el estado.
 - **Subir** (`POST /uploads`, multipart `file` + `fecha_corte` opcional, por defecto hoy en Paraguay): se lee y analiza
   en el mismo pedido y queda el **borrador** del mes (el mes con más pedidos). Las filas leídas se guardan comprimidas
@@ -1140,11 +1142,19 @@ Código en `backend/app/operativas/televentas_claro/logistica/` y pantallas en `
   y acumulado, por estado), **pendientes y demora por zona** (EN GESTION: **días hábiles** desde la venta al corte,
   promedio, máximo y tramos 0-2 · 3-5 · 6-10 · 11+ por región → departamento → ciudad, por motivo y la lista del más
   demorado al más nuevo), vendedores, promociones y el **detalle completo** (todos los pedidos con sus días).
-- **Cómo se cuenta la demora** (`dias_habiles`, v3 del análisis): se cuentan los días posteriores a la venta hasta el
-  corte inclusive, **sin los domingos** (la logística no entrega ese día). Vendido el sábado 10 y corte el miércoles
-  14 → 3 días; vendido el mismo día del corte → 0. Cada pedido guarda también `dias_corridos` (calendario) para
-  contrastar. Los tramos y la alerta de 6 días o más se aplican sobre los días hábiles. Los informes generados con
-  la versión anterior muestran «Actualizar análisis» y se recalculan con las filas guardadas, sin volver a subir.
+- **Tiempo de entrega** (`entregas`, v4 del análisis): para cada **entregado** con fecha de entrega, los días hábiles
+  desde la venta hasta la **fecha de entrega** del archivo (`hasta: "entrega"`); promedio, máximo, tramos, mismo día,
+  % en 2 días o menos y cuántos tardaron 6 o más, por región → departamento → ciudad, por día de entrega (con el
+  desglose por región), por vendedor y la lista de las entregas más lentas (hasta 300). Entregados sin fecha no entran
+  y se avisan; una fecha de entrega anterior a la venta cuenta 0 y se avisa. Sin la columna, `disponible: false`, se
+  avisa y solo se mide la demora de los pendientes. `entrega_prom`, `entrega_max` y `entrega_regiones` quedan
+  desnormalizados para la lista; Voi los devuelve en `logistica_del_mes` (`tiempo_de_entrega`, por zona y las más lentas).
+- **Cómo se cuentan los días** (`dias_habiles`): los días posteriores a la venta hasta la entrega (entregados) o hasta
+  el corte (los demás, `hasta: "corte"`), inclusive, **sin los domingos** (la logística no entrega ese día). Vendido el
+  sábado 10 y entregado el lunes 12 → 1 día; vendido el sábado 10 y corte el miércoles 14 → 3 días; vendido y entregado
+  el mismo día → 0. Cada pedido guarda también `dias_corridos` (calendario). Los tramos 0-2 · 3-5 · 6-10 · 11+ y la
+  alerta de 6 días o más se aplican sobre los días hábiles. Los informes generados con una versión anterior muestran
+  «Actualizar análisis» y se recalculan con las filas guardadas, sin volver a subir.
 - **Proyección a fin de mes** (`proyeccion.py`, estadística descriptiva): serie diaria de pedidos del mes por fecha
   de venta; los días laborables se infieren del archivo (los días de la semana con ventas; en Voicenter, lunes a
   sábado). **Ritmo** = promedio de los días con ventas en la media o por encima (el arranque lento del mes no cuenta;
@@ -1158,8 +1168,9 @@ Código en `backend/app/operativas/televentas_claro/logistica/` y pantallas en `
 - **Demora por región de un vistazo**: la lista muestra, por corte, la demora promedio y máxima de los pendientes y
   cuántos llevan 6 días o más, discriminado Central / Interior (`demora_regiones`, desnormalizado en el informe);
   el informe abre con una tarjeta por región (pendientes, promedio, máximo, tramos y % entregados).
-- **Pantalla**: KPIs, **filtro dinámico por estado** (Todos · Entregado · En gestión · Devuelto) que recorta todas las
-  secciones, tablas con conmutador cantidad/%, gráfico de línea de tiempo (Recharts), pendientes desplegables por
+- **Pantalla**: KPIs (con el tiempo de entrega y la demora de pendientes por región), **Tiempo de entrega por región**
+  (tarjetas por región, zona desplegable, entregas por día y las más lentas), **filtro dinámico por estado** (Todos ·
+  Entregado · En gestión · Devuelto) que recorta todas las secciones, tablas con conmutador cantidad/%, gráfico de línea de tiempo (Recharts), pendientes desplegables por
   zona, vendedores y la data completa con búsqueda, filtro por región y descarga CSV.
 - **Publicación**: misma lógica que Ventas Netas: `draft` → `published` (uno por mes; reemplazar pide confirmación y
   el anterior queda `replaced`), `despublicar`, `recalcular`, eliminar (solo no publicados). Quien no gestiona ve solo

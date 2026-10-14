@@ -50,6 +50,7 @@ def _resumen(r: LogisticaInforme) -> dict[str, Any]:
         "pedidos": r.pedidos, "entregados": r.entregados, "en_gestion": r.en_gestion, "devueltos": r.devueltos,
         "pct_entregados": r.pct_entregados, "demora_prom": r.demora_prom, "demora_max": r.demora_max,
         "demora_regiones": r.demora_regiones or {}, "proyeccion": r.proyeccion, "version_actual": VERSION_ANALISIS,
+        "entrega_prom": r.entrega_prom, "entrega_max": r.entrega_max, "entrega_regiones": r.entrega_regiones,
     }
 
 
@@ -68,7 +69,8 @@ def _aplicar(informe: LogisticaInforme, data: dict[str, Any]) -> None:
     informe.period_month = date.fromisoformat(res["periodo"] + "-01")
     informe.fecha_dato = date.fromisoformat(res["fecha_dato"])
     informe.version = res["version"]
-    for k in ("pedidos", "entregados", "en_gestion", "devueltos", "pct_entregados", "demora_prom", "demora_max", "demora_regiones", "proyeccion"):
+    for k in ("pedidos", "entregados", "en_gestion", "devueltos", "pct_entregados", "demora_prom", "demora_max", "demora_regiones", "proyeccion",
+              "entrega_prom", "entrega_max", "entrega_regiones"):
         setattr(informe, k, res[k])
 
 

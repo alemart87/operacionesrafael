@@ -5,6 +5,8 @@ Todo lo que la pantalla muestra sale de acá y queda congelado en el informe (`d
 - `por_region` / `por_departamento` / `por_ciudad`: cantidad y % por estado en cada zona (las tablas del modelo).
 - `motivos`: motivo × región, para todos los pedidos y para cada estado (el filtro dinámico por estado).
 - `serie`: la línea de tiempo por fecha de venta: pedidos del día y acumulado, por estado.
+- `entregas`: el tiempo de entrega de los ENTREGADOS (días hábiles desde la venta hasta la FECHA DE ENTREGA del
+  archivo, sin contar los domingos), por zona, en tramos y por día de entrega.
 - `pendientes`: los pedidos EN GESTION con su demora (días hábiles desde la venta hasta el corte, sin contar los
   domingos: la logística no entrega ese día), por zona y en tramos.
 - `vendedores`, `promociones`: el mismo desglose por estado.
@@ -19,11 +21,13 @@ from typing import Any
 from .parser import DEVUELTO, EN_GESTION, ENTREGADO, ESTADOS
 from .proyeccion import proyectar
 
-VERSION_ANALISIS = 3  # v3: la demora se cuenta en días hábiles (sin domingos)
+VERSION_ANALISIS = 4  # v4: tiempo de entrega de los entregados (fecha de entrega − venta) · v3: días hábiles sin domingos
 TRAMOS = (("0-2", 0, 2), ("3-5", 3, 5), ("6-10", 6, 10), ("11+", 11, 10**6))
 REGIONES_ORDEN = ("CENTRAL", "INTERIOR")
 DOMINGO = 6
 METODO_DEMORA = "días hábiles desde la venta hasta el corte, sin contar los domingos"
+METODO_ENTREGA = "días hábiles desde la venta hasta la fecha de entrega del archivo, sin contar los domingos"
+MAX_LISTA_ENTREGAS = 300
 MAX_CIUDADES = 20
 
 
@@ -90,16 +94,26 @@ def analizar(filas: list[dict[str, Any]], fecha_corte: date) -> dict[str, Any]:
     regiones = _orden_regiones(filas)
     corte = fecha_corte.isoformat()
     pedidos: list[dict[str, Any]] = []
+    entrega_invertida = 0
     for f in filas:
         venta = date.fromisoformat(f["fecha"])
-        dias = dias_habiles(venta, fecha_corte)
-        pedidos.append({**f, "dias": dias, "dias_corridos": max(0, (fecha_corte - venta).days), "tramo": _tramo(dias)})
+        entrega = date.fromisoformat(f["fecha_entrega"]) if f.get("fecha_entrega") else None
+        if entrega is not None and entrega < venta:
+            entrega_invertida += 1   # fecha de entrega anterior a la venta: se cuenta 0 (dato del archivo)
+        hasta = entrega if entrega is not None else fecha_corte   # entregado: hasta la entrega; si no, hasta el corte
+        dias = dias_habiles(venta, hasta)
+        pedidos.append({**f, "fecha_entrega": entrega.isoformat() if entrega else None, "hasta": "entrega" if entrega else "corte",
+                        "dias": dias, "dias_corridos": max(0, (hasta - venta).days), "tramo": _tramo(dias)})
     pedidos.sort(key=lambda p: (p["fecha"], p["region"], p["cliente"] or ""))
 
     total = len(pedidos)
     por_estado = Counter(p["estado"] for p in pedidos)
     pendientes = [p for p in pedidos if p["estado"] == EN_GESTION]
     dias_pend = [p["dias"] for p in pendientes]
+    entregados = [p for p in pedidos if p["estado"] == ENTREGADO]
+    con_entrega = [p for p in entregados if p["fecha_entrega"]]
+    dias_entrega = [p["dias"] for p in con_entrega]
+    hay_fecha_entrega = any(p["fecha_entrega"] for p in pedidos)
 
     # Período: el mes con más pedidos (un corte cruza de mes alguna vez).
     meses = Counter(p["fecha"][:7] for p in pedidos)
@@ -112,7 +126,11 @@ def analizar(filas: list[dict[str, Any]], fecha_corte: date) -> dict[str, Any]:
         "entregados": por_estado.get(ENTREGADO, 0), "en_gestion": por_estado.get(EN_GESTION, 0), "devueltos": por_estado.get(DEVUELTO, 0),
         "pct_entregados": _pct(por_estado.get(ENTREGADO, 0), total), "pct_en_gestion": _pct(por_estado.get(EN_GESTION, 0), total),
         "pct_devueltos": _pct(por_estado.get(DEVUELTO, 0), total),
-        "demora": _demora(dias_pend), "metodo_demora": METODO_DEMORA, "vendedores": len({p["vendedor"] for p in pedidos if p["vendedor"]}),
+        "demora": _demora(dias_pend), "metodo_demora": METODO_DEMORA,
+        "entrega": ({**_demora(dias_entrega), "sin_fecha": len(entregados) - len(con_entrega),
+                     "pct_hasta_2": _pct(sum(1 for d in dias_entrega if d <= 2), len(dias_entrega)),
+                     "en_6_o_mas": sum(1 for d in dias_entrega if d >= 6)} if hay_fecha_entrega else None),
+        "metodo_entrega": METODO_ENTREGA if hay_fecha_entrega else None, "vendedores": len({p["vendedor"] for p in pedidos if p["vendedor"]}),
         "regiones": len(regiones), "fuera_de_periodo": sum(n for m, n in meses.items() if m != periodo),
     }
 
@@ -154,6 +172,39 @@ def analizar(filas: list[dict[str, Any]], fecha_corte: date) -> dict[str, Any]:
                            "ciudades": [{"ciudad": c, **_demora([p["dias"] for p in gc])}
                                         for c, gc in sorted(_agrupar(g, "ciudad").items(), key=lambda kv: (-len(kv[1]), kv[0]))]})
         por_zona.append({"region": r, **_demora([p["dias"] for p in pr]), "departamentos": deptos})
+    # Tiempo de entrega de los entregados (fecha de entrega − venta), por zona, en tramos y por día de entrega.
+    entregas_out: dict[str, Any] = {"disponible": hay_fecha_entrega, "metodo": METODO_ENTREGA if hay_fecha_entrega else None,
+                                    "n": len(con_entrega), "sin_fecha": len(entregados) - len(con_entrega)}
+    if hay_fecha_entrega:
+        por_zona_e = []
+        for r in regiones:
+            pr = [p for p in con_entrega if p["region"] == r]
+            if not pr:
+                continue
+            deptos = []
+            for d, g in sorted(_agrupar(pr, "departamento").items(), key=lambda kv: (-len(kv[1]), kv[0])):
+                deptos.append({"departamento": d, **_demora([p["dias"] for p in g]),
+                               "ciudades": [{"ciudad": c, **_demora([p["dias"] for p in gc])}
+                                            for c, gc in sorted(_agrupar(g, "ciudad").items(), key=lambda kv: (-len(kv[1]), kv[0]))]})
+            por_zona_e.append({"region": r, **_demora([p["dias"] for p in pr]), "departamentos": deptos,
+                               "pct_hasta_2": _pct(sum(1 for p in pr if p["dias"] <= 2), len(pr)),
+                               "en_6_o_mas": sum(1 for p in pr if p["dias"] >= 6)})
+        por_dia_e = []
+        for fch, g in sorted(_agrupar(con_entrega, "fecha_entrega").items()):
+            por_dia_e.append({"fecha": fch, "n": len(g), "dias_prom": round(sum(p["dias"] for p in g) / len(g), 1),
+                              "regiones": {r: sum(1 for p in g if p["region"] == r) for r in regiones}})
+        entregas_out.update({
+            **_demora(dias_entrega), "por_zona": por_zona_e, "por_dia": por_dia_e,
+            "pct_hasta_2": _pct(sum(1 for d in dias_entrega if d <= 2), len(dias_entrega)),
+            "en_6_o_mas": sum(1 for d in dias_entrega if d >= 6), "mismo_dia": sum(1 for d in dias_entrega if d == 0),
+            "por_vendedor": sorted(({"vendedor": v, **_demora([p["dias"] for p in g])} for v, g in _agrupar(con_entrega, "vendedor").items()),
+                                   key=lambda x: (-x["n"], x["vendedor"]))[:30],
+            "lista": sorted(({k: p.get(k) for k in ("formulario", "cliente", "documento", "ciudad", "departamento", "region", "fecha",
+                                                     "fecha_entrega", "dias", "dias_corridos", "tramo", "vendedor", "motivo", "promocion", "linea",
+                                                     "estado")} for p in con_entrega),
+                            key=lambda p: (-p["dias"], p["region"], p["cliente"] or ""))[:MAX_LISTA_ENTREGAS],
+        })
+
     motivos_pend = Counter(p["motivo"] for p in pendientes)
     pendientes_out = {
         **_demora(dias_pend), "por_zona": por_zona,
@@ -181,6 +232,13 @@ def analizar(filas: list[dict[str, Any]], fecha_corte: date) -> dict[str, Any]:
     sin_region = sum(1 for p in pedidos if p["region"] == "SIN REGION")
     if sin_region:
         avisos.append(f"{sin_region} pedido(s) sin región.")
+    if not hay_fecha_entrega:
+        avisos.append("El archivo no trae FECHA DE ENTREGA: no se puede medir el tiempo de entrega de los entregados; "
+                      "solo la demora de los pendientes hasta el corte.")
+    elif entregas_out["sin_fecha"]:
+        avisos.append(f"{entregas_out['sin_fecha']} pedido(s) entregado(s) sin fecha de entrega: no entran en el tiempo de entrega.")
+    if entrega_invertida:
+        avisos.append(f"{entrega_invertida} pedido(s) con fecha de entrega anterior a la de venta: se contaron con 0 días.")
 
     return {
         "version": VERSION_ANALISIS, "periodo": periodo, "fecha_corte": corte, "estados": estados, "regiones": regiones,
@@ -188,7 +246,7 @@ def analizar(filas: list[dict[str, Any]], fecha_corte: date) -> dict[str, Any]:
         "por_region": _desglose(pedidos, "region", estados, orden=regiones),
         "por_departamento": _desglose(pedidos, "departamento", estados, extra={"region": "region"}),
         "por_ciudad": _desglose(pedidos, "ciudad", estados, extra={"region": "region", "departamento": "departamento"}, tope=MAX_CIUDADES),
-        "motivos": motivos, "serie": serie, "pendientes": pendientes_out,
+        "motivos": motivos, "serie": serie, "pendientes": pendientes_out, "entregas": entregas_out,
         "vendedores": _desglose(pedidos, "vendedor", estados),
         "promociones": _desglose(pedidos, "promocion", estados),
         "pedidos": pedidos, "avisos": avisos,
@@ -209,7 +267,12 @@ def resumen_para_modelo(data: dict[str, Any]) -> dict[str, Any]:
                 for z in data["pendientes"]["por_zona"]}
     for r in data["regiones"]:
         regiones.setdefault(r, {"n": 0, "dias_prom": None, "dias_max": None, "vencidos_6": 0})
-    return {"pedidos": k["pedidos"], "entregados": k["entregados"], "en_gestion": k["en_gestion"], "devueltos": k["devueltos"],
+    e = data.get("entregas") or {}
+    entrega_regiones = {z["region"]: {"n": z["n"], "dias_prom": z["dias_prom"], "dias_max": z["dias_max"],
+                                      "pct_hasta_2": z.get("pct_hasta_2"), "en_6_o_mas": z.get("en_6_o_mas", 0)}
+                        for z in e.get("por_zona") or []} if e.get("disponible") else None
+    return {"entrega_prom": e.get("dias_prom") if e.get("disponible") else None,
+            "entrega_max": e.get("dias_max") if e.get("disponible") else None, "entrega_regiones": entrega_regiones,"pedidos": k["pedidos"], "entregados": k["entregados"], "en_gestion": k["en_gestion"], "devueltos": k["devueltos"],
             "pct_entregados": k["pct_entregados"] or 0.0, "demora_prom": k["demora"]["dias_prom"], "demora_max": k["demora"]["dias_max"],
             "demora_regiones": regiones, "fecha_dato": k["hasta"], "periodo": data["periodo"], "version": data["version"],
             "proyeccion": (data.get("proyeccion") or {}).get("proyeccion")}

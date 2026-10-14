@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useMemo, useState } from "react";
-import { Area, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   DatosLogistica, Desglose, EN_GESTION, ENTREGADO, Filtro, Motivo, Pedido, PuntoSerie, TRAMOS, colorEstado, diaMes, dias,
   etiquetaEstado, fechaCorta, n, pct,
@@ -46,8 +46,8 @@ export function DemoraPorRegion({ d }: { d: DatosLogistica }) {
   const zonas = d.regiones.map((r) => d.pendientes.por_zona.find((z) => z.region === r) ?? { region: r, n: 0, dias_prom: null, dias_max: null, tramos: {}, departamentos: [] });
   const entregados = (r: string) => d.por_region.find((x) => x.region === r);
   return (
-    <Seccion titulo="Demora de entregas por región" id="demora"
-      sub={<>Pedidos <b>en gestión</b> y los <b>días hábiles</b> que llevan desde la venta hasta el corte del {fechaCorta(d.fecha_corte)} (los domingos no cuentan), por región. Los entregados no traen fecha de entrega en el archivo: su tiempo no se puede medir.</>}>
+    <Seccion titulo="Demora de pendientes por región" id="demora"
+      sub={<>Pedidos <b>en gestión</b> y los <b>días hábiles</b> que llevan desde la venta hasta el corte del {fechaCorta(d.fecha_corte)} (los domingos no cuentan), por región. {d.entregas?.disponible ? <>El tiempo de los ya entregados está arriba, en «Tiempo de entrega por región».</> : <>Los entregados no traen fecha de entrega en el archivo: su tiempo no se puede medir.</>}</>}>
       <div className={`grid gap-3 ${zonas.length > 2 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
         {zonas.map((z) => {
           const e = entregados(z.region);
@@ -76,6 +76,121 @@ export function DemoraPorRegion({ d }: { d: DatosLogistica }) {
             </div>
           );
         })}
+      </div>
+    </Seccion>
+  );
+}
+
+// ------------------------------------------------------------------ tiempo de entrega (entregados: fecha de entrega − venta)
+export function TiempoDeEntrega({ d }: { d: DatosLogistica }) {
+  const e = d.entregas;
+  const [abierto, setAbierto] = useState<string | null>(null);
+  if (!e) return null;
+  if (!e.disponible) {
+    return (
+      <Seccion titulo="Tiempo de entrega por región" id="entregas" sub="Días hábiles desde la venta hasta la entrega de cada pedido entregado (sin contar los domingos).">
+        <div className="text-sm text-brand-slate">El archivo no trae <b>FECHA DE ENTREGA</b>: no se puede medir cuánto tardó cada entrega. Solo se mide la demora de los pedidos en gestión hasta el corte (abajo).</div>
+      </Seccion>
+    );
+  }
+  const Barra = ({ tramos, total }: { tramos: Record<string, number>; total: number }) => (
+    <div className="h-2 rounded-full bg-brand-bg overflow-hidden flex" title={TRAMOS.map((t) => `${t} días: ${tramos[t] ?? 0}`).join(" · ")}>
+      {TRAMOS.map((t) => <div key={t} style={{ width: `${total ? ((tramos[t] ?? 0) / total) * 100 : 0}%`, background: COLOR_TRAMO[t] }} />)}
+    </div>
+  );
+  const zonas = e.por_zona ?? [];
+  const serie = (e.por_dia ?? []).map((x) => ({ ...x, etiqueta: diaMes(x.fecha) }));
+  const colorRegion = (i: number) => ["#00B2BF", "#662483", "#5B6275"][i % 3];
+  return (
+    <Seccion titulo="Tiempo de entrega por región" id="entregas"
+      sub={<>Pedidos <b>entregados</b> y los <b>días hábiles</b> que tardó cada entrega: de la fecha de venta a la <b>fecha de entrega</b> del archivo, sin contar los domingos (vendido el sábado y entregado el lunes: 1 día). {e.sin_fecha > 0 && <>{n(e.sin_fecha)} entregado(s) sin fecha de entrega no entran.</>} Tramos: {TRAMOS.map((t) => <span key={t} className="inline-flex items-center gap-1 ml-2"><span className="w-2 h-2 rounded-full" style={{ background: COLOR_TRAMO[t] }} />{t} días</span>)}</>}>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs mb-4">
+        <div className="rounded-md bg-brand-bg px-3 py-2"><div className="text-brand-slate">Entregas medidas</div><div className="font-display text-2xl text-brand-ink tabular-nums">{n(e.n)}</div></div>
+        <div className="rounded-md bg-brand-bg px-3 py-2"><div className="text-brand-slate">Tiempo promedio</div><div className={`font-display text-2xl tabular-nums ${(e.dias_prom ?? 0) >= 3 ? "text-brand-orange" : "text-brand-ink"}`}>{dias(e.dias_prom)}</div></div>
+        <div className="rounded-md bg-brand-bg px-3 py-2"><div className="text-brand-slate">Entrega más lenta</div><div className="font-display text-2xl text-brand-ink tabular-nums">{dias(e.dias_max)}</div></div>
+        <div className="rounded-md bg-brand-bg px-3 py-2"><div className="text-brand-slate">Mismo día</div><div className="font-display text-2xl text-brand-ink tabular-nums">{n(e.mismo_dia)} <span className="text-xs font-sans text-brand-slate">({pct(e.n ? Math.round(((e.mismo_dia ?? 0) * 1000) / e.n) / 10 : null)})</span></div></div>
+        <div className="rounded-md bg-brand-bg px-3 py-2"><div className="text-brand-slate">En 2 días o menos</div><div className="font-display text-2xl text-brand-cyan tabular-nums">{pct(e.pct_hasta_2)}</div>{(e.en_6_o_mas ?? 0) > 0 && <div className="text-brand-primary font-semibold">{n(e.en_6_o_mas)} tardaron 6 días o más</div>}</div>
+      </div>
+      <div className={`grid gap-3 mb-4 ${zonas.length > 2 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+        {zonas.map((z) => {
+          const lento = (z.dias_prom ?? 0) >= 3 || z.en_6_o_mas > 0;
+          return (
+            <div key={z.region} className={`rounded-lg border p-4 ${lento ? "border-brand-orange/50 bg-brand-orange/5" : "border-brand-border bg-white"}`}>
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="font-display text-xl uppercase text-brand-ink">{z.region}</div>
+                <div className="text-xs text-brand-slate">{n(z.n)} entregas · <b className="text-brand-graphite">{pct(z.pct_hasta_2)}</b> en 2 días o menos</div>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <div><div className="text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold">Entregas</div><div className="font-display text-2xl text-brand-ink tabular-nums">{n(z.n)}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold">Tiempo prom.</div><div className={`font-display text-2xl tabular-nums ${(z.dias_prom ?? 0) >= 3 ? "text-brand-orange" : "text-brand-ink"}`}>{dias(z.dias_prom)}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold">Máximo</div><div className="font-display text-2xl text-brand-ink tabular-nums">{dias(z.dias_max)}</div></div>
+              </div>
+              {z.n > 0 && (
+                <>
+                  <div className="mt-3"><Barra tramos={z.tramos} total={z.n} /></div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-brand-slate">
+                    {TRAMOS.map((t) => <span key={t} className="inline-flex items-center gap-1 tabular-nums"><span className="w-2 h-2 rounded-full" style={{ background: COLOR_TRAMO[t] }} />{t} d: <b className="text-brand-graphite">{n(z.tramos[t] ?? 0)}</b></span>)}
+                    {z.en_6_o_mas > 0 && <span className="ml-auto rounded-full bg-brand-primary-light text-brand-primary-dark px-2 font-semibold">{n(z.en_6_o_mas)} de 6 días o más</span>}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="overflow-x-auto -mx-5 px-5 mb-4">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
+            <th className="py-2 pr-3">Zona</th><th className="py-2 px-3 text-right">Entregas</th><th className="py-2 px-3 text-right">Prom.</th><th className="py-2 px-3 text-right">Máx.</th>
+            {TRAMOS.map((t) => <th key={t} className="py-2 px-3 text-right">{t} d</th>)}<th className="py-2 pl-3 w-44">Tiempo</th>
+          </tr></thead>
+          <tbody>
+            {zonas.map((z) => (
+              <Fragmento key={z.region}>
+                <tr className="border-b border-brand-border/60 bg-brand-bg-soft cursor-pointer" onClick={() => setAbierto(abierto === z.region ? null : z.region)}>
+                  <td className="py-2 pr-3 font-semibold text-brand-ink">{abierto === z.region ? "▾" : "▸"} {z.region}</td>
+                  <td className="py-2 px-3 text-right tabular-nums font-semibold">{n(z.n)}</td><td className="py-2 px-3 text-right tabular-nums">{dias(z.dias_prom)}</td><td className="py-2 px-3 text-right tabular-nums">{dias(z.dias_max)}</td>
+                  {TRAMOS.map((t) => <td key={t} className="py-2 px-3 text-right tabular-nums">{n(z.tramos[t])}</td>)}
+                  <td className="py-2 pl-3"><Barra tramos={z.tramos} total={z.n} /></td>
+                </tr>
+                {abierto === z.region && z.departamentos.map((dep) => (
+                  <tr key={dep.departamento} className="border-b border-brand-border/40">
+                    <td className="py-1.5 pr-3 pl-6 text-brand-graphite">{dep.departamento} <span className="text-xs text-brand-slate">· {dep.ciudades.map((c) => `${c.ciudad} (${c.n}, ${dias(c.dias_prom)})`).join(", ")}</span></td>
+                    <td className="py-1.5 px-3 text-right tabular-nums">{n(dep.n)}</td><td className="py-1.5 px-3 text-right tabular-nums">{dias(dep.dias_prom)}</td><td className="py-1.5 px-3 text-right tabular-nums">{dias(dep.dias_max)}</td>
+                    {TRAMOS.map((t) => <td key={t} className="py-1.5 px-3 text-right tabular-nums">{n(dep.tramos[t])}</td>)}
+                    <td className="py-1.5 pl-3"><Barra tramos={dep.tramos} total={dep.n} /></td>
+                  </tr>
+                ))}
+              </Fragmento>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold mb-1.5">Entregas por día de entrega</div>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={serie} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                <CartesianGrid stroke="#E5E7EB" vertical={false} />
+                <XAxis dataKey="etiqueta" tick={EJE} tickLine={false} axisLine={{ stroke: "#E5E7EB" }} />
+                <YAxis tick={EJE} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip content={({ active, payload }) => (active && payload?.length ? (
+                  <div className="rounded-md border border-brand-border bg-white shadow-elevated px-3 py-2 text-xs">
+                    <div className="font-semibold text-brand-ink mb-1">{fechaCorta(payload[0].payload.fecha)} · {n(payload[0].payload.n)} entregas · {dias(payload[0].payload.dias_prom)} prom.</div>
+                    {d.regiones.map((r) => <div key={r} className="flex justify-between gap-4"><span>{r}</span><b className="tabular-nums">{n(payload[0].payload.regiones?.[r])}</b></div>)}
+                  </div>
+                ) : null)} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                {d.regiones.map((r, i) => <Bar key={r} dataKey={`regiones.${r}`} name={r} stackId="e" fill={colorRegion(i)} radius={i === d.regiones.length - 1 ? [4, 4, 0, 0] : undefined} maxBarSize={28} />)}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold mb-1.5">Las entregas más lentas</div>
+          <TablaPedidos pedidos={e.lista ?? []} conDias compacta />
+        </div>
       </div>
     </Seccion>
   );
@@ -357,12 +472,13 @@ export function TablaPedidos({ pedidos, conDias = true, compacta = false, estado
   const [ver, setVer] = useState(compacta ? 15 : 50);
   if (!pedidos.length) return <div className="text-sm text-brand-mist py-3">Sin pedidos.</div>;
   const lista = pedidos.slice(0, ver);
+  const conEntrega = pedidos.some((p) => p.fecha_entrega);
   return (
     <div className="overflow-x-auto -mx-5 px-5">
       <table className="w-full text-xs min-w-[760px]">
         <thead><tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
           <th className="py-1.5 pr-2">Formulario</th><th className="py-1.5 pr-2">Cliente</th><th className="py-1.5 pr-2">Ciudad</th><th className="py-1.5 pr-2">Región</th>
-          <th className="py-1.5 pr-2">Venta</th>{conDias && <th className="py-1.5 pr-2 text-right" title="Días hábiles desde la venta hasta el corte, sin contar los domingos">Días háb.</th>}{estados && <th className="py-1.5 pr-2">Estado</th>}<th className="py-1.5 pr-2">Motivo</th><th className="py-1.5 pr-2">Vendedor</th><th className="py-1.5">Promoción</th>
+          <th className="py-1.5 pr-2">Venta</th>{conEntrega && <th className="py-1.5 pr-2">Entrega</th>}{conDias && <th className="py-1.5 pr-2 text-right" title="Días hábiles sin domingos: entregados, de la venta a la entrega; en gestión, de la venta al corte">Días háb.</th>}{estados && <th className="py-1.5 pr-2">Estado</th>}<th className="py-1.5 pr-2">Motivo</th><th className="py-1.5 pr-2">Vendedor</th><th className="py-1.5">Promoción</th>
         </tr></thead>
         <tbody>
           {lista.map((p, i) => (
@@ -372,7 +488,8 @@ export function TablaPedidos({ pedidos, conDias = true, compacta = false, estado
               <td className="py-1.5 pr-2">{p.ciudad ?? "—"}<div className="text-brand-slate">{p.departamento ?? ""}</div></td>
               <td className="py-1.5 pr-2">{p.region}</td>
               <td className="py-1.5 pr-2 tabular-nums whitespace-nowrap">{fechaCorta(p.fecha)}</td>
-              {conDias && <td className={`py-1.5 pr-2 text-right tabular-nums font-semibold ${p.dias >= 11 ? "text-brand-purple" : p.dias >= 6 ? "text-brand-primary" : p.dias >= 3 ? "text-brand-orange" : ""}`}><span title={p.dias_corridos !== undefined ? `${n(p.dias_corridos)} días corridos` : undefined}>{p.estado === EN_GESTION ? n(p.dias) : <span className="text-brand-mist font-normal">{n(p.dias)}</span>}</span></td>}
+              {conEntrega && <td className="py-1.5 pr-2 tabular-nums whitespace-nowrap">{p.fecha_entrega ? fechaCorta(p.fecha_entrega) : <span className="text-brand-mist">—</span>}</td>}
+              {conDias && <td className={`py-1.5 pr-2 text-right tabular-nums font-semibold ${p.dias >= 11 ? "text-brand-purple" : p.dias >= 6 ? "text-brand-primary" : p.dias >= 3 ? "text-brand-orange" : ""}`}><span title={`${p.hasta === "entrega" ? "de la venta a la entrega" : "de la venta al corte"}${p.dias_corridos !== undefined ? ` · ${n(p.dias_corridos)} días corridos` : ""}`}>{p.estado === EN_GESTION || p.hasta === "entrega" ? n(p.dias) : <span className="text-brand-mist font-normal">{n(p.dias)}</span>}</span></td>}
               {estados && <td className="py-1.5 pr-2"><span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="w-2 h-2 rounded-full" style={{ background: colorEstado(p.estado, estados) }} />{etiquetaEstado(p.estado)}</span></td>}
               <td className="py-1.5 pr-2">{p.motivo}</td>
               <td className="py-1.5 pr-2">{p.vendedor ?? "—"}</td>
@@ -395,7 +512,7 @@ export function DataCompleta({ d, filtro }: { d: DatosLogistica; filtro: Filtro 
       (!t || [p.formulario, p.cliente, p.documento, p.ciudad, p.departamento, p.vendedor, p.motivo, p.promocion, p.linea].some((v) => (v ?? "").toUpperCase().includes(t))));
   }, [d.pedidos, filtro, region, q]);
   const descargar = () => {
-    const cols = ["formulario", "linea", "documento", "cliente", "ciudad", "departamento", "region", "fecha", "vendedor", "promocion", "estado", "motivo", "dias"] as const;
+    const cols = ["formulario", "linea", "documento", "cliente", "ciudad", "departamento", "region", "fecha", "fecha_entrega", "vendedor", "promocion", "estado", "motivo", "dias", "dias_corridos"] as const;
     const esc = (v: unknown) => { const s = v === null || v === undefined ? "" : String(v); return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const csv = "﻿" + [cols.join(";"), ...filas.map((p) => cols.map((c) => esc(p[c])).join(";"))].join("\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); a.download = `logistica_${d.periodo}_${filtro === "todos" ? "todos" : filtro.toLowerCase().replace(" ", "_")}.csv`; a.click(); URL.revokeObjectURL(a.href);

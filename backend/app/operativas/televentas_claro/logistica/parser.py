@@ -30,6 +30,7 @@ ALIAS: dict[str, tuple[str, ...]] = {
     "departamento": ("DEPARTAMENTO", "DEPTO", "DPTO"),
     "region": ("REGION", "ZONA"),
     "fecha": ("FECHA VENTA", "FECHA DE VENTA", "FECHA", "FECHA PEDIDO"),
+    "fecha_entrega": ("FECHA DE ENTREGA", "FECHA ENTREGA", "FECHA ENTREGADO", "FECHA DE ENTREGADO", "ENTREGADO EL", "FECHA DE ENTREGA REAL"),
     "vendedor": ("VEN NOMBRE COMPLETO", "VENDEDOR", "VENDEDOR NOMBRE", "ASESOR", "VEN NOMBRE"),
     "promocion": ("PROMOCION", "PROMO", "CAMPANIA", "CAMPANA"),
     "estado": ("ESTADO", "ESTADO ENTREGA", "ESTADO PEDIDO"),
@@ -111,14 +112,24 @@ def parse_logistica(contenido: bytes) -> dict[str, Any]:
         wb = load_workbook(io.BytesIO(contenido), read_only=True, data_only=True)
     except Exception as exc:  # noqa: BLE001
         raise ArchivoInvalido("No se pudo abrir el archivo. Debe ser un .xlsx de Excel válido.") from exc
+    # La hoja de pedidos es la primera que tiene la fila de encabezados: el archivo puede traer antes una hoja
+    # «resumen» con tablas dinámicas (como el corte de octubre 2026).
     try:
-        ws = wb.worksheets[0]
-        filas = [tuple(r) for r in ws.iter_rows(values_only=True)]
+        hojas = [(ws.title, [tuple(r) for r in ws.iter_rows(values_only=True)]) for ws in wb.worksheets]
     finally:
         wb.close()
-    if not filas:
-        raise ArchivoInvalido("El archivo está vacío.")
-    i, idx = _encabezado(filas)
+    titulo, filas, i, idx = None, [], 0, {}
+    for titulo, filas in hojas:
+        try:
+            i, idx = _encabezado(filas)
+            break
+        except ArchivoInvalido:
+            continue
+    else:
+        if not any(filas for _, filas in hojas):
+            raise ArchivoInvalido("El archivo está vacío.")
+        raise ArchivoInvalido("No es el archivo de pedidos de logística: ninguna hoja tiene la fila de encabezados con "
+                              "«ESTADO» y «Fecha Venta» (o «Nro. Formulario»).")
     faltan = [ETIQUETA[c] for c in OBLIGATORIAS if c not in idx]
     if faltan:
         raise ArchivoInvalido("Faltan columnas obligatorias: " + ", ".join(faltan) + ".")
@@ -144,10 +155,10 @@ def parse_logistica(contenido: bytes) -> dict[str, Any]:
             "cliente": _texto(celda("cliente")), "ciudad": _texto(celda("ciudad")), "departamento": _texto(celda("departamento")),
             "region": _texto(celda("region")) or "SIN REGION", "fecha": fecha, "vendedor": _texto(celda("vendedor")),
             "promocion": _texto(celda("promocion")), "estado": estado or "SIN ESTADO", "motivo": motivo or estado or "SIN MOTIVO",
-            "motivo_informado": bool(motivo),
+            "motivo_informado": bool(motivo), "fecha_entrega": _fecha(celda("fecha_entrega")),
         })
         if len(out) > MAX_FILAS:
             raise ArchivoInvalido(f"El archivo tiene más de {MAX_FILAS} pedidos.")
     if not out:
         raise ArchivoInvalido("El archivo no tiene filas de pedidos con fecha de venta.")
-    return {"filas": out, "columnas": sorted(idx), "hoja": ws.title, "sin_fecha": sin_fecha}
+    return {"filas": out, "columnas": sorted(idx), "hoja": titulo, "sin_fecha": sin_fecha}
