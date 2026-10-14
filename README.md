@@ -1168,8 +1168,12 @@ Código en `backend/app/operativas/televentas_claro/logistica/` y pantallas en `
 - **Demora por región de un vistazo**: la lista muestra, por corte, la demora promedio y máxima de los pendientes y
   cuántos llevan 6 días o más, discriminado Central / Interior (`demora_regiones`, desnormalizado en el informe);
   el informe abre con una tarjeta por región (pendientes, promedio, máximo, tramos y % entregados).
-- **Pantalla**: KPIs (con el tiempo de entrega y la demora de pendientes por región), **Tiempo de entrega por región**
-  (tarjetas por región, zona desplegable, entregas por día y las más lentas), **filtro dinámico por estado** (Todos ·
+- **Pantalla**: KPIs (con el tiempo de entrega y la demora de pendientes por región; sus enlaces bajan a la sección en
+  la misma página), **Tiempo de entrega por región** (tarjetas por región, zona desplegable, entregas por día y las
+  más lentas), **ver los pedidos en detalle por zona**: en las tablas de pendientes y de entregas, un clic en una
+  región, un departamento, una ciudad o un tramo de días deja en la lista solo esos pedidos (del más demorado al más
+  nuevo, con formulario, línea, cliente, vendedor y motivo), con atajos «6 días o más» y «11 o más» y «Ver todos»;
+  las tarjetas de región tienen «Ver los pedidos pendientes» y «Solo los de 6 días o más», **filtro dinámico por estado** (Todos ·
   Entregado · En gestión · Devuelto) que recorta todas las secciones, tablas con conmutador cantidad/%, gráfico de línea de tiempo (Recharts), pendientes desplegables por
   zona, vendedores y la data completa con búsqueda, filtro por región y descarga CSV.
 - **Publicación**: misma lógica que Ventas Netas: `draft` → `published` (uno por mes; reemplazar pide confirmación y

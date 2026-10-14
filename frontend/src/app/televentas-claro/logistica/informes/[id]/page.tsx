@@ -5,7 +5,8 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { KpiCard } from "@/components/KpiCard";
-import { DataCompleta, DemoraPorRegion, EstadoPorZona, FiltroEstado, LineaTiempo, Motivos, Pendientes, ProyeccionFinDeMes, TiempoDeEntrega, Vendedores } from "@/components/logistica/Bloques";
+import { DataCompleta, DemoraPorRegion, EstadoPorZona, FiltroEstado, LineaTiempo, Motivos, Pendientes, ProyeccionFinDeMes, TiempoDeEntrega, Vendedores, type Foco } from "@/components/logistica/Bloques";
+import { irASeccion } from "@/components/KpiCard";
 import { usePublicarLogistica } from "@/components/logistica/PublicarLogistica";
 import {
   EN_GESTION, ESTADO_LABEL, LOG_API, LOG_HREF, VERSION_ANALISIS, dias, fechaCorta, fechaHora, n, nombrePeriodo, pct,
@@ -29,7 +30,14 @@ function Informe() {
   const [r, setR] = useState<InformeDetalle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [foco, setFoco] = useState<Foco | null>(null);
   const [recalculando, setRecalculando] = useState(false);
+  // Desde una tarjeta de región: muestra esos pendientes y baja hasta la lista (si el filtro los escondía, lo abre).
+  const verPedidos = (f: Foco) => {
+    if (filtro !== "todos" && filtro !== EN_GESTION) setFiltro(EN_GESTION);
+    setFoco(f);
+    window.setTimeout(() => irASeccion("pendientes-lista", 140), 50);
+  };
 
   const load = useCallback(async () => {
     try { setR(await apiFetch<InformeDetalle>(`${LOG_API}/informes/${id}`)); } catch (e: any) { setError(e.message); }
@@ -97,7 +105,7 @@ function Informe() {
 
       <div className="mb-5"><ProyeccionFinDeMes d={d} /></div>
       <div className="mb-5"><TiempoDeEntrega d={d} /></div>
-      <div className="mb-5"><DemoraPorRegion d={d} /></div>
+      <div className="mb-5"><DemoraPorRegion d={d} onVerPedidos={verPedidos} /></div>
 
       <div className="card p-3 mb-5 sticky top-[64px] z-20">
         <FiltroEstado estados={d.estados} valor={filtro} onChange={setFiltro} kpis={k} />
@@ -107,7 +115,7 @@ function Informe() {
         <EstadoPorZona d={d} filtro={filtro} />
         <LineaTiempo d={d} filtro={filtro} />
         <Motivos d={d} filtro={filtro} />
-        {(filtro === "todos" || filtro === EN_GESTION) && <Pendientes d={d} />}
+        {(filtro === "todos" || filtro === EN_GESTION) && <Pendientes d={d} foco={foco} onFoco={setFoco} />}
         <Vendedores d={d} filtro={filtro} />
         <DataCompleta d={d} filtro={filtro} />
       </div>
