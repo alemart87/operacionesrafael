@@ -64,8 +64,23 @@ async def informe(db: AsyncSession, valor: Any) -> Optional[Auditoria]:
     return a
 
 
+def alcance_de(a: Auditoria) -> str:
+    """Las fuentes del informe por tipo, en una línea: «Ventas Netas: sep 2026 corte 22/09 · Logística: … · Supervisión: …»."""
+    from ..operativas.televentas_claro.auditoria.fuentes import TIPOS, VENTAS_NETAS
+
+    por_tipo: dict[str, list[str]] = {}
+    for f in a.fuentes or []:
+        tipo = f.get("tipo") or VENTAS_NETAS
+        por_tipo.setdefault(tipo, []).append(str(f.get("etiqueta") or f.get("periodo") or f.get("id") or ""))
+    partes = []
+    for tipo, items in por_tipo.items():
+        nombre = TIPOS.get(tipo, {}).get("nombre", tipo)
+        partes.append(f"{nombre}: " + ", ".join(items[:6]) + (f" y {len(items) - 6} más" if len(items) > 6 else ""))
+    return " · ".join(partes) or "sin fuentes"
+
+
 def _destino(a: Auditoria) -> dict[str, Any]:
-    return {"auditoria_id": a.id, "codigo": a.codigo, "titulo": a.titulo, "estado": a.status}
+    return {"auditoria_id": a.id, "codigo": a.codigo, "titulo": a.titulo, "estado": a.status, "alcance": alcance_de(a)}
 
 
 async def activar(db: AsyncSession, conv: AsistenteConversacion, user: CurrentUser, auditoria: Any = None, *,
@@ -84,7 +99,7 @@ async def activar(db: AsyncSession, conv: AsistenteConversacion, user: CurrentUs
                              "o en revisión (o reabrilo).")
         destino = _destino(a)
     elif conservar_destino and previo.get("auditoria_id"):
-        destino = {k: previo.get(k) for k in ("auditoria_id", "codigo", "titulo", "estado")}
+        destino = {k: previo.get(k) for k in ("auditoria_id", "codigo", "titulo", "estado", "alcance") if k in previo}
     nuevo = {"activo": True, **destino, "desde": previo.get("desde") or datetime.now(timezone.utc).isoformat(), "por": por}
     conv.investigacion = nuevo
     return nuevo
@@ -131,9 +146,10 @@ async def activar_informe(db: AsyncSession, conv: AsistenteConversacion, user: C
 
 
 POSTURA = (
-    "  Postura de auditor: escéptico, incisivo y RÁPIDO. Lo primero son las netas y las cargas de Ventas Netas: empezá "
-    "con alertas_del_corte (un solo llamado: último corte publicado con críticos, datos llamativos y hallazgos "
-    "automáticos). Si el contexto lo amerita (una evolución o una concentración en pocos días o vendedores que una "
+    "  Postura de auditor: escéptico, incisivo y RÁPIDO. Si hay informe destino, lo primero son SUS datos congelados: "
+    "datos_de_auditoria (resumen y después la sección que haga falta: ventas_netas, cruce o cada módulo incluido). Si no "
+    "hay informe destino, empezá por las netas y las cargas con alertas_del_corte (un solo llamado: último corte "
+    "publicado con críticos, datos llamativos y hallazgos automáticos). Si el contexto lo amerita (una evolución o una concentración en pocos días o vendedores que una "
     "imagen explica mejor que una cifra) acompañá con un gráfico de netas o cargas en el lienzo; si alcanza con las "
     "cifras, no lo hagas. Después, solo si el usuario quiere profundizar, "
     "ventas_del_mes (líneas, cargas por día, un vendedor), el centro de comandos o los tickets. Respondé corto: una "
@@ -177,7 +193,10 @@ def contexto_lineas(inv: Optional[dict[str, Any]], *, puede: bool = False, puede
                 f"/televentas-claro/informe-diario/{inv.get('informe_id')}.", POSTURA_INFORME]
     if inv.get("auditoria_id"):
         destino = (f"Informe destino: {inv.get('codigo')} «{inv.get('titulo')}» "
-                   f"({ESTADO_TEXTO.get(inv.get('estado') or '', inv.get('estado') or '')}).")
+                   f"({ESTADO_TEXTO.get(inv.get('estado') or '', inv.get('estado') or '')}). "
+                   f"Fuentes elegidas por el auditor (datos congelados): {inv.get('alcance') or 'ver datos_de_auditoria'}. "
+                   "Leelas con datos_de_auditoria (una sección por llamado); las herramientas por módulo son para ampliar "
+                   "con datos vivos, y si el auditor quiere sumar una fuente al informe, decile que la agregue desde Riesgos.")
     else:
         destino = ("Sin informe destino todavía: antes de proponer evidencia preguntale a qué informe va (consultá "
                    "auditorias_de_ventas) o ofrecé prepararlo con preparar_auditoria.")

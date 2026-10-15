@@ -302,13 +302,13 @@ def test_facturacion_solo_para_superadmin_y_sub_gerente():
     for rol in ("coordinador", "controller", "analista", "auditor", "cliente"):
         u = _usuario(rol, sorted(set(DEFAULT_PERMISSIONS.get(rol, [])) | {f"{TC}.asistente"}))
         assert not FACTURACION & {h.nombre for h in para_usuario(u, modo(u))}, rol
-    # Aunque un perfil restringido tuviera el permiso en la base, el modo auditoría no la da.
+    # Aunque un perfil restringido tuviera el permiso en la base, no vale: Facturación no se le puede dar al auditor.
     aud = _usuario("auditor", [*DEFAULT_PERMISSIONS["auditor"], f"{TC}.facturacion"])
-    assert not FACTURACION & {h.nombre for h in para_usuario(aud, "auditor")}
+    assert not FACTURACION & {h.nombre for h in para_usuario(aud, modo(aud))}
     # La habilidad de Facturación sigue el mismo permiso.
     assert sesiones._habilidad_permitida("voi-facturacion", _usuario("sub_gerente"), "gestion")
     assert not sesiones._habilidad_permitida("voi-facturacion", _usuario("coordinador"), "gestion")
-    assert not sesiones._habilidad_permitida("voi-facturacion", aud, "auditor")
+    assert not sesiones._habilidad_permitida("voi-facturacion", aud, modo(aud))
     assert "voi-facturacion" in {h.nombre for h in definicion.habilidades()}
 
 

@@ -517,6 +517,10 @@ class ClienteSimulado:
                                 "evidencia del informe."}),
                     ("mensaje", _final_modo)]
         # En modo auditor, el barrido empieza siempre por el corte de Ventas Netas (un solo llamado).
+        if "MODO AUDITOR ACTIVO" in s.contexto and "datos_de_auditoria" in h and "Informe destino:" in s.contexto \
+                and re.search(r"\b(fuente|dato|congelad|logistic|productividad|sph|supervisi|informe diario|cruce)", n):
+            seccion = next((x for x in ("productividad", "sph", "logistica", "supervision", "informe_diario", "cruce") if x.replace("_", " ") in n or x in n), "resumen")
+            return [("herramienta", "datos_de_auditoria", {"seccion": seccion}), ("mensaje", _final)]
         if "MODO AUDITOR ACTIVO" in s.contexto and "alertas_del_corte" in h and "lienzo" not in n and "grafic" not in n \
                 and "tablero" not in n and (RE_INVESTIGA.search(n) or re.search(r"barrido|alerta|critic|que (esta|hay)|por donde", n)):
             return [("herramienta", "alertas_del_corte", {}), ("mensaje", _final)]

@@ -1,6 +1,7 @@
 "use client";
 
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
+import { irASeccion } from "@/components/KpiCard";
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   DatosLogistica, Desglose, EN_GESTION, ENTREGADO, Filtro, Motivo, Pedido, PuntoSerie, TRAMOS, colorEstado, diaMes, dias,
@@ -8,6 +9,42 @@ import {
 } from "./tipos";
 
 const EJE = { fontSize: 11, fill: "#5B6275" };
+
+/** Qué pedidos mirar en detalle: una zona (región → departamento → ciudad) y, opcionalmente, un tramo de días. */
+export interface Foco { region?: string; departamento?: string; ciudad?: string; tramo?: string; minimo?: number }
+
+function enFoco(p: Pedido, f: Foco | null): boolean {
+  if (!f) return true;
+  if (f.region && p.region !== f.region) return false;
+  if (f.departamento && (p.departamento ?? "—") !== f.departamento) return false;
+  if (f.ciudad && (p.ciudad ?? "—") !== f.ciudad) return false;
+  if (f.tramo && p.tramo !== f.tramo) return false;
+  if (f.minimo !== undefined && p.dias < f.minimo) return false;
+  return true;
+}
+
+function etiquetaFoco(f: Foco | null): string {
+  if (!f) return "";
+  const zona = [f.region, f.departamento, f.ciudad].filter(Boolean).join(" · ");
+  const dias = f.tramo ? `${f.tramo} días` : f.minimo !== undefined ? `${f.minimo} días o más` : "";
+  return [zona, dias].filter(Boolean).join(" · ");
+}
+
+/** La zona o el tramo elegido, con el botón para volver a ver todo. */
+function ChipsFoco({ foco, onChange, total, filtrados, nombre, verTodos }: { foco: Foco | null; onChange: (f: Foco | null) => void; total: number; filtrados: number; nombre: string; verTodos: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
+      {foco ? (
+        <>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-ink text-white px-3 py-1 font-semibold">{etiquetaFoco(foco)} <span className="text-white/70 tabular-nums">{n(filtrados)} de {n(total)}</span></span>
+          <button type="button" className="rounded-full border border-brand-border bg-white px-3 py-1 font-semibold text-brand-graphite hover:border-brand-slate" onClick={() => onChange(null)}>{verTodos}</button>
+        </>
+      ) : (
+        <span className="text-brand-slate">{n(total)} {nombre} · hacé clic en una zona, un departamento o un tramo para ver solo esos pedidos.</span>
+      )}
+    </div>
+  );
+}
 
 export function Seccion({ titulo, sub, accion, children, id }: { titulo: string; sub?: ReactNode; accion?: ReactNode; children: ReactNode; id?: string }) {
   return (
@@ -42,7 +79,7 @@ export function FiltroEstado({ estados, valor, onChange, kpis }: { estados: stri
 // ------------------------------------------------------------------ demora por región, de un vistazo
 const COLOR_TRAMO: Record<string, string> = { "0-2": "#00B2BF", "3-5": "#F39200", "6-10": "#E6332A", "11+": "#662483" };
 
-export function DemoraPorRegion({ d }: { d: DatosLogistica }) {
+export function DemoraPorRegion({ d, onVerPedidos }: { d: DatosLogistica; onVerPedidos?: (foco: Foco) => void }) {
   const zonas = d.regiones.map((r) => d.pendientes.por_zona.find((z) => z.region === r) ?? { region: r, n: 0, dias_prom: null, dias_max: null, tramos: {}, departamentos: [] });
   const entregados = (r: string) => d.por_region.find((x) => x.region === r);
   return (
@@ -71,6 +108,12 @@ export function DemoraPorRegion({ d }: { d: DatosLogistica }) {
                     {TRAMOS.map((t) => <span key={t} className="inline-flex items-center gap-1 tabular-nums"><span className="w-2 h-2 rounded-full" style={{ background: COLOR_TRAMO[t] }} />{t} d: <b className="text-brand-graphite">{n(z.tramos[t] ?? 0)}</b></span>)}
                     {vencidos > 0 && <span className="ml-auto rounded-full bg-brand-primary-light text-brand-primary-dark px-2 font-semibold">{n(vencidos)} con 6 días o más</span>}
                   </div>
+                  {onVerPedidos && (
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold print:hidden">
+                      <button type="button" className="text-brand-primary hover:underline" onClick={() => onVerPedidos({ region: z.region })}>Ver los {n(z.n)} pedidos pendientes ↓</button>
+                      {vencidos > 0 && <button type="button" className="text-brand-primary-dark hover:underline" onClick={() => onVerPedidos({ region: z.region, minimo: 6 })}>Solo los de 6 días o más ↓</button>}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -85,6 +128,8 @@ export function DemoraPorRegion({ d }: { d: DatosLogistica }) {
 export function TiempoDeEntrega({ d }: { d: DatosLogistica }) {
   const e = d.entregas;
   const [abierto, setAbierto] = useState<string | null>(null);
+  const [foco, setFoco] = useState<Foco | null>(null);
+  const listaE = useMemo(() => (e?.lista ?? []).filter((p) => enFoco(p, foco)), [e, foco]);
   if (!e) return null;
   if (!e.disponible) {
     return (
@@ -147,18 +192,18 @@ export function TiempoDeEntrega({ d }: { d: DatosLogistica }) {
           <tbody>
             {zonas.map((z) => (
               <Fragmento key={z.region}>
-                <tr className="border-b border-brand-border/60 bg-brand-bg-soft cursor-pointer" onClick={() => setAbierto(abierto === z.region ? null : z.region)}>
-                  <td className="py-2 pr-3 font-semibold text-brand-ink">{abierto === z.region ? "▾" : "▸"} {z.region}</td>
-                  <td className="py-2 px-3 text-right tabular-nums font-semibold">{n(z.n)}</td><td className="py-2 px-3 text-right tabular-nums">{dias(z.dias_prom)}</td><td className="py-2 px-3 text-right tabular-nums">{dias(z.dias_max)}</td>
-                  {TRAMOS.map((t) => <td key={t} className="py-2 px-3 text-right tabular-nums">{n(z.tramos[t])}</td>)}
-                  <td className="py-2 pl-3"><Barra tramos={z.tramos} total={z.n} /></td>
+                <tr className={`border-b border-brand-border/60 cursor-pointer ${foco?.region === z.region && !foco.departamento ? "bg-brand-cyan/10" : "bg-brand-bg-soft"}`} title="Ver las entregas de esta región">
+                  <td className="py-2 pr-3 font-semibold text-brand-ink"><button type="button" className="mr-1 text-brand-slate" aria-label="Desplegar departamentos" onClick={() => setAbierto(abierto === z.region ? null : z.region)}>{abierto === z.region ? "▾" : "▸"}</button><span onClick={() => { setAbierto(z.region); setFoco({ region: z.region }); }}>{z.region}</span></td>
+                  <td className="py-2 px-3 text-right tabular-nums font-semibold" onClick={() => setFoco({ region: z.region })}>{n(z.n)}</td><td className="py-2 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region })}>{dias(z.dias_prom)}</td><td className="py-2 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region })}>{dias(z.dias_max)}</td>
+                  {TRAMOS.map((t) => <td key={t} className="py-2 px-3 text-right tabular-nums hover:text-brand-primary" title={`Ver las entregas de ${t} días`} onClick={() => setFoco({ region: z.region, tramo: t })}>{n(z.tramos[t])}</td>)}
+                  <td className="py-2 pl-3" onClick={() => setFoco({ region: z.region })}><Barra tramos={z.tramos} total={z.n} /></td>
                 </tr>
                 {abierto === z.region && z.departamentos.map((dep) => (
-                  <tr key={dep.departamento} className="border-b border-brand-border/40">
-                    <td className="py-1.5 pr-3 pl-6 text-brand-graphite">{dep.departamento} <span className="text-xs text-brand-slate">· {dep.ciudades.map((c) => `${c.ciudad} (${c.n}, ${dias(c.dias_prom)})`).join(", ")}</span></td>
-                    <td className="py-1.5 px-3 text-right tabular-nums">{n(dep.n)}</td><td className="py-1.5 px-3 text-right tabular-nums">{dias(dep.dias_prom)}</td><td className="py-1.5 px-3 text-right tabular-nums">{dias(dep.dias_max)}</td>
-                    {TRAMOS.map((t) => <td key={t} className="py-1.5 px-3 text-right tabular-nums">{n(dep.tramos[t])}</td>)}
-                    <td className="py-1.5 pl-3"><Barra tramos={dep.tramos} total={dep.n} /></td>
+                  <tr key={dep.departamento} className={`border-b border-brand-border/40 cursor-pointer ${foco?.departamento === dep.departamento ? "bg-brand-cyan/10" : ""}`} title="Ver las entregas de este departamento">
+                    <td className="py-1.5 pr-3 pl-6 text-brand-graphite" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}>{dep.departamento} <span className="text-xs text-brand-slate">· {dep.ciudades.map((c) => <button key={c.ciudad} type="button" className="hover:text-brand-primary hover:underline mr-1" onClick={(ev) => { ev.stopPropagation(); setFoco({ region: z.region, departamento: dep.departamento, ciudad: c.ciudad }); }}>{c.ciudad} ({c.n}, {dias(c.dias_prom)})</button>)}</span></td>
+                    <td className="py-1.5 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}>{n(dep.n)}</td><td className="py-1.5 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}>{dias(dep.dias_prom)}</td><td className="py-1.5 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}>{dias(dep.dias_max)}</td>
+                    {TRAMOS.map((t) => <td key={t} className="py-1.5 px-3 text-right tabular-nums hover:text-brand-primary" onClick={() => setFoco({ region: z.region, departamento: dep.departamento, tramo: t })}>{n(dep.tramos[t])}</td>)}
+                    <td className="py-1.5 pl-3" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}><Barra tramos={dep.tramos} total={dep.n} /></td>
                   </tr>
                 ))}
               </Fragmento>
@@ -187,9 +232,10 @@ export function TiempoDeEntrega({ d }: { d: DatosLogistica }) {
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold mb-1.5">Las entregas más lentas</div>
-          <TablaPedidos pedidos={e.lista ?? []} conDias compacta />
+        <div className="min-w-0" id="entregas-lista">
+          <div className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold mb-1.5">Las entregas más lentas{foco ? ` · ${etiquetaFoco(foco)}` : ""}</div>
+          <ChipsFoco foco={foco} onChange={setFoco} total={(e.lista ?? []).length} filtrados={listaE.length} nombre="entregas medidas" verTodos="Ver todas las entregas" />
+          <TablaPedidos pedidos={listaE} conDias compacta />
         </div>
       </div>
     </Seccion>
@@ -401,9 +447,14 @@ function DetalleSerie({ active, payload, estados }: { active?: boolean; payload?
 }
 
 // ------------------------------------------------------------------ pendientes y demora por zona
-export function Pendientes({ d }: { d: DatosLogistica }) {
+export function Pendientes({ d, foco: focoExterno, onFoco }: { d: DatosLogistica; foco?: Foco | null; onFoco?: (f: Foco | null) => void }) {
   const p = d.pendientes;
   const [abierto, setAbierto] = useState<string | null>(null);
+  const [focoLocal, setFocoLocal] = useState<Foco | null>(null);
+  const foco = focoExterno !== undefined ? focoExterno : focoLocal;
+  const setFoco = (f: Foco | null) => { setFocoLocal(f); onFoco?.(f); };
+  useEffect(() => { if (focoExterno?.region) setAbierto(focoExterno.region); }, [focoExterno]);
+  const lista = useMemo(() => p.lista.filter((x) => enFoco(x, foco)), [p.lista, foco]);
   const colorTramo = COLOR_TRAMO;
   const Barra = ({ tramos, total }: { tramos: Record<string, number>; total: number }) => (
     <div className="h-2 rounded-full bg-brand-bg overflow-hidden flex" title={TRAMOS.map((t) => `${t} días: ${tramos[t] ?? 0}`).join(" · ")}>
@@ -430,18 +481,18 @@ export function Pendientes({ d }: { d: DatosLogistica }) {
               <tbody>
                 {p.por_zona.map((z) => (
                   <Fragmento key={z.region}>
-                    <tr className="border-b border-brand-border/60 bg-brand-bg-soft cursor-pointer" onClick={() => setAbierto(abierto === z.region ? null : z.region)}>
-                      <td className="py-2 pr-3 font-semibold text-brand-ink">{abierto === z.region ? "▾" : "▸"} {z.region}</td>
-                      <td className="py-2 px-3 text-right tabular-nums font-semibold">{n(z.n)}</td><td className="py-2 px-3 text-right tabular-nums">{dias(z.dias_prom)}</td><td className="py-2 px-3 text-right tabular-nums">{dias(z.dias_max)}</td>
-                      {TRAMOS.map((t) => <td key={t} className="py-2 px-3 text-right tabular-nums">{n(z.tramos[t])}</td>)}
-                      <td className="py-2 pl-3"><Barra tramos={z.tramos} total={z.n} /></td>
+                    <tr className={`border-b border-brand-border/60 cursor-pointer ${foco?.region === z.region && !foco.departamento ? "bg-brand-orange/10" : "bg-brand-bg-soft"}`} title="Ver los pendientes de esta región">
+                      <td className="py-2 pr-3 font-semibold text-brand-ink"><button type="button" className="mr-1 text-brand-slate" aria-label="Desplegar departamentos" onClick={() => setAbierto(abierto === z.region ? null : z.region)}>{abierto === z.region ? "▾" : "▸"}</button><span onClick={() => { setAbierto(z.region); setFoco({ region: z.region }); }}>{z.region}</span></td>
+                      <td className="py-2 px-3 text-right tabular-nums font-semibold" onClick={() => setFoco({ region: z.region })}>{n(z.n)}</td><td className="py-2 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region })}>{dias(z.dias_prom)}</td><td className="py-2 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region })}>{dias(z.dias_max)}</td>
+                      {TRAMOS.map((t) => <td key={t} className="py-2 px-3 text-right tabular-nums hover:text-brand-primary" title={`Ver los pendientes de ${t} días`} onClick={() => setFoco({ region: z.region, tramo: t })}>{n(z.tramos[t])}</td>)}
+                      <td className="py-2 pl-3" onClick={() => setFoco({ region: z.region })}><Barra tramos={z.tramos} total={z.n} /></td>
                     </tr>
                     {abierto === z.region && z.departamentos.map((dep) => (
-                      <tr key={dep.departamento} className="border-b border-brand-border/40">
-                        <td className="py-1.5 pr-3 pl-6 text-brand-graphite">{dep.departamento} <span className="text-xs text-brand-slate">· {dep.ciudades.map((c) => `${c.ciudad} (${c.n})`).join(", ")}</span></td>
-                        <td className="py-1.5 px-3 text-right tabular-nums">{n(dep.n)}</td><td className="py-1.5 px-3 text-right tabular-nums">{dias(dep.dias_prom)}</td><td className="py-1.5 px-3 text-right tabular-nums">{dias(dep.dias_max)}</td>
-                        {TRAMOS.map((t) => <td key={t} className="py-1.5 px-3 text-right tabular-nums">{n(dep.tramos[t])}</td>)}
-                        <td className="py-1.5 pl-3"><Barra tramos={dep.tramos} total={dep.n} /></td>
+                      <tr key={dep.departamento} className={`border-b border-brand-border/40 cursor-pointer ${foco?.departamento === dep.departamento ? "bg-brand-orange/10" : ""}`} title="Ver los pendientes de este departamento">
+                        <td className="py-1.5 pr-3 pl-6 text-brand-graphite" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}>{dep.departamento} <span className="text-xs text-brand-slate">· {dep.ciudades.map((c) => <button key={c.ciudad} type="button" className="hover:text-brand-primary hover:underline mr-1" onClick={(ev) => { ev.stopPropagation(); setFoco({ region: z.region, departamento: dep.departamento, ciudad: c.ciudad }); }}>{c.ciudad} ({c.n})</button>)}</span></td>
+                        <td className="py-1.5 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}>{n(dep.n)}</td><td className="py-1.5 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}>{dias(dep.dias_prom)}</td><td className="py-1.5 px-3 text-right tabular-nums" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}>{dias(dep.dias_max)}</td>
+                        {TRAMOS.map((t) => <td key={t} className="py-1.5 px-3 text-right tabular-nums hover:text-brand-primary" onClick={() => setFoco({ region: z.region, departamento: dep.departamento, tramo: t })}>{n(dep.tramos[t])}</td>)}
+                        <td className="py-1.5 pl-3" onClick={() => setFoco({ region: z.region, departamento: dep.departamento })}><Barra tramos={dep.tramos} total={dep.n} /></td>
                       </tr>
                     ))}
                   </Fragmento>
@@ -454,9 +505,16 @@ export function Pendientes({ d }: { d: DatosLogistica }) {
               <div className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold mb-1.5">Por motivo</div>
               <ul className="text-sm space-y-1">{p.por_motivo.map((m) => <li key={m.motivo} className="flex justify-between gap-2 border-b border-brand-border/50 py-1"><span className="text-brand-graphite">{m.motivo}</span><span className="tabular-nums whitespace-nowrap"><b>{n(m.n)}</b> <span className="text-brand-slate text-xs">· {dias(m.dias_prom)}</span></span></li>)}</ul>
             </div>
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold mb-1.5">Los pedidos pendientes, del más demorado al más nuevo</div>
-              <TablaPedidos pedidos={p.lista} conDias compacta />
+            <div className="min-w-0" id="pendientes-lista">
+              <div className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold mb-1.5">Los pedidos pendientes{foco ? ` · ${etiquetaFoco(foco)}` : ""}, del más demorado al más nuevo</div>
+              <div className="flex flex-wrap gap-1.5 mb-2 text-xs print:hidden">
+                {[{ etiqueta: "6 días o más", minimo: 6 }, { etiqueta: "11 o más", minimo: 11 }].map((q) => (
+                  <button key={q.minimo} type="button" aria-pressed={foco?.minimo === q.minimo} className={`rounded-full border px-2.5 py-0.5 font-semibold ${foco?.minimo === q.minimo ? "border-brand-primary bg-brand-primary text-white" : "border-brand-border bg-white text-brand-graphite hover:border-brand-slate"}`}
+                    onClick={() => setFoco(foco?.minimo === q.minimo ? { ...foco, minimo: undefined } : { ...(foco ?? {}), tramo: undefined, minimo: q.minimo })}>{q.etiqueta}</button>
+                ))}
+              </div>
+              <ChipsFoco foco={foco} onChange={setFoco} total={p.lista.length} filtrados={lista.length} nombre="pendientes" verTodos="Ver todos los pendientes" />
+              <TablaPedidos pedidos={lista} conDias compacta />
             </div>
           </div>
         </>

@@ -50,15 +50,15 @@ def sugerencias(user: CurrentUser, modo: str) -> list[str]:
         return user.has_perm(f"{TC}.{u}")
 
     s: list[str] = []
-    if modo == "auditor":
+    if user.role == "auditor":   # el auditor arranca por lo suyo, pero puede pedir cualquiera de sus módulos
         if p("auditoria"):
             s.append("¿Qué dice la última auditoría de ventas?")
         if p("ventas_netas"):
             s.append("¿Qué vendedores están en alerta de líneas sin uso este mes?")
+        if p("logistica"):
+            s.append("¿Qué pedidos llevan más días sin entregar?")
         if p("supervision"):
             s.append("¿Qué alertas abiertas hay en el centro de comandos?")
-        if p("tickets"):
-            s.append("¿Qué tickets de revisión están por vencer?")
         return s[:4] or ["¿Qué puedo hacer con Voi?"]
     if p("informe_diario"):
         s.append("Prepará el borrador del informe diario de hoy")

@@ -5,10 +5,11 @@ import { Senales } from "@/components/ventas-netas/ui";
 import { FiguraInforme, IndiceFiguras, figurasDeHallazgo } from "./Evidencia";
 import { GraficoAuditoria, tituloGrafico } from "./GraficoAuditoria";
 import { RefFiguras } from "./InformeEjecutivo";
+import { ResumenModulos, modulosDe } from "./Modulos";
 import { NivelBadge, TablaEvidencia } from "./RiesgosView";
 import {
-  CATEGORIA_LABEL, ESTADO_AUD_LABEL, HALLAZGO_ESTADO_LABEL, SEVERIDAD_LABEL, fechaCorta, fechaHora, n, nombrePeriodo, pct, rangoPeriodos,
-  type AuditoriaDetalle,
+  CATEGORIA_LABEL, ESTADO_AUD_LABEL, HALLAZGO_ESTADO_LABEL, SEVERIDAD_LABEL, TIPO_FUENTE_LABEL, fechaCorta, fechaHora, n, nombrePeriodo, pct, rangoPeriodos,
+  type AuditoriaDetalle, type TipoFuente,
 } from "./tipos";
 
 /** Informe extenso: todas las detecciones congeladas en cada hallazgo, sin recorte. */
@@ -62,7 +63,7 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
         <tbody>
           {[
             ["Código", a.codigo], ["Estado", ESTADO_AUD_LABEL[a.status]], ["Período auditado", periodo],
-            ["Fuentes", a.fuentes.map((f) => `${nombrePeriodo(f.periodo)} · corte ${fechaCorta(f.fecha_dato)} · ${f.status === "published" ? "publicado" : f.status === "draft" ? "borrador" : "reemplazado"} · ${n(f.netas)} netas`).join("  |  ")],
+            ["Fuentes", a.fuentes.map((f) => `${TIPO_FUENTE_LABEL[(f.tipo ?? "ventas_netas") as TipoFuente]} · ${f.etiqueta ?? `${nombrePeriodo(f.periodo)} · corte ${fechaCorta(f.fecha_dato)}`} · ${f.status === "published" ? "publicado" : f.status === "draft" ? "borrador" : f.status === "replaced" ? "reemplazado" : f.status}${f.netas != null && (f.tipo ?? "ventas_netas") === "ventas_netas" ? ` · ${n(f.netas)} netas` : ""}`).join("  |  ")],
             ["Elaborado por", `${nombre(a.created_by)} · ${fechaHora(a.created_at)}`],
             ["Cerrado por", a.closed_at ? `${nombre(a.closed_by)} · ${fechaHora(a.closed_at)}` : "—"],
             ["Datos congelados el", fechaHora(s.generado_en)],
@@ -99,6 +100,29 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
           </div>
         ))}
       </div>
+
+      {modulosDe(s).length > 0 && (
+        <>
+          <Titulo num={num()}>Otras fuentes auditadas</Titulo>
+          <ResumenModulos s={s} />
+          {s.cruce && s.cruce.length > 0 && (
+            <table className="w-full text-sm mt-3">
+              <thead><tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border"><th className="py-1.5 pr-3">Vendedor riesgoso</th><th className="py-1.5 pr-3">SPH</th><th className="py-1.5 pr-3">Entregas</th><th className="py-1.5 pr-3">Supervisión</th><th className="py-1.5">Señales</th></tr></thead>
+              <tbody>
+                {s.cruce.map((c) => (
+                  <tr key={c.vendedor} className="border-b border-brand-border/60 align-top">
+                    <td className="py-1.5 pr-3"><b>{c.vendedor}</b> <span className="text-brand-slate">({c.nivel === "critico" ? "crítico" : "alerta media"})</span></td>
+                    <td className="py-1.5 pr-3">{c.sph ? `${c.sph.sph ?? "—"} · ${c.sph.horas ?? "—"} h` : "—"}</td>
+                    <td className="py-1.5 pr-3">{c.logistica ? `${n(c.logistica.entregado)}/${n(c.logistica.total)} · ${n(c.logistica.devuelto)} dev.` : "—"}</td>
+                    <td className="py-1.5 pr-3">{c.supervision ? `${n(c.supervision.alertas)} alertas · ${n(c.supervision.coachings)} coach.` : "—"}</td>
+                    <td className="py-1.5">{c.senales.join("; ") || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
 
       <Titulo num={num()}>Datos llamativos</Titulo>
       <table className="w-full text-sm">

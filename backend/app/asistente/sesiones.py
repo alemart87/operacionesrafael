@@ -25,6 +25,7 @@ from .cliente import cliente
 from .herramientas import para_usuario
 from .models import AsistenteConversacion
 from .permisos import modo as modo_de
+from .permisos import permiso_valido
 
 log = logging.getLogger("asistente.sesiones")
 
@@ -32,9 +33,9 @@ DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "doming
 MODO_TEXTO = {
     "superadmin": "superadmin: ve y puede todo en la plataforma.",
     "gestion": "trabaja con los módulos de su perfil (los que tienen herramienta en esta sesión).",
+    # Ya no se usa para el perfil Auditor (trabaja en modo gestión con todos sus módulos); queda por compatibilidad.
     "auditor": ("MODO AUDITORÍA: trabajá solo con auditoría de ventas y alertas (informes de auditoría, vendedores en "
-                "alerta de Ventas Netas, alertas del centro de comandos y tickets). Si pide otra cosa, explicá que en su "
-                "perfil Voi está acotado a auditoría y alertas."),
+                "alerta de Ventas Netas, alertas del centro de comandos y tickets)."),
 }
 # Si la API no aceptara `system.message`, el contexto viaja como primer bloque del mensaje (y no se muestra).
 _contexto_en_mensaje = False
@@ -50,7 +51,7 @@ def _habilidad_permitida(nombre: str, user: CurrentUser, modo: str) -> bool:
     if modo == "auditor" and nombre not in definicion.HABILIDADES_AUDITOR:
         return False
     req = definicion.PERMISO_HABILIDAD.get(nombre)
-    return not req or any(user.has_perm(p) for p in req)
+    return not req or any(permiso_valido(user, p) for p in req)
 
 
 def _modulos(user: CurrentUser) -> str:

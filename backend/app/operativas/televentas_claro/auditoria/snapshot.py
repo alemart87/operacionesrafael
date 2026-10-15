@@ -6,6 +6,11 @@ vendedores con nivel de riesgo y señales, datos llamativos, series para
 gráficos, líneas sin uso y Sali Hablando como evidencia, y los hallazgos
 automáticos con los que arranca el informe.
 
+Las otras fuentes que el auditor elija (Productividad, SPH, Logística,
+Supervisión, Informe diario; ver `fuentes.py`) entran ya congeladas en
+`modulos`, se cruzan con el ranking por vendedor (`cruce`) y suman sus
+propios datos llamativos y hallazgos.
+
 Todo es lógica pura sobre los JSON de los informes: no toca la base.
 """
 from __future__ import annotations
@@ -17,6 +22,7 @@ from typing import Any
 
 from ..ventas_netas.analyzer import DIAS_ESPERA_USO, UMBRAL_CRITICO_SIN_USO_PCT
 from ..ventas_netas.jobs import ANALYSIS_VERSION
+from .fuentes import TIPOS, cruce_vendedores, fuentes_de
 
 # ------------------------------------------------------------------ reglas
 # Única fuente de verdad: el motor las aplica, cada snapshot las guarda y la
@@ -188,10 +194,11 @@ def _nivel_y_puntaje(v: dict[str, Any]) -> tuple[str, int]:
 
 
 # ------------------------------------------------------------------ snapshot
-def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
-    """Consolida los informes (objetos con .id .periodo .fecha_dato .status .data …) en un snapshot."""
+def construir_snapshot(reports: list[Any], modulos: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Consolida los informes de Ventas Netas (objetos con .id .periodo .fecha_dato .status .data …) y los datos
+    congelados de las otras fuentes (`modulos`, de `fuentes.cargar_modulos`) en un snapshot."""
     reports = sorted(reports, key=lambda r: r.periodo)
-    fuentes = []
+    modulos = modulos or {}
     advertencias: list[str] = []
     for r in reports:
         d = r.data or {}
@@ -201,19 +208,12 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
                 f"El corte al {corte} de {_nombre_periodo(r.periodo)} fue analizado con una versión anterior (v{int(d.get('version') or 0)}) "
                 f"y no se pudo recalcular: pueden faltar Sali Hablando, riesgo de cargas y productividad."
             )
-        fuentes.append({
-            "report_id": r.id,
-            "periodo": r.periodo,
-            "fecha_dato": r.fecha_dato.isoformat() if r.fecha_dato else None,
-            "status": r.status,
-            "netas": r.netas,
-            "pospago": r.pospago,
-            "pct_sin_uso": r.pct_sin_uso,
-            "pendientes": r.pendientes,
-            "generated_at": r.generated_at.isoformat() if r.generated_at else None,
-            "version": int(d.get("version") or 0),
-        })
-    periodos = sorted({r.periodo for r in reports})
+    fuentes = fuentes_de(reports, modulos)
+    periodos = sorted({r.periodo for r in reports} | {p for m in modulos.values() for p in (m.get("periodos") or [])})
+    if not periodos:
+        periodos = [datetime.utcnow().strftime("%Y-%m")]
+    if not reports:
+        advertencias.append("Sin un corte de Ventas Netas no hay ranking de vendedores ni líneas: la auditoría se arma con las otras fuentes.")
 
     def nuevo_vendedor(nombre: str, subcanal: str | None) -> dict[str, Any]:
         return {
@@ -386,7 +386,9 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
     pospago_total = k_tot["pospago"]
     kpis = {
         "periodos": periodos,
-        "fuentes": len(fuentes),
+        "fuentes": len(reports),
+        "fuentes_total": len(fuentes),
+        "modulos": sorted(modulos),
         "netas": k_tot["netas"], "pospago": pospago_total, "gpon": k_tot["gpon"], "iptv": k_tot["iptv"],
         "portadas": k_tot["portadas"], "nativas": k_tot["nativas"],
         "pospago_sin_uso": k_tot["pospago_sin_uso"], "pospago_con_uso": k_tot["pospago_con_uso"],
@@ -439,7 +441,8 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
         ],
     }
 
-    llamativos = _datos_llamativos(kpis, ranking, series, lineas_sin_uso)
+    llamativos = _datos_llamativos(kpis, ranking, series, lineas_sin_uso) + _llamativos_modulos(modulos)
+    cruce = cruce_vendedores(ranking, modulos) if modulos else []
 
     lineas_sin_uso.sort(key=lambda x: (-(x["dias"] or 0), x["vendedor"]))
     sali_lineas.sort(key=lambda x: (not x.get("sin_uso"), x.get("fecha_portacion") or ""))
@@ -461,7 +464,174 @@ def construir_snapshot(reports: list[Any]) -> dict[str, Any]:
         "pendientes_viejas": pendientes_viejas,
         "pendientes_por_legajo": sorted(por_legajo.values(), key=lambda x: -x["total"]),
         "cargas_riesgo_alto_sin_uso": cargas_riesgo_alto_sin_uso,
+        "modulos": modulos,
+        "cruce": cruce,
     }
+
+
+# ------------------------------------------------------------------ otras fuentes: datos llamativos y hallazgos
+def _llamativos_modulos(modulos: dict[str, dict[str, Any]]) -> list[dict]:
+    out: list[dict] = []
+
+    def add(gravedad: str, categoria: str, titulo: str, detalle: str, cifra: str) -> None:
+        out.append({"gravedad": gravedad, "categoria": categoria, "titulo": titulo, "detalle": detalle, "cifra": cifra})
+
+    pr = (modulos.get("productividad") or {}).get("kpis") or {}
+    if pr.get("dias"):
+        g = "alta" if pr.get("banda") == "rojo" else "media" if pr.get("banda") == "bajo" else "info"
+        add(g, "productividad", "Conversación de llamadas del período",
+            f"{pr['dias']} día(s) de Productividad: {_g(pr.get('pct_conversacion') or 0)}% de conversación (banda {pr.get('banda') or '—'}), "
+            f"{pr.get('dias_rojo') or 0} día(s) en rojo y {pr.get('agentes_bajo_meta') or 0} agente(s) bajo la meta con 20+ llamadas.",
+            f"{_g(pr.get('pct_conversacion') or 0)}%")
+    sp = (modulos.get("sph") or {}).get("kpis") or {}
+    if sp.get("informes"):
+        g = "media" if (sp.get("asesores_muy_sobre_media") or sp.get("ventas_sin_agente", 0) >= 5) else "info"
+        add(g, "sph", "SPH de la operación",
+            f"{sp.get('ventas')} ventas en {_g(sp.get('horas') or 0)} h conectadas ({sp.get('agentes')} agentes). "
+            f"{sp.get('asesores_muy_sobre_media') or 0} asesor(es) con el doble o más del SPH de la operación; {sp.get('ventas_sin_agente') or 0} ventas sin agente conectado.",
+            f"{sp.get('sph') if sp.get('sph') is not None else '—'}")
+    lg = (modulos.get("logistica") or {}).get("kpis") or {}
+    if lg.get("cortes"):
+        g = "alta" if (lg.get("vencidos_11") or 0) >= 5 else "media" if lg.get("vencidos") else "info"
+        add(g, "logistica", "Entregas: pendientes vencidos y devoluciones",
+            f"{lg.get('pedidos')} pedidos, {_g(lg.get('pct_entregados') or 0)}% entregados, {lg.get('devueltos')} devueltos ({_g(lg.get('pct_devueltos') or 0)}%). "
+            f"{lg.get('vencidos')} en gestión con 6+ días hábiles ({lg.get('vencidos_11')} con 11+); {lg.get('vendedores_con_devoluciones')} vendedor(es) con devoluciones.",
+            f"{lg.get('vencidos')} vencidos")
+    su = (modulos.get("supervision") or {}).get("kpis") or {}
+    if su.get("meses"):
+        g = "media" if (su.get("alertas_abiertas") or su.get("tickets_fuera_sla") or su.get("coaching_vencidos")) else "info"
+        add(g, "supervision", "Supervisión: alertas, coaching y tickets",
+            f"{su.get('alertas')} alerta(s) de asesores ({su.get('alertas_abiertas')} abiertas), {su.get('coachings')} coaching(s) "
+            f"({su.get('coaching_vencidos')} con seguimiento vencido) y {su.get('tickets')} ticket(s) ({su.get('tickets_fuera_sla')} fuera de SLA).",
+            f"{su.get('alertas_abiertas')} alertas")
+    di = (modulos.get("informe_diario") or {}).get("kpis") or {}
+    if di.get("meses"):
+        g = "media" if (di.get("compromisos_vencidos") or (di.get("dias_sin_informe") or 0) >= 5) else "info"
+        add(g, "informe_diario", "Informes diarios y compromisos",
+            f"{di.get('firmados')} informe(s) firmado(s), {di.get('dias_sin_informe')} día(s) sin informe, {di.get('metricas_criticas')} métrica(s) crítica(s), "
+            f"{di.get('compromisos_abiertos')} compromiso(s) abierto(s) y {di.get('compromisos_vencidos')} vencido(s).",
+            f"{di.get('dias_sin_informe')} días sin informe")
+    return out
+
+
+def _hallazgo(titulo: str, severidad: str, categoria: str, descripcion: str, recomendacion: str, evidencia: dict, *,
+              clave: str, vendedor: str | None = None) -> dict:
+    return {"titulo": titulo, "severidad": severidad, "categoria": categoria, "vendedor": vendedor, "descripcion": descripcion,
+            "recomendacion": recomendacion, "evidencia": {"clave": clave, **evidencia}}
+
+
+def hallazgos_modulos(snapshot: dict[str, Any]) -> list[dict]:
+    """Hallazgos iniciales que aportan las otras fuentes y el cruce por vendedor (el auditor los edita o descarta)."""
+    m = snapshot.get("modulos") or {}
+    out: list[dict] = []
+
+    pr = m.get("productividad") or {}
+    k = pr.get("kpis") or {}
+    if k.get("dias_rojo"):
+        dias = [d for d in pr.get("por_dia") or [] if d.get("banda") == "rojo"]
+        out.append(_hallazgo(f"Días con conversación en rojo ({k['dias_rojo']} de {k['dias']})",
+                             "media" if k["dias_rojo"] / max(k["dias"], 1) >= 0.3 else "baja", "productividad",
+                             f"{k['dias_rojo']} de los {k['dias']} días de Productividad auditados quedaron en banda roja de conversación "
+                             f"(meta mínima {_g(k.get('meta_min') or 0)}%). Conversación del período: {_g(k.get('pct_conversacion') or 0)}%.",
+                             "Revisar con el coordinador qué pasó esos días (dotación, pausas, marcación) y si coinciden con los días de más cargas.",
+                             {"lineas": dias, "total": len(dias)}, clave="dias_rojo"))
+    if k.get("agentes_bajo_meta"):
+        ag = [a for a in pr.get("agentes") or [] if a.get("banda") in ("rojo", "bajo") and (a.get("llamadas") or 0) >= 20]
+        out.append(_hallazgo(f"Agentes bajo la meta de conversación ({k['agentes_bajo_meta']})",
+                             "media" if k["agentes_bajo_meta"] >= 5 else "baja", "productividad",
+                             f"{k['agentes_bajo_meta']} agente(s) con 20 o más llamadas cerraron el período en banda roja o baja de conversación. "
+                             "Los que más venden sin conversar son los que hay que mirar: cargas que no salen de las llamadas.",
+                             "Cruzar estos agentes con sus cargas y su SPH; pedir coaching a su supervisor.",
+                             {"lineas": ag, "total": len(ag)}, clave="agentes_bajo_meta"))
+    if k.get("agentes_con_alertas"):
+        ag = [a for a in pr.get("agentes") or [] if a.get("alertas")]
+        out.append(_hallazgo(f"Agentes con sesión abierta o sin llamadas ({k['agentes_con_alertas']})", "baja", "productividad",
+                             f"{k['agentes_con_alertas']} agente(s) con alertas de Productividad (sesión abierta o días sin llamadas): sus horas no son reales.",
+                             "Pedir que cierren sesión al terminar; no usar esas horas para el SPH.",
+                             {"lineas": ag, "total": len(ag)}, clave="agentes_alertas"))
+
+    sp = m.get("sph") or {}
+    k = sp.get("kpis") or {}
+    if k.get("asesores_muy_sobre_media"):
+        ag = [a for a in sp.get("agentes") or [] if a.get("sph") and k.get("sph") and a["sph"] >= 2 * k["sph"] and (a.get("horas") or 0) >= 4]
+        out.append(_hallazgo(f"Asesores con SPH del doble o más de la operación ({k['asesores_muy_sobre_media']})", "media", "sph",
+                             f"Con la operación en {k.get('sph')} ventas por hora, {k['asesores_muy_sobre_media']} asesor(es) con 4+ horas conectadas "
+                             "duplican o más ese ritmo. Puede ser excelencia o ventas que no salen de las llamadas (cargas de terceros, líneas sin uso).",
+                             "Cruzar con las líneas sin uso y las cargas de cada uno; escuchar llamadas de muestra.",
+                             {"lineas": ag, "total": len(ag)}, clave="sph_sobre_media"))
+    if k.get("ventas_sin_agente"):
+        out.append(_hallazgo(f"Ventas sin agente conectado ({k['ventas_sin_agente']})", "media" if k["ventas_sin_agente"] >= 5 else "baja", "sph",
+                             f"{k['ventas_sin_agente']} venta(s) del período son de vendedores que no se vincularon con un agente conectado en Productividad: "
+                             "no hay horas detrás de esas ventas.",
+                             "Confirmar quién las vendió y desde qué puesto; vincular los nombres en SPH si corresponde.",
+                             {"lineas": sp.get("ventas_sin_agente") or [], "total": k["ventas_sin_agente"]}, clave="ventas_sin_agente"))
+
+    lg = m.get("logistica") or {}
+    k = lg.get("kpis") or {}
+    if k.get("vencidos"):
+        out.append(_hallazgo(f"Pedidos en gestión con 6 o más días hábiles ({k['vencidos']})",
+                             "alta" if (k.get("vencidos_11") or 0) >= 5 else "media", "logistica",
+                             f"{k['vencidos']} pedido(s) siguen en gestión con 6 o más días hábiles desde la venta ({k.get('vencidos_11')} con 11 o más). "
+                             "Una venta que no se entrega no se activa ni se cobra, y el cliente puede desistir.",
+                             "Reclamar a logística los pedidos de la lista, empezando por los de más días; verificar si el cliente sigue interesado.",
+                             {"lineas": lg.get("pendientes_vencidos") or [], "total": k["vencidos"]}, clave="pendientes_vencidos"))
+    dev = [v for v in lg.get("vendedores") or [] if (v.get("devuelto") or 0) >= 2 and (v.get("pct_devuelto") or 0) >= 20]
+    if dev:
+        out.append(_hallazgo(f"Devoluciones concentradas en vendedores ({len(dev)})", "media", "logistica",
+                             f"{len(dev)} vendedor(es) con 2 o más pedidos devueltos y 20% o más de devolución: "
+                             + ", ".join(f"{v['vendedor']} ({v['devuelto']} de {v['total']})" for v in dev[:6]) + ".",
+                             "Revisar las ventas devueltas de cada uno (datos del cliente, dirección, titularidad) y el proceso de venta.",
+                             {"lineas": dev, "total": len(dev), "motivos": lg.get("motivos_devueltos")}, clave="devoluciones_vendedor"))
+
+    su = m.get("supervision") or {}
+    k = su.get("kpis") or {}
+    if k.get("alertas_abiertas"):
+        ab = [a for a in su.get("alertas") or [] if a.get("abierta")]
+        out.append(_hallazgo(f"Asesores con alerta de uso abierta en Supervisión ({k['alertas_abiertas']})", "media", "supervision",
+                             f"{k['alertas_abiertas']} alerta(s) de asesores siguen abiertas en el período auditado.",
+                             "Confirmar que cada asesor en alerta tenga coaching registrado y seguimiento.",
+                             {"lineas": ab, "total": len(ab)}, clave="alertas_abiertas"))
+    if k.get("coaching_vencidos"):
+        ve = [c for c in su.get("coachings") or [] if c.get("seguimiento") == "vencido"]
+        out.append(_hallazgo(f"Coachings con seguimiento vencido ({k['coaching_vencidos']})", "media" if k["coaching_vencidos"] >= 3 else "baja", "supervision",
+                             f"{k['coaching_vencidos']} coaching(s) pasaron la fecha de seguimiento sin registrarlo.",
+                             "Pedir a los supervisores que registren el seguimiento con su resultado.",
+                             {"lineas": ve, "total": len(ve)}, clave="coaching_vencidos"))
+    if k.get("tickets_fuera_sla"):
+        fs = [t for t in su.get("tickets") or [] if t.get("cumple_sla") is False]
+        out.append(_hallazgo(f"Tickets de revisión fuera de SLA ({k['tickets_fuera_sla']})", "media", "supervision",
+                             f"{k['tickets_fuera_sla']} ticket(s) de revisión incumplieron el plazo de respuesta o de resolución.",
+                             "Revisar con los supervisores los tickets vencidos y qué los demoró.",
+                             {"lineas": fs, "total": len(fs)}, clave="tickets_fuera_sla"))
+
+    di = m.get("informe_diario") or {}
+    k = di.get("kpis") or {}
+    if k.get("dias_sin_informe"):
+        aut = [a for mes in di.get("meses") or [] for a in mes.get("cumplimiento") or [] if a.get("dias_sin_informe")]
+        out.append(_hallazgo(f"Días sin informe diario firmado ({k['dias_sin_informe']})", "media" if k["dias_sin_informe"] >= 5 else "baja", "informe_diario",
+                             f"{k['dias_sin_informe']} día(s) esperados sin informe diario firmado: "
+                             + ", ".join(f"{a['nombre']} ({len(a['dias_sin_informe'])})" for a in aut[:6]) + ".",
+                             "Recordar la obligación del informe diario; revisar qué pasó esos días.",
+                             {"lineas": aut, "total": len(aut)}, clave="dias_sin_informe"))
+    if k.get("compromisos_vencidos"):
+        ve = [c for c in di.get("compromisos") or [] if c.get("vencido")]
+        out.append(_hallazgo(f"Compromisos del informe diario vencidos ({k['compromisos_vencidos']})", "media", "informe_diario",
+                             f"{k['compromisos_vencidos']} compromiso(s) asumidos en informes diarios pasaron su fecha límite sin cerrarse.",
+                             "Pedir a cada autor que cierre el compromiso (cumplido o no) y explique el desvío.",
+                             {"lineas": ve, "total": len(ve)}, clave="compromisos_vencidos"))
+
+    # Cruce por vendedor: lo que las otras fuentes dicen de cada vendedor riesgoso de Ventas Netas.
+    for c in (snapshot.get("cruce") or [])[:15]:
+        senales = [x for x in c.get("senales") or [] if not x.startswith("sin alerta")]
+        if not senales:
+            continue
+        out.append(_hallazgo(f"{c['vendedor']}: señales en otras fuentes ({len(senales)})",
+                             "alta" if c.get("nivel") == "critico" and len(senales) >= 2 else "media", "cruce",
+                             f"Vendedor en nivel {NIVEL_LABEL.get(c.get('nivel') or '', c.get('nivel'))} por sus líneas ({c.get('sin_uso')} sin uso, "
+                             f"{_g(c.get('pct_sin_uso') or 0)}%). Además: " + "; ".join(senales) + ".",
+                             "Tratar el caso de forma integral: líneas sin uso, horas y SPH, entregas y lo registrado por su supervisor.",
+                             {"cruce": c, "total": len(senales)}, clave="cruce", vendedor=c["vendedor"]))
+    return out
 
 
 # ------------------------------------------------------------------ datos llamativos
@@ -630,6 +800,7 @@ def hallazgos_automaticos(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                 "senales": v["senales"], "resumen": {key: v[key] for key in ("netas", "pospago", "con_uso", "sin_uso", "en_espera", "pct_uso", "sin_uso_antiguas", "sali", "sali_sin_uso", "suspendidas", "riesgo_A", "sin_uso_riesgo_A", "nivel", "puntaje", "posicion")},
             },
         })
+    out.extend(hallazgos_modulos(snapshot))
     return out
 
 
@@ -637,14 +808,38 @@ def resumen_automatico(snapshot: dict[str, Any]) -> str:
     """Borrador del resumen ejecutivo para que el auditor arranque con algo escrito."""
     k = snapshot["kpis"]
     per = ", ".join(_nombre_periodo(p) for p in snapshot["periodos"])
-    partes = [
-        f"Se auditaron las ventas de {per} ({k['fuentes']} informe{'s' if k['fuentes'] > 1 else ''} de Ventas Netas): "
-        f"{k['netas']} ventas netas ({k['pospago']} Pospago, {k['gpon']} GPON, {k['iptv']} IPTV) y {k['cargas']} cargas con {_g(k['pct_finalizacion'])}% de finalización.",
-    ]
+    m = snapshot.get("modulos") or {}
+    if k["fuentes"]:
+        partes = [
+            f"Se auditaron las ventas de {per} ({k['fuentes']} informe{'s' if k['fuentes'] > 1 else ''} de Ventas Netas): "
+            f"{k['netas']} ventas netas ({k['pospago']} Pospago, {k['gpon']} GPON, {k['iptv']} IPTV) y {k['cargas']} cargas con {_g(k['pct_finalizacion'])}% de finalización.",
+        ]
+    else:
+        partes = [f"Se auditó {per} sin un corte de Ventas Netas (no hay ranking de vendedores ni líneas): la auditoría se arma con "
+                  + ", ".join(TIPOS[t]["nombre"] for t in sorted(m) if t in TIPOS) + "."]
     if k["pospago"]:
         partes.append(f"El {_g(k['pct_sin_uso'])}% de las líneas Pospago netas con {DIAS_ESPERA_USO} días o más de activadas ({k['pospago_sin_uso']}) no registra consumo."
                       + (f" Otras {k['en_espera']}, activadas hace menos de {DIAS_ESPERA_USO} días al corte, quedan en espera de uso y no se cuentan." if k.get("en_espera") else ""))
     if k["sali_total"]:
         partes.append(f"Se identificaron {k['sali_total']} portaciones Sali Hablando, {k['sali_sin_uso']} sin uso ({_g(k['sali_pct_sin_uso'])}%).")
-    partes.append(f"{k['vendedores_criticos']} vendedores quedan en nivel crítico y {k['vendedores_atencion']} en alerta media, sobre {k['vendedores']} con actividad.")
+    if k["fuentes"]:
+        partes.append(f"{k['vendedores_criticos']} vendedores quedan en nivel crítico y {k['vendedores_atencion']} en alerta media, sobre {k['vendedores']} con actividad.")
+    extras = []
+    pr, sp, lg, su, di = ((m.get(t) or {}).get("kpis") or {} for t in ("productividad", "sph", "logistica", "supervision", "informe_diario"))
+    if pr.get("dias"):
+        extras.append(f"Productividad ({pr['dias']} días): {_g(pr.get('pct_conversacion') or 0)}% de conversación, {pr.get('dias_rojo') or 0} día(s) en rojo")
+    if sp.get("informes"):
+        extras.append(f"SPH de la operación {sp.get('sph') if sp.get('sph') is not None else '—'} ({sp.get('ventas')} ventas en {_g(sp.get('horas') or 0)} h)")
+    if lg.get("cortes"):
+        extras.append(f"Logística: {_g(lg.get('pct_entregados') or 0)}% entregados, {lg.get('vencidos')} pendientes con 6+ días hábiles, {lg.get('devueltos')} devueltos")
+    if su.get("meses"):
+        extras.append(f"Supervisión: {su.get('alertas_abiertas')} alertas abiertas, {su.get('coaching_vencidos')} coachings con seguimiento vencido, {su.get('tickets_fuera_sla')} tickets fuera de SLA")
+    if di.get("meses"):
+        extras.append(f"Informe diario: {di.get('firmados')} firmados, {di.get('dias_sin_informe')} días sin informe, {di.get('compromisos_vencidos')} compromisos vencidos")
+    if extras:
+        partes.append("Otras fuentes incluidas: " + "; ".join(extras) + ".")
+    if snapshot.get("cruce"):
+        con = [c["vendedor"] for c in snapshot["cruce"] if any(not s.startswith("sin alerta") for s in c.get("senales") or [])]
+        if con:
+            partes.append(f"Con señales en más de una fuente: {', '.join(con[:6])}" + ("…" if len(con) > 6 else "") + ".")
     return " ".join(partes)

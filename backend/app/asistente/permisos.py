@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..api.deps import CurrentUser, effective_permissions, load_role_permissions
 from ..core.config import settings
-from ..core.operativas import ALL_PERMISSIONS, OPERATIVA_SLUGS
+from ..core.operativas import ALL_PERMISSIONS, OPERATIVA_SLUGS, asignables
 from ..models.user import User
 from .config import UTILIDAD
 
@@ -16,12 +16,14 @@ def puede_usar(user: CurrentUser) -> bool:
 
 
 def modo(user: CurrentUser) -> str:
-    """superadmin: todo. auditor: solo auditoría de ventas y alertas. gestion: lo que permita su perfil."""
-    if user.is_superadmin:
-        return "superadmin"
-    if user.role == "auditor":
-        return "auditor"
-    return "gestion"
+    """superadmin: todo. gestion: lo que permita su perfil (el auditor también: ve todos sus módulos; Facturación e
+    Integraciones no se le pueden dar, ver core/operativas). El «modo auditor» es de la conversación, no del perfil."""
+    return "superadmin" if user.is_superadmin else "gestion"
+
+
+def permiso_valido(user: CurrentUser, perm: str) -> bool:
+    """Tiene el permiso Y su perfil lo puede tener: aunque figurara en la base, un perfil restringido no lo usa."""
+    return user.is_superadmin or (user.has_perm(perm) and perm in asignables(user.role))
 
 
 async def usuario(db: AsyncSession, user_id: str) -> CurrentUser | None:

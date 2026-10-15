@@ -40,7 +40,12 @@ DEFAULT_PERMISSIONS: dict[str, list[str]] = {
     "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion", "auditoria",
                                          "productividad", "productividad_gestion", "sph", "sph_gestion",
                                          "supervision", "operadores", "logistica", "logistica_gestion")],
-    "auditor": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "auditoria", "supervision", "tickets", "asistente", "logistica")],
+    # El auditor ve todos los módulos para elegir qué auditar; nunca Facturación ni Integraciones (ni los exclusivos de
+    # otro perfil: parámetros de supervisión y el portal del supervisor). La gestión no es suya: ni subir o publicar
+    # (`*_gestion`) ni mantener el maestro de operadores (vincular, renombrar, dar de baja); los operadores los ve
+    # igual, con Supervisión.
+    "auditor": [f"{_TC}.{u}" for u in _TODAS_TC if u not in ("facturacion", "integraciones", "supervision_parametros",
+                                                               "portal_supervisor", "operadores") and not u.endswith("_gestion")],
     "cliente": [f"{_TC}.{u}" for u in ("ver",)],
 }
 

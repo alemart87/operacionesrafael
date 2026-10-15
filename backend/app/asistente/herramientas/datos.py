@@ -534,6 +534,74 @@ registrar(Herramienta(
     esquema=esquema({"mes": _MES}), fn=_alertas_corte, permisos=(P_AUD,), modos=TODOS))
 
 
+SECCIONES_AUDITORIA = ("resumen", "ventas_netas", "cruce", "productividad", "sph", "logistica", "supervision", "informe_diario")
+
+
+async def _datos_auditoria(ctx: Ctx, a: dict[str, Any]) -> Any:
+    """Los datos congelados de un informe de auditoría, sección por sección (lo que el auditor eligió como fuente)."""
+    from ...asistente import investigacion as inv_srv
+    from ...asistente.models import AsistenteConversacion
+    from ...operativas.televentas_claro.auditoria.fuentes import TIPOS
+    from ...operativas.televentas_claro.auditoria.snapshot import hallazgos_automaticos
+
+    valor = a.get("informe")
+    if not valor:
+        conv = await ctx.db.get(AsistenteConversacion, ctx.conversacion_id) if ctx.conversacion_id else None
+        inv = inv_srv.estado(conv) if conv is not None else None
+        valor = (inv or {}).get("auditoria_id")
+    if not valor:
+        raise ErrorHerramienta("Indicá el informe de auditoría (id o código AUD-…), o activá el modo auditor con un informe destino.")
+    det = await llamar(aud_api.detalle, auditoria_id=str(valor), user=ctx.user, db=ctx.db)
+    d = det.model_dump(mode="json") if hasattr(det, "model_dump") else dict(det)
+    snap = d.get("snapshot") or {}
+    modulos = snap.get("modulos") or {}
+    seccion = str(a.get("seccion") or "resumen")
+    if seccion not in SECCIONES_AUDITORIA:
+        raise ErrorHerramienta("Sección inválida: " + ", ".join(SECCIONES_AUDITORIA))
+    base = {"informe": seleccionar(d, ("id", "codigo", "titulo", "status", "periodo_desde", "periodo_hasta")),
+            "pantalla": f"/televentas-claro/auditoria/informes/{d.get('id')}"}
+    fuentes = [f"{TIPOS.get(f.get('tipo') or 'ventas_netas', {}).get('nombre', f.get('tipo'))}: {f.get('etiqueta') or f.get('periodo')}"
+               for f in d.get("fuentes") or []]
+    if seccion == "resumen":
+        k = snap.get("kpis") or {}
+        return compactar({**base, "fuentes": fuentes, "secciones_disponibles": ["ventas_netas", "cruce"] + sorted(modulos),
+                          "resumen": d.get("resumen"), "kpis_ventas_netas": seleccionar(k, ("netas", "pospago", "gpon", "pospago_sin_uso", "pct_sin_uso",
+                                                                                            "sali_sin_uso", "cargas", "pendientes", "vendedores_criticos", "vendedores_atencion")),
+                          "kpis_por_modulo": {t: (m or {}).get("kpis") for t, m in modulos.items()},
+                          "datos_llamativos": [seleccionar(x, ("gravedad", "categoria", "titulo", "cifra")) for x in snap.get("llamativos") or []][:12],
+                          "hallazgos": [seleccionar(h, ("codigo", "titulo", "severidad", "categoria", "vendedor", "estado")) for h in d.get("hallazgos") or []][:30],
+                          "advertencias": snap.get("advertencias") or None}, max_lista=30)
+    if seccion == "ventas_netas":
+        rk = snap.get("ranking") or []
+        return compactar({**base, "kpis": snap.get("kpis"), "riesgosos": [seleccionar(v, ("vendedor", "nivel", "netas", "pospago", "sin_uso", "pct_sin_uso",
+                                                                                            "sali_sin_uso", "suspendidas", "puntaje", "posicion")) for v in snap.get("riesgosos") or []][:20],
+                          "ranking_top": [seleccionar(v, ("vendedor", "netas", "pospago", "sin_uso", "pct_sin_uso", "nivel")) for v in rk[:15]],
+                          "lineas_sin_uso": (snap.get("lineas_sin_uso") or [])[:40], "sali_sin_uso": [x for x in snap.get("sali_lineas") or [] if x.get("sin_uso")][:30],
+                          "pendientes_viejas": (snap.get("pendientes_viejas") or [])[:30]}, max_lista=40)
+    if seccion == "cruce":
+        return compactar({**base, "cruce_por_vendedor": snap.get("cruce") or [],
+                          "nota": "Cada vendedor riesgoso de Ventas Netas con lo que dicen de él SPH, Logística y Supervisión (cruce por nombre)."}, max_lista=30)
+    m = modulos.get(seccion)
+    if not m:
+        raise ErrorHerramienta(f"El informe no incluye {TIPOS.get(seccion, {}).get('nombre', seccion)} entre sus fuentes. Fuentes: " + "; ".join(fuentes))
+    return compactar({**base, "fuente": TIPOS.get(seccion, {}).get("nombre"), **{k: v for k, v in m.items() if k != "fuentes"},
+                      "fuentes": [f.get("etiqueta") for f in m.get("fuentes") or []]}, max_lista=40)
+
+
+registrar(Herramienta(
+    nombre="datos_de_auditoria", etiqueta="Leyendo los datos congelados de la auditoría",
+    descripcion=("Los DATOS CONGELADOS de un informe de auditoría: lo que el auditor eligió como fuente (Ventas Netas y, si las "
+                 "incluyó, Productividad, SPH, Logística, Supervisión e Informe diario), ya consolidado y cruzado por vendedor. "
+                 "Sin «informe» usa el informe destino del modo auditor. «seccion»: resumen (fuentes, KPIs por módulo, "
+                 "datos llamativos y hallazgos), ventas_netas (ranking, riesgosos, líneas sin uso), cruce (cada vendedor "
+                 "riesgoso con lo que dicen de él las otras fuentes), productividad, sph, logistica, supervision, "
+                 "informe_diario. Usala en modo auditor antes que las herramientas por módulo: es exactamente lo que "
+                 "el informe audita."),
+    esquema=esquema({"informe": {"type": "string", "description": "Id o código (AUD-2026-003) del informe; opcional en modo auditor."},
+                     "seccion": {"type": "string", "enum": list(SECCIONES_AUDITORIA), "description": "Qué parte leer (por defecto, resumen)."}}),
+    fn=_datos_auditoria, permisos=(P_AUD,), modos=TODOS))
+
+
 registrar(Herramienta(
     nombre="auditorias_de_ventas", etiqueta="Consultando las auditorías de ventas",
     descripcion=("Informes de auditoría de ventas: estado, período, riesgos, hallazgos y seguimientos. Sin «id» lista "
@@ -545,4 +613,4 @@ registrar(Herramienta(
 
 # Después de responder con una de estas consultas, la plataforma ofrece sola los botones «Armar un tablero» y
 # «Ver en la pantalla» (consumidor.py): el agente no gasta una vuelta en ofrecer_opciones para eso.
-CONSULTAS = frozenset(['alertas_del_corte', 'auditorias_de_ventas', 'centro_de_comandos', 'coaching_del_dia', 'informes_diarios', 'logistica_del_mes', 'productividad_del_dia', 'productividad_por_rango', 'seguimiento_informes_diarios', 'sph', 'supervision_del_mes', 'tickets_de_revision', 'ventas_del_dia', 'ventas_del_mes'])
+CONSULTAS = frozenset(['alertas_del_corte', 'auditorias_de_ventas', 'centro_de_comandos', 'coaching_del_dia', 'datos_de_auditoria', 'informes_diarios', 'logistica_del_mes', 'productividad_del_dia', 'productividad_por_rango', 'seguimiento_informes_diarios', 'sph', 'supervision_del_mes', 'tickets_de_revision', 'ventas_del_dia', 'ventas_del_mes'])

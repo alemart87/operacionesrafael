@@ -50,7 +50,7 @@ def test_solo_facturacion_tiene_el_simulador():
         u = _usuario(rol, sorted(set(DEFAULT_PERMISSIONS.get(rol, [])) | {f"{TC}.asistente"}))
         assert not SIMULADOR & {h.nombre for h in para_usuario(u, modo(u))}, rol
     aud = _usuario("auditor", [*DEFAULT_PERMISSIONS["auditor"], f"{TC}.facturacion"])
-    assert not SIMULADOR & {h.nombre for h in para_usuario(aud, "auditor")}
+    assert not SIMULADOR & {h.nombre for h in para_usuario(aud, modo(aud))}   # el perfil no puede tener Facturación
 
 
 def test_entrada_normalizada_reproduce_la_pantalla():

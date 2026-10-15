@@ -133,7 +133,7 @@ export function FranjaAuditor({ inv, onCambiar, onSalir, onNavegar }: {
         <div className="text-xs font-semibold text-brand-ink">{diario ? "Voi en modo informe diario" : "Voi en modo auditor"}</div>
         <div className="text-xs text-brand-slate truncate">
           {diario ? <>El agente arma con vos el informe del <span className="font-medium text-brand-graphite">{ddmm(inv.fecha)}</span> (borrador): sus gráficos van a ese informe</>
-            : inv.auditoria_id ? <>El agente investiga con vos · <span className="font-medium text-brand-graphite">{inv.codigo}</span> · {inv.titulo}</>
+            : inv.auditoria_id ? <>El agente investiga con vos · <span className="font-medium text-brand-graphite">{inv.codigo}</span> · {inv.titulo}{inv.alcance ? <span className="block text-[11px] text-brand-slate truncate" title={inv.alcance}>Fuentes: {inv.alcance}</span> : null}</>
               : "El agente investiga con vos · sin informe destino"}
         </div>
       </div>

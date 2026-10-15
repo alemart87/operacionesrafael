@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { KpiCard } from "@/components/KpiCard";
-import { AUD_API, AUD_HREF, ESTADO_AUD_LABEL, fechaHora, n, rangoPeriodos, type AuditoriaResumen, type EstadoAuditoria } from "@/components/auditoria/tipos";
+import { AUD_API, AUD_HREF, ESTADO_AUD_LABEL, fechaHora, n, rangoPeriodos, type AuditoriaResumen, type EstadoAuditoria , resumenFuentes } from "@/components/auditoria/tipos";
 import { apiFetch } from "@/lib/api";
 
 const ESTADO_CLS: Record<EstadoAuditoria, string> = { borrador: "badge-cyan", en_revision: "badge-primary", cerrado: "badge-success", archivado: "badge-neutral" };
@@ -98,7 +98,7 @@ function Panel() {
                   </td>
                   <td className="px-3 py-2.5">{rangoPeriodos(a)}</td>
                   <td className="px-3 py-2.5"><span className={ESTADO_CLS[a.status]}>{ESTADO_AUD_LABEL[a.status]}</span></td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{n(a.fuentes.length)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums" title={resumenFuentes(a.fuentes)}>{n(a.fuentes.length)}{new Set(a.fuentes.map((f) => f.tipo ?? "ventas_netas")).size > 1 && <span className="ml-1 badge-cyan">multi</span>}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{n(a.hallazgos_total)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{a.hallazgos_abiertos ? <b className="text-brand-primary">{n(a.hallazgos_abiertos)}</b> : "0"}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{n(a.hallazgos_alta)}</td>

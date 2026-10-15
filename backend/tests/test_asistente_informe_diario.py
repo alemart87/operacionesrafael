@@ -100,14 +100,22 @@ async def test_modo_informe_diario_y_figuras_del_lienzo(simulador, tmp_path, mon
         _, otra = await _nuevo(ac, admin, "coordinador", "Otra Coordinadora")
         _, auditor = await _nuevo(ac, admin, "auditor", "Ana Auditora")
 
-        # Quién tiene el modo: quien prepara el informe diario.
+        # Quién tiene el modo: quien prepara el informe diario (el auditor también tiene el módulo; el analista, no).
+        _, analista = await _nuevo(ac, admin, "analista", "Ale Analista")
+        async with AsyncSessionLocal() as db:   # el analista necesita Voi para consultar el estado
+            from app.models.profile import Profile
+            from app.core.operativas import filter_permissions
+            perfil = await db.get(Profile, "analista")
+            perfil.permissions = filter_permissions(sorted(set(perfil.permissions or []) | {"televentas_claro.asistente"}), "analista")
+            await db.commit()
         assert (await ac.get(f"{BASE}/estado", headers=coord)).json()["modo_informe_diario"] is True
-        assert (await ac.get(f"{BASE}/estado", headers=auditor)).json()["modo_informe_diario"] is False
+        assert (await ac.get(f"{BASE}/estado", headers=auditor)).json()["modo_informe_diario"] is True
+        assert (await ac.get(f"{BASE}/estado", headers=analista)).json()["modo_informe_diario"] is False
 
         # Desde el panel: activar el modo abre el borrador de hoy (se crea si no existe) y lo deja como destino.
         cid = (await ac.post(f"{BASE}/conversaciones", headers=coord, json={})).json()["id"]
-        cid_aud = (await ac.post(f"{BASE}/conversaciones", headers=auditor, json={})).json()["id"]
-        r = await ac.post(f"{BASE}/conversaciones/{cid_aud}/investigacion", headers=auditor,
+        cid_an = (await ac.post(f"{BASE}/conversaciones", headers=analista, json={})).json()["id"]
+        r = await ac.post(f"{BASE}/conversaciones/{cid_an}/investigacion", headers=analista,
                           json={"activo": True, "tipo": "informe_diario"})
         assert r.status_code == 403 and "informe diario" in r.json()["detail"]
         r = await ac.post(f"{BASE}/conversaciones/{cid}/investigacion", headers=coord, json={"activo": True, "tipo": "informe_diario"})
@@ -202,7 +210,7 @@ async def test_modo_informe_diario_y_figuras_del_lienzo(simulador, tmp_path, mon
         assert r.status_code == 200 and r.json()["titulo"] == "Llamadas por turno" and r.json()["nota"] is None and r.json()["figura"] == 2
         assert (await ac.patch(f"{INF}/{iid}/figuras/{f2}", headers=otra, json={"titulo": "x"})).status_code == 404
         assert (await ac.patch(f"{INF}/{iid}/figuras/{f2}", headers=admin, json={"titulo": "x"})).status_code == 403
-        assert (await ac.patch(f"{INF}/{iid}/figuras/{f2}", headers=auditor, json={"titulo": "x"})).status_code == 403
+        assert (await ac.patch(f"{INF}/{iid}/figuras/{f2}", headers=auditor, json={"titulo": "x"})).status_code in (403, 404)   # no es suyo
         assert (await ac.patch(f"{INF}/{iid}/figuras/no-existe", headers=coord, json={"titulo": "x"})).status_code == 404
         subir = lambda fid, datos, quien=coord: ac.post(  # noqa: E731
             f"{INF}/{iid}/figuras/{fid}/imagen", headers=quien, files={"archivo": ("captura.png", datos, "image/png")})
@@ -221,7 +229,7 @@ async def test_modo_informe_diario_y_figuras_del_lienzo(simulador, tmp_path, mon
         assert img.headers["x-content-type-options"] == "nosniff" and dict(Image.open(io.BytesIO(img.content)).getexif()) == {}
         assert (await ac.get(f"{INF}/{iid}/figuras/{f1}/imagen", headers=otra)).status_code == 404
         assert (await ac.get(f"{INF}/{iid}/figuras/{f1}/imagen", headers=admin)).status_code == 200   # el superadmin ve el informe
-        assert (await ac.get(f"{INF}/{iid}/figuras/{f1}/imagen", headers=auditor)).status_code == 403
+        assert (await ac.get(f"{INF}/{iid}/figuras/{f1}/imagen", headers=auditor)).status_code in (403, 404)   # no es suyo
 
         # El PDF del borrador lleva las figuras: la captura si existe, los datos si no.
         r = await ac.get(f"{INF}/{iid}/pdf", headers=coord)
@@ -308,8 +316,9 @@ async def test_modo_informe_diario_y_figuras_del_lienzo(simulador, tmp_path, mon
         await _esperar(cid2)
         async with AsyncSessionLocal() as db:
             assert (await db.get(AsistenteConversacion, cid2)).investigacion is None
-        # Quien no prepara el informe diario no tiene la herramienta: el mismo pedido no activa nada.
-        cid3 = (await ac.post(f"{BASE}/conversaciones", headers=auditor, json={"texto": "Armemos el informe diario de hoy"})).json()["id"]
+        # Quien no prepara el informe diario no tiene la herramienta: el mismo pedido no activa nada (el analista; el
+        # auditor sí tiene el módulo desde que ve todos los módulos).
+        cid3 = (await ac.post(f"{BASE}/conversaciones", headers=analista, json={"texto": "Armemos el informe diario de hoy"})).json()["id"]
         await _esperar(cid3)
         async with AsyncSessionLocal() as db:
             assert (await db.get(AsistenteConversacion, cid3)).investigacion is None

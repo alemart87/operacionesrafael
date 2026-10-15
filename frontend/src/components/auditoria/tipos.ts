@@ -47,13 +47,38 @@ export const CATEGORIA_LABEL: Record<string, string> = {
   suspendidas: "Suspendidas",
   riesgo: "Riesgo de carga",
   zona: "Zona",
+  productividad: "Productividad",
+  sph: "SPH",
+  logistica: "Logística",
+  supervision: "Supervisión",
+  informe_diario: "Informe diario",
+  cruce: "Cruce de fuentes",
   otro: "Otro",
 };
 
 export type Nivel = "critico" | "atencion" | "normal";
 export const NIVEL_LABEL: Record<Nivel, string> = { critico: "Crítico", atencion: "Alerta media", normal: "Normal" };
 
+/** Tipos de fuente que puede tomar una auditoría (Facturación nunca). */
+export type TipoFuente = "ventas_netas" | "productividad" | "sph" | "logistica" | "supervision" | "informe_diario";
+export const TIPO_FUENTE_LABEL: Record<TipoFuente, string> = {
+  ventas_netas: "Ventas Netas", productividad: "Productividad", sph: "SPH", logistica: "Logística",
+  supervision: "Supervisión", informe_diario: "Informe diario",
+};
+export const TIPOS_FUENTE: TipoFuente[] = ["ventas_netas", "productividad", "sph", "logistica", "supervision", "informe_diario"];
+
+/** Un ítem elegible de un módulo (día de Productividad, informe de SPH, corte de Logística, mes de Supervisión…). */
+export interface FuenteItem {
+  tipo: TipoFuente; id: string; periodo: string; fecha?: string | null; status: string; etiqueta: string;
+  [k: string]: unknown;
+}
+export interface CatalogoTipo { tipo: TipoFuente; nombre: string; unidad: string; descripcion: string; habilitado: boolean; items: FuenteItem[] }
+export interface CatalogoFuentes { ventas_netas: Fuente[]; tipos: CatalogoTipo[] }
+export interface FuenteSeleccion { tipo: TipoFuente; id: string }
+
 export interface Fuente {
+  tipo?: TipoFuente;
+  etiqueta?: string;
   id: string;
   periodo: string;
   fecha_dato: string | null;
@@ -70,7 +95,10 @@ export interface Fuente {
 }
 
 export interface FuenteUsada {
-  report_id: string;
+  tipo?: TipoFuente;
+  etiqueta?: string;
+  id?: string;
+  report_id?: string;
   periodo: string;
   fecha_dato: string | null;
   status: string;
@@ -101,6 +129,32 @@ export interface VendedorRanking {
 
 export interface Llamativo { gravedad: Severidad; categoria: string; titulo: string; detalle: string; cifra: string }
 
+/** Lo que congela cada módulo: sus fuentes, KPIs y listas (la forma exacta depende del módulo; ver fuentes.py). */
+export interface ModuloDatos {
+  fuentes: FuenteUsada[];
+  periodos: string[];
+  kpis: Record<string, number | string | null | undefined | Record<string, number>>;
+  [k: string]: unknown;
+}
+export interface CruceVendedor {
+  vendedor: string; nivel: Nivel; netas: number; sin_uso: number; pct_sin_uso: number;
+  sph: { sph: number | null; ventas: number | null; horas: number | null; agente: string | null; sobre_media: boolean } | null;
+  logistica: { total: number; entregado: number; en_gestion: number; devuelto: number; pct_entregado: number | null; pct_devuelto: number | null } | null;
+  supervision: { alertas: number; coachings: number; tickets: number } | null;
+  senales: string[];
+}
+
+/** «Ventas Netas: sep 2026 · corte 22/09 · Logística: octubre 2026 · corte 13/10 …» */
+export function resumenFuentes(fuentes: FuenteUsada[], max = 4): string {
+  const por = new Map<string, string[]>();
+  for (const f of fuentes) {
+    const t = (f.tipo ?? "ventas_netas") as TipoFuente;
+    const et = f.etiqueta ?? (f.fecha_dato ? `${nombrePeriodo(f.periodo)} corte ${fechaCorta(f.fecha_dato)}` : nombrePeriodo(f.periodo));
+    por.set(t, [...(por.get(t) ?? []), et]);
+  }
+  return [...por.entries()].map(([t, v]) => `${TIPO_FUENTE_LABEL[t as TipoFuente] ?? t}: ${v.slice(0, max).join(", ")}${v.length > max ? ` y ${v.length - max} más` : ""}`).join(" · ");
+}
+
 export interface LineaEvidencia {
   periodo?: string; sds_number: string; linea?: string | null; fecha_activacion?: string | null; fecha_portacion?: string | null;
   plan?: string | null; origen_portacion?: string | null; portacion?: string | null; consumo?: string | null;
@@ -129,6 +183,9 @@ export interface Snapshot {
   llamativos: Llamativo[];
   ranking: VendedorRanking[];
   riesgosos: VendedorRanking[];
+  /** Datos congelados de las otras fuentes (por tipo) y el cruce por vendedor riesgoso. */
+  modulos?: Partial<Record<Exclude<TipoFuente, "ventas_netas">, ModuloDatos>>;
+  cruce?: CruceVendedor[];
   series: {
     netas_por_dia: { dia: string; total: number; con_uso: number; sin_uso: number; en_espera?: number; otros: number }[];
     sali_por_dia: { dia: string; total: number; sin_uso: number; con_uso: number }[];

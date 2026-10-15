@@ -39,6 +39,8 @@ export interface InvestigacionVoi {
   tipo?: TipoModo | null;
   auditoria_id?: string | null;
   codigo?: string | null;
+  /** Fuentes del informe destino, en una línea («Ventas Netas: … · Logística: …»). */
+  alcance?: string | null;
   titulo?: string | null;
   estado?: string | null;
   /** Modo informe diario: el borrador destino y su fecha (AAAA-MM-DD). */
