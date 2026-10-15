@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .models import CATEGORIAS, HALLAZGO_ESTADOS, SEVERIDADES
 
@@ -27,14 +27,35 @@ class FuenteDisponible(BaseModel):
     actualizada: bool = True
 
 
-class RiesgosRequest(BaseModel):
-    report_ids: List[str] = Field(min_length=1, max_length=24)
+class FuenteSeleccion(BaseModel):
+    """Una fuente elegida: el tipo (ventas_netas, productividad, sph, logistica, supervision, informe_diario) y su id
+    (el informe, o el mes AAAA-MM en Supervisión e Informe diario)."""
+    tipo: str = Field(max_length=20)
+    id: str = Field(min_length=1, max_length=40)
 
 
-class AuditoriaCreate(BaseModel):
+class _ConFuentes(BaseModel):
+    """`report_ids` son informes de Ventas Netas (como siempre); `fuentes` suma cualquier tipo. Hace falta al menos una."""
+    report_ids: List[str] = Field(default_factory=list, max_length=24)
+    fuentes: List[FuenteSeleccion] = Field(default_factory=list, max_length=60)
+
+    @model_validator(mode="after")
+    def _al_menos_una(self):
+        if not self.report_ids and not self.fuentes:
+            raise ValueError("Elegí al menos una fuente.")
+        return self
+
+    def seleccion(self) -> list[dict[str, str]]:
+        return [f.model_dump() for f in self.fuentes]
+
+
+class RiesgosRequest(_ConFuentes):
+    pass
+
+
+class AuditoriaCreate(_ConFuentes):
     titulo: str = Field(min_length=3, max_length=255)
     alcance: Optional[str] = None
-    report_ids: List[str] = Field(min_length=1, max_length=24)
 
 
 class GraficoElegido(BaseModel):

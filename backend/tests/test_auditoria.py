@@ -58,7 +58,7 @@ async def test_circuito_de_auditoria(tmp_path, monkeypatch):
         # Permisos
         assert (await ac.get(f"{BASE}/fuentes", headers=supervisor)).status_code == 403
         assert (await ac.get(f"{BASE}/fuentes", headers=coordinador)).status_code == 403
-        fuentes = (await ac.get(f"{BASE}/fuentes", headers=analista)).json()
+        fuentes = (await ac.get(f"{BASE}/fuentes", headers=analista)).json()["ventas_netas"]
         assert [f["id"] for f in fuentes] == [r1] and fuentes[0]["status"] == "draft" and fuentes[0]["actualizada"]
 
         # Informe generado por una versión anterior del análisis (sin Sali Hablando ni productividad):
@@ -68,7 +68,7 @@ async def test_circuito_de_auditoria(tmp_path, monkeypatch):
             rep.data = {k: v for k, v in rep.data.items() if k not in ("productividad", "sali_hablando", "version")}
             rep.netas = 0
             await db.commit()
-        f1 = (await ac.get(f"{BASE}/fuentes", headers=analista)).json()[0]
+        f1 = (await ac.get(f"{BASE}/fuentes", headers=analista)).json()["ventas_netas"][0]
         assert f1["actualizada"] is False and f1["analysis_version"] == 0 and f1["netas"] == 0
 
         # Riesgos en vivo (no se guarda el análisis, pero la fuente queda actualizada)
@@ -84,7 +84,7 @@ async def test_circuito_de_auditoria(tmp_path, monkeypatch):
         assert reglas["umbral_sin_uso_critico"] == 35 and reglas["umbral_uso_pct"] == 65 and reglas["pesos"]["sali_sin_uso"] == 3
         assert "nivel_critico" not in reglas and reglas["nivel_atencion"]["sin_uso_antiguas"] == 3
         assert reglas["patrones"]["pospago_mismo_dia"] == {"min": 6, "pct": 40} and reglas["llamativos"]["pendientes_dias"] == 7
-        f1 = (await ac.get(f"{BASE}/fuentes", headers=analista)).json()[0]
+        f1 = (await ac.get(f"{BASE}/fuentes", headers=analista)).json()["ventas_netas"][0]
         assert f1["actualizada"] and f1["netas"] == 6
         det = (await ac.get(f"{VN}/reports/{r1}", headers=analista)).json()
         assert det["netas"] == 6 and "sali_hablando" in det["data"]
@@ -107,12 +107,12 @@ async def test_circuito_de_auditoria(tmp_path, monkeypatch):
         s2 = (await ac.post(f"{BASE}/riesgos", headers=analista, json={"report_ids": [r2]})).json()
         assert s2["kpis"]["netas"] == 6 and s2["kpis"]["sali_sin_uso"] == 0
         assert len(s2["advertencias"]) == 1 and "versión anterior" in s2["advertencias"][0] and s2["fuentes"][0]["version"] == 0
-        assert r2 in [f["id"] for f in (await ac.get(f"{BASE}/fuentes", headers=analista)).json()]  # sigue disponible
+        assert r2 in [f["id"] for f in (await ac.get(f"{BASE}/fuentes", headers=analista)).json()["ventas_netas"]]  # sigue disponible
         # Un corte reemplazado por otra publicación deja de ofrecerse como fuente.
         async with session_scope() as db:
             (await db.get(VentasNetasReport, r2)).status = "replaced"
             await db.commit()
-        assert [f["id"] for f in (await ac.get(f"{BASE}/fuentes", headers=analista)).json()] == [r1]
+        assert [f["id"] for f in (await ac.get(f"{BASE}/fuentes", headers=analista)).json()["ventas_netas"]] == [r1]
         async with session_scope() as db:
             (await db.get(VentasNetasReport, r2)).status = "draft"
             await db.commit()
@@ -220,3 +220,92 @@ async def test_circuito_de_auditoria(tmp_path, monkeypatch):
             assert esperada in acciones, esperada
         reproc = [x for x in log if x["action"] == "reprocess_ventas_netas_report"]
         assert len(reproc) == 1 and reproc[0]["resource_id"] == r1 and reproc[0]["extra"]["origen"] == "auditoria" and reproc[0]["extra"]["anterior"] == 0
+
+
+@pytest.mark.asyncio
+async def test_auditoria_con_fuentes_de_todos_los_modulos(tmp_path, monkeypatch):
+    """El auditor elige fuentes de cualquier módulo (salvo Facturación): se congelan, se cruzan por vendedor y
+    suman hallazgos; sin Ventas Netas también se puede auditar."""
+    from datetime import date as _date
+
+    from app.operativas.televentas_claro.supervision.models import AlertaAsesor, Operador
+    from tests.test_logistica import xlsx as log_xlsx
+    from tests.test_productividad import DIA, UN_CORTE, nombre_archivo, reporte
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        analista = await _new_user(ac, admin, "analista")
+        auditor = await _new_user(ac, admin, "auditor")
+        vn = await _subir_y_procesar(ac, analista, build_xlsx(tmp_path / "sep-multi.xlsx"), monkeypatch)
+        r = await ac.post("/api/v1/televentas-claro/productividad/cortes", headers=analista,
+                          files={"file": (nombre_archivo(DIA, 18), reporte(UN_CORTE), "text/csv")})
+        assert r.status_code == 201, r.text
+        prod_id = r.json()["informe"]["id"]
+        r = await ac.post("/api/v1/televentas-claro/logistica/uploads", headers=analista,
+                          files={"file": ("pedidos.xlsx", log_xlsx(), "application/octet-stream")}, data={"fecha_corte": "2026-10-10"})
+        assert r.status_code == 201, r.text
+        log_id = r.json()["informe"]["id"]
+        async with session_scope() as db:
+            op = Operador(nombre="NUÑEZ, EVELYN", vendedor="NUÑEZ, EVELYN", cruce="manual")
+            db.add(op)
+            await db.flush()
+            db.add(AlertaAsesor(periodo="2026-10", operador_id=op.id, desde=_date(2026, 10, 3), datos={"sin_uso": 3, "pospago": 5}))
+            await db.commit()
+
+        # Catálogo por tipo: el auditor ve todos los módulos; el analista no tiene Informe diario.
+        cat = (await ac.get(f"{BASE}/fuentes", headers=auditor)).json()
+        tipos = {t["tipo"]: t for t in cat["tipos"]}
+        assert set(tipos) == {"ventas_netas", "productividad", "sph", "logistica", "supervision", "informe_diario"}
+        assert all(t["habilitado"] for t in tipos.values()) and "facturacion" not in tipos
+        assert [i["id"] for i in tipos["productividad"]["items"]] == [prod_id] and tipos["productividad"]["items"][0]["periodo"] == "2026-10"
+        assert [i["id"] for i in tipos["logistica"]["items"]] == [log_id]
+        assert "2026-10" in [i["id"] for i in tipos["supervision"]["items"]] and tipos["supervision"]["unidad"] == "mes"
+        cat_an = {t["tipo"]: t for t in (await ac.get(f"{BASE}/fuentes", headers=analista)).json()["tipos"]}
+        assert not cat_an["informe_diario"]["habilitado"] and cat_an["informe_diario"]["items"] == []
+        r = await ac.post(f"{BASE}/riesgos", headers=analista, json={"fuentes": [{"tipo": "informe_diario", "id": "2026-10"}]})
+        assert r.status_code == 403
+        assert (await ac.post(f"{BASE}/riesgos", headers=auditor, json={"fuentes": []})).status_code == 422
+        assert (await ac.post(f"{BASE}/riesgos", headers=auditor, json={"fuentes": [{"tipo": "sph", "id": "no-existe"}]})).status_code == 400
+
+        # Riesgos con todas las fuentes: datos congelados por módulo, cruce y hallazgos nuevos.
+        fuentes = [{"tipo": "productividad", "id": prod_id}, {"tipo": "logistica", "id": log_id},
+                   {"tipo": "supervision", "id": "2026-10"}, {"tipo": "informe_diario", "id": "2026-10"}]
+        r = await ac.post(f"{BASE}/riesgos", headers=auditor, json={"report_ids": [vn], "fuentes": fuentes})
+        assert r.status_code == 200, r.text
+        s = r.json()
+        assert set(s["modulos"]) == {"productividad", "logistica", "supervision", "informe_diario"}
+        assert s["kpis"]["fuentes"] == 1 and s["kpis"]["fuentes_total"] == 5 and s["kpis"]["modulos"] == ["informe_diario", "logistica", "productividad", "supervision"]
+        assert {f["tipo"] for f in s["fuentes"]} == {"ventas_netas", "productividad", "logistica", "supervision", "informe_diario"}
+        assert s["periodos"] == ["2026-09", "2026-10"]
+        pr = s["modulos"]["productividad"]
+        assert pr["kpis"]["dias"] == 1 and pr["kpis"]["llamadas"] == 860 and len(pr["agentes"]) >= 3 and pr["por_dia"][0]["fecha"] == "2026-10-07"
+        lg = s["modulos"]["logistica"]
+        assert lg["kpis"]["pedidos"] == 8 and lg["kpis"]["vencidos"] == 2 and lg["vendedores"][0]["vendedor"]
+        su = s["modulos"]["supervision"]
+        assert su["kpis"]["alertas"] == 1 and su["kpis"]["alertas_abiertas"] == 1 and su["alertas"][0]["operador"] == "NUÑEZ, EVELYN"
+        assert s["modulos"]["informe_diario"]["kpis"]["meses"] == 1
+        assert any(x["categoria"] == "logistica" for x in s["llamativos"])
+        # Hallazgos: los de Ventas Netas de siempre más los de las otras fuentes.
+        r = await ac.post(f"{BASE}/informes", headers=auditor, json={"titulo": "Auditoría integral", "report_ids": [vn], "fuentes": fuentes})
+        assert r.status_code == 201, r.text
+        a = r.json()
+        cats = {h["categoria"] for h in a["hallazgos"]}
+        assert {"vendedor", "logistica", "productividad", "supervision"} <= cats
+        claves = {(h["categoria"], h["evidencia"].get("clave")) for h in a["hallazgos"]}
+        assert ("logistica", "pendientes_vencidos") in claves and ("productividad", "agentes_bajo_meta") in claves and ("supervision", "alertas_abiertas") in claves
+        assert "Otras fuentes incluidas" in a["resumen"] and "Logística" in a["resumen"]
+        assert len(a["fuentes"]) == 5 and a["periodo_desde"] == "2026-09" and a["periodo_hasta"] == "2026-10"
+        # Actualizar datos vuelve a cargar todas las fuentes (las otras incluidas).
+        r = await ac.post(f"{BASE}/informes/{a['id']}/actualizar", headers=auditor)
+        assert r.status_code == 200, r.text
+        assert set(r.json()["snapshot"]["modulos"]) == {"productividad", "logistica", "supervision", "informe_diario"}
+        assert {(h["categoria"], h["evidencia"].get("clave")) for h in r.json()["hallazgos"]} == claves
+
+        # Sin Ventas Netas también se audita (sin ranking), con la advertencia.
+        r = await ac.post(f"{BASE}/riesgos", headers=auditor, json={"fuentes": [{"tipo": "logistica", "id": log_id}]})
+        assert r.status_code == 200, r.text
+        s2 = r.json()
+        assert s2["kpis"]["netas"] == 0 and s2["ranking"] == [] and s2["periodos"] == ["2026-10"] and "Sin un corte de Ventas Netas" in s2["advertencias"][0]
+        r = await ac.post(f"{BASE}/informes", headers=auditor, json={"titulo": "Solo logística", "fuentes": [{"tipo": "logistica", "id": log_id}]})
+        assert r.status_code == 201, r.text
+        assert r.json()["resumen"].startswith("Se auditó octubre 2026 sin un corte de Ventas Netas")

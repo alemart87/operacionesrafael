@@ -11,11 +11,13 @@ import { GraficoAuditoria, tituloGrafico } from "@/components/auditoria/GraficoA
 import { Hallazgos } from "@/components/auditoria/Hallazgos";
 import { InformeEjecutivo } from "@/components/auditoria/InformeEjecutivo";
 import { InformeImpreso } from "@/components/auditoria/InformeImpreso";
+import { ModulosView } from "@/components/auditoria/Modulos";
 import { RiesgosView } from "@/components/auditoria/RiesgosView";
 import { Seguimiento } from "@/components/auditoria/Seguimiento";
 import {
   ACCION_ESTADO, AUD_API, AUD_HREF, CATALOGO_GRAFICOS, ESTADO_AUD_LABEL, fechaCorta, fechaHora, n, nombrePeriodo, rangoPeriodos,
   type AuditoriaDetalle, type EstadoAuditoria, type GraficoElegido,
+  resumenFuentes,
 } from "@/components/auditoria/tipos";
 import { Tabs } from "@/components/ventas-netas/ui";
 import { VoiIsotipo } from "@/components/voi/VoiIsotipo";
@@ -111,7 +113,7 @@ function Informe() {
             </div>
             <h1 className="font-display text-3xl text-brand-ink uppercase leading-tight">{a.titulo}</h1>
             <p className="text-sm text-brand-slate mt-1">
-              {rangoPeriodos(a)} · fuentes: {a.fuentes.map((f) => `${nombrePeriodo(f.periodo)} corte ${fechaCorta(f.fecha_dato)}`).join(", ")} · auditor {nombre(a.created_by)} · {fechaHora(a.created_at)}
+              {rangoPeriodos(a)} · fuentes: {resumenFuentes(a.fuentes)} · auditor {nombre(a.created_by)} · {fechaHora(a.created_at)}
               {a.closed_at && <> · cerrado por {nombre(a.closed_by)} el {fechaHora(a.closed_at)}</>}
             </p>
           </div>
@@ -158,7 +160,7 @@ function Informe() {
         />
       </div>
 
-      {vista === "resumen" && <RiesgosView s={a.snapshot} />}
+      {vista === "resumen" && <div className="space-y-6"><RiesgosView s={a.snapshot} /><ModulosView s={a.snapshot} /></div>}
       {vista === "hallazgos" && <Hallazgos a={a} onChange={load} />}
       {vista === "evidencia" && <EvidenciaTab a={a} onChange={load} />}
       {vista === "graficos" && <Graficos a={a} onDetalle={setA} />}

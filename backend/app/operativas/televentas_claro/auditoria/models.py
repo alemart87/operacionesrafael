@@ -46,7 +46,8 @@ SEVERIDADES = ["alta", "media", "baja", "info"]
 EVIDENCIA_TIPOS = ["grafico", "imagen"]          # pieza del lienzo (congelada) | imagen subida
 EVIDENCIA_ORIGENES = ["voi", "lienzo", "subida"]  # la propuso Voi · la eligió el usuario en el lienzo · la subió
 MAX_EVIDENCIAS = 60
-CATEGORIAS = ["vendedor", "sali_hablando", "sin_uso", "activacion", "pendientes", "suspendidas", "riesgo", "otro"]
+CATEGORIAS = ["vendedor", "sali_hablando", "sin_uso", "activacion", "pendientes", "suspendidas", "riesgo",
+              "productividad", "sph", "logistica", "supervision", "informe_diario", "cruce", "otro"]
 
 
 class Auditoria(Base):

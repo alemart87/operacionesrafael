@@ -30,6 +30,7 @@ from .integraciones import api as integraciones_api
 from .integraciones.migraciones import MIGRACIONES as integraciones_migraciones
 from .logistica import api as logistica_api
 from .logistica.migraciones import MIGRACIONES as logistica_migraciones
+from .auditoria.migraciones import MIGRACIONES as auditoria_migraciones
 from .productividad import api as productividad_api
 from .router import router
 from .sph import api as sph_api
@@ -56,4 +57,4 @@ AL_ARRANCAR = {"ventas_netas_actualizar": ventas_netas_actualizar}
 
 # Migraciones de datos de una sola vez (id, coroutine(db)): main.py las corre al arrancar y las anota.
 MIGRACIONES_DATOS = [*supervision_migraciones, *facturacion_migraciones, *informe_diario_migraciones, *integraciones_migraciones,
-                     *logistica_migraciones]
+                     *logistica_migraciones, *auditoria_migraciones]

@@ -56,7 +56,8 @@ def test_quien_usa_voi_por_defecto():
     assert puede_usar(_usuario("coordinador")) and not puede_usar(_usuario("controller"))
     sa = CurrentUser(id="superadmin", email="a", role="superadmin", full_name="Admin")
     assert puede_usar(sa) and modo(sa) == "superadmin"
-    assert modo(_usuario("auditor")) == "auditor" and modo(_usuario("sub_gerente")) == "gestion"
+    # El auditor trabaja con Voi como el resto: con todos sus módulos (el «modo auditor» es de la conversación).
+    assert modo(_usuario("auditor")) == "gestion" and modo(_usuario("sub_gerente")) == "gestion"
 
 
 def test_herramientas_segun_perfil_y_modo():
@@ -64,11 +65,14 @@ def test_herramientas_segun_perfil_y_modo():
     assert {"productividad_del_dia", "ventas_del_mes", "centro_de_comandos", "preparar_informe_diario",
             "enviar_ticket_revision", "gestionar_alerta", "buscar_personas"} <= coord
     assert "auditorias_de_ventas" not in coord                       # el coordinador no tiene auditoría
-    aud = {h.nombre for h in para_usuario(_usuario("auditor"), "auditor")}
-    assert {"auditorias_de_ventas", "ventas_del_mes", "centro_de_comandos", "tickets_de_revision"} <= aud
-    # Modo auditoría: nada de productividad, informe diario, coaching ni actuar sobre alertas.
-    assert not aud & {"productividad_del_dia", "productividad_por_rango", "preparar_informe_diario", "coaching_del_dia",
-                      "gestionar_alerta", "supervision_del_mes", "sph", "informes_diarios"}
+    aud = {h.nombre for h in para_usuario(_usuario("auditor"), "gestion")}
+    assert {"auditorias_de_ventas", "ventas_del_mes", "centro_de_comandos", "tickets_de_revision", "productividad_del_dia",
+            "productividad_por_rango", "sph", "logistica_del_mes", "supervision_del_mes", "coaching_del_dia",
+            "informes_diarios"} <= aud
+    # El auditor ve, no gestiona: nada de actuar sobre alertas ni de facturación (que su perfil no puede tener).
+    assert not aud & {"gestionar_alerta", "facturacion_pospago", "facturacion_gpon"}
+    aud_con_fact = {h.nombre for h in para_usuario(_usuario("auditor", [*DEFAULT_PERMISSIONS["auditor"], f"{TC}.facturacion"]), "gestion")}
+    assert aud_con_fact == aud                                         # aunque figure en la base, no vale para su perfil
     # Sin el permiso del módulo no hay herramienta, aunque tenga Voi.
     solo_vn = {h.nombre for h in para_usuario(_usuario("analista", [f"{TC}.ver", f"{TC}.ventas_netas", f"{TC}.asistente"]),
                                               "gestion")}
@@ -374,24 +378,25 @@ async def test_acciones_con_confirmacion(simulador):
 
 
 @pytest.mark.asyncio
-async def test_auditor_acotado_a_auditoria_y_alertas(simulador):
+async def test_auditor_usa_voi_con_todos_sus_modulos(simulador):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
         await _publicado(ac, admin)
         _, aud = await _nuevo(ac, admin, "auditor", "Ana Auditora")
         est = (await ac.get(f"{BASE}/estado", headers=aud)).json()
-        assert est["modo"] == "auditor" and "auditoría" in est["sugerencias"][0].lower()
-        cid = (await ac.post(f"{BASE}/conversaciones", headers=aud, json={"texto": "¿Cómo vino la productividad?"})).json()["id"]
+        assert est["modo"] == "gestion" and "auditoría" in est["sugerencias"][0].lower() and est["modo_auditor"]
+        cid = (await ac.post(f"{BASE}/conversaciones", headers=aud, json={"texto": "¿Qué dice la última auditoría de ventas?"})).json()["id"]
         await _esperar(cid)
         async with AsyncSessionLocal() as db:
             c = await db.get(AsistenteConversacion, cid)
             rec = await voi_config.recursos(db)
         sesion = simulador.sesiones[c.session_id]
-        assert "productividad_del_dia" not in sesion.herramientas and "auditorias_de_ventas" in sesion.herramientas
-        ids_aud = {rec["habilidades"][n]["id"] for n in definicion.HABILIDADES_AUDITOR}
-        assert set(c.contexto["habilidades"]) <= ids_aud and c.contexto["modo"] == "auditor"
-        t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=aud)).json()
-        assert "paso" not in [i["tipo"] for i in t["items"]]          # no tenía cómo consultar productividad
+        # Todos sus módulos (productividad, SPH, logística…) y nunca facturación.
+        assert {"productividad_del_dia", "sph", "logistica_del_mes", "auditorias_de_ventas"} <= set(sesion.herramientas)
+        assert not {h for h in sesion.herramientas if h.startswith("facturacion_")}
+        ids = {rec["habilidades"][n]["id"] for n in ("voi-productividad-y-sph", "voi-auditoria-de-ventas")}
+        assert ids <= set(c.contexto["habilidades"]) and rec["habilidades"]["voi-facturacion"]["id"] not in c.contexto["habilidades"]
+        assert c.contexto["modo"] == "gestion"
 
 
 @pytest.mark.asyncio

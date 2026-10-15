@@ -374,20 +374,35 @@ registrar(Herramienta(
 
 
 # ------------------------------------------------------------------ auditoría de ventas (nivel 2)
-async def _fuentes_por_mes(ctx: Ctx, meses: list[str]) -> list[str]:
-    """El corte de Ventas Netas de cada mes: el publicado más reciente o, si no hay, el último borrador."""
-    disponibles = await llamar(aud_api.fuentes, user=ctx.user, db=ctx.db)
+OTRAS_FUENTES = ("productividad", "sph", "logistica", "supervision", "informe_diario")
+
+
+async def _fuentes_por_mes(ctx: Ctx, meses: list[str], incluir: list[str] | None = None) -> tuple[list[str], list[dict[str, str]]]:
+    """El corte de Ventas Netas de cada mes (el publicado más reciente o, si no hay, el último borrador) y, si se
+    pide, todo lo que haya de los otros módulos en esos meses (días de Productividad, informes de SPH, cortes de
+    Logística, el mes de Supervisión y de Informe diario)."""
+    cat = await llamar(aud_api.fuentes, user=ctx.user, db=ctx.db)
+    disponibles = cat.get("ventas_netas") or []
     ids, faltan = [], []
     for mes in meses:
-        del_mes = [f for f in disponibles if str(f.periodo)[:7] == mes]
-        elegido = next((f for f in del_mes if f.status == "published"), del_mes[0] if del_mes else None)
+        del_mes = [f for f in disponibles if str(f.get("periodo"))[:7] == mes]
+        elegido = next((f for f in del_mes if f.get("status") == "published"), del_mes[0] if del_mes else None)
         if elegido is None:
             faltan.append(mes)
         else:
-            ids.append(elegido.id)
+            ids.append(elegido["id"])
     if faltan:
         raise ErrorHerramienta(f"No hay informes de Ventas Netas para: {', '.join(faltan)}. Cargá esos cortes primero.")
-    return ids
+    seleccion: list[dict[str, str]] = []
+    for t in cat.get("tipos") or []:
+        if t["tipo"] not in (incluir or []) or not t.get("habilitado"):
+            continue
+        vistos: set[str] = set()
+        for it in t.get("items") or []:
+            if str(it.get("periodo"))[:7] in meses and it["id"] not in vistos:
+                vistos.add(it["id"])
+                seleccion.append({"tipo": t["tipo"], "id": str(it["id"])})
+    return ids, seleccion
 
 
 def _meses(valor: Any) -> list[str]:
@@ -405,9 +420,10 @@ def _meses(valor: Any) -> list[str]:
 
 async def _preparar_auditoria(ctx: Ctx, a: dict[str, Any]) -> Any:
     meses = _meses(a.get("meses"))
-    ids = await _fuentes_por_mes(ctx, meses)
+    incluir = [str(x) for x in (a.get("incluir") or []) if str(x) in OTRAS_FUENTES]
+    ids, seleccion = await _fuentes_por_mes(ctx, meses, incluir)
     payload = AuditoriaCreate(titulo=texto(a.get("titulo"), "el título", minimo=3, maximo=255),
-                              alcance=(str(a.get("alcance") or "").strip()[:2000] or None), report_ids=ids)
+                              alcance=(str(a.get("alcance") or "").strip()[:2000] or None), report_ids=ids, fuentes=seleccion)
     r = await llamar(aud_api.crear, payload=payload, request=ctx.request(), user=ctx.user, db=ctx.db)
     d = r.model_dump(mode="json") if hasattr(r, "model_dump") else dict(r)
     hallazgos = [seleccionar(h, ("codigo", "titulo", "severidad", "categoria", "vendedor")) for h in d.get("hallazgos") or []]
@@ -421,6 +437,7 @@ async def _preparar_auditoria(ctx: Ctx, a: dict[str, Any]) -> Any:
         destino = "Quedó como informe destino del modo auditor: ya podés proponer evidencia."
     return compactar({**seleccionar(d, ("id", "codigo", "titulo", "status", "periodo_desde", "periodo_hasta", "resumen")),
                       "hallazgos_automaticos": hallazgos, "meses": meses, "modo_auditor": destino,
+                      "fuentes": [f"{f.get('tipo')}: {f.get('etiqueta') or f.get('periodo')}" for f in d.get("fuentes") or []],
                       "pantalla": f"/televentas-claro/auditoria/informes/{d.get('id')}",
                       "importante": "Quedó en BORRADOR con los hallazgos automáticos: el auditor lo revisa, completa y "
                                     "cambia de estado desde la pantalla."}, max_lista=15)
@@ -428,19 +445,25 @@ async def _preparar_auditoria(ctx: Ctx, a: dict[str, Any]) -> Any:
 
 async def _resumen_auditoria(ctx: Ctx, a: dict[str, Any]) -> str:
     meses = ", ".join(str(m)[:7] for m in (a.get("meses") or [])[:24])
-    return f"Crear el informe de auditoría «{str(a.get('titulo') or '')[:120]}» en borrador con Ventas Netas de {meses}."
+    otras = [str(x) for x in (a.get("incluir") or []) if str(x) in OTRAS_FUENTES]
+    return (f"Crear el informe de auditoría «{str(a.get('titulo') or '')[:120]}» en borrador con Ventas Netas de {meses}"
+            + (f" y además {', '.join(otras)} de esos meses." if otras else "."))
 
 
 registrar(Herramienta(
     nombre="preparar_auditoria", etiqueta="Preparando un informe de auditoría", nivel=PROPIO,
     descripcion=("Crea un informe de auditoría de ventas en BORRADOR a partir de los informes de Ventas Netas de los "
-                 "meses indicados (uno por mes; toma el corte publicado más reciente). Genera el código, el resumen y "
-                 "los hallazgos automáticos (riesgos de vendedores, líneas sin uso, «salí hablando», etc.). No lo pasa a "
+                 "meses indicados (uno por mes; toma el corte publicado más reciente) y, si el usuario lo pide, con las "
+                 "otras fuentes de esos meses (`incluir`: productividad, sph, logistica, supervision, informe_diario; se "
+                 "congelan y se cruzan por vendedor). Genera el código, el resumen y los hallazgos automáticos (riesgos de "
+                 "vendedores, líneas sin uso, «salí hablando», pendientes de entrega, SPH anómalo, etc.). No lo pasa a "
                  "revisión ni lo cierra: eso lo hace el auditor desde la pantalla."),
     esquema=esquema({
         "titulo": {"type": "string", "description": "Título del informe (3 a 255 caracteres)."},
         "meses": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 24,
                   "description": "Meses AAAA-MM a auditar."},
+        "incluir": {"type": "array", "items": {"type": "string", "enum": list(OTRAS_FUENTES)},
+                    "description": "Otras fuentes a incluir de esos meses (todo lo que haya de cada una). Vacío: solo Ventas Netas."},
         "alcance": {"type": "string", "description": "Alcance u objetivo (opcional)."},
     }, ["titulo", "meses"]),
     fn=_preparar_auditoria, resumen=_resumen_auditoria, permisos=(P_AUD,)))

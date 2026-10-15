@@ -59,9 +59,11 @@ class Herramienta:
     guardar_resultado: bool = False
 
     def disponible(self, user: CurrentUser, modo: str) -> bool:
+        from ..permisos import permiso_valido  # el permiso tiene que ser válido para su perfil (Facturación nunca al auditor)
+
         return (modo in self.modos
-                and (not self.permisos or any(user.has_perm(p) for p in self.permisos))
-                and all(user.has_perm(p) for p in self.todos))
+                and (not self.permisos or any(permiso_valido(user, p) for p in self.permisos))
+                and all(permiso_valido(user, p) for p in self.todos))
 
     def definicion(self) -> dict[str, Any]:
         return {"type": "custom", "name": self.nombre, "description": self.descripcion, "input_schema": self.esquema}

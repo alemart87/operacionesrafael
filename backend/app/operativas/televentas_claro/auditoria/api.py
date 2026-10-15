@@ -30,6 +30,7 @@ from .schemas import (
     FuenteDisponible, HallazgoCreate, HallazgoRead, HallazgoUpdate, RiesgosRequest, SeguimientoCreate, SeguimientoRead,
 )
 from . import evidencias
+from .fuentes import VENTAS_NETAS, FuenteInvalida, cargar_modulos, catalogo, ids_ventas_netas
 from .snapshot import construir_snapshot, hallazgos_automaticos, parametros, resumen_automatico
 
 PERM = "televentas_claro.auditoria"
@@ -86,6 +87,8 @@ async def _cargar_fuentes(db: AsyncSession, report_ids: list[str], user: Current
     advierte.
     """
     ids = list(dict.fromkeys(report_ids))
+    if not ids:
+        return []
     rows = (await db.execute(select(VentasNetasReport).where(VentasNetasReport.id.in_(ids)))).scalars().all()
     if len(rows) != len(ids):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Alguno de los informes de Ventas Netas no existe")
@@ -155,16 +158,47 @@ async def _siguiente_codigo(db: AsyncSession) -> str:
 
 
 # ============================ fuentes y riesgos ============================
-@router.get("/fuentes", response_model=list[FuenteDisponible])
-async def fuentes(user: CurrentUser = Depends(require_auditoria), db: AsyncSession = Depends(get_db)) -> list[FuenteDisponible]:
-    """Informes de Ventas Netas disponibles como fuente (publicados y borradores; los reemplazados no)."""
+async def _fuentes_ventas_netas(db: AsyncSession) -> list[dict[str, Any]]:
     rows = (await db.execute(
         select(VentasNetasReport).where(VentasNetasReport.status.in_([ESTADO_PUBLICADO, ESTADO_BORRADOR])).order_by(VentasNetasReport.period_month.desc(), VentasNetasReport.fecha_dato.desc(), VentasNetasReport.generated_at.desc()).limit(200)
     )).scalars().all()
-    return [
-        FuenteDisponible.model_validate(r).model_copy(update={"analysis_version": version_analisis(r), "actualizada": not desactualizado(r)})
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        f = FuenteDisponible.model_validate(r).model_copy(update={"analysis_version": version_analisis(r), "actualizada": not desactualizado(r)})
+        out.append({"tipo": VENTAS_NETAS, "etiqueta": f"Corte al {r.fecha_dato:%d/%m/%Y}" if r.fecha_dato else "Corte", **f.model_dump(mode="json")})
+    return out
+
+
+@router.get("/fuentes")
+async def fuentes(user: CurrentUser = Depends(require_auditoria), db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Lo que el auditor puede elegir como fuente, por tipo (solo de los módulos que su perfil ve).
+
+    `ventas_netas`: los informes de Ventas Netas (publicados y borradores; los reemplazados no), como siempre.
+    `tipos`: cada módulo con sus ítems (días de Productividad, informes de SPH, cortes de Logística, meses de
+    Supervisión y de Informe diario) y si el perfil lo tiene habilitado.
+    """
+    vn = await _fuentes_ventas_netas(db)
+    return {"ventas_netas": vn, "tipos": await catalogo(db, user, vn)}
+
+
+async def _cargar_todo(db: AsyncSession, payload: Any, user: CurrentUser, request: Request) -> tuple[list[VentasNetasReport], dict[str, Any]]:
+    """Las fuentes elegidas: los informes de Ventas Netas (recalculados si hace falta) y los datos congelados del resto."""
+    seleccion = payload.seleccion()
+    reports = await _cargar_fuentes(db, ids_ventas_netas(seleccion, payload.report_ids), user, request)
+    try:
+        modulos = await cargar_modulos(db, [f for f in seleccion if f["tipo"] != VENTAS_NETAS], user)
+    except FuenteInvalida as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN if "perfil" in str(exc) else status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if not reports and not modulos:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Elegí al menos una fuente.")
+    return reports, modulos
+
+
+def _resumen_fuentes(snapshot: dict[str, Any]) -> str:
+    por_tipo: dict[str, list[str]] = {}
+    for f in snapshot.get("fuentes") or []:
+        por_tipo.setdefault(f.get("tipo") or VENTAS_NETAS, []).append(str(f.get("etiqueta") or f.get("periodo") or f.get("id")))
+    return "; ".join(f"{t}: " + ", ".join(v) for t, v in por_tipo.items())
 
 
 @router.get("/parametros")
@@ -175,9 +209,9 @@ async def parametros_vigentes(user: CurrentUser = Depends(require_auditoria)) ->
 
 @router.post("/riesgos")
 async def riesgos(payload: RiesgosRequest, request: Request, user: CurrentUser = Depends(require_auditoria), db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    """Análisis de riesgos en vivo sobre los informes elegidos (no se guarda)."""
-    reports = await _cargar_fuentes(db, payload.report_ids, user, request)
-    return construir_snapshot(reports)
+    """Análisis de riesgos en vivo sobre las fuentes elegidas (no se guarda)."""
+    reports, modulos = await _cargar_todo(db, payload, user, request)
+    return construir_snapshot(reports, modulos)
 
 
 # ============================ informes de auditoría ============================
@@ -206,8 +240,8 @@ async def listar(user: CurrentUser = Depends(require_auditoria), db: AsyncSessio
 
 @router.post("/informes", response_model=AuditoriaDetalle, status_code=status.HTTP_201_CREATED)
 async def crear(payload: AuditoriaCreate, request: Request, user: CurrentUser = Depends(require_auditoria), db: AsyncSession = Depends(get_db)) -> AuditoriaDetalle:
-    reports = await _cargar_fuentes(db, payload.report_ids, user, request)
-    snapshot = construir_snapshot(reports)
+    reports, modulos = await _cargar_todo(db, payload, user, request)
+    snapshot = construir_snapshot(reports, modulos)
     periodos = snapshot["periodos"]
     a = Auditoria(
         codigo=await _siguiente_codigo(db), titulo=payload.titulo.strip(), alcance=payload.alcance,
@@ -217,7 +251,7 @@ async def crear(payload: AuditoriaCreate, request: Request, user: CurrentUser = 
         graficos=[{"key": "netas_por_dia"}, {"key": "sin_uso_por_vendedor"}, {"key": "sali_por_dia"}, {"key": "riesgo_uso"}],
         created_by=user.id,
     )
-    _historial(a, user, "crear", f"{len(reports)} fuente(s): " + ", ".join(f"{r.periodo} corte {r.fecha_dato}" for r in reports))
+    _historial(a, user, "crear", f"{len(snapshot['fuentes'])} fuente(s) · {_resumen_fuentes(snapshot)}")
     db.add(a)
     await db.flush()
     for i, h in enumerate(hallazgos_automaticos(snapshot), start=1):
@@ -226,7 +260,7 @@ async def crear(payload: AuditoriaCreate, request: Request, user: CurrentUser = 
     await db.commit()
     await db.refresh(a)
     await record_action(db, user_id=user.id, action="create_auditoria", resource_type="auditoria", resource_id=a.id,
-                        ip=client_ip(request), extra={"codigo": a.codigo, "fuentes": payload.report_ids})
+                        ip=client_ip(request), extra={"codigo": a.codigo, "fuentes": payload.report_ids, "seleccion": payload.seleccion()})
     return await _detalle(db, a, user)
 
 
@@ -240,13 +274,18 @@ async def actualizar_datos(auditoria_id: str, request: Request, user: CurrentUse
     """
     a = await _get(db, auditoria_id)
     _exigir_editable(a)
-    ids = [f["report_id"] for f in (a.fuentes or [])]
-    existentes = set((await db.execute(select(VentasNetasReport.id).where(VentasNetasReport.id.in_(ids)))).scalars().all())
+    ids = [f["report_id"] for f in (a.fuentes or []) if (f.get("tipo") or VENTAS_NETAS) == VENTAS_NETAS and f.get("report_id")]
+    otras = [{"tipo": f["tipo"], "id": str(f.get("id"))} for f in (a.fuentes or []) if (f.get("tipo") or VENTAS_NETAS) != VENTAS_NETAS]
+    existentes = set((await db.execute(select(VentasNetasReport.id).where(VentasNetasReport.id.in_(ids)))).scalars().all()) if ids else set()
     if len(existentes) != len(ids):
         raise HTTPException(status.HTTP_409_CONFLICT, "Alguna fuente de este informe ya no existe en Ventas Netas: el informe conserva sus datos congelados y no se puede actualizar. Creá uno nuevo desde Riesgos.")
     reports = await _cargar_fuentes(db, ids, user, request)
+    try:
+        modulos = await cargar_modulos(db, otras, user)
+    except FuenteInvalida as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"{exc} El informe conserva sus datos congelados y no se puede actualizar.") from exc
     anterior = a.snapshot or {}
-    snapshot = construir_snapshot(reports)
+    snapshot = construir_snapshot(reports, modulos)
 
     hallazgos = (await db.execute(select(AuditoriaHallazgo).where(AuditoriaHallazgo.auditoria_id == a.id))).scalars().all()
     con_notas = set((await db.execute(select(AuditoriaSeguimiento.hallazgo_id).where(
@@ -260,11 +299,11 @@ async def actualizar_datos(auditoria_id: str, request: Request, user: CurrentUse
             borrados += 1
         else:
             conservados.append(h)
-    ya = {(h.categoria, h.vendedor) for h in conservados if h.origen == "auto"}
+    ya = {(h.categoria, h.vendedor, (h.evidencia or {}).get("clave")) for h in conservados if h.origen == "auto"}
     orden = max((h.orden for h in conservados), default=0)
     nuevos = 0
     for h in hallazgos_automaticos(snapshot):
-        if (h["categoria"], h.get("vendedor")) in ya:
+        if (h["categoria"], h.get("vendedor"), (h.get("evidencia") or {}).get("clave")) in ya:
             continue  # ya hay uno de ese tema trabajado por el auditor
         orden += 1
         nuevos += 1

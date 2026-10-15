@@ -39,7 +39,9 @@ def test_catalogo_de_pantallas_segun_permisos():
     # El coordinador ve Ventas Netas pero no «Subir corte» (le falta la gestión); el analista sí; el auditor, lo suyo.
     assert "/televentas-claro/ventas-netas" in rutas(coord) and "/televentas-claro/ventas-netas/upload" not in rutas(coord)
     assert "/televentas-claro/ventas-netas/upload" in rutas(analista) and "/televentas-claro/productividad/subir" in rutas(analista)
-    assert "/televentas-claro/productividad" not in rutas(auditor) and "/televentas-claro/auditoria/riesgos" in rutas(auditor)
+    # El auditor ve todos los módulos (sin gestionarlos) y nunca Facturación; lo suyo, Riesgos, también.
+    assert "/televentas-claro/productividad" in rutas(auditor) and "/televentas-claro/productividad/subir" not in rutas(auditor)
+    assert "/televentas-claro/auditoria/riesgos" in rutas(auditor) and not any(r.startswith("/televentas-claro/facturacion") for r in rutas(auditor))
     # Facturación y la administración: solo quien corresponde.
     assert not any(r.startswith("/televentas-claro/facturacion") for r in rutas(coord))
     assert not any(r.startswith("/admin") for r in rutas(coord)) and "/admin/asistente" in rutas(sa)

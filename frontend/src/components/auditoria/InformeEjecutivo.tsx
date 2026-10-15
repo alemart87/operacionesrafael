@@ -3,9 +3,11 @@
 import { PrintCover, PrintHeader } from "@/components/PrintButton";
 import { FiguraInforme, figurasDeHallazgo } from "./Evidencia";
 import { GraficoAuditoria, tituloGrafico } from "./GraficoAuditoria";
+import { ResumenModulos, modulosDe } from "./Modulos";
 import {
   ESTADO_AUD_LABEL, HALLAZGO_ESTADO_LABEL, SEVERIDAD_CLS, SEVERIDAD_LABEL, fechaCorta, fechaHora, n, pct, rangoPeriodos,
   type AuditoriaDetalle, type Severidad,
+  resumenFuentes,
 } from "./tipos";
 
 const ORDEN_SEV: Record<Severidad, number> = { alta: 0, media: 1, baja: 2, info: 3 };
@@ -91,7 +93,7 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5 text-sm">
         {[
           ["Período", periodo],
-          ["Fuente", a.fuentes.map((f) => `corte ${fechaCorta(f.fecha_dato)}`).join(" · ")],
+          ["Fuentes", resumenFuentes(a.fuentes, 3)],
           ["Auditor", nombre(a.created_by)],
           ["Estado", a.closed_at ? `${ESTADO_AUD_LABEL[a.status]} · ${fechaCorta(a.closed_at)}` : ESTADO_AUD_LABEL[a.status]],
         ].map(([l, v]) => (
@@ -124,6 +126,12 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
           </p>
         )}
       </Bloque>
+
+      {modulosDe(a.snapshot).length > 0 && (
+        <Bloque num={num()} titulo="Otras fuentes auditadas">
+          <ResumenModulos s={a.snapshot} />
+        </Bloque>
+      )}
 
       <Bloque num={num()} titulo={`Hallazgos (${n(hallazgos.length)})`}>
         <div className="flex flex-wrap gap-2 mb-4">

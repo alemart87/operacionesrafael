@@ -69,7 +69,7 @@ async def _informe(ac, quien, tmp_path, monkeypatch, admin) -> dict:
                       json={"confirm_replace": True})
     assert r.status_code == 200, r.text
     fuentes = (await ac.get(f"{AUD}/fuentes", headers=quien)).json()
-    r = await ac.post(f"{AUD}/informes", headers=quien, json={"titulo": "Auditoría de septiembre", "report_ids": [fuentes[0]["id"]]})
+    r = await ac.post(f"{AUD}/informes", headers=quien, json={"titulo": "Auditoría de septiembre", "report_ids": [fuentes["ventas_netas"][0]["id"]]})
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -380,3 +380,46 @@ async def test_voi_sugiere_el_modo_auditor_y_enlaces_del_informe(simulador, tmp_
         from app.asistente.herramientas import acciones
         fuente = inspect.getsource(acciones)
         assert "/televentas-claro/auditoria/{" not in fuente and "/televentas-claro/auditoria/informes/{" in fuente
+
+
+@pytest.mark.asyncio
+async def test_voi_lee_los_datos_congelados_del_informe_destino(simulador, tmp_path, monkeypatch):
+    """En modo auditor con informe destino, Voi recibe el alcance (fuentes) en el contexto y lee los datos congelados
+    con datos_de_auditoria: lo que el auditor eligió, sección por sección."""
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path / "disco"))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        await _publicado(ac, admin)
+        _, auditor = await _nuevo(ac, admin, "auditor", "Ana Auditora")
+        inf = await _informe(ac, auditor, tmp_path, monkeypatch, admin)
+        aid, codigo = inf["id"], inf["codigo"]
+        # Le suma el mes de Supervisión como fuente (datos congelados de otro módulo).
+        cat = (await ac.get(f"{AUD}/fuentes", headers=auditor)).json()
+        sup = next(t for t in cat["tipos"] if t["tipo"] == "supervision")
+        assert sup["habilitado"] and sup["items"]
+        r = await ac.post(f"{AUD}/informes", headers=auditor, json={
+            "titulo": "Auditoría con supervisión", "report_ids": [cat["ventas_netas"][0]["id"]],
+            "fuentes": [{"tipo": "supervision", "id": sup["items"][0]["id"]}]})
+        assert r.status_code == 201, r.text
+        aid, codigo = r.json()["id"], r.json()["codigo"]
+        assert {f["tipo"] for f in r.json()["fuentes"]} == {"ventas_netas", "supervision"}
+
+        cid = (await ac.post(f"{BASE}/conversaciones", headers=auditor, json={})).json()["id"]
+        r = await ac.post(f"{BASE}/conversaciones/{cid}/investigacion", headers=auditor, json={"activo": True, "auditoria_id": codigo})
+        assert r.status_code == 200, r.text
+        inv = r.json()["investigacion"]
+        assert inv["auditoria_id"] == aid and "Supervisión" in inv["alcance"] and "Ventas Netas" in inv["alcance"]
+
+        r = await ac.post(f"{BASE}/conversaciones/{cid}/mensajes", headers=auditor, json={"texto": "¿Qué dicen las fuentes del informe sobre supervisión?"})
+        assert r.status_code == 200, r.text
+        await _esperar(cid, hasta=("idle",))
+        t = (await ac.get(f"{BASE}/conversaciones/{cid}", headers=auditor)).json()
+        assert [i["tipo"] for i in t["items"]][:3] == ["usuario", "paso", "voi"]   # consultó (paso) y respondió
+        async with AsyncSessionLocal() as db:
+            ctx = (await db.execute(select(AsistenteEvento).where(AsistenteEvento.conversacion_id == cid,
+                                                                  AsistenteEvento.tipo == "system.message"))).scalars().all()
+            texto = " ".join(json.dumps(e.datos, ensure_ascii=False) for e in ctx)
+            assert "Fuentes elegidas por el auditor" in texto and "Supervisión" in texto and "datos_de_auditoria" in texto
+            res = (await db.execute(select(AsistenteAccion).where(AsistenteAccion.conversacion_id == cid,
+                                                                  AsistenteAccion.herramienta == "datos_de_auditoria"))).scalars().first()
+            assert res is not None and (res.entrada or {}).get("seccion") == "supervision" and res.estado == "ejecutada"

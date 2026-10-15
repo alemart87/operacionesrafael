@@ -118,17 +118,19 @@ existentes según el modelo definido, y no se repite aunque el superadmin las ca
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | Acceso a la operativa | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Ventas Netas · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
-| Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
-| SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | | |
+| Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
+| SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
 | Supervisión · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | 🔒 | ✓ / | ✓ / | |
 | Supervisión · Tickets de revisión | ✓ | ✓ | ✓ | 🔒 | | ✓ | |
 | Supervisión · Parámetros del modelo (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
 | Operadores · Vincular | ✓ | ✓ | ✓ | 🔒 | ✓ | | |
-| Informe diario | ✓ | | ✓ | 🔒 | | | |
+| Logística · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
+| Informe diario | ✓ | | ✓ | 🔒 | | ✓ | |
 | Portal del supervisor (restringida) | 🔒 | 🔒 | 🔒 | ✓ | 🔒 | 🔒 | 🔒 |
 | Auditoría de ventas | ✓ | ✓ | | 🔒 | ✓ | ✓ | |
 | Facturación (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
-| Asistente IA (Voi) | ✓ | | ✓ | 🔒 | | ✓ (modo auditoría) | |
+| Integraciones (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
+| Asistente IA (Voi) | ✓ | | ✓ | 🔒 | | ✓ | |
 
 - **Sub gerente:** todos los módulos, incluida Facturación.
 - **Controller:** todos los módulos menos Facturación (el informe diario y el asistente no vienen por
@@ -136,12 +138,16 @@ existentes según el modelo definido, y no se repite aunque el superadmin las ca
 - **Supervisor:** solo entra a **su portal** (`PERFILES_SOLO_PORTAL`): únicamente puede
   tener las utilidades marcadas `portal` (el acceso y el Portal del supervisor). Al
   iniciar sesión va directo al portal; cualquier otra ruta lo devuelve ahí.
-- **Auditor:** revisa ventas y casos (Auditoría y Ventas Netas), envía tickets de revisión
-  a los supervisores y ve el tablero de Supervisión en lectura.
+- **Auditor:** **ve todos los módulos** (Ventas Netas, Productividad, SPH, Supervisión con sus operadores,
+  Logística, Informe diario y Auditoría) en lectura, sin gestionarlos (no sube, no publica, no mantiene
+  el maestro de operadores), para elegir qué auditar; envía tickets de revisión y usa Voi con todos sus módulos. **Nunca** Facturación ni
+  Integraciones (restringidas al Sub gerente y al superadmin). La migración
+  `auditoria_auditor_todos_los_modulos_v1` suma las utilidades que le faltaban al perfil ya sembrado
+  sin quitar nada que el superadmin le haya asignado.
 
 Las utilidades con `solo_perfiles` en el catálogo son **restringidas**: además del
-superadmin, solo las pueden tener los perfiles listados (hoy: **Facturación → Sub
-gerente**). La matriz las muestra bloqueadas para el resto, la API rechaza el cambio
+superadmin, solo las pueden tener los perfiles listados (hoy: **Facturación e
+Integraciones → Sub gerente**). La matriz las muestra bloqueadas para el resto, la API rechaza el cambio
 y, aunque figuren en la base, no se hacen efectivas; a los demás usuarios ni
 siquiera se les listan. Con la lista vacía son exclusivas del superadmin. La
 administración (usuarios, perfiles, auditoría y seguridad) sigue siendo solo del
@@ -567,12 +573,13 @@ Perfiles). Código en `backend/app/operativas/televentas_claro/informe_diario/`.
 ## Televentas CLARO · Auditoría de Ventas
 
 Circuito de trabajo del área de Auditoría de Ventas sobre los informes de
-Ventas Netas. Código en `backend/app/operativas/televentas_claro/auditoria/`.
+Ventas Netas y, desde v1.2, sobre **cualquier dato disponible de los otros módulos** que el
+auditor elija como fuente. Código en `backend/app/operativas/televentas_claro/auditoria/`.
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
 | Informes de auditoría | `/televentas-claro/auditoria` | Lista por estado con hallazgos abiertos y de severidad alta |
-| Riesgos | `…/riesgos` | Elegir fuentes (un informe de Ventas Netas por mes) y ver el análisis en vivo; crear el informe |
+| Riesgos | `…/riesgos` | Elegir fuentes (un informe de Ventas Netas por mes y, por módulo, días de Productividad, informes de SPH, cortes de Logística, meses de Supervisión e Informe diario) y ver el análisis en vivo; crear el informe |
 | Informe | `…/informes/{id}` | Resumen, hallazgos, **evidencia visual**, gráficos, seguimiento, redacción y vista para imprimir en PDF |
 | Guía del auditor | `…/guia` | Esquemas de riesgo, Sali Hablando, líneas sin uso, patrones de venta y entrega, semáforo del vendedor, alertas de negocio, checklist y recomendaciones tipo; imprimible en PDF |
 
@@ -593,6 +600,25 @@ Ventas Netas. Código en `backend/app/operativas/televentas_claro/auditoria/`.
   análisis, la auditoría la **recalcula sola** desde los datos guardados al
   analizarla (queda en el registro como `reprocess_ventas_netas_report`, origen
   `auditoria`); si no se puede, se usa como está y el snapshot lo advierte.
+- **Fuentes de todos los módulos** (`fuentes.py`): `GET /fuentes` devuelve `ventas_netas` (como siempre) y
+  `tipos`, un catálogo por módulo con sus ítems y si el perfil lo tiene habilitado (hace falta la utilidad de
+  ver del módulo; Facturación nunca es fuente). Tipos: `productividad` (días, publicados o borradores),
+  `sph` (informes), `logistica` (cortes), `supervision` (meses: objetivos y proyección, asesores en alerta,
+  coaching y tickets), `informe_diario` (meses: los firmados del equipo, cumplimiento por autor, métricas
+  críticas y compromisos). `POST /riesgos` y `POST /informes` reciben `report_ids` (Ventas Netas) y
+  `fuentes: [{tipo, id}]` (hasta 60; al menos una en total). Cada tipo se **congela** en
+  `snapshot.modulos[tipo]` (fuentes, KPIs y listas acotadas) y se **cruza por vendedor** con el ranking
+  (`snapshot.cruce`, por nombre normalizado: SPH, entregas y devoluciones, alertas, coaching y tickets de
+  cada vendedor riesgoso). Suman **datos llamativos** y **hallazgos automáticos** propios (categorías
+  `productividad`, `sph`, `logistica`, `supervision`, `informe_diario` y `cruce`; cada uno con una `clave`
+  en la evidencia para que «actualizar datos» regenere solo los intactos): días en rojo y agentes bajo la
+  meta de conversación, SPH del doble de la operación y ventas sin agente, pedidos en gestión con 6+ días
+  hábiles y devoluciones concentradas, alertas abiertas, coachings con seguimiento vencido y tickets fuera
+  de SLA, días sin informe diario y compromisos vencidos, y un hallazgo por vendedor riesgoso con señales en
+  otras fuentes. Sin un corte de Ventas Netas también se audita (sin ranking; se advierte). La pantalla
+  Riesgos muestra cada módulo con sus ítems por mes («Todo el mes», «Elegir todo»); el informe los muestra
+  en Resumen (secciones por módulo y el cruce) y en los PDF («Otras fuentes auditadas»). `actualizar`
+  vuelve a cargar todas las fuentes, las de otros módulos incluidas.
 - El PDF sale de la pestaña Informe (portada, datos, alcance, resumen,
   indicadores, datos llamativos, hallazgos con su evidencia resumida, gráficos
   elegidos por el auditor, vendedores riesgosos, conclusiones, recomendaciones
@@ -1256,7 +1282,7 @@ permisos, la memoria y los topes.
 | Superadmin | Siempre | Toda la plataforma (incluida Facturación) |
 | Sub gerente | Por defecto (utilidad «Asistente IA») | Los módulos de su perfil, incluida **Facturación** |
 | Coordinador | Por defecto | Los módulos de su perfil |
-| Auditor | Por defecto | **Modo auditoría**: auditoría de ventas (preparar informes y hallazgos, **modo auditor** con evidencia del lienzo), vendedores en alerta, alertas del centro de comandos y tickets |
+| Auditor | Por defecto | Todos los módulos de su perfil (nunca Facturación ni Integraciones, que su perfil no puede tener: la herramienta y la habilidad se validan contra el catálogo de perfiles, no solo contra lo guardado), más preparar auditorías y hallazgos y el **modo auditor** con evidencia del lienzo |
 | Controller, Analista, Cliente | Se les puede asignar | Los módulos de su perfil |
 | Supervisor | No (solo entra a su portal) | — |
 
@@ -1350,7 +1376,11 @@ en una **investigación** con un **informe destino**:
   dudosas), Voi pregunta antes de seguir con una tarjeta **«¿Activamos el modo auditor?»** (Activar / Ahora no;
   herramienta `proponer_modo_auditor`). Si la rechaza, no insiste en esa conversación. Se elige el informe (en Borrador o
   En revisión), se trabaja sin destino o se le pide a Voi que **prepare uno nuevo** (queda como destino solo).
-- **Cambia la actitud de Voi:** en modo auditor es escéptico, incisivo y rápido. **Lo primero son las netas y las
+- **Cambia la actitud de Voi:** en modo auditor es escéptico, incisivo y rápido. Con informe destino, **lo primero son
+  sus datos congelados**: el contexto de cada mensaje lleva las **fuentes elegidas por el auditor** (`alcance`, por tipo)
+  y Voi las lee con `datos_de_auditoria` (secciones `resumen`, `ventas_netas`, `cruce`, `productividad`, `sph`,
+  `logistica`, `supervision`, `informe_diario`: exactamente lo que el informe audita; si pide una fuente que el informe
+  no incluye, avisa que se agregue desde Riesgos). Sin destino, **lo primero son las netas y las
   cargas de Ventas Netas**: empieza con la herramienta `alertas_del_corte` (un solo llamado: el último corte publicado
   con los vendedores críticos y en alerta media, los datos llamativos y los hallazgos automáticos, ya resumidos) y
   responde con eso, corto: una línea de conclusión, de 3 a 5 alertas con cifra y vendedor, hechos separados de
