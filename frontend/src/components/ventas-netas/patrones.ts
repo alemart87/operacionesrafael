@@ -16,8 +16,6 @@ export interface Senal {
  * Antes está "en espera de uso": todavía no tuvo tiempo de usarse y no cuenta como sin uso.
  */
 export const DIAS_SIN_USO_ANTIGUA = 3;
-/** Días (48 h) desde los que una línea en espera pasa a riesgo medio: sigue sin ser alerta, pero se la sigue de cerca. */
-export const DIAS_RIESGO_MEDIO = 2;
 
 const dias = (desde: string | null, hasta: string | null) => {
   if (!desde || !hasta) return 0;
@@ -30,14 +28,6 @@ export function estadoUso(r: DetalleNeta, corte: string | null): "SI" | "NO" | "
   if (r.consumo === "SI") return "SI";
   const espera = r.en_espera ?? (!!r.fecha_activacion && !!corte && dias(r.fecha_activacion, corte) < DIAS_SIN_USO_ANTIGUA);
   return espera ? "ESPERA" : "NO";
-}
-
-/** En espera de uso con 48 h o más sin consumo: riesgo medio (el backend lo marca en v10+; antes se deduce de los días). */
-export function riesgoMedio(r: DetalleNeta, corte: string | null): boolean {
-  if (estadoUso(r, corte) !== "ESPERA") return false;
-  if (r.riesgo_medio !== undefined && r.riesgo_medio !== null) return r.riesgo_medio;
-  const d = r.dias ?? (r.fecha_activacion && corte ? dias(r.fecha_activacion, corte) : 0);
-  return d >= DIAS_RIESGO_MEDIO;
 }
 
 const pctDe = (parte: number, total: number) => (total ? Math.round((parte / total) * 100) : 0);
@@ -57,8 +47,6 @@ export interface PatronVendedor {
   sinUsoAntiguas: number;
   /** Pospago en espera de uso (activadas hace menos de DIAS_SIN_USO_ANTIGUA días): no son alerta. */
   enEspera: number;
-  /** De las en espera, las que ya llevan DIAS_RIESGO_MEDIO días (48 h) sin uso: riesgo medio. */
-  riesgoMedio: number;
   /** Puntaje para ordenar la lista de críticos (más alto = más crítico). */
   puntaje: number;
 }
@@ -70,7 +58,6 @@ export function patronVendedor(d: InformeData, v: Vendedor, lineas: DetalleNeta[
   const sinUso = pospago.filter((r) => estadoUso(r, corte) === "NO");
   const sinUsoAntiguas = sinUso.length;
   const enEspera = pospago.filter((r) => estadoUso(r, corte) === "ESPERA").length;
-  const riesgoMedioN = pospago.filter((r) => riesgoMedio(r, corte)).length;
   const senales: Senal[] = [];
 
   if (v.alerta) senales.push({ gravedad: "alta", texto: `${v.pct_sin_uso.toLocaleString("es-PY", { maximumFractionDigits: 1 })}% sin uso: supera el ${umbralCritico(d)}% (crítico)` });
@@ -79,9 +66,6 @@ export function patronVendedor(d: InformeData, v: Vendedor, lineas: DetalleNeta[
       gravedad: sinUsoAntiguas >= 3 ? "alta" : "media",
       texto: `${sinUsoAntiguas} sin uso con ${DIAS_SIN_USO_ANTIGUA}+ días desde la activación`,
     });
-  }
-  if (riesgoMedioN) {
-    senales.push({ gravedad: "media", texto: `${riesgoMedioN} con ${DIAS_RIESGO_MEDIO * 24} h sin uso (riesgo medio): pasa${riesgoMedioN > 1 ? "n" : ""} a alerta en el corte siguiente` });
   }
   if (enEspera) {
     senales.push({ gravedad: "info", texto: `${enEspera} en espera de uso: activada${enEspera > 1 ? "s" : ""} hace menos de ${DIAS_SIN_USO_ANTIGUA} días, no es alerta` });
@@ -128,7 +112,7 @@ export function patronVendedor(d: InformeData, v: Vendedor, lineas: DetalleNeta[
     (v.alerta ? 5 : 0) +
     senales.filter((s) => s.gravedad === "alta").length * 2;
 
-  return { senales, sinUsoAntiguas, enEspera, riesgoMedio: riesgoMedioN, puntaje };
+  return { senales, sinUsoAntiguas, enEspera, puntaje };
 }
 
 /** % sin uso desde el cual un vendedor es crítico (lo define el backend; 35% hoy). */

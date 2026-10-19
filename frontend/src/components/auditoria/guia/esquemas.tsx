@@ -87,8 +87,8 @@ export function RecorridoVenta({ r }: { r: ReglasAuditoria }) {
     },
     {
       titulo: "Uso", fuente: "Campo CONSUMO_DATOS",
-      texto: `¿La línea consume datos? Con menos de ${d} días queda en espera de uso y no es alerta (con 48 h sin uso ya es riesgo medio); sin uso con ${d} días o más es la señal más directa de una PFI.`,
-      riesgos: [{ texto: `Sin uso ${d}+ días`, s: "alta", ancla: "sin-uso" }, { texto: "48 h sin uso", s: "media", ancla: "sin-uso" }, { texto: "Lote sin uso", s: "media", ancla: "patrones" }],
+      texto: `¿La línea consume datos? Con menos de ${d} días queda en espera de uso y no es alerta; sin uso con ${d} días o más es la señal más directa de una PFI.`,
+      riesgos: [{ texto: `Sin uso ${d}+ días`, s: "alta", ancla: "sin-uso" }, { texto: "Lote sin uso", s: "media", ancla: "patrones" }],
     },
     {
       titulo: "Neta y comisión", fuente: "Corte publicado",
@@ -237,7 +237,6 @@ export function LineaTiempoSH() {
 // ============================================================== Días desde la activación: en espera vs sin uso
 export function RelojUso({ r }: { r: ReglasAuditoria }) {
   const d = r.dias_sin_uso_antigua;
-  const m = r.dias_riesgo_medio ?? 2;
   const cajas = Array.from({ length: d + 5 }, (_, i) => i);
   return (
     <div className="card p-5">
@@ -245,21 +244,17 @@ export function RelojUso({ r }: { r: ReglasAuditoria }) {
       <div className="flex gap-1">
         {cajas.map((i) => (
           <div key={i} className="flex-1 min-w-0">
-            <div className={`h-12 rounded-md grid place-items-center font-display text-xl ${i < m ? "bg-[#E5E7EB] text-brand-graphite" : i < d ? "bg-amber-100 text-amber-800" : "text-white"}`}
+            <div className={`h-12 rounded-md grid place-items-center font-display text-xl ${i < d ? "bg-[#E5E7EB] text-brand-graphite" : "text-white"}`}
               style={i >= d ? { background: `rgba(214,51,108,${Math.min(0.55 + (i - d) * 0.1, 1)})` } : undefined}>
               {i === cajas.length - 1 ? `${i}+` : i}
             </div>
           </div>
         ))}
       </div>
-      <div className="grid sm:grid-cols-3 gap-3 mt-3 text-sm">
+      <div className="grid sm:grid-cols-2 gap-3 mt-3 text-sm">
         <div className="rounded-md bg-brand-bg p-3">
-          <div className="font-bold text-brand-ink">◷ En espera de uso · 0 a {m - 1} días</div>
+          <div className="font-bold text-brand-ink">◷ En espera de uso · 0 a {d - 1} días</div>
           <p className="text-brand-slate text-[13px] leading-snug mt-0.5">Todavía no tuvieron tiempo de usarse. <b>No son alerta</b>: no cuentan como sin uso, no suman puntos ni cambian el nivel del vendedor. Se marcan “En espera” y se evalúan en el corte siguiente.</p>
-        </div>
-        <div className="rounded-md bg-amber-50 p-3">
-          <div className="font-bold text-amber-800">◔ Riesgo medio · {m === d - 1 ? `día ${m}` : `${m} a ${d - 1} días`} ({m * 24} h sin uso)</div>
-          <p className="text-brand-graphite text-[13px] leading-snug mt-0.5">Siguen en espera (no cuentan como sin uso ni cambian el nivel), pero ya llevan {m * 24} h sin consumo: si no se usan pasan a alerta en el corte siguiente. Van como hallazgo de severidad media y señal del vendedor. Contactar al cliente ahora.</p>
         </div>
         <div className="rounded-md p-3" style={{ background: "rgba(214,51,108,0.08)" }}>
           <div className="font-bold" style={{ color: "#B0204F" }}>Sin uso · {d} días o más</div>

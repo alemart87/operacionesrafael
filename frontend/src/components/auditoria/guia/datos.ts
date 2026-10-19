@@ -14,8 +14,6 @@ export interface ReglasAuditoria {
   dias_sin_uso_antigua: number;
   /** Activadas hace menos de estos días al corte: "en espera de uso", no son alerta. */
   dias_espera_uso: number;
-  /** En espera con estos días (48 h) o más sin uso: riesgo medio (no es alerta todavía). Informes viejos no lo traen. */
-  dias_riesgo_medio?: number;
   umbral_sin_uso_atencion: number;
   umbral_sin_uso_critico: number;
   analysis_version: number;
@@ -35,7 +33,7 @@ export interface ReglasAuditoria {
 }
 
 export const REGLAS_REFERENCIA: ReglasAuditoria = {
-  umbral_uso_pct: 65, min_lineas_alerta: 5, dias_sin_uso_antigua: 3, dias_espera_uso: 3, dias_riesgo_medio: 2, umbral_sin_uso_atencion: 15, umbral_sin_uso_critico: 35, analysis_version: 5,
+  umbral_uso_pct: 65, min_lineas_alerta: 5, dias_sin_uso_antigua: 3, dias_espera_uso: 3, umbral_sin_uso_atencion: 15, umbral_sin_uso_critico: 35, analysis_version: 5,
   nivel_atencion: { sin_uso_antiguas: 3, sali_sin_uso: 3, suspendidas: 1, sin_uso_riesgo_A: 2 },
   pesos: { sin_uso_antigua: 3, sali_sin_uso: 3, suspendida: 2, sin_uso_riesgo_A: 2, alerta_uso: 8 },
   senal_alta_desde: { sin_uso_antiguas: 3, sali_sin_uso: 3, suspendidas: 2 },

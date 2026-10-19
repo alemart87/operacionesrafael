@@ -373,48 +373,6 @@ def test_lineas_en_espera_de_uso_no_son_alerta(tmp_path):
     assert "sin_uso_reciente" not in s["parametros"]["pesos"]
 
 
-def test_riesgo_medio_48_horas_sin_uso(tmp_path):
-    """Dentro de las en espera, las activadas hace 2 días (48 h) sin consumo son riesgo medio: se marcan y se
-    listan, pero siguen sin contar como sin uso (ni en el %, ni en el nivel del vendedor)."""
-    from types import SimpleNamespace
-    from app.operativas.televentas_claro.auditoria.snapshot import construir_snapshot, hallazgos_automaticos
-
-    extra = [
-        _ddi(6100, D(2026, 9, 22), "Pospago", "Control 15GB", "NO", "NO", "TKM - NUEVA VENDEDORA"),  # 0 días: en espera
-        _ddi(6101, D(2026, 9, 21), "Pospago", "Control 15GB", "NO", "NO", "TKM - NUEVA VENDEDORA"),  # 1 día: en espera
-        _ddi(6102, D(2026, 9, 20), "Pospago", "Control 15GB", "NO", "NO", "TKM - NUEVA VENDEDORA"),  # 2 días: riesgo medio
-        _ddi(6103, D(2026, 9, 20), "Pospago", "Control 15GB", "NO", "NO", "TKM - NUEVA VENDEDORA"),  # 2 días: riesgo medio
-        _ddi(6104, D(2026, 9, 20), "Pospago", "Control 15GB", "NO", "SI", "TKM - NUEVA VENDEDORA"),  # 2 días con uso: nada
-        _ddi(6105, D(2026, 9, 19), "Pospago", "Control 15GB", "NO", "NO", "TKM - NUEVA VENDEDORA"),  # 3 días: sin uso (alerta)
-    ]
-    a = analyze_ventas_netas(parse_ventas_netas(build_xlsx(tmp_path / "m.xlsx", ddi_extra=extra)))
-    k = a["kpis"]
-    assert k["dias_riesgo_medio"] == 2 and k["pospago_en_espera"] == 4 and k["pospago_riesgo_medio"] == 2
-    assert k["pospago_sin_uso"] == 3  # las 2 del archivo base + 6105: el riesgo medio no suma como sin uso
-    det = {x["sds_number"]: x for x in a["detalle_netas"]}
-    assert det["6102"]["riesgo_medio"] is True and det["6102"]["en_espera"] is True
-    assert det["6101"]["riesgo_medio"] is False and det["6104"]["riesgo_medio"] is False and det["6105"]["riesgo_medio"] is False
-    v = next(x for x in a["vendedores"] if x["vendedor"] == "NUEVA VENDEDORA")
-    assert (v["pospago"], v["en_espera"], v["riesgo_medio"], v["sin_uso"], v["con_uso"]) == (6, 4, 2, 1, 1)
-    dia20 = next(x for x in a["por_dia"] if x["dia"] == "2026-09-20")
-    assert dia20["en_espera"] == 2 and dia20["riesgo_medio"] == 2 and dia20["sin_uso"] == 0
-
-    rep = SimpleNamespace(id="r", periodo="2026-09", fecha_dato=date(2026, 9, 22), status="draft", netas=k["netas"], pospago=k["pospago"],
-                          pct_sin_uso=k["pct_sin_uso"], pendientes=k["pendientes"], generated_at=None, data={**a, "version": jobs.ANALYSIS_VERSION})
-    s = construir_snapshot([rep])
-    assert s["parametros"]["dias_riesgo_medio"] == 2
-    assert s["kpis"]["en_espera"] == 4 and s["kpis"]["riesgo_medio"] == 2 and len(s["lineas_riesgo_medio"]) == 2
-    assert {x["sds_number"] for x in s["lineas_riesgo_medio"]} == {"6102", "6103"}
-    assert all(x["riesgo_medio"] is False for x in s["lineas_sin_uso"])
-    vr = next(x for x in s["ranking"] if x["vendedor"] == "NUEVA VENDEDORA")
-    assert vr["riesgo_medio"] == 2 and vr["sin_uso"] == 1 and vr["nivel"] == "normal"  # no cambia el nivel
-    assert any("48 h sin uso" in x["texto"] and x["gravedad"] == "media" for x in vr["senales"])
-    assert any("48 horas sin uso" in x["titulo"] and x["gravedad"] == "media" for x in s["llamativos"])
-    h = next(h for h in hallazgos_automaticos(s) if h["evidencia"].get("clave") == "riesgo_medio_48h")
-    assert h["severidad"] == "media" and h["categoria"] == "sin_uso" and h["evidencia"]["total"] == 2
-    assert "NUEVA VENDEDORA (2)" in h["descripcion"]
-
-
 def test_parser_valida_el_archivo(tmp_path):
     a = analyze_ventas_netas(parse_ventas_netas(build_xlsx(tmp_path / "sin-por.xlsx", sin_portabilidad=True)))
     assert a["kpis"]["fuera_de_netas"] == 0  # PORTABILIDAD es opcional

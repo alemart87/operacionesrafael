@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ESTADO_SDS_LABEL, fechaCorta, n, type DetalleNeta, type InformeData, type Pendiente, type Vendedor } from "./tipos";
 import { PctUso, Seccion, Senales, Tabla, UsoBadge } from "./ui";
 import { VendedorDetalle } from "./VendedorDetalle";
-import { DIAS_SIN_USO_ANTIGUA, estadoUso, riesgoMedio, umbralCritico, vendedoresCriticos } from "./patrones";
+import { DIAS_SIN_USO_ANTIGUA, estadoUso, umbralCritico, vendedoresCriticos } from "./patrones";
 
 type Hoja = "vendedores" | "criticos" | "netas" | "pendientes" | "fuera";
 
@@ -44,7 +44,7 @@ export function VisionOperativa({ d, onDescargar, descargando }: { d: InformeDat
     { value: "fuera", label: "Fuera de netas", total: d.fuera_de_netas.total },
   ];
 
-  const consumo = (r: DetalleNeta) => <UsoBadge estado={estadoUso(r, d.kpis.fecha_dato)} riesgoMedio={riesgoMedio(r, d.kpis.fecha_dato)} />;
+  const consumo = (r: DetalleNeta) => <UsoBadge estado={estadoUso(r, d.kpis.fecha_dato)} />;
 
   return (
     <div className="space-y-4">

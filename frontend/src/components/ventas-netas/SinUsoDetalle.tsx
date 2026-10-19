@@ -5,7 +5,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { descargarCsv } from "@/lib/csv";
 import { fechaCorta, n, pct, type DetalleNeta, type InformeData } from "./tipos";
-import { DIAS_RIESGO_MEDIO, DIAS_SIN_USO_ANTIGUA, estadoUso, riesgoMedio, umbralCritico } from "./patrones";
+import { DIAS_SIN_USO_ANTIGUA, estadoUso, umbralCritico } from "./patrones";
 import { Seccion, Tabs, UsoBadge } from "./ui";
 import { VendedorDetalle } from "./VendedorDetalle";
 
@@ -59,13 +59,12 @@ interface FilaRanking {
   sin_uso: number;
   con_uso: number;
   en_espera: number;
-  riesgo_medio: number;
   pct_sin_uso: number;
   primera: string | null;
   ultima: string | null;
   critico: boolean;
 }
-type KRanking = "sin_uso" | "pct_sin_uso" | "evaluables" | "con_uso" | "en_espera" | "riesgo_medio" | "vendedor" | "ultima";
+type KRanking = "sin_uso" | "pct_sin_uso" | "evaluables" | "con_uso" | "en_espera" | "vendedor" | "ultima";
 type KLinea = "fecha" | "fecha_activacion" | "dias" | "vendedor" | "sds_number" | "linea" | "plan" | "origen" | "ciudad" | "riesgo" | "legajo";
 
 function Indicador({ titulo, valor, detalle, borde }: { titulo: string; valor: ReactNode; detalle?: ReactNode; borde: string }) {
@@ -93,7 +92,6 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
   );
   const sinUso = useMemo(() => pospago.filter((x) => x.uso === "NO").map((x) => x.r), [pospago]);
   const enEspera = useMemo(() => pospago.filter((x) => x.uso === "ESPERA").map((x) => x.r), [pospago]);
-  const riesgoMedioL = useMemo(() => enEspera.filter((r) => riesgoMedio(r, corte)), [enEspera, corte]);
   const tieneFechaVenta = useMemo(() => d.detalle_netas.some((r) => r.fecha_venta), [d.detalle_netas]);
 
   // ------------------------------------------------------------ ranking por vendedor
@@ -102,10 +100,10 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
     const m = new Map<string, FilaRanking>();
     for (const { r, uso } of pospago) {
       const f = m.get(r.vendedor) ?? {
-        vendedor: r.vendedor, subcanal: r.subcanal, evaluables: 0, sin_uso: 0, con_uso: 0, en_espera: 0, riesgo_medio: 0,
+        vendedor: r.vendedor, subcanal: r.subcanal, evaluables: 0, sin_uso: 0, con_uso: 0, en_espera: 0,
         pct_sin_uso: 0, primera: null, ultima: null, critico: !!alerta.get(r.vendedor)?.alerta,
       };
-      if (uso === "ESPERA") { f.en_espera++; if (riesgoMedio(r, corte)) f.riesgo_medio++; }
+      if (uso === "ESPERA") f.en_espera++;
       else if (uso === "SI" || uso === "NO") {
         f.evaluables++;
         if (uso === "SI") f.con_uso++;
@@ -119,7 +117,7 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
       m.set(r.vendedor, f);
     }
     return [...m.values()].map((f) => ({ ...f, pct_sin_uso: f.evaluables ? Math.round((f.sin_uso / f.evaluables) * 1000) / 10 : 0 }));
-  }, [pospago, d.vendedores, corte]);
+  }, [pospago, d.vendedores]);
 
   const [soloConSinUso, setSoloConSinUso] = useState(true);
   const [qRank, setQRank] = useState("");
@@ -140,25 +138,22 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [qLinea, setQLinea] = useState("");
-  /** Qué mostrar además de las sin uso: nada, las de riesgo medio (48 h) o todas las en espera. */
-  const [incluir, setIncluir] = useState<"sin_uso" | "medio" | "espera">("sin_uso");
-  const conEspera = incluir !== "sin_uso";
+  const [conEspera, setConEspera] = useState(false);
   const ordLinea = useOrden<KLinea>("fecha");
   const valorLinea = (r: DetalleNeta, key: KLinea): string | number | null | undefined =>
     key === "fecha" ? fechaRef(r) : key === "origen" ? (r.portacion === "SI" ? `Portación ${r.origen_portacion ?? ""}` : "Nativa") : (r as any)[key];
   const lineas = useMemo(() => {
     const t = qLinea.trim().toLowerCase();
-    return (incluir === "espera" ? [...sinUso, ...enEspera] : incluir === "medio" ? [...sinUso, ...riesgoMedioL] : sinUso)
+    return (conEspera ? [...sinUso, ...enEspera] : sinUso)
       .filter((r) => (!fVendedor || r.vendedor === fVendedor)
         && (!desde || fechaRef(r) >= desde) && (!hasta || fechaRef(r) <= hasta)
         && (!t || [r.sds_number, r.linea, r.plan, r.ciudad, r.vendedor, r.legajo].some((x) => (x ?? "").toString().toLowerCase().includes(t))))
       .sort((a, b) => comparar(valorLinea(a, ordLinea.orden.k), valorLinea(b, ordLinea.orden.k), ordLinea.orden.dir)
         || String(a.sds_number).localeCompare(String(b.sds_number)));
-  }, [sinUso, enEspera, riesgoMedioL, incluir, fVendedor, desde, hasta, qLinea, ordLinea.orden]);
+  }, [sinUso, enEspera, conEspera, fVendedor, desde, hasta, qLinea, ordLinea.orden]);
   const hayFiltros = !!(fVendedor || desde || hasta || qLinea || conEspera);
-  const limpiar = () => { setFVendedor(""); setDesde(""); setHasta(""); setQLinea(""); setIncluir("sin_uso"); };
+  const limpiar = () => { setFVendedor(""); setDesde(""); setHasta(""); setQLinea(""); setConEspera(false); };
   const verLineasDe = (vendedor: string) => { limpiar(); setFVendedor(vendedor); setVista("lineas"); };
-  const verRiesgoMedio = () => { limpiar(); setIncluir("medio"); setVista("lineas"); };
   const verLineasDel = (dia: string) => { limpiar(); setDesde(dia); setHasta(dia); setVista("lineas"); };
 
   // ------------------------------------------------------------ por fecha de venta
@@ -188,11 +183,11 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
 
   // ------------------------------------------------------------ exportar
   const exportarRanking = () => descargarCsv(`sin-uso-ranking_${periodo}.csv`,
-    ["Puesto", "Vendedor", "Subcanal", "Pospago evaluables", "Sin uso", "% sin uso", "Con uso", "En espera", "Riesgo medio (48 h)", "Primera venta sin uso", "Última venta sin uso", "Crítico"],
-    rankingVisible.map((f, i) => [i + 1, f.vendedor, f.subcanal, f.evaluables, f.sin_uso, f.pct_sin_uso.toLocaleString("es-PY"), f.con_uso, f.en_espera, f.riesgo_medio, fechaCorta(f.primera), fechaCorta(f.ultima), f.critico ? "Sí" : "No"]));
+    ["Puesto", "Vendedor", "Subcanal", "Pospago evaluables", "Sin uso", "% sin uso", "Con uso", "En espera", "Primera venta sin uso", "Última venta sin uso", "Crítico"],
+    rankingVisible.map((f, i) => [i + 1, f.vendedor, f.subcanal, f.evaluables, f.sin_uso, f.pct_sin_uso.toLocaleString("es-PY"), f.con_uso, f.en_espera, fechaCorta(f.primera), fechaCorta(f.ultima), f.critico ? "Sí" : "No"]));
   const exportarLineas = () => descargarCsv(`sin-uso-lineas_${periodo}.csv`,
     ["Fecha venta", "Fecha activación", "Días desde activación", "Estado", "Vendedor", "Subcanal", "Legajo", "SDS", "Línea", "Plan", "Portación", "Origen", "Ciudad", "Riesgo"],
-    lineas.map((r) => [fechaCorta(r.fecha_venta), fechaCorta(r.fecha_activacion), r.dias ?? "", riesgoMedio(r, corte) ? "Riesgo medio (48 h sin uso)" : estadoUso(r, corte) === "ESPERA" ? "En espera" : "Sin uso",
+    lineas.map((r) => [fechaCorta(r.fecha_venta), fechaCorta(r.fecha_activacion), r.dias ?? "", estadoUso(r, corte) === "ESPERA" ? "En espera" : "Sin uso",
       r.vendedor, r.subcanal, r.legajo, r.sds_number, r.linea, r.plan, r.portacion, r.origen_portacion, r.ciudad, r.riesgo]));
 
   const vendedoresConLineas = useMemo(() => [...new Set(sinUso.map((r) => r.vendedor))].sort((a, b) => a.localeCompare(b)), [sinUso]);
@@ -207,11 +202,8 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
           detalle={ranking[0] ? `Top: ${[...ranking].sort((a, b) => b.sin_uso - a.sin_uso)[0].vendedor}` : undefined} />
         <Indicador titulo="Críticos" borde="border-l-brand-primary"
           valor={n(criticos)} detalle={`Más de ${umbral}% sin uso (con ${k.min_lineas_alerta}+ líneas evaluables)`} />
-        <Indicador titulo="En espera de uso" borde={riesgoMedioL.length ? "border-l-amber-400" : "border-l-brand-mist"}
-          valor={<>{n(enEspera.length)}{riesgoMedioL.length ? <span className="text-lg text-amber-700"> · {n(riesgoMedioL.length)} con 48 h</span> : null}</>}
-          detalle={riesgoMedioL.length
-            ? <>Activadas hace menos de {DIAS_SIN_USO_ANTIGUA} días: no son alerta. <button type="button" onClick={verRiesgoMedio} className="font-semibold text-amber-800 underline underline-offset-2">{n(riesgoMedioL.length)} ya con {DIAS_RIESGO_MEDIO * 24} h sin uso: riesgo medio</button></>
-            : `Activadas hace menos de ${DIAS_SIN_USO_ANTIGUA} días: no son alerta`} />
+        <Indicador titulo="En espera de uso" borde="border-l-brand-mist"
+          valor={n(enEspera.length)} detalle={`Activadas hace menos de ${DIAS_SIN_USO_ANTIGUA} días: no son alerta`} />
       </div>
 
       <Tabs<Vista>
@@ -262,7 +254,6 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
                     <Th k="evaluables" label="Pospago evaluables" align="right" orden={ordRank.orden} alternar={ordRank.alternar} />
                     <Th k="con_uso" label="Con uso" align="right" orden={ordRank.orden} alternar={ordRank.alternar} />
                     <Th k="en_espera" label="En espera" align="right" orden={ordRank.orden} alternar={ordRank.alternar} />
-                    <Th k="riesgo_medio" label="48 h sin uso" align="right" orden={ordRank.orden} alternar={ordRank.alternar} title={`En espera pero ya con ${DIAS_RIESGO_MEDIO * 24} h sin uso: riesgo medio, pasan a alerta en el corte siguiente`} />
                     <Th k="ultima" label="Ventas sin uso" orden={ordRank.orden} alternar={ordRank.alternar} title="Primera y última fecha de venta de sus líneas sin uso" />
                     <th className="px-3 py-2" />
                   </tr>
@@ -298,7 +289,6 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
                       <td className="px-3 py-2 text-right tabular-nums">{n(f.evaluables)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{n(f.con_uso)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-brand-slate">{f.en_espera ? n(f.en_espera) : "—"}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{f.riesgo_medio ? <span className="font-semibold text-amber-700">{n(f.riesgo_medio)}</span> : <span className="text-brand-mist">—</span>}</td>
                       <td className="px-3 py-2 text-xs text-brand-graphite whitespace-nowrap">
                         {f.primera ? (f.primera === f.ultima ? fechaCorta(f.primera) : <>{fechaCorta(f.primera)} <span className="text-brand-mist">→</span> {fechaCorta(f.ultima)}</>) : "—"}
                       </td>
@@ -317,8 +307,8 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
 
       {vista === "lineas" && (
         <Seccion
-          titulo={fVendedor ? `Líneas sin uso de ${fVendedor}` : incluir === "medio" ? "Líneas Pospago sin uso y con riesgo medio (48 h)" : "Líneas Pospago sin uso"}
-          sub={`${n(lineas.length)} línea(s) · sin consumo con ${DIAS_SIN_USO_ANTIGUA}+ días de activadas${incluir === "medio" ? ` más las en espera con ${DIAS_RIESGO_MEDIO * 24} h sin uso (riesgo medio)` : incluir === "espera" ? " más todas las en espera" : ""}${tieneFechaVenta ? "" : " · este informe no trae la fecha de venta: se muestra la de activación (se completa al actualizarlo)"}`}
+          titulo={fVendedor ? `Líneas sin uso de ${fVendedor}` : "Líneas Pospago sin uso"}
+          sub={`${n(lineas.length)} línea(s) · sin consumo con ${DIAS_SIN_USO_ANTIGUA}+ días de activadas${tieneFechaVenta ? "" : " · este informe no trae la fecha de venta: se muestra la de activación (se completa al actualizarlo)"}`}
           accion={<button onClick={exportarLineas} disabled={!lineas.length} className="btn-secondary text-xs px-3 py-2 shrink-0"><Download size={14} /> CSV</button>}
         >
           <div className="grid sm:grid-cols-2 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto_auto_auto] gap-3 items-end mb-4">
@@ -344,15 +334,10 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
               <label className="label">Hasta</label>
               <input type="date" className="input py-2" value={hasta} min={desde || undefined} onChange={(e) => setHasta(e.target.value)} />
             </div>
-            <div className="flex items-end gap-3">
-              <div>
-                <label className="label">Incluir</label>
-                <select className="input py-2" value={incluir} onChange={(e) => setIncluir(e.target.value as typeof incluir)} title="Qué mostrar además de las líneas sin uso">
-                  <option value="sin_uso">Solo sin uso</option>
-                  <option value="medio">+ riesgo medio (48 h sin uso){riesgoMedioL.length ? ` · ${n(riesgoMedioL.length)}` : ""}</option>
-                  <option value="espera">+ todas en espera{enEspera.length ? ` · ${n(enEspera.length)}` : ""}</option>
-                </select>
-              </div>
+            <div className="flex items-center gap-3 pb-2">
+              <label className="text-xs text-brand-graphite flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                <input type="checkbox" className="accent-brand-primary" checked={conEspera} onChange={(e) => setConEspera(e.target.checked)} /> Incluir en espera
+              </label>
               {hayFiltros && <button onClick={limpiar} className="text-xs font-semibold text-brand-primary inline-flex items-center gap-1"><X size={12} /> Limpiar</button>}
             </div>
           </div>
@@ -396,7 +381,7 @@ export function SinUsoDetalle({ d, periodo }: { d: InformeData; periodo: string 
                       <td className="px-3 py-1.5 whitespace-nowrap text-xs">{r.ciudad ?? "—"}</td>
                       <td className="px-3 py-1.5">{r.riesgo ? <span className={r.riesgo === "A" ? "badge-primary" : r.riesgo === "M" ? "badge-orange" : "badge-neutral"}>{{ A: "Alto", M: "Medio", B: "Bajo" }[r.riesgo] ?? r.riesgo}</span> : "—"}</td>
                       <td className="px-3 py-1.5 text-xs">{r.legajo ?? "—"}</td>
-                      <td className="px-3 py-1.5 whitespace-nowrap"><UsoBadge estado={estadoUso(r, corte)} riesgoMedio={riesgoMedio(r, corte)} /></td>
+                      <td className="px-3 py-1.5 whitespace-nowrap"><UsoBadge estado={estadoUso(r, corte)} /></td>
                     </tr>
                   ))}
                 </tbody>

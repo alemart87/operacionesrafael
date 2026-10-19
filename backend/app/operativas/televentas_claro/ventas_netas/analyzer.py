@@ -14,9 +14,6 @@ Reglas acordadas con el negocio:
 * En espera de uso: una Pospago sin consumo activada hace menos de
   DIAS_ESPERA_USO días al corte todavía no tuvo tiempo de usarse. No es alerta:
   no cuenta como sin uso en ningún indicador y se informa aparte ("en_espera").
-* Riesgo medio: dentro de las en espera, las que ya llevan DIAS_RIESGO_MEDIO
-  días (48 h) o más sin uso. Siguen sin contar como sin uso (al día siguiente
-  pasan a alerta), pero se marcan ("riesgo_medio") para seguirlas antes.
 * Vendedor crítico (alerta): al menos MIN_LINEAS_ALERTA Pospago evaluables (sin
   las en espera) y más de UMBRAL_CRITICO_SIN_USO_PCT sin uso con 3+ días.
 * Productividad (hoja CARGAS): evolutivo diario por fecha de alta de la venta,
@@ -38,7 +35,6 @@ UMBRAL_CRITICO_SIN_USO_PCT = 35.0  # vendedor crítico: más de esto de sus lín
 UMBRAL_USO_PCT = 100 - UMBRAL_CRITICO_SIN_USO_PCT  # lo mismo visto como % en uso (menos de esto = crítico)
 MIN_LINEAS_ALERTA = 5
 DIAS_ESPERA_USO = 3  # activadas hace menos de esto al corte: "en espera de uso", no son alerta
-DIAS_RIESGO_MEDIO = 2  # en espera con estos días (48 h) o más sin uso: riesgo medio, para seguir antes de que sea alerta
 ESTADO_FINALIZADA = "Vta_Finalizada"
 RANGOS_ANTIGUEDAD = [("0-2 días", 0, 2), ("3-7 días", 3, 7), ("8-15 días", 8, 15), ("más de 15 días", 16, None)]
 
@@ -137,10 +133,6 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         d = dias_al_corte(r)
         return d is not None and d < DIAS_ESPERA_USO
 
-    def riesgo_medio(r: dict[str, Any]) -> bool:
-        """En espera de uso con DIAS_RIESGO_MEDIO días (48 h) o más sin consumo: riesgo medio."""
-        return en_espera(r) and (dias_al_corte(r) or 0) >= DIAS_RIESGO_MEDIO
-
     def estado_uso(r: dict[str, Any]) -> str | None:
         """SI / NO / ESPERA para Pospago; None para el resto."""
         if r.get("tipo_producto") != "Pospago":
@@ -151,7 +143,6 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
 
     pospago = [r for r in ddi if r.get("tipo_producto") == "Pospago"]
     espera = [r for r in pospago if estado_uso(r) == "ESPERA"]
-    medio = [r for r in espera if riesgo_medio(r)]
     sin_uso = [r for r in pospago if estado_uso(r) == "NO"]
     portadas = [r for r in ddi if r.get("portacion") == "SI"]
     suspendidas = [r for r in ddi if r.get("linea_estado_cierre") == "S"]
@@ -162,7 +153,6 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         su, cu, esp = est["NO"], est["SI"], est["ESPERA"]
         evaluables = len(pp) - esp
         return {"total": len(rows), "pospago": len(pp), "sin_uso": su, "con_uso": cu, "en_espera": esp,
-                "riesgo_medio": sum(1 for r in pp if riesgo_medio(r)),
                 "pct_uso": _pct(cu, evaluables), "pct_sin_uso": _pct(su, evaluables)}
 
     def agrupar(rows: list[dict], key, label: str, orden_por_total: bool = True) -> list[dict]:
@@ -190,7 +180,7 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
     for r in ddi:
         nombre, subcanal = vendedor_de(r.get("pos_nombre"), r.get("subcanal"))
         v = vend.setdefault(nombre, {"vendedor": nombre, "subcanal": subcanal, "pos_id": r.get("pos_id"),
-                                     "pospago": 0, "sin_uso": 0, "con_uso": 0, "en_espera": 0, "riesgo_medio": 0, "gpon": 0, "iptv": 0,
+                                     "pospago": 0, "sin_uso": 0, "con_uso": 0, "en_espera": 0, "gpon": 0, "iptv": 0,
                                      "otros": 0, "total": 0, "portadas": 0, "suspendidas": 0})
         v["total"] += 1
         if r.get("portacion") == "SI":
@@ -201,8 +191,6 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         if p == "Pospago":
             v["pospago"] += 1
             v[{"SI": "con_uso", "NO": "sin_uso", "ESPERA": "en_espera"}[estado_uso(r)]] += 1
-            if riesgo_medio(r):
-                v["riesgo_medio"] += 1
         elif p == "GPON":
             v["gpon"] += 1
         elif p == "IPTV":
@@ -292,14 +280,12 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "detalle": detalle_pend,
     }
 
-    # Uso por SDS (solo Pospago de DDI) para cruzar las cargas finalizadas con su consumo
-    # (None = en espera de uso; las de riesgo medio van aparte).
+    # Uso por SDS (solo Pospago de DDI) para cruzar las cargas finalizadas con su consumo.
     uso_por_sds = {r["sds_number"]: (None if en_espera(r) else r.get("consumo_datos") == "SI") for r in ddi_all if r.get("tipo_producto") == "Pospago"}
-    riesgo_medio_sds = {r["sds_number"] for r in ddi_all if r.get("tipo_producto") == "Pospago" and riesgo_medio(r)}
     # Vendedor de cada línea activada (DDI o PORTABILIDAD) por SDS: dice quién vendió una carga que no trae POS.
     pos_por_sds = {r["sds_number"]: vendedor_de(r.get("pos_nombre"), r.get("subcanal"))
                    for r in [*por_all, *ddi_all] if r.get("sds_number") and r.get("pos_nombre")}
-    productividad = _productividad(cargas, cargas_all, fecha_dato, uso_por_sds, pos_por_sds, riesgo_medio_sds)
+    productividad = _productividad(cargas, cargas_all, fecha_dato, uso_por_sds, pos_por_sds)
 
     kpis = {
         "periodo": periodo,
@@ -314,11 +300,9 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "pospago_sin_uso": len(sin_uso),
         "pospago_con_uso": len(pospago) - len(sin_uso) - len(espera),
         "pospago_en_espera": len(espera),
-        "pospago_riesgo_medio": len(medio),
         "pct_sin_uso": _pct(len(sin_uso), len(pospago) - len(espera)),
         "pct_uso": _pct(len(pospago) - len(sin_uso) - len(espera), len(pospago) - len(espera)),
         "dias_espera_uso": DIAS_ESPERA_USO,
-        "dias_riesgo_medio": DIAS_RIESGO_MEDIO,
         "suspendidas": len(suspendidas),
         "fuera_de_netas": len(por_fuera),
         "vendedores": len(vendedores),
@@ -356,7 +340,7 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "pendientes": pendientes,
         "finalizadas_sin_activar": [_detalle_carga(r) for r in finalizadas_sin_activar],
         "detalle_netas": [{**_detalle_neta(r, "DDI"), **_venta_de(carga_por_sds.get(r["sds_number"])),
-                           "dias": dias_al_corte(r), "en_espera": en_espera(r), "riesgo_medio": riesgo_medio(r)} for r in ddi],
+                           "dias": dias_al_corte(r), "en_espera": en_espera(r)} for r in ddi],
         "productividad": productividad,
         "hojas": parsed.get("hojas", []),
     }
@@ -525,12 +509,10 @@ def cancelada_adm(r: dict[str, Any]) -> bool:
 
 def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date | None,
                    uso_por_sds: dict[str, bool | None] | None = None,
-                   pos_por_sds: dict[str, tuple[str, str | None]] | None = None,
-                   riesgo_medio_sds: set[str] | None = None) -> dict[str, Any]:
+                   pos_por_sds: dict[str, tuple[str, str | None]] | None = None) -> dict[str, Any]:
     mapa = _mapa_legajo_pos(cargas_all)
     uso_por_sds = uso_por_sds or {}
     pos_por_sds = pos_por_sds or {}
-    riesgo_medio_sds = riesgo_medio_sds or set()
     estados = [e for e in ESTADOS_ORDEN if any(r.get("sds_estado") == e for r in cargas)]
     estados += sorted({r.get("sds_estado") for r in cargas} - set(estados) - {None})
     productos = ["Pospago", "Internet", "IPTV"]
@@ -540,7 +522,7 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
         f = {"total": 0, "finalizadas": 0, **{e: 0 for e in estados}, **{p.lower(): 0 for p in productos},
              "capital_central": 0, "interior": 0,
              # Salud de las finalizadas: Pospago con/sin uso (cruce con DDI), Internet/IPTV y sin dato.
-             "con_uso": 0, "sin_uso": 0, "en_espera": 0, "riesgo_medio": 0, "sin_dato_uso": 0, "fin_fija": 0,
+             "con_uso": 0, "sin_uso": 0, "en_espera": 0, "sin_dato_uso": 0, "fin_fija": 0,
              **{f"riesgo_{x}": 0 for x in RIESGOS}, **{f"sin_uso_riesgo_{x}": 0 for x in RIESGOS},
              **extra}
         return f
@@ -570,8 +552,6 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
                 f["sin_dato_uso"] += 1
             elif uso_por_sds[r["sds_number"]] is None:
                 f["en_espera"] += 1  # activada hace menos de DIAS_ESPERA_USO: no es alerta
-                if r["sds_number"] in riesgo_medio_sds:
-                    f["riesgo_medio"] += 1  # …pero ya con 48 h sin uso
             elif uso_por_sds[r["sds_number"]]:
                 f["con_uso"] += 1
             else:
@@ -666,7 +646,6 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
             uso = "ESPERA" if u is None else "SI" if u else "NO"
         detalle_cargas.append({
             "sds_number": r["sds_number"],
-            "riesgo_medio": uso == "ESPERA" and r["sds_number"] in riesgo_medio_sds,
             "fecha_alta": r.get("sds_fecha_alta_venta"),
             "estado": r.get("sds_estado"),
             "cancelada": cancelada_adm(r),
@@ -727,7 +706,6 @@ def _productividad(cargas: list[dict], cargas_all: list[dict], fecha_dato: date 
             "sin_uso": total["sin_uso"],
             "sin_dato_uso": total["sin_dato_uso"],
             "en_espera": total["en_espera"],
-            "riesgo_medio": total["riesgo_medio"],
             "pct_sin_uso": total["pct_sin_uso"],
             "riesgo_alto": total["riesgo_A"],
             "sin_uso_riesgo_alto": total["sin_uso_riesgo_A"],
