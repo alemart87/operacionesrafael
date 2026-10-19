@@ -72,7 +72,7 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
 
   const kpis: [string, string, string, string][] = [
     ["Ventas netas", n(k.netas), `${n(k.pospago)} Pospago · ${n(k.gpon)} GPON · ${n(k.iptv)} IPTV`, "border-l-brand-ink"],
-    ["Pospago sin uso", pct(k.pct_sin_uso), `${n(k.pospago_sin_uso)} líneas con 3+ días${k.en_espera ? ` · ${n(k.en_espera)} en espera` : ""}${k.riesgo_medio ? ` (${n(k.riesgo_medio)} con 48 h: riesgo medio)` : ""}`, "border-l-brand-primary"],
+    ["Pospago sin uso", pct(k.pct_sin_uso), `${n(k.pospago_sin_uso)} líneas con 3+ días${k.en_espera ? ` · ${n(k.en_espera)} en espera` : ""}`, "border-l-brand-primary"],
     ["Sali Hablando sin uso", `${n(k.sali_sin_uso)} · ${pct(k.sali_pct_sin_uso)}`, `de ${n(k.sali_total)} portaciones SH`, "border-l-brand-primary"],
     ["Vendedores críticos", n(k.vendedores_criticos), `${n(k.vendedores_atencion)} en alerta media · de ${n(k.vendedores)}`, "border-l-brand-orange"],
   ];
@@ -237,7 +237,7 @@ export function InformeEjecutivo({ a }: { a: AuditoriaDetalle }) {
                 <tr key={v.vendedor} className="border-b border-brand-border even:bg-brand-bg/50">
                   <td className="px-3 py-1.5 font-semibold">{v.vendedor}</td><td className="px-3 py-1.5 text-right">{n(v.netas)}</td>
                   <td className="px-3 py-1.5 text-right font-bold text-brand-primary">{pct(v.pct_sin_uso)}</td><td className="px-3 py-1.5 text-right">{n(v.sin_uso)}</td>
-                  <td className="px-3 py-1.5 text-right text-brand-slate">{n(v.en_espera ?? 0)}{v.riesgo_medio ? <span className="text-amber-700 text-xs"> ({n(v.riesgo_medio)} c/48 h)</span> : null}</td><td className="px-3 py-1.5 text-right">{n(v.sali_sin_uso)}</td>
+                  <td className="px-3 py-1.5 text-right text-brand-slate">{n(v.en_espera ?? 0)}</td><td className="px-3 py-1.5 text-right">{n(v.sali_sin_uso)}</td>
                 </tr>
               ))}
             </tbody>

@@ -67,7 +67,7 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
             ["Elaborado por", `${nombre(a.created_by)} · ${fechaHora(a.created_at)}`],
             ["Cerrado por", a.closed_at ? `${nombre(a.closed_by)} · ${fechaHora(a.closed_at)}` : "—"],
             ["Datos congelados el", fechaHora(s.generado_en)],
-            ...(k.en_espera ? [["En espera de uso", `${n(k.en_espera)} líneas activadas hace menos de 3 días al corte: no son alerta y no se cuentan${k.riesgo_medio ? `. ${n(k.riesgo_medio)} de ellas ya llevan 48 h sin uso: riesgo medio, pasan a alerta en el corte siguiente si no se usan` : ""}`]] : []),
+            ...(k.en_espera ? [["En espera de uso", `${n(k.en_espera)} líneas activadas hace menos de 3 días al corte: no son alerta y no se cuentan`]] : []),
             ...(s.advertencias?.length ? [["Advertencias", s.advertencias.join(" ")]] : []),
           ].map(([l, v]) => (
             <tr key={l as string}><td className="pr-4 py-0.5 text-[11px] uppercase tracking-wider2 text-brand-slate whitespace-nowrap align-top">{l}</td><td className="py-0.5 text-brand-graphite">{v}</td></tr>
@@ -85,7 +85,7 @@ export function InformeImpreso({ a, conEvidencia = true }: { a: AuditoriaDetalle
       <div className="grid md:grid-cols-4 gap-3">
         {[
           ["Ventas netas", n(k.netas), `${n(k.pospago)} Pospago · ${n(k.gpon)} GPON · ${n(k.iptv)} IPTV`],
-          ["Pospago sin uso", pct(k.pct_sin_uso), `${n(k.pospago_sin_uso)} líneas con 3+ días${k.en_espera ? ` · ${n(k.en_espera)} en espera de uso` : ""}${k.riesgo_medio ? ` (${n(k.riesgo_medio)} con 48 h: riesgo medio)` : ""}`],
+          ["Pospago sin uso", pct(k.pct_sin_uso), `${n(k.pospago_sin_uso)} líneas con 3+ días${k.en_espera ? ` · ${n(k.en_espera)} en espera de uso` : ""}`],
           ["Sali Hablando sin uso", `${n(k.sali_sin_uso)} · ${pct(k.sali_pct_sin_uso)}`, `${n(k.sali_total)} portaciones`],
           ["Vendedores con riesgo", `${n(k.vendedores_criticos)} · ${n(k.vendedores_atencion)}`, `críticos · alerta media, de ${n(k.vendedores)}`],
           ["Cargas", n(k.cargas), `${pct(k.pct_finalizacion)} finalizadas · ${n(k.pendientes)} pendientes`],

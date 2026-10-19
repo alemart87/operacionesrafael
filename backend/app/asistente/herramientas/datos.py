@@ -187,9 +187,9 @@ async def _ventas_mes(ctx: Ctx, a: dict[str, Any]) -> Any:
         "totales": {"netas": elegido.netas, "pospago": elegido.pospago, "gpon": elegido.gpon, "iptv": elegido.iptv,
                     "pospago_sin_uso": elegido.pospago_sin_uso, "pct_sin_uso": elegido.pct_sin_uso},
         "indicadores": seleccionar(k, ("portadas", "nativas", "pct_portacion", "pospago_con_uso", "pospago_en_espera",
-                                       "pospago_riesgo_medio", "pct_uso", "suspendidas", "vendedores", "vendedores_alerta", "cargas",
+                                       "pct_uso", "suspendidas", "vendedores", "vendedores_alerta", "cargas",
                                        "cargas_finalizadas", "finalizadas_sin_activar", "pendientes",
-                                       "umbral_critico_sin_uso_pct", "min_lineas_alerta", "dias_espera_uso", "dias_riesgo_medio")),
+                                       "umbral_critico_sin_uso_pct", "min_lineas_alerta", "dias_espera_uso")),
         "por_producto": data.get("por_producto"),
         "cargas_por_dia": ((data.get("productividad") or {}).get("por_dia")),
         "vendedores_en_alerta": alertas[:15],
@@ -499,7 +499,7 @@ async def _alertas_corte(ctx: Ctx, a: dict[str, Any]) -> Any:
     vendedor = lambda v: {  # noqa: E731
         "vendedor": v.get("vendedor"), "netas": v.get("netas"), "pospago": v.get("pospago"), "sin_uso": v.get("sin_uso"),
         "pct_sin_uso": v.get("pct_sin_uso"), "sali_sin_uso": v.get("sali_sin_uso"), "suspendidas": v.get("suspendidas"),
-        "en_espera": v.get("en_espera"), "riesgo_medio": v.get("riesgo_medio"), "senales": [x.get("texto") for x in (v.get("senales") or [])][:4]}
+        "en_espera": v.get("en_espera"), "senales": [x.get("texto") for x in (v.get("senales") or [])][:4]}
     hallazgos = [{"titulo": h.get("titulo"), "severidad": h.get("severidad"), "categoria": h.get("categoria"),
                   "vendedor": h.get("vendedor")} for h in hallazgos_automaticos(snap)]
     llamativos = sorted(snap.get("llamativos") or [], key=lambda x: {"alta": 0, "media": 1}.get(x.get("gravedad"), 2))
@@ -507,7 +507,7 @@ async def _alertas_corte(ctx: Ctx, a: dict[str, Any]) -> Any:
         "corte": {"mes": elegido.periodo, "fecha_dato": str(elegido.fecha_dato) if elegido.fecha_dato else None,
                   "report_id": elegido.id, "pantalla": f"/televentas-claro/ventas-netas/reports/{elegido.id}"},
         "netas": seleccionar(k, ("netas", "pospago", "gpon", "iptv", "portadas", "pospago_sin_uso", "pct_sin_uso",
-                                 "en_espera", "riesgo_medio", "suspendidas", "sali_total", "sali_sin_uso", "sali_pct_sin_uso",
+                                 "en_espera", "suspendidas", "sali_total", "sali_sin_uso", "sali_pct_sin_uso",
                                  "total_sin_uso")),
         "cargas": seleccionar(k, ("cargas", "cargas_finalizadas", "pct_finalizacion", "cargas_a_confirmar",
                                   "cargas_rechazadas", "pendientes", "finalizadas_sin_activar", "riesgo_alto",

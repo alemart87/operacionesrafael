@@ -29,7 +29,7 @@ export function TablaEvidencia({ lineas, maxAlto = "max-h-72" }: { lineas: Linea
         { key: "linea", label: "Línea", className: "tabular-nums", render: (r) => r.linea ?? "—" },
         { key: "plan", label: "Plan" },
         { key: "origen_portacion", label: "Origen", render: (r) => (r.portacion === "SI" ? r.origen_portacion ?? "SI" : r.portacion === "NO" ? "Nativa" : r.origen_portacion ?? "—") },
-        { key: "consumo", label: "Uso", render: (r) => <UsoBadge estado={r.en_espera ? "ESPERA" : r.consumo === "NO" || r.sin_uso ? "NO" : r.consumo === "SI" ? "SI" : null} riesgoMedio={!!r.riesgo_medio} /> },
+        { key: "consumo", label: "Uso", render: (r) => <UsoBadge estado={r.en_espera ? "ESPERA" : r.consumo === "NO" || r.sin_uso ? "NO" : r.consumo === "SI" ? "SI" : null} /> },
         { key: "riesgo", label: "Riesgo", align: "center", render: (r) => (r.riesgo ? <span className={r.riesgo === "A" ? "font-semibold text-brand-primary" : ""}>{r.riesgo}</span> : "—") },
         { key: "estado_linea", label: "Estado", render: (r) => (r.estado_linea === "S" ? <span className="badge-primary">Susp.</span> : r.estado_linea === "A" ? "Activa" : "—") },
         { key: "vendedor", label: "Vendedor" },
@@ -69,7 +69,7 @@ export function VendedorAuditoria({ s, v, onClose }: { s: Snapshot; v: VendedorR
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <KpiCard label="Netas" value={n(v.netas)} hint={`${n(v.pospago)} Pospago · ${n(v.gpon)} GPON · ${n(v.iptv)} IPTV`} accent="secondary" />
-            <KpiCard label="% Pospago en uso" value={v.pospago ? pct(v.pct_uso) : "—"} hint={`${n(v.sin_uso)} sin uso${v.en_espera ? ` · ${n(v.en_espera)} en espera de uso` : ""}${v.riesgo_medio ? ` (${n(v.riesgo_medio)} con 48 h: riesgo medio)` : ""}`} accent={v.alerta ? "danger" : "cyan"} />
+            <KpiCard label="% Pospago en uso" value={v.pospago ? pct(v.pct_uso) : "—"} hint={`${n(v.sin_uso)} sin uso${v.en_espera ? ` · ${n(v.en_espera)} en espera de uso` : ""}`} accent={v.alerta ? "danger" : "cyan"} />
             <KpiCard label="Sali Hablando" value={n(v.sali)} hint={`${n(v.sali_sin_uso)} sin uso`} accent={v.sali_sin_uso ? "danger" : "neutral"} />
             <KpiCard label="Cargas" value={n(v.cargas)} hint={`${pct(v.pct_finalizacion)} finalizadas · riesgo A ${n(v.riesgo_A)} (${n(v.sin_uso_riesgo_A)} s/uso) · susp. ${n(v.suspendidas)}`} accent="purple" />
           </div>
@@ -96,8 +96,8 @@ export function VendedorAuditoria({ s, v, onClose }: { s: Snapshot; v: VendedorR
             <TablaEvidencia lineas={sinUso} maxAlto="max-h-80" />
             {enEspera.length > 0 && (
               <div className="mt-4 rounded-md border border-dashed border-brand-border bg-brand-bg/60 p-3">
-                <div className="text-[11px] font-bold uppercase tracking-wider2 text-brand-slate">◷ En espera de uso · {n(enEspera.length)}{enEspera.some((x) => x.riesgo_medio) ? <span className="text-amber-700"> · {n(enEspera.filter((x) => x.riesgo_medio).length)} con 48 h sin uso (riesgo medio)</span> : null}</div>
-                <p className="text-xs text-brand-slate mb-2">Activadas hace menos de 3 días al corte: todavía no tuvieron tiempo de usarse. No son alerta ni suman al puntaje; se evalúan en el corte siguiente. Las marcadas <b>◔ 48 h sin uso</b> son riesgo medio: conviene contactar al cliente antes del próximo corte.</p>
+                <div className="text-[11px] font-bold uppercase tracking-wider2 text-brand-slate">◷ En espera de uso · {n(enEspera.length)}</div>
+                <p className="text-xs text-brand-slate mb-2">Activadas hace menos de 3 días al corte: todavía no tuvieron tiempo de usarse. No son alerta ni suman al puntaje; se evalúan en el corte siguiente.</p>
                 <TablaEvidencia lineas={enEspera} maxAlto="max-h-60" />
               </div>
             )}
@@ -140,7 +140,7 @@ export function RiesgosView({ s, titulo }: { s: Snapshot; titulo?: string }) {
       )}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard label="Ventas netas" value={n(k.netas)} hint={`${s.periodos.map(nombrePeriodo).join(" · ")} · ${n(k.pospago)} Pospago · ${n(k.gpon)} GPON · ${n(k.iptv)} IPTV`} accent="secondary" />
-        <KpiCard label="Pospago sin uso" value={pct(k.pct_sin_uso)} hint={`${n(k.pospago_sin_uso)} líneas con 3+ días${k.en_espera ? ` · ${n(k.en_espera)} en espera de uso, no son alerta` : ""}${k.riesgo_medio ? ` · ${n(k.riesgo_medio)} con 48 h sin uso: riesgo medio` : ""}`} accent="danger" />
+        <KpiCard label="Pospago sin uso" value={pct(k.pct_sin_uso)} hint={`${n(k.pospago_sin_uso)} líneas con 3+ días${k.en_espera ? ` · ${n(k.en_espera)} en espera de uso, no son alerta` : ""}`} accent="danger" />
         <KpiCard label="Sali Hablando sin uso" value={`${n(k.sali_sin_uso)} · ${pct(k.sali_pct_sin_uso)}`} hint={`${n(k.sali_total)} portaciones Sali Hablando`} accent="danger" />
         <KpiCard label="Vendedores con riesgo" value={`${n(k.vendedores_criticos)} · ${n(k.vendedores_atencion)}`} hint={`críticos (+35% sin uso) · alerta media, de ${n(k.vendedores)} con actividad`} accent="orange" />
       </div>

@@ -32,7 +32,7 @@ def analizar_guardado(parsed_gz: bytes) -> dict[str, Any]:
     return analyze_ventas_netas(json.loads(gzip.decompress(parsed_gz).decode("utf-8")))
 
 
-ANALYSIS_VERSION = 10  # sube cuando el análisis agrega bloques: los informes viejos se pueden actualizar
+ANALYSIS_VERSION = 9  # sube cuando el análisis agrega bloques: los informes viejos se pueden actualizar
 # (v9: cargas sin POS atribuidas por su línea activada; subcanal y cancelación en el detalle de cargas · v8: fecha de venta en el detalle de netas)
 
 

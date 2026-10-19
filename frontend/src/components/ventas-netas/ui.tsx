@@ -8,17 +8,9 @@ import type { Senal } from "./patrones";
  * Uso de una línea con la misma marca en toda la plataforma. "En espera": Pospago sin consumo
  * activada hace menos de 3 días al corte; todavía no se evalúa y no es alerta.
  */
-/** Estado de uso de una Pospago. `riesgoMedio`: en espera pero ya con 48 h sin uso (ámbar, riesgo medio). */
-export function UsoBadge({ estado, riesgoMedio }: { estado: "SI" | "NO" | "ESPERA" | null | undefined; riesgoMedio?: boolean }) {
+export function UsoBadge({ estado }: { estado: "SI" | "NO" | "ESPERA" | null | undefined }) {
   if (estado === "SI") return <span className="text-emerald-700 font-semibold">Con uso</span>;
   if (estado === "NO") return <span className="text-brand-primary font-semibold">Sin uso</span>;
-  if (estado === "ESPERA" && riesgoMedio)
-    return (
-      <span className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 whitespace-nowrap"
-        title="En espera de uso, pero ya con 48 horas sin consumo: riesgo medio. Si no se usa antes del próximo corte pasa a sin uso (alerta PFI). Conviene contactar al cliente ahora.">
-        <span aria-hidden>◔</span>48 h sin uso
-      </span>
-    );
   if (estado === "ESPERA")
     return (
       <span className="inline-flex items-center gap-1 rounded border border-brand-border bg-brand-bg px-1.5 py-0.5 text-[11px] font-semibold text-brand-slate whitespace-nowrap"
