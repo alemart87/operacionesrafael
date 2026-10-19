@@ -161,6 +161,9 @@ export function SinUso({ r, num }: P) {
           <Callout tipo="clave" titulo="En espera de uso: no es alerta">
             Una Pospago sin consumo activada hace menos de {d} días al corte todavía no tuvo tiempo de usarse. El sistema la marca <b>◷ En espera</b> en todas las tablas y la deja fuera de los porcentajes, del nivel y del puntaje del vendedor y del “día con más líneas sin uso”. En el caso testigo fueron <b>{fmt(CT.en_espera)} líneas</b> ({CT.en_espera_dia_corte} del mismo día del corte). Se evalúan en el corte siguiente.
           </Callout>
+          <Callout tipo="clave" titulo={`Riesgo medio: ${(r.dias_riesgo_medio ?? 2) * 24} h sin uso`}>
+            Dentro de las en espera, las que ya llevan {r.dias_riesgo_medio ?? 2} días o más sin consumo se marcan <b>◔ 48 h sin uso</b>. Siguen sin contar como sin uso, pero el sistema las lista como hallazgo de severidad media y como señal del vendedor: si no se usan antes del próximo corte, pasan a alerta PFI. Es el momento de llamar al cliente.
+          </Callout>
           <Callout tipo="caso" titulo={`Caso testigo · corte al ${CT.corte}`}>
             {fmt(CT.pospago_sin_uso)} de {fmt(CT.pospago - CT.en_espera)} Pospago netas evaluables sin uso (<b>{fmt(CT.pct_sin_uso)}%</b>) y {fmt(CT.en_espera)} en espera. Por zona, el Interior tenía <b>{fmt(CT.zonas.interior.pct)}% sin uso</b> contra {fmt(CT.zonas.capital.pct)}% de Capital y Central.
           </Callout>
@@ -168,6 +171,7 @@ export function SinUso({ r, num }: P) {
         <div className="space-y-4">
           <Verificar items={[
             <>Las marcadas <b>◷ En espera</b> no se verifican todavía: se revisan en el corte siguiente.</>,
+            <>Las marcadas <b>◔ 48 h sin uso</b> (riesgo medio) sí: una llamada al cliente ahora evita que pasen a alerta.</>,
             "Nativas contra portadas: muchas nativas sin uso es una señal propia.",
             "Plan acorde al perfil del cliente: planes altos sin uso merecen llamada.",
             "Lotes: activaciones del mismo día y del mismo vendedor.",

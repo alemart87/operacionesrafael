@@ -212,6 +212,14 @@ Reglas del análisis (`analyzer.py`):
   evalúa en el corte siguiente. Auditoría usa el mismo criterio (lo importa del
   analizador). Al arrancar, la plataforma recalcula sola, desde los datos
   guardados, los informes generados por una versión anterior del análisis.
+- **Riesgo medio (48 h sin uso)**: dentro de las en espera, las que ya llevan 2
+  días o más sin consumo (`DIAS_RIESGO_MEDIO`) se marcan "◔ 48 h sin uso". Siguen
+  sin contar como sin uso (al día siguiente pasan a alerta), pero se listan para
+  llamar al cliente antes: KPI e indicador con acceso directo a esas líneas, columna
+  "48 h sin uso" en el ranking de Sin uso, filtro "Incluir: + riesgo medio", ficha
+  del vendedor, y en Auditoría un dato llamativo, un hallazgo automático de
+  severidad media (categoría sin uso, clave `riesgo_medio_48h`) y una señal media
+  del vendedor, sin tocar su nivel ni su puntaje. Voi lo recibe en los KPIs del corte.
 - **Sali Hablando** (`PORTACION_TIPO = SI-SaliHbl`): la línea salió hablando de
   la otra operadora. Suelen activarse el mes anterior y completar la portación
   en el período, por lo que no figuran en DDI ni en CARGAS del mes; el
@@ -644,7 +652,9 @@ auditor elija como fuente. Código en `backend/app/operativas/televentas_claro/a
 - **Crítico** es solo el vendedor con más de 35% de sus líneas Pospago sin uso con
   3+ días de activadas (`UMBRAL_CRITICO_SIN_USO_PCT`, con 5 o más evaluables; las
   en espera no cuentan). Rige igual en Ventas Netas ("Ver críticos") y en
-  Auditoría. Todo otro riesgo del vendedor es **alerta media**.
+  Auditoría. Todo otro riesgo del vendedor es **alerta media**. Las líneas en
+  espera con 48 h sin uso (`DIAS_RIESGO_MEDIO`) son **riesgo medio**: hallazgo y
+  señal de severidad media con sus líneas como evidencia, sin cambiar el nivel.
 - Informe final en dos versiones, cada una en PDF para enviar: **ejecutivo**
   (resumen del auditor, indicadores, hallazgos generales y críticos, alertas medias
   en una tabla, gráficos con los comentarios del auditor, críticos, conclusiones y
