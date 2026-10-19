@@ -52,6 +52,10 @@ export interface Vendedor {
   pospago: number;
   sin_uso: number;
   con_uso: number;
+  /** Pospago en espera de uso (menos de 3 días al corte, sin consumo): no cuentan. */
+  en_espera?: number;
+  /** De las en espera, las que ya llevan 48 h sin uso: riesgo medio. */
+  riesgo_medio?: number;
   gpon: number;
   iptv: number;
   otros: number;
@@ -97,6 +101,8 @@ export interface DetalleNeta {
   consumo: "SI" | "NO" | null;
   /** Pospago sin consumo activada hace menos de 3 días al corte: en espera de uso, no es alerta. */
   en_espera?: boolean;
+  /** En espera pero ya con 48 h (2 días) sin uso: riesgo medio, pasa a alerta en el corte siguiente (v10+). */
+  riesgo_medio?: boolean;
   /** Días desde la activación hasta el corte. */
   dias?: number | null;
   /** Datos de la venta (hoja CARGAS, cruce por SDS; informes v8+). */
@@ -129,6 +135,9 @@ export interface Kpis {
   pospago_con_uso: number;
   /** Pospago sin consumo activadas hace menos de 3 días al corte: no cuentan como sin uso. */
   pospago_en_espera?: number;
+  /** De las en espera, las que ya llevan 48 h sin uso: riesgo medio (v10+). */
+  pospago_riesgo_medio?: number;
+  dias_riesgo_medio?: number;
   pct_sin_uso: number;
   pct_uso: number;
   suspendidas: number;
@@ -179,7 +188,7 @@ export interface Productividad {
     pospago: number; internet: number; iptv: number; capital_central: number; interior: number; pct_interior: number;
     dias_con_cargas: number; promedio_diario: number; mejor_dia: string | null; mejor_dia_total: number;
     ultimo_dia: string | null; ultimo_dia_total: number; vendedores: number; sin_atribuir: number; fecha_dato: string | null;
-    con_uso: number; sin_uso: number; sin_dato_uso: number; en_espera?: number; pct_sin_uso: number; riesgo_alto: number; sin_uso_riesgo_alto: number;
+    con_uso: number; sin_uso: number; sin_dato_uso: number; en_espera?: number; riesgo_medio?: number; pct_sin_uso: number; riesgo_alto: number; sin_uso_riesgo_alto: number;
   };
   por_dia: (FilaProd & { dia: string; acumulado: number })[];
   por_estado: { estado: string; total: number; pct: number }[];
@@ -217,6 +226,8 @@ export interface DetalleCarga {
   legajo: string | null;
   /** ESPERA: activada hace menos de 3 días al corte, todavía no se evalúa (no es alerta). */
   uso: "SI" | "NO" | "ESPERA" | null;
+  /** En espera con 48 h sin uso: riesgo medio. */
+  riesgo_medio?: boolean;
   /** Finalizada Pospago sin consumo: alerta PFI. */
   riesgosa: boolean;
 }

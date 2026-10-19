@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ESTADO_SDS_LABEL, fechaCorta, n, pct, type DetalleCarga, type DetalleNeta, type InformeData } from "./tipos";
 import { BarraUso, PctUso, Senales, Tabla, UsoBadge } from "./ui";
-import { estadoUso, patronVendedor, umbralCritico } from "./patrones";
+import { estadoUso, patronVendedor, riesgoMedio, umbralCritico } from "./patrones";
 
 const RIESGO_LABEL: Record<string, string> = { A: "Alto", M: "Medio", B: "Bajo" };
 
@@ -53,6 +53,7 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
   const porDia = useMemo(() => grupo((r) => r.fecha_activacion).sort((a, b) => a.label.localeCompare(b.label)), [lineas]);
   const sinUso = lineas.filter((r) => estadoUso(r, d.kpis.fecha_dato) === "NO");
   const enEspera = lineas.filter((r) => estadoUso(r, d.kpis.fecha_dato) === "ESPERA").length;
+  const riesgoMedioN = lineas.filter((r) => riesgoMedio(r, d.kpis.fecha_dato)).length;
   const patron = useMemo(() => (vendedor ? patronVendedor(d, vendedor, lineas) : null), [d, vendedor, lineas]);
   const riesgosas = cargas.filter((c) => c.riesgosa);
   const riesgosasAlto = riesgosas.filter((c) => c.riesgo === "A").length;
@@ -73,7 +74,8 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
         (posUso >= 0 ? ` Puesto ${posUso + 1} de ${conPospago.length} en calidad de uso.` : ""),
       );
       if (vendedor.alerta) resumen.push(`Crítico: ${pct(vendedor.pct_sin_uso)} de sus líneas con 3+ días están sin uso (más del ${umbralCritico(d)}%). Revisar las ${n(vendedor.sin_uso)} sin uso.`);
-      if (enEspera) resumen.push(`${n(enEspera)} línea${enEspera > 1 ? "s" : ""} en espera de uso: activada${enEspera > 1 ? "s" : ""} hace menos de 3 días al corte, no ${enEspera > 1 ? "son" : "es"} alerta todavía.`);
+      if (enEspera) resumen.push(`${n(enEspera)} línea${enEspera > 1 ? "s" : ""} en espera de uso: activada${enEspera > 1 ? "s" : ""} hace menos de 3 días al corte, no ${enEspera > 1 ? "son" : "es"} alerta todavía.`
+        + (riesgoMedioN ? ` ${n(riesgoMedioN)} de ellas ya ${riesgoMedioN > 1 ? "llevan" : "lleva"} 48 h sin uso (riesgo medio): si no se usa${riesgoMedioN > 1 ? "n" : ""} antes del próximo corte, pasa${riesgoMedioN > 1 ? "n" : ""} a alerta.` : ""));
     }
     if (vendedor.portadas) resumen.push(`${pct(Math.round((vendedor.portadas / vendedor.total) * 1000) / 10)} de sus ventas son portaciones${porOrigen[0] ? ` (la mayoría ${porOrigen[0].label === "Nativa" ? "nativas" : "desde " + porOrigen[0].label.replace("Portación ", "")})` : ""}.`);
     if (vendedor.suspendidas) resumen.push(`${n(vendedor.suspendidas)} línea${vendedor.suspendidas > 1 ? "s" : ""} suspendida${vendedor.suspendidas > 1 ? "s" : ""} al cierre.`);
@@ -87,7 +89,7 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
   if (fuera.length) resumen.push(fuera.length > 1 ? `${n(fuera.length)} portaciones suyas no llegaron a DDI (fuera de netas).` : "1 portación suya no llegó a DDI (fuera de netas).");
   if (pendientes.length) resumen.push(`${n(pendientes.length)} carga${pendientes.length > 1 ? "s" : ""} pendiente${pendientes.length > 1 ? "s" : ""} de finalizar.`);
 
-  const consumo = (r: DetalleNeta) => <UsoBadge estado={estadoUso(r, d.kpis.fecha_dato)} />;
+  const consumo = (r: DetalleNeta) => <UsoBadge estado={estadoUso(r, d.kpis.fecha_dato)} riesgoMedio={riesgoMedio(r, d.kpis.fecha_dato)} />;
   const subcanal = vendedor?.subcanal ?? (prod?.subcanal as string | null) ?? null;
   const alerta = vendedor?.alerta || (prod ? (prod.con_uso + prod.sin_uso >= 5 && prod.pct_sin_uso > 30) : false);
 
@@ -162,7 +164,7 @@ export function VendedorDetalle({ d, nombre, lista, onClose, onCambiar }: {
                   { key: "estado", label: "Estado", render: (c) => ESTADO_SDS_LABEL[c.estado] ?? c.estado },
                   { key: "producto", label: "Negocio", render: (c) => (c.producto === "Internet" ? "Internet (IF)" : c.producto) },
                   { key: "plan", label: "Plan" },
-                  { key: "uso", label: "Uso", render: (c) => <UsoBadge estado={c.uso as any} /> },
+                  { key: "uso", label: "Uso", render: (c) => <UsoBadge estado={c.uso as any} riesgoMedio={c.riesgo_medio} /> },
                   { key: "riesgo", label: "Riesgo", align: "center", render: (c) => (c.riesgo ? <span className={c.riesgo === "A" ? "font-semibold text-brand-primary" : ""}>{c.riesgo} · {RIESGO_LABEL[c.riesgo] ?? ""}</span> : "—") },
                   { key: "portacion", label: "Port.", align: "center", render: (c) => (c.portacion === "SI" ? c.origen_portacion ?? "SI" : "Nativa") },
                   { key: "zona", label: "Zona", render: (c) => <>{c.zona === "Interior" ? "Interior" : "Cap./Central"} <span className="text-brand-mist text-xs">{c.ciudad}</span></> },

@@ -122,6 +122,8 @@ export interface VendedorRanking {
   sin_uso_antiguas: number;
   /** Pospago en espera de uso (activadas hace menos de 3 días al corte): no son alerta. */
   en_espera?: number;
+  /** De las en espera, las que ya llevan 48 h sin uso: riesgo medio (no cambian el nivel). */
+  riesgo_medio?: number;
   pct_uso: number; pct_sin_uso: number; pct_finalizacion: number; alerta: boolean;
   nivel: Nivel; puntaje: number; senales: Senal[];
   periodos: Record<string, { netas: number; sin_uso: number; sali_sin_uso: number }>;
@@ -162,6 +164,8 @@ export interface LineaEvidencia {
   dias?: number | null; riesgo?: string | null; sin_uso?: boolean; subcanal?: string | null;
   /** Activada hace menos de 3 días al corte: todavía no se evalúa el uso (no es alerta). */
   en_espera?: boolean;
+  /** En espera pero ya con 48 h sin uso: riesgo medio. */
+  riesgo_medio?: boolean;
   [k: string]: unknown;
 }
 
@@ -178,7 +182,7 @@ export interface Snapshot {
     sali_total: number; sali_sin_uso: number; sali_pct_sin_uso: number; suspendidas: number; finalizadas_sin_activar: number;
     pendientes: number; pendientes_mas_7: number; cargas: number; cargas_finalizadas: number; pct_finalizacion: number;
     riesgo_alto: number; sin_uso_riesgo_alto: number; vendedores: number; vendedores_criticos: number; vendedores_atencion: number;
-    total_sin_uso: number; fuentes: number; en_espera?: number; capital_central: number; interior: number;
+    total_sin_uso: number; fuentes: number; en_espera?: number; riesgo_medio?: number; capital_central: number; interior: number;
   };
   llamativos: Llamativo[];
   ranking: VendedorRanking[];
@@ -187,7 +191,7 @@ export interface Snapshot {
   modulos?: Partial<Record<Exclude<TipoFuente, "ventas_netas">, ModuloDatos>>;
   cruce?: CruceVendedor[];
   series: {
-    netas_por_dia: { dia: string; total: number; con_uso: number; sin_uso: number; en_espera?: number; otros: number }[];
+    netas_por_dia: { dia: string; total: number; con_uso: number; sin_uso: number; en_espera?: number; riesgo_medio?: number; otros: number }[];
     sali_por_dia: { dia: string; total: number; sin_uso: number; con_uso: number }[];
     riesgo_uso: { riesgo: string; cargas: number; con_uso: number; sin_uso: number; pct_sin_uso: number }[];
     estados: { estado: string; total: number }[];
@@ -202,6 +206,8 @@ export interface Snapshot {
   lineas_sin_uso: LineaEvidencia[];
   /** Activadas hace menos de 3 días al corte, sin consumo todavía: se muestran aparte y no son alerta. */
   lineas_en_espera?: LineaEvidencia[];
+  /** En espera con 48 h o más sin uso: riesgo medio, se siguen antes de que pasen a alerta. */
+  lineas_riesgo_medio?: LineaEvidencia[];
   sali_lineas: LineaEvidencia[];
   finalizadas_sin_activar: Record<string, unknown>[];
   pendientes_viejas: Record<string, unknown>[];
