@@ -4,9 +4,13 @@ Formato: tres hojas — DDI (líneas activadas), CARGAS (ventas cargadas) y
 PORTABILIDAD (Pospago con portación efectiva) — cada una con un título en la
 fila 1, una fila vacía y los encabezados en la fila 3. La fila de encabezados se
 reconoce por sus columnas clave (en cualquier orden), así que tolera filas extra
-arriba y cambios de orden. Desde octubre 2026 CARGAS viene sin SDS_NUMBER ni
-vendedor que cargó: cada fila se toma como una venta cargada (`sin_sds`, con id
-sintético `CARGA-n`, repetida según CANTIDAD) y el corte sale de FECHA_ACTUALIZACION.
+arriba y cambios de orden. Desde octubre 2026 CARGAS viene sin SDS_NUMBER: cada
+fila se toma como una venta cargada (`sin_sds`, con id sintético `CARGA-n`,
+repetida según CANTIDAD o CARGA) y el corte sale de FECHA_DATO o FECHA_ACTUALIZACION.
+Desde el 19/10/2026 las hojas se llaman ACTIVACIONES (o «ACTIVACONES»), PORTAS y
+CARGAS, con los encabezados en la fila 1 y algunas columnas renombradas
+(PLAN_DESCRIPCION_ORIG, TOTAL_ABONO, Venta, CARGA): las hojas se reconocen por
+alias de nombre o, si no, por su contenido, y las columnas renombradas por alias.
 
 Devuelve filas normalizadas (dicts con claves en minúsculas) con solo las
 columnas que usa el análisis. Corre en subproceso aislado (ver jobs.py).
@@ -25,6 +29,20 @@ HOJAS = {
     "ddi": ("DDI", ("FECHA_ACTIVACION", "TIPO_PRODUCTO"), True),
     "cargas": ("CARGAS", ("SDS_ESTADO", "TIPO_PRODUCTO"), True),
     "portabilidad": ("PORTABILIDAD", ("FECHA_ACTIVACION", "TIPO_PRODUCTO"), False),
+}
+# Cómo puede venir nombrada cada hoja (normalizado: mayúsculas, sin tildes ni espacios); después, por prefijo.
+ALIAS_HOJAS = {
+    "ddi": ("DDI", "ACTIVACIONES", "ACTIVACONES", "ACTIVADAS", "NETAS", "LINEAS ACTIVADAS"),
+    "cargas": ("CARGAS", "VENTAS CARGADAS", "CARGA"),
+    "portabilidad": ("PORTABILIDAD", "PORTAS", "PORTACIONES", "PORTA", "PORTADAS"),
+}
+PREFIJOS_HOJAS = {"ddi": ("DDI", "ACTIVA", "NETA"), "cargas": ("CARGA",), "portabilidad": ("PORTA",)}
+# Columnas que cambiaron de nombre: la que usa el análisis → cómo puede venir en el archivo (la primera que esté).
+ALIAS_COLUMNAS = {
+    "PLAN_DESCRIPCION": ("PLAN_DESCRIPCION", "PLAN_DESCRIPCION_ORIG"),
+    "TOTAL_PLAN": ("TOTAL_PLAN", "TOTAL_ABONO"),
+    "CANTIDAD": ("CANTIDAD", "CARGA"),
+    "VENTA": ("VENTA",),   # «Venta»: el encabezado se compara en mayúsculas
 }
 # Columnas de fecha: se normalizan a ISO (vienen como datetime, 'YYYY-MM-DD' o 'DD/MM/YYYY' según el formato).
 FECHAS = {"fecha_activacion", "portacion_fecha", "sds_fecha_alta_venta", "sds_fecha_venta", "fecha_venta", "fecha_dato",
@@ -81,7 +99,8 @@ def _fecha_iso(v: Any) -> Any:
     if v is None or isinstance(v, (date, datetime)):
         return _norm(v)
     s = str(v).strip()
-    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d/%m/%Y", "%d/%m/%Y %H:%M", "%d-%m-%Y"):
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d/%m/%Y", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
+                "%d-%m-%Y"):
         try:
             return datetime.strptime(s, fmt).date().isoformat()
         except ValueError:
@@ -115,7 +134,12 @@ def _parse_sheet(ws, claves: tuple[str, ...], columnas: list[str]) -> list[dict[
             f"La hoja '{ws.title}' no tiene la fila de encabezados esperada (con las columnas {' y '.join(claves)})."
         )
     _, header = found
-    idx = {c: header.index(c) for c in columnas if c in header}
+    idx: dict[str, int] = {}
+    for c in columnas:
+        for nombre in ALIAS_COLUMNAS.get(c, (c,)):
+            if nombre in header:
+                idx[c] = header.index(nombre)
+                break
     faltan = [c for c in columnas if c not in idx]
     es_cargas = "SDS_ESTADO" in claves
     if "TIPO_PRODUCTO" in faltan or ("SDS_NUMBER" in faltan and not es_cargas):
@@ -139,6 +163,8 @@ def _parse_sheet(ws, claves: tuple[str, ...], columnas: list[str]) -> list[dict[
             if rec.get("sds_estado") is None and rec.get("tipo_producto") is None:
                 continue
             cantidad = rec.get("cantidad")
+            if isinstance(cantidad, str) and cantidad.strip().isdigit():
+                cantidad = int(cantidad)
             veces = int(cantidad) if isinstance(cantidad, (int, float)) and 1 < cantidad <= 50 else 1
             for k in range(veces):
                 n += 1
@@ -151,6 +177,43 @@ def _parse_sheet(ws, claves: tuple[str, ...], columnas: list[str]) -> list[dict[
     return out
 
 
+def _nombre_hoja(titulo: str) -> str:
+    import unicodedata
+
+    s = unicodedata.normalize("NFKD", str(titulo or ""))
+    return " ".join("".join(c for c in s if not unicodedata.combining(c)).upper().split())
+
+
+def _asignar_hojas(worksheets) -> dict[str, Any]:
+    """Qué hoja del archivo es cada una (ddi, cargas, portabilidad): por nombre exacto o alias, después por prefijo
+    y, si todavía falta alguna, por contenido (CARGAS es la que tiene SDS_ESTADO; de las que tienen FECHA_ACTIVACION,
+    la primera es activaciones y la segunda portabilidad)."""
+    libres = list(worksheets)
+    out: dict[str, Any] = {}
+    for key, alias in ALIAS_HOJAS.items():
+        ws = next((w for w in libres if _nombre_hoja(w.title) in alias), None)
+        if ws is not None:
+            out[key], libres = ws, [w for w in libres if w is not ws]
+    for key, prefijos in PREFIJOS_HOJAS.items():
+        if key in out:
+            continue
+        ws = next((w for w in libres if _nombre_hoja(w.title).startswith(prefijos)), None)
+        if ws is not None:
+            out[key], libres = ws, [w for w in libres if w is not ws]
+    if len(out) < len(HOJAS) and libres:
+        def tiene(ws, claves) -> bool:
+            return bool(_find_header(ws.iter_rows(values_only=True), claves))
+        if "cargas" not in out:
+            ws = next((w for w in libres if tiene(w, HOJAS["cargas"][1])), None)
+            if ws is not None:
+                out["cargas"], libres = ws, [w for w in libres if w is not ws]
+        con_activacion = [w for w in libres if tiene(w, HOJAS["ddi"][1]) and not tiene(w, ("SDS_ESTADO",))]
+        for key in ("ddi", "portabilidad"):
+            if key not in out and con_activacion:
+                out[key] = con_activacion.pop(0)
+    return out
+
+
 def parse_ventas_netas(path: str) -> dict[str, Any]:
     """Lee el .xlsx y devuelve {'ddi': [...], 'cargas': [...], 'portabilidad': [...], 'hojas': [...]}."""
     try:
@@ -158,14 +221,15 @@ def parse_ventas_netas(path: str) -> dict[str, Any]:
     except Exception as exc:  # archivo corrupto o no es xlsx
         raise ArchivoInvalido("No se pudo abrir el archivo. Debe ser un .xlsx de Excel válido.") from exc
     try:
-        por_nombre = {ws.title.strip().upper(): ws for ws in wb.worksheets}
         result: dict[str, Any] = {"hojas": [ws.title for ws in wb.worksheets]}
+        asignadas = _asignar_hojas(wb.worksheets)
         for key, (nombre, claves, obligatoria) in HOJAS.items():
-            ws = por_nombre.get(nombre)
+            ws = asignadas.get(key)
             if ws is None:
                 if obligatoria:
                     raise ArchivoInvalido(
-                        f"Falta la hoja '{nombre}'. El archivo debe tener las hojas DDI, CARGAS y PORTABILIDAD."
+                        f"Falta la hoja '{nombre}' (o ACTIVACIONES / PORTAS). El archivo debe tener las hojas de "
+                        "activaciones (DDI), CARGAS y portabilidad (PORTAS)."
                     )
                 result[key] = []
                 continue

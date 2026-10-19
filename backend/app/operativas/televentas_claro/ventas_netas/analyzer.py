@@ -96,21 +96,26 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
     sin_sds = any(c.get("sin_sds") for c in cargas_all)
     avisos: list[str] = []
     if sin_sds:
+        con_vendedor = any(c.get("vendedor_legajo") or c.get("vendedor_nombre") for c in cargas_all)
+        con_comentario = any(c.get("comentario") for c in cargas_all)
+        falta = ["«finalizadas sin activar»", "uso por carga"] + ([] if con_comentario else ["comentario"]) \
+            + ([] if con_vendedor else ["quién la cargó"])
         avisos.append("La hoja CARGAS de este archivo no trae SDS_NUMBER: cada fila cuenta como una venta cargada, pero no se "
-                      "puede cruzar con su activación (no hay «finalizadas sin activar», uso por carga ni comentario).")
+                      f"puede cruzar con su activación (no hay {', '.join(falta[:-1])} ni {falta[-1]}).")
         expandidas = sum(1 for c in cargas_all if isinstance(c.get("cantidad"), (int, float)) and c["cantidad"] > 1)
         if expandidas:
-            avisos.append(f"{expandidas} fila(s) de CARGAS con CANTIDAD mayor que 1 se contaron una vez por unidad.")
-        if any(c.get("fecha_actualizacion") for c in cargas_all):
+            avisos.append(f"{expandidas} fila(s) de CARGAS con cantidad mayor que 1 se contaron una vez por unidad.")
+        if any(c.get("fecha_actualizacion") for c in cargas_all) and not any(c.get("fecha_dato") and not c.get("fecha_actualizacion") for c in cargas_all):
             avisos.append("La fecha del corte se tomó de FECHA_ACTUALIZACION de la hoja CARGAS.")
     # Venta cargada de cada línea (hoja CARGAS): fecha de venta, legajo y riesgo para el detalle de netas.
     carga_por_sds = {c["sds_number"]: c for c in cargas_all if c.get("sds_number") and not c.get("sin_sds")}
     por_all = parsed.get("portabilidad", [])
 
     fechas_dato = [d for r in cargas_all if (d := _to_date(r.get("fecha_dato")))]
-    fecha_dato = max(fechas_dato) if fechas_dato else max(
-        (d for r in ddi_all if (d := _to_date(r.get("fecha_activacion")))), default=None
-    )
+    ultima_activacion = max((d for r in ddi_all if (d := _to_date(r.get("fecha_activacion")))), default=None)
+    # El corte es la FECHA_DATO de CARGAS; nunca anterior a la última activación (el archivo no puede traer
+    # activaciones posteriores al corte: si las trae, el corte es ese día).
+    fecha_dato = max([d for d in (max(fechas_dato) if fechas_dato else None, ultima_activacion) if d], default=None)
 
     # ---- Netas del período (DDI) ----
     ddi = [r for r in ddi_all if _mes(r.get("fecha_activacion")) == periodo]

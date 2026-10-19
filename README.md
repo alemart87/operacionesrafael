@@ -186,6 +186,15 @@ sintético `CARGA-n`, repetida según `CANTIDAD`), las fechas se normalizan a IS
 el corte sale de `FECHA_ACTUALIZACION`. Lo que no se puede calcular sin el cruce carga ↔ activación queda explícito:
 `finalizadas_sin_activar` es `null`, las finalizadas Pospago quedan «sin dato de uso» y el informe muestra las notas
 (`data.avisos`). Netas, sin uso, vendedores, pendientes, productividad diaria, SPH e informe diario siguen igual.
+Desde el **19/10/2026** el archivo (`data - AAAA-MM-DD….xlsx`) trae las hojas **ACTIVACIONES** (viene escrita
+«ACTIVACONES »), **PORTAS** y **CARGAS**, con los encabezados en la fila 1 y columnas renombradas:
+`PLAN_DESCRIPCION_ORIG` (antes `PLAN_DESCRIPCION`), `TOTAL_ABONO` (antes `TOTAL_PLAN`), `Venta` y, en CARGAS, `CARGA`
+(cantidad). CARGAS sigue sin `SDS_NUMBER` pero vuelve a traer `VENDEDOR_*`, `COMENTARIO`, `RIESGO_ORI`, `TIPO_PORT` y
+`FECHA_DATO`. El parser reconoce cada hoja por **alias de nombre** (`ALIAS_HOJAS`), después por prefijo y, si falta,
+por contenido (CARGAS tiene `SDS_ESTADO`; de las que tienen `FECHA_ACTIVACION`, la primera es activaciones y la
+segunda portabilidad), y las columnas renombradas por `ALIAS_COLUMNAS`. El corte nunca es anterior a la última
+activación del archivo (el 19/10 trae activaciones del 18 y 19 con `FECHA_DATO` 17). Los tres formatos (septiembre,
+14/10 y 19/10) conviven y tienen prueba.
 
 Reglas del análisis (`analyzer.py`):
 

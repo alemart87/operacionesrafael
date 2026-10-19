@@ -161,7 +161,7 @@ def test_formato_octubre_2026_cargas_sin_sds_number(tmp_path):
     k = a["kpis"]
     assert k["periodo"] == "2026-09" and k["fecha_dato"] == "2026-09-22" and k["netas"] == 3 and k["pospago"] == 2
     assert k["cargas"] == 8 and k["cargas_finalizadas"] == 3 and k["pendientes"] == 5 and k["finalizadas_sin_activar"] is None
-    assert len(a["avisos"]) == 3 and "SDS_NUMBER" in a["avisos"][0] and "CANTIDAD" in a["avisos"][1]
+    assert len(a["avisos"]) == 3 and "SDS_NUMBER" in a["avisos"][0] and "cantidad mayor que 1" in a["avisos"][1]
     pk = a["productividad"]["kpis"]
     assert pk["cargas"] == 8 and pk["finalizadas"] == 3 and pk["pospago"] == 7 and pk["internet"] == 1 and pk["riesgo_alto"] == 1
     # Las finalizadas Pospago no se pueden cruzar con DDI: quedan «sin dato de uso», no como alerta.
@@ -169,6 +169,76 @@ def test_formato_octubre_2026_cargas_sin_sds_number(tmp_path):
     # El detalle de pendientes y las cargas por vendedor siguen funcionando (vendedor desde POS_NOMBRE).
     assert a["pendientes"]["total"] == 5 and a["pendientes"]["detalle"][0]["vendedor"] == "ANA PEREZ"
     assert {v["vendedor"] for v in a["productividad"]["por_vendedor"]} >= {"ANA PEREZ"}
+
+
+ACT_COLS_1910 = ["FECHA_ACTIVACION", "PERIODO_ACTIVACION", "PERIODO_PORTACION", "SDS_FORMULARIO", "SDS_NUMBER", "TIPO_NEGOCIO_ORIG",
+                 "TIPO_PRODUCTO", "LINEA_ORIG", "LINEA_CIERRE", "PLAN_ID_ORIG", "PLAN_DESCRIPCION_ORIG", "ACTIVACION_PORTACION", "PORTACION",
+                 "PORTACION_TIPO", "PORTACION_FECHA", "ORIGEN_PORTACION", "REGION", "DEPARTAMENTO", "CIUDAD", "CLIENTE_SEGMENTO", "SUBCANAL",
+                 "POS_ID", "POS_NOMBRE", "CONSUMO_DATOS", "LINEA_ESTADO_CIERRE", "LINEA_RAZON_CIERRE", "TOTAL_ABONO", "TOTAL_DESCUENTO",
+                 "TOTAL_NETO", "Venta"]
+CAR_COLS_1910 = ["PERIODO_CARGA_VENTA", "DIA_CARGA_VENTA", "SDS_FECHA_ALTA_VENTA", "SDS_FECHA_VENTA", "TIEMPO_ATENC_MIN", "SDS_ESTADO",
+                 "SDS_CANC_ADM", "TIPO_NEGOCIO_ORIG", "CAMPANIA", "CAMPANIA_DESCRIPCION", "TIPO_PRODUCTO", "PLAN_ID_ORIG",
+                 "PLAN_DESCRIPCION_ORIG", "FECHA_ACTIVACION", "FECHA_VENTA", "PERIODO_VENTA", "ORIGEN_PORTACION", "COMENTARIO", "RIESGO_ORI",
+                 "TIPO_PORT", "DEPARTAMENTO_FACT", "CIUDAD_FACT", "VENDEDOR_LEGAJO", "VENDEDOR_NOMBRE", "VENDEDOR_APELLIDO", "POS_NOMBRE",
+                 "SUBCANAL", "FECHA_DATO", "CARGA"]
+
+
+def _act_1910(sds, fecha, producto, plan, port, consumo, pos, estado="A", porta_fecha=None):
+    return [fecha, fecha.strftime("%Y%m"), fecha.strftime("%Y%m") if port == "SI" else None, f"F{sds}", sds, "CO", producto, f"L{sds}",
+            f"L{sds}", "CM15G", plan, "PORTA_EFECTIVA" if port == "SI" else "NATIVA", port, "SI-PreSusp" if port == "SI" else "NO",
+            porta_fecha, "TIGO" if port == "SI" else "NO", "CENTRAL", "CAPITAL", "ASUNCION", "MASIVO", "TKM", 1, pos, consumo, estado,
+            "PNPINP", 340910, -204547, 136363, 1]
+
+
+def _carga_1910(alta, estado, producto="Pospago", pos="TKM - ANA PEREZ", riesgo="M", legajo="EXP1", comentario="-Aceptado por: EXP07098-"):
+    return ["202610", alta.strftime("%d"), alta, alta, 193, estado, "NO", "CO", "726TLK", "CAMPAÑA X", producto, "CM15G", "Control 15GB",
+            alta, alta.strftime("%d/%m/%Y 12:07:07"), int(alta.strftime("%Y%m")), "TIGO", comentario, riesgo, "SI-PreSusp", "CAPITAL",
+            "ASUNCION", legajo, "ANA", "DUARTE", pos, "TKM", D(2026, 10, 17), 1]
+
+
+def build_xlsx_1910(path):
+    """Formato del 19/10/2026: hojas «ACTIVACONES » (sic), PORTAS y CARGAS, encabezados en la fila 1, sin SDS_NUMBER en CARGAS."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "ACTIVACONES "
+    ws.append(ACT_COLS_1910)
+    for f in (_act_1910(2001, D(2026, 10, 1), "Pospago", "Control 15GB", "SI", "SI", "TKM - ANA PEREZ", porta_fecha=D(2026, 10, 1)),
+              _act_1910(2002, D(2026, 10, 2), "Pospago", "Control 30GB", "SI", "NO", "TKM - ANA PEREZ", porta_fecha=D(2026, 10, 2)),
+              _act_1910(2003, D(2026, 10, 19), "GPON", "Internet 400Mbps", "NO", "NO", "TKM - LUIS GOMEZ")):
+        ws.append(f)
+    ws = wb.create_sheet("PORTAS")
+    ws.append(ACT_COLS_1910)
+    ws.append(_act_1910(2001, D(2026, 10, 1), "Pospago", "Control 15GB", "SI", "SI", "TKM - ANA PEREZ", porta_fecha=D(2026, 10, 1)))
+    ws.append(_act_1910(2002, D(2026, 10, 2), "Pospago", "Control 30GB", "SI", "NO", "TKM - ANA PEREZ", porta_fecha=D(2026, 10, 2)))
+    ws = wb.create_sheet("CARGAS")
+    ws.append(CAR_COLS_1910)
+    for f in (_carga_1910(D(2026, 10, 1), "Vta_Finalizada"), _carga_1910(D(2026, 10, 2), "Vta_Finalizada"),
+              _carga_1910(D(2026, 10, 3), "Vta_A_Confirmar", riesgo="A"), _carga_1910(D(2026, 10, 17), "Vta_Rechazada", legajo="EXP2")):
+        ws.append(f)
+    wb.save(path)
+
+
+def test_formato_19_octubre_2026_hojas_renombradas(tmp_path):
+    path = tmp_path / "data_1910.xlsx"
+    build_xlsx_1910(path)
+    parsed = parse_ventas_netas(str(path))
+    assert parsed["hojas"] == ["ACTIVACONES ", "PORTAS", "CARGAS"]
+    assert len(parsed["ddi"]) == 3 and len(parsed["portabilidad"]) == 2 and len(parsed["cargas"]) == 4
+    # Columnas renombradas: PLAN_DESCRIPCION_ORIG → plan_descripcion, TOTAL_ABONO → total_plan, Venta → venta, CARGA → cantidad.
+    d0 = parsed["ddi"][0]
+    assert d0["plan_descripcion"] == "Control 15GB" and d0["total_plan"] == 340910 and d0["venta"] == 1 and d0["sds_number"] == "2001"
+    c0 = parsed["cargas"][0]
+    assert c0["sin_sds"] and c0["cantidad"] == 1 and c0["vendedor_legajo"] == "EXP1" and c0["comentario"].startswith("-Aceptado")
+    assert c0["sds_fecha_venta"] == "2026-10-01" and c0["fecha_venta"] == "2026-10-01" and c0["fecha_dato"] == "2026-10-17"
+    a = analyze_ventas_netas(parsed)
+    k = a["kpis"]
+    # El corte no es anterior a la última activación (19/10), aunque FECHA_DATO de CARGAS diga 17/10.
+    assert k["periodo"] == "2026-10" and k["fecha_dato"] == "2026-10-19" and k["netas"] == 3 and k["pospago"] == 2 and k["gpon"] == 1
+    assert k["cargas"] == 4 and k["cargas_finalizadas"] == 2 and k["finalizadas_sin_activar"] is None
+    # Con vendedor y comentario en CARGAS, el aviso solo dice lo que de verdad falta.
+    assert len(a["avisos"]) == 1 and "SDS_NUMBER" in a["avisos"][0] and "quién la cargó" not in a["avisos"][0] and "comentario" not in a["avisos"][0]
+    assert {v["vendedor"] for v in a["productividad"]["por_vendedor"]} >= {"ANA PEREZ"}
+    assert a["sali_hablando"]["kpis"]["total"] == 0
 
 
 def test_vendedor_normalizado():
