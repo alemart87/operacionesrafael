@@ -1,6 +1,7 @@
 "use client";
 
-import { Lock } from "lucide-react";
+import { Lock, QrCode } from "lucide-react";
+import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
@@ -154,6 +155,9 @@ export default function PerfilesPage() {
                     {p.usuarios_activos} usuario(s) activo(s)
                   </div>
                   {p.solo_portal && <div className="mt-1"><span className="badge-cyan">Solo su portal</span></div>}
+                  <Link href={`/admin/users?rapida=${p.slug}`} className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold normal-case text-brand-primary hover:underline">
+                    <QrCode size={12} aria-hidden /> Creación rápida
+                  </Link>
                 </th>
               ))}
             </tr>
