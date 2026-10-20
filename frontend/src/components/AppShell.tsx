@@ -6,6 +6,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
 import { Brand } from "./Brand";
 import { CurrentUserInfo, ROLE_LABELS, apiFetch, can, getToken, getUser, logout, saveUser } from "@/lib/api";
+import { NavInferior } from "./NavInferior";
 import { ControlSesion, type EstadoSeguridad } from "./seguridad/ControlSesion";
 import { VoiBoton } from "./voi/VoiBoton";
 import { useVoi } from "./voi/VoiProvider";
@@ -48,13 +49,13 @@ function Pagina({ ruta, className, children }: { ruta: string | null; className:
   return <div className={`${conFundido ? "pagina-entra" : ""} ${className}`}>{children}</div>;
 }
 
-export function AppShell({ children, workspace = false, movil = false }: {
+export function AppShell({ children, workspace = false, barraPropia = false }: {
   children: React.ReactNode;
   /** Pantalla completa sin márgenes ni footer (chat del agente). */
   workspace?: boolean;
-  /** Pensada primero para el celular (portal del supervisor): márgenes justos, sin footer en el teléfono y lugar abajo
-   *  para la barra de navegación del pulgar. */
-  movil?: boolean;
+  /** La pantalla trae su propia barra del pulgar (el portal del supervisor) o no lleva ninguna (la firma del asesor):
+   *  no se muestra la barra general del celular. */
+  barraPropia?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -157,7 +158,7 @@ export function AppShell({ children, workspace = false, movil = false }: {
       active ? "bg-brand-primary text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
     }`;
   const mobilePill = (active: boolean) =>
-    `block px-3 py-2 rounded-md text-sm font-medium ${
+    `flex items-center min-h-[48px] px-3 rounded-lg text-[15px] font-medium ${
       active ? "bg-brand-primary-light text-brand-primary-dark" : "text-brand-graphite hover:bg-brand-bg"
     }`;
   const groupLabel = "px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider2 text-brand-mist font-semibold";
@@ -220,7 +221,12 @@ export function AppShell({ children, workspace = false, movil = false }: {
           </div>
 
           {mobileOpen && (
-            <div className="md:hidden border-t border-brand-border bg-white animate-fade max-h-[75vh] overflow-y-auto">
+            // En el celular, el menú sube desde abajo (a mano del pulgar), sobre la barra inferior.
+            <div className="md:hidden fixed inset-0 z-[45]" role="dialog" aria-modal="true" aria-label="Menú">
+            <button type="button" aria-label="Cerrar el menú" tabIndex={-1} className="absolute inset-0 bg-brand-ink/40 animate-fade"
+              onClick={() => setMobileOpen(false)} />
+            <div className={`absolute inset-x-0 ${workspace || barraPropia ? "bottom-0 pb-[env(safe-area-inset-bottom)]" : "bottom-[calc(64px+env(safe-area-inset-bottom))]"} max-h-[80dvh] overflow-y-auto overscroll-contain bg-white rounded-t-2xl shadow-elevated hoja-sube`}>
+              <div className="pt-2 flex justify-center" aria-hidden><span className="w-10 h-1.5 rounded-full bg-brand-border" /></div>
               <nav className="px-3 py-3 flex flex-col">
                 <Link href="/inicio" className={mobilePill(pathname === "/inicio")}>Operativas</Link>
                 <Link href="/perfil" className={mobilePill(pathname === "/perfil")}>Mi perfil</Link>
@@ -254,11 +260,12 @@ export function AppShell({ children, workspace = false, movil = false }: {
                 )}
                 <button
                   onClick={onLogout}
-                  className="mt-3 text-left px-3 py-2 rounded-md text-sm font-medium text-brand-primary hover:bg-brand-primary-light"
+                  className="mt-3 text-left min-h-[48px] px-3 rounded-lg text-[15px] font-medium text-brand-primary hover:bg-brand-primary-light"
                 >
                   Cerrar sesión
                 </button>
               </nav>
+            </div>
             </div>
           )}
 
@@ -294,8 +301,7 @@ export function AppShell({ children, workspace = false, movil = false }: {
         {/* La pantalla: aparece con un fundido suave y, al cambiar de ruta, pasa como una hoja (View Transitions). */}
         <main
           className={`${workspace ? "flex-1 flex min-h-0 w-full"
-            : movil ? "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 pt-4 sm:pt-8 pb-28 md:pb-8"
-              : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 py-8"}`}
+            : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 pt-4 sm:pt-8 pb-28 md:pb-8"}`}
           style={{ viewTransitionName: "contenido" }}
         >
           <Pagina key={pathname} ruta={pathname} className={workspace ? "flex-1 flex min-h-0 w-full" : "w-full"}>
@@ -303,8 +309,11 @@ export function AppShell({ children, workspace = false, movil = false }: {
           </Pagina>
         </main>
 
+        {!workspace && !barraPropia && user.role !== "supervisor" && (
+          <NavInferior user={user} onMenu={() => setMobileOpen((o) => !o)} menuAbierto={mobileOpen} />
+        )}
         {!workspace && (
-        <footer className={`border-t border-brand-border bg-white ${movil ? "hidden md:block" : ""}`}>
+        <footer className="border-t border-brand-border bg-white hidden md:block">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 text-[11px] uppercase tracking-wider2 text-brand-slate flex flex-wrap justify-between gap-2">
             <span>Operaciones Voicenter · Gerencia Expansión RM</span>
             <span>© {new Date().getFullYear()} Voicenter S.A.</span>

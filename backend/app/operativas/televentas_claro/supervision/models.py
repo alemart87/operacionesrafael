@@ -269,12 +269,13 @@ class PedidoPase(Base):
 
 
 class CoachingEvento(Base):
-    """Historial de un coaching (solo se agrega): creado, editado, anulado, seguimiento, aclaración."""
+    """Historial de un coaching (solo se agrega): creado, editado, monitoreos y compromisos, audios, firma, anulado,
+    seguimiento, aclaración y la revisión de los jefes."""
     __tablename__ = "sup_coaching_eventos"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     coaching_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    tipo: Mapped[str] = mapped_column(String(15), nullable=False)
+    tipo: Mapped[str] = mapped_column(String(30), nullable=False)   # «compromiso_editado» tiene 18
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     por: Mapped[str] = mapped_column(String(36), nullable=False)
     datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
@@ -406,3 +407,27 @@ class AlertaComando(Base):
     descartada_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     descartada_motivo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+
+
+class AnalisisInforme(Base):
+    """Un informe del analizador semántico de coaching: lo escribe Claude (Haiku) con los textos de los coachings
+    firmados de un rango, en segundo plano. Guarda el resultado, el modelo, los tokens y el costo."""
+    __tablename__ = "sup_analisis_informes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    desde: Mapped[date] = mapped_column(Date, nullable=False)
+    hasta: Mapped[date] = mapped_column(Date, nullable=False)
+    supervisor_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)   # sin él: toda la operación
+    estado: Mapped[str] = mapped_column(String(14), nullable=False, default="pendiente", index=True)  # pendiente | procesando | listo | error
+    coachings: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    modelo: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    resultado: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    entrada_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    salida_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    costo_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    intentos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pedido_por: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    terminado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

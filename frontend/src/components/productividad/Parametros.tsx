@@ -62,7 +62,7 @@ export function ParametrosModulo({ onCambio }: { onCambio?: (p: Parametros) => v
       </div>
 
       {borrador && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
           <div className="absolute inset-0 bg-brand-ink/50 backdrop-blur-[2px] animate-fade" onClick={() => !guardando && setBorrador(null)} />
           <div role="dialog" aria-modal="true" className="relative w-full max-w-2xl card shadow-elevated animate-pop overflow-y-auto max-h-[92vh]">
             <div className="h-1.5 bg-brand-cyan" />

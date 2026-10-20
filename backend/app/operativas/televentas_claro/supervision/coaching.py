@@ -265,7 +265,7 @@ async def notas(db: AsyncSession, supervisor_id: str, periodo: str) -> list[Bita
 
 ORDEN_EVENTO = {"creado": 0, "editado": 1, "item": 2, "item_editado": 2, "item_quitado": 2, "compromiso": 3,
                 "compromiso_editado": 3, "compromiso_quitado": 3, "audio": 4, "transcripcion": 4, "firmado": 5, "anulado": 6, "seguimiento": 7,
-                "aclaracion": 8}  # a igual hora
+                "aclaracion": 8, "revision": 9}  # a igual hora
 
 
 async def eventos(db: AsyncSession, coaching_id: str) -> list[CoachingEvento]:

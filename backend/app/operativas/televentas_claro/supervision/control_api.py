@@ -251,7 +251,7 @@ async def actividad(desde: Optional[date] = Query(None), hasta: Optional[date] =
     q = (select(CoachingEvento, Coaching.supervisor_id, Coaching.operador_id)
          .join(Coaching, Coaching.id == CoachingEvento.coaching_id)
          .where(Coaching.operativa == OPERATIVA, CoachingEvento.at >= ini, CoachingEvento.at < fin,
-                CoachingEvento.tipo.notin_(("transcripcion",))))
+                CoachingEvento.tipo.notin_(("transcripcion", "revision"))))
     if supervisor_id:
         q = q.where(Coaching.supervisor_id == supervisor_id)
     filas = (await db.execute(q.order_by(CoachingEvento.at.desc()).limit(limite))).all()

@@ -33,7 +33,7 @@ services:
         sync: false
       - key: OPENAI_API_KEY        # Agente de Facturación y transcripción de voz del portal (opcional)
         sync: false
-      - key: ANTHROPIC_API_KEY     # Voi, el agente de la plataforma (Claude Managed Agents)
+      - key: ANTHROPIC_API_KEY     # Voi (Claude Managed Agents) y los informes del Analizador de coaching
         sync: false
       - key: ANTHROPIC_WEBHOOK_SIGNING_KEY   # Voi: secreto del webhook de Anthropic (opcional)
         sync: false

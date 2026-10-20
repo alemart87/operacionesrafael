@@ -96,7 +96,7 @@ export function VincularDialog({ objetivo, agentes, vendedores, manual, onCerrar
   const confirma = !!agente && accion === "vincular" && !!agente.vendedor && elegido === agente.vendedor && agente.nivel !== "manual";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-brand-ink/50 backdrop-blur-[2px] animate-fade" onClick={() => !guardando && onCerrar()} />
       <div role="dialog" aria-modal="true" aria-labelledby="vincular-titulo" className="relative w-full max-w-lg card shadow-elevated overflow-y-auto max-h-[92vh] animate-pop">
         <div className="h-1.5 bg-brand-cyan" />

@@ -79,6 +79,8 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE sup_operadores ADD COLUMN IF NOT EXISTS alta_por VARCHAR(36)",
     "ALTER TABLE sup_operadores ADD COLUMN IF NOT EXISTS alta_at TIMESTAMPTZ",
     "ALTER TABLE sup_operadores ADD COLUMN IF NOT EXISTS documento VARCHAR(30)",
+    # v1.3.1 · el tipo de evento del coaching admite los nombres largos (compromiso_editado, compromiso_quitado)
+    "ALTER TABLE sup_coaching_eventos ALTER COLUMN tipo TYPE VARCHAR(30)",
 ]
 
 

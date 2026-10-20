@@ -16,7 +16,7 @@ import { apiFetch } from "@/lib/api";
 /** La devolución: el supervisor le pasa el celular al asesor, que lee sus compromisos, acepta y firma. Después firma él. */
 export default function FirmaPage() {
   // Sin la barra de navegación: el asesor tiene el celular y no tiene que poder irse a otra pantalla por error.
-  return <AppShell movil><Firma /></AppShell>;
+  return <AppShell barraPropia><Firma /></AppShell>;
 }
 
 function Firma() {

@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, CircleCheck, CircleDashed, ClipboardCheck, PenLine, Ticket, TriangleAlert } from "lucide-react";
+import { CalendarClock, CircleCheck, CircleDashed, ClipboardCheck, MessageSquareWarning, PenLine, ThumbsUp, Ticket, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSession } from "@/components/AppShell";
 import { diaCorto, hoyPy } from "@/components/portal/coaching";
@@ -84,6 +84,17 @@ function ParaHoy({ d, v }: { d: DetalleSupervisor; v: VistaCoachingData }) {
         sub={c.devolucion_vencida ? `Sin firmar · venció ${diaCorto(c.vence_devolucion, hoy)}` : `Sin firmar · hasta ${diaCorto(c.vence_devolucion, hoy)}`} />,
     );
   }
+  // Lo que el jefe marcó «a mejorar» en la última semana (una fila por coaching, la revisión más nueva).
+  const revisados = new Set<string>();
+  for (const r of v.revisiones ?? []) {
+    if (revisados.has(r.coaching_id)) continue;
+    revisados.add(r.coaching_id);
+    if (r.valoracion !== "mejorar") continue;
+    filas.push(
+      <Fila key={`rv-${r.coaching_id}`} href={`${PORTAL}/coaching/${r.coaching_id}`} icono={MessageSquareWarning} tono="naranja"
+        titulo={`${r.por.split(" ")[0]}: a mejorar en el coaching de ${r.operador}`} sub={r.comentario ?? undefined} />,
+    );
+  }
   for (const c of v.pendientes.filter((c) => c.seguimiento === "vencido" || c.seguimiento === "hoy")) {
     filas.push(
       <Fila key={`sg-${c.id}`} href={`${PORTAL}/coaching/${c.id}`} icono={ClipboardCheck} tono={c.seguimiento === "vencido" ? "rojo" : "azul"}
@@ -112,6 +123,14 @@ function ParaHoy({ d, v }: { d: DetalleSupervisor; v: VistaCoachingData }) {
     filas.push(
       <Fila key="sc" href={`${PORTAL}/equipo?filtro=sin_coaching`} icono={CircleDashed} tono="naranja"
         titulo={plural(x.sin_coaching, "asesor sin coaching este mes", "asesores sin coaching este mes")} sub="Cada asesor necesita al menos uno en el mes." />,
+    );
+  }
+  const bien = (v.revisiones ?? []).filter((r, i, a) => r.valoracion === "bien" && a.findIndex((o) => o.coaching_id === r.coaching_id) === i);
+  if (bien.length) {
+    filas.push(
+      <Fila key="rb" href={`${PORTAL}/coaching/${bien[0].coaching_id}`} icono={ThumbsUp} tono="verde"
+        titulo={plural(bien.length, "coaching valorado «bien hecho»", "coaching valorados «bien hecho»")}
+        sub={`Por tu jefe en la última semana${bien[0].comentario ? ` · «${bien[0].comentario}»` : ""}`} />,
     );
   }
   if (x?.seguimientos_proximos) {

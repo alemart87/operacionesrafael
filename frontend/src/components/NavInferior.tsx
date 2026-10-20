@@ -1,0 +1,84 @@
+"use client";
+
+/**
+ * La barra del pulgar en el celular, para todos los perfiles menos el supervisor (que tiene la de su portal). Los jefes
+ * (gerente, sub gerente, coordinador, controller y superadmin) tienen a mano el control de los supervisores, el coaching
+ * del día y el analizador; el resto, sus módulos. «Menú» abre la navegación completa.
+ */
+import {
+  BarChart3, ClipboardCheck, Gauge, House, LayoutGrid, Menu, MessageSquareText, Siren, Sparkles, Truck, Users,
+  type LucideIcon,
+} from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { can, type CurrentUserInfo } from "@/lib/api";
+import { OPERATIVA_ROUTES } from "@/lib/operativas";
+
+const SUP = "/televentas-claro/supervision";
+const TC = "televentas_claro";
+
+interface Item { href: string; label: string; icono: LucideIcon; central?: boolean; exacto?: boolean }
+
+const ICONOS: Record<string, LucideIcon> = {
+  ventas_netas: BarChart3, productividad: Gauge, sph: Sparkles, supervision: Users, logistica: Truck,
+  informe_diario: ClipboardCheck, auditoria: Siren,
+};
+
+export function itemsDe(user: CurrentUserInfo): Item[] {
+  const ok = (u: string) => can(user, `${TC}.${u}`);
+  if (ok("control_supervisores")) {
+    return [
+      { href: `${SUP}/control`, label: "Control", icono: Users },
+      { href: `${SUP}/coaching/hoy`, label: "Hoy", icono: MessageSquareText, central: true },
+      ok("analisis_coaching")
+        ? { href: `${SUP}/analisis`, label: "Análisis", icono: Sparkles }
+        : { href: `${SUP}/comando`, label: "Comando", icono: Siren },
+    ];
+  }
+  const tc = OPERATIVA_ROUTES.find((o) => o.slug === TC);
+  return (tc?.submodulos ?? []).filter((s) => ok(s.utilidad)).slice(0, 3)
+    .map((s) => ({ href: s.href, label: s.label.split(" ")[0], icono: ICONOS[s.utilidad] ?? LayoutGrid }));
+}
+
+export function NavInferior({ user, onMenu, menuAbierto }: { user: CurrentUserInfo; onMenu: () => void; menuAbierto: boolean }) {
+  const ruta = usePathname() ?? "";
+  const items: Item[] = [{ href: "/inicio", label: "Inicio", icono: House, exacto: true }, ...itemsDe(user)];
+  const activo = (i: Item) => (i.exacto ? ruta === i.href : ruta === i.href || ruta.startsWith(`${i.href}/`));
+  return (
+    <nav aria-label="Navegación rápida"
+      className="barra-inferior md:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-brand-border pb-[env(safe-area-inset-bottom)] print:hidden">
+      <ul className="flex h-16">
+        {items.map((i) => {
+          const on = activo(i);
+          const I = i.icono;
+          if (i.central) {
+            return (
+              <li key={i.href} className="flex-1 flex items-start justify-center">
+                <Link href={i.href} aria-label="Coaching del día"
+                  className="-mt-5 w-16 h-16 rounded-full bg-brand-primary text-white shadow-elevated ring-4 ring-white flex flex-col items-center justify-center active:scale-95 transition-transform">
+                  <I size={24} strokeWidth={2.5} aria-hidden />
+                  <span className="text-[9px] font-bold uppercase tracking-wider2 -mt-0.5">{i.label}</span>
+                </Link>
+              </li>
+            );
+          }
+          return (
+            <li key={i.href} className="flex-1 min-w-0">
+              <Link href={i.href} aria-current={on ? "page" : undefined}
+                className={`h-full flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold px-1 ${on ? "text-brand-primary" : "text-brand-slate"}`}>
+                <I size={22} strokeWidth={on ? 2.5 : 2} aria-hidden />
+                <span className="truncate max-w-full">{i.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+        <li className="flex-1 min-w-0">
+          <button type="button" onClick={onMenu} aria-expanded={menuAbierto}
+            className={`w-full h-full flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold ${menuAbierto ? "text-brand-primary" : "text-brand-slate"}`}>
+            <Menu size={22} aria-hidden /> Menú
+          </button>
+        </li>
+      </ul>
+    </nav>
+  );
+}

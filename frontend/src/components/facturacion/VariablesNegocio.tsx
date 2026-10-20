@@ -160,7 +160,7 @@ export function VariablesNegocio({ p, setP, defaults, titulo = "Variables de neg
   const vendedores = Number(p.costos?.ventas_por_vendedor) > 0 ? Math.ceil(Number(p.ventas) / Number(p.costos.ventas_por_vendedor)) : 0;
   return (
     <section className="space-y-2 no-print">
-            <div className="flex items-center justify-between gap-3 mb-1">
+            <div className="flex items-center justify-between gap-3 mb-1 flex-wrap">
               <h2 className="font-display text-xl text-brand-ink uppercase">{titulo}</h2>
               <div className="flex items-center gap-3">
                 <button onClick={() => setP((prev: any) => aplicarPreset(prev, PRESET_IDEAL_MOVIL))}
@@ -184,7 +184,8 @@ export function VariablesNegocio({ p, setP, defaults, titulo = "Variables de neg
             </Grupo>
 
             <Grupo titulo="Tarifas por plan y mix" hint={`mix ${mixTotal.toFixed(1)}%`}>
-              <table className="w-full text-[11px]">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[460px] text-[11px]">
                 <thead><tr className="text-brand-slate uppercase tracking-wider2 text-[9px]">
                   <th className="text-left">Plan</th><th>Mix %</th><th>Cuota 1</th><th>Cuota 2</th><th>Porta plus</th><th>Abono</th>
                 </tr></thead>
@@ -199,6 +200,7 @@ export function VariablesNegocio({ p, setP, defaults, titulo = "Variables de neg
                   ))}
                 </tbody>
               </table>
+              </div>
             </Grupo>
 
             <Grupo titulo="Cuota 2 y legajos">

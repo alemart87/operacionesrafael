@@ -91,7 +91,7 @@ export default function TeleventasClaroHub() {
             Liquidación de comisiones: detalle por concepto, drivers operativos y comparativos mensuales.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/televentas-claro/facturacion/agente"
             className="inline-flex items-center gap-2 rounded-md border border-[#662483]/30 bg-[#662483]/5 text-[#662483] hover:bg-[#662483]/10 px-3.5 py-2 text-sm font-semibold transition-colors"
