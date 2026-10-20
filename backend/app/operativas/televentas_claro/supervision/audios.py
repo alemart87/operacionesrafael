@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 CARPETA = "supervision/audios"
 HABLANTES = ("supervisor", "asesor")
-DESTINOS = ("item", "compromiso", "comentario")
+DESTINOS = ("item", "compromiso", "comentario", "cierre")   # cierre: el cierre del día del supervisor (sin coaching)
 MIN_BYTES = 800
 MAX_INTENTOS = 3
 LOTE = 4
@@ -110,9 +110,12 @@ async def segundos_hoy(db: AsyncSession, user_id: str, momento: datetime) -> flo
     return float((await db.execute(q)).scalar() or 0.0)
 
 
-async def guardar(db: AsyncSession, *, c: Coaching, user_id: str, datos: bytes, duracion_s: float, hablante: str,
+async def guardar(db: AsyncSession, *, c: Coaching | None, user_id: str, datos: bytes, duracion_s: float, hablante: str,
                   destino: str, momento: datetime) -> CoachingAudio:
-    """Valida y guarda el audio (sin commit). La transcripción queda en cola."""
+    """Valida y guarda el audio (sin commit). La transcripción queda en cola. Sin coaching: un audio del cierre del día
+    del propio supervisor."""
+    if (c is None) != (destino == "cierre"):
+        raise AudioInvalido("Audio mal identificado")
     if hablante not in HABLANTES or destino not in DESTINOS:
         raise AudioInvalido("Audio mal identificado")
     if len(datos) < MIN_BYTES:
@@ -128,7 +131,7 @@ async def guardar(db: AsyncSession, *, c: Coaching, user_id: str, datos: bytes, 
     if usados + duracion_s > settings.transcripcion_minutos_dia * 60:
         raise AudioInvalido(f"Llegaste al tope de {settings.transcripcion_minutos_dia} minutos de audio por día")
     mime, ext = tipo
-    a = CoachingAudio(coaching_id=c.id, supervisor_id=c.supervisor_id, hablante=hablante, destino=destino, mime=mime,
+    a = CoachingAudio(coaching_id=c.id if c else None, supervisor_id=c.supervisor_id if c else user_id, hablante=hablante, destino=destino, mime=mime,
                       bytes=len(datos), duracion_s=round(float(duracion_s), 1), sha256=hashlib.sha256(datos).hexdigest(),
                       estado="pendiente" if servicio_disponible() else "sin_servicio", created_by=user_id, created_at=momento)
     db.add(a)
@@ -192,6 +195,9 @@ async def _completar_textos(db: AsyncSession, a: CoachingAudio) -> None:
 
     if not a.texto:
         return
+    if a.coaching_id is None:
+        await _completar_cierre(db, a)
+        return
     n = 0
     for modelo in (CoachingItem, CoachingCompromiso):
         r = await db.execute(update(modelo).where(modelo.audio_id == a.id, modelo.texto == "").values(texto=a.texto))
@@ -199,6 +205,21 @@ async def _completar_textos(db: AsyncSession, a: CoachingAudio) -> None:
     c = await db.get(Coaching, a.coaching_id)
     if n and c is not None and c.estado == srv.PENDIENTE:
         srv.resumir(c, await srv.items_de(db, c.id), await srv.compromisos_de(db, c.id))
+
+
+async def _completar_cierre(db: AsyncSession, a: CoachingAudio) -> None:
+    """El cierre del día que se guardó con el campo vacío esperando la transcripción recibe el texto (y su ánimo)."""
+    from . import calidad as cal
+    from .models import CierreDia
+
+    filas = (await db.execute(select(CierreDia).where(
+        (CierreDia.audio_resultados_id == a.id) | (CierreDia.audio_compromiso_id == a.id)))).scalars().all()
+    for c in filas:
+        if c.audio_resultados_id == a.id and not (c.resultados or "").strip():
+            c.resultados = a.texto
+        if c.audio_compromiso_id == a.id and not (c.compromiso or "").strip():
+            c.compromiso = a.texto
+        c.animo = cal.detectar_animo(f"{c.resultados}. {c.compromiso}", c.como_termino)
 
 
 async def procesar_uno(db: AsyncSession, a: CoachingAudio) -> None:
@@ -222,8 +243,9 @@ async def procesar_uno(db: AsyncSession, a: CoachingAudio) -> None:
     a.estado, a.transcrito_at = "listo", _ahora()
     a.costo_usd = 0.0 if modelo.startswith("simulador") else round(a.duracion_s / 60 * precio_minuto(modelo), 5)
     await _completar_textos(db, a)
-    db.add(CoachingEvento(coaching_id=a.coaching_id, tipo="transcripcion", at=_ahora(), por=a.created_by,
-                          datos={"audio_id": a.id, "transcripto": True, "segundos": a.duracion_s}))
+    if a.coaching_id:
+        db.add(CoachingEvento(coaching_id=a.coaching_id, tipo="transcripcion", at=_ahora(), por=a.created_by,
+                              datos={"audio_id": a.id, "transcripto": True, "segundos": a.duracion_s}))
     await db.commit()
 
 

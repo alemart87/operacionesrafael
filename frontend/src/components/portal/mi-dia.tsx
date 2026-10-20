@@ -12,6 +12,7 @@ import {
 } from "@/components/supervision/tipos";
 import { Boton, Etiqueta, Fallo, Fila, Hoja, Seccion, cx, plural } from "./ui";
 import { diaCorto } from "./coaching";
+import { CIERRE, Dictado } from "./grabadora";
 
 const DIAS_CORTOS = ["D", "L", "M", "M", "J", "V", "S"];
 
@@ -50,6 +51,8 @@ export function BarraObjetivo({ d, onCierre }: { d: MiDia; onCierre: () => void 
         </button>
       </div>
 
+      <p className="mt-2 text-[11px] text-brand-slate">Cuenta cada asesor al que le diste feedback hoy: lo que cargaste en su coaching o su seguimiento.</p>
+
       <ul className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5">
         {d.hitos.map((h) => (
           <li key={h.clave} className={cx("inline-flex items-center gap-1 text-xs", h.logrado ? "text-emerald-700 font-semibold" : "text-brand-slate")}>
@@ -75,8 +78,49 @@ export function BarraObjetivo({ d, onCierre }: { d: MiDia; onCierre: () => void 
           })}
         </div>
         {d.racha > 0 && (
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#8A5200]"><Flame size={15} aria-hidden /> {plural(d.racha, "día", "días")} seguidos</span>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#8A5200]"><Flame size={15} aria-hidden /> {d.racha}</span>
         )}
+      </div>
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ mis rachas (diaria, semanal y mensual)
+function Racha({ titulo, actual, unidad, record, avance, etiqueta }: {
+  titulo: string; actual: number; unidad: [string, string]; record: number; avance: { hechos: number; meta: number; cumplido: boolean };
+  etiqueta: string;
+}) {
+  const pct = avance.meta ? Math.min(100, (avance.hechos / avance.meta) * 100) : 0;
+  return (
+    <div className="min-w-0 rounded-lg bg-brand-bg-soft border border-brand-border p-2.5">
+      <div className="text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold">{titulo}</div>
+      <div className="flex items-center gap-1 mt-1">
+        <Flame size={18} className={actual ? "text-[#E07B00]" : "text-brand-mist"} fill={actual ? "#F2A900" : "none"} aria-hidden />
+        <span className="font-display text-3xl leading-none tabular-nums text-brand-ink">{actual}</span>
+      </div>
+      <div className="text-[11px] text-brand-slate leading-tight">{actual === 1 ? unidad[0] : unidad[1]}</div>
+      <div className="text-[10px] text-brand-slate leading-tight">Récord {record}</div>
+      <div className="h-1.5 rounded-full bg-white border border-brand-border mt-2 overflow-hidden">
+        <div className={cx("h-full", avance.cumplido ? "bg-emerald-600" : "bg-[#00B2BF]")} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="text-[10px] text-brand-slate mt-1 tabular-nums">{etiqueta} {avance.hechos}/{avance.meta}{avance.cumplido ? " ✓" : ""}</div>
+    </div>
+  );
+}
+
+export function MisRachas({ d }: { d: MiDia }) {
+  const r = d.rachas;
+  if (!r) return null;
+  return (
+    <section className="card p-4" aria-label="Mis rachas">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold">Mis rachas</span>
+        <span className="text-[11px] text-brand-slate">seguidas con el objetivo</span>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-2">
+        <Racha titulo="Diaria" actual={r.diaria.actual} unidad={["día", "días"]} record={r.diaria.record} avance={r.diaria.hoy} etiqueta="Hoy" />
+        <Racha titulo="Semanal" actual={r.semanal.actual} unidad={["semana", "semanas"]} record={r.semanal.record} avance={r.semanal.en_curso} etiqueta="Semana" />
+        <Racha titulo="Mensual" actual={r.mensual.actual} unidad={["mes", "meses"]} record={r.mensual.record} avance={r.mensual.en_curso} etiqueta="Mes" />
       </div>
     </section>
   );
@@ -85,7 +129,7 @@ export function BarraObjetivo({ d, onCierre }: { d: MiDia; onCierre: () => void 
 // ------------------------------------------------------------------ fila del cierre en «Para hoy»
 export function FilaCierre({ d, onAbrir }: { d: MiDia; onAbrir: () => void }) {
   if (d.cierre) {
-    return <Fila icono={Flag} tono="verde" onClick={onAbrir} titulo="Día cerrado · +1 punto" sub={`Mañana: ${d.cierre.compromiso}`} />;
+    return <Fila icono={Flag} tono="verde" onClick={onAbrir} titulo="Día cerrado · +1 punto" sub={d.cierre.compromiso ? `Mañana: ${d.cierre.compromiso}` : "Tu compromiso dictado se está transcribiendo."} />;
   }
   return (
     <Fila icono={MoonStar} tono="azul" onClick={onAbrir} titulo="Cerrá tu día"
@@ -181,20 +225,27 @@ export function HojaCierre({ d, onClose, onGuardado }: { d: MiDia; onClose: () =
   const [cumplio, setCumplio] = useState<ResultadoCompromiso | null>(d.cierre?.cumplio_anterior ?? null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const listo = resultados.trim().length >= 10 && compromiso.trim().length >= 10 && !!como && (!d.anterior || !!cumplio);
+  // Lo dictado: el audio de cada campo (queda guardado como registro; el texto llega con la transcripción).
+  const [audioRes, setAudioRes] = useState<string | null>(null);
+  const [audioComp, setAudioComp] = useState<string | null>(null);
+  const [grabando, setGrabando] = useState<{ r: boolean; c: boolean }>({ r: false, c: false });
+  const campoOk = (t: string, audio: string | null) => t.trim().length >= 10 || (!!audio && !t.trim());
+  const listo = campoOk(resultados, audioRes) && campoOk(compromiso, audioComp) && !!como && (!d.anterior || !!cumplio) && !grabando.r && !grabando.c;
+  const sumar = (set: (f: (p: string) => string) => void) => (t: string) => set((p) => (p.trim() ? `${p.trim()} ${t}` : t));
   const guardar = async () => {
     setOcupado(true);
     setError(null);
     try {
       onGuardado(await apiFetch<MiDia>(`${SUP_API}/portal/cierre`, {
-        method: "PUT", body: JSON.stringify({ resultados, compromiso, como_termino: como, cumplio_anterior: d.anterior ? cumplio : null }),
+        method: "PUT", body: JSON.stringify({ resultados, compromiso, como_termino: como, cumplio_anterior: d.anterior ? cumplio : null,
+          audio_resultados_id: audioRes, audio_compromiso_id: audioComp }),
       }));
     } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
   };
   const boton = (activo: boolean) => cx("min-h-[52px] rounded-lg border-2 px-2 font-semibold text-sm flex items-center justify-center gap-1.5",
     activo ? "border-brand-ink bg-brand-ink text-white" : "border-brand-border text-brand-ink");
   return (
-    <Hoja sobre={`Hoy · ${plural(d.feedbacks, "feedback", "feedback")} de ${d.objetivo}`} titulo={d.cierre ? "Corregir mi cierre" : "Cerrar mi día"} onClose={onClose} ocupada={ocupado}
+    <Hoja sobre={`Hoy · ${plural(d.feedbacks, "feedback", "feedback")} de ${d.objetivo}`} titulo={d.cierre ? "Corregir mi cierre" : "Cerrar mi día"} onClose={onClose} ocupada={ocupado || grabando.r || grabando.c}
       pie={<Boton icono={Flag} onClick={guardar} disabled={!listo} ocupado={ocupado}>{d.cierre ? "Guardar cambios" : "Cerrar el día · +1 punto"}</Boton>}>
       <div className="space-y-5">
         {d.anterior && (
@@ -217,14 +268,22 @@ export function HojaCierre({ d, onClose, onGuardado }: { d: MiDia; onClose: () =
         </div>
         <div>
           <label className="label" htmlFor="resultados">¿Cómo te fue hoy?</label>
+          <div className="mb-2">
+            <Dictado coachingId={CIERRE} hablante="supervisor" destino="cierre" etiqueta="Dictar cómo te fue" principal={false}
+              onGrabando={(v) => setGrabando((g) => ({ ...g, r: v }))} onSubido={(a) => setAudioRes(a.id)} onTexto={sumar(setResultados)} />
+          </div>
           <textarea id="resultados" className="input !text-base min-h-[110px] leading-relaxed" maxLength={2000} value={resultados}
             onChange={(e) => setResultados(e.target.value)} placeholder="Ej.: 7 feedback, el equipo vendió 14 Pospago; faltó trabajar GPON con Ana y Beto." />
         </div>
         <div>
           <label className="label" htmlFor="compromiso">Tu compromiso para mañana</label>
+          <div className="mb-2">
+            <Dictado coachingId={CIERRE} hablante="supervisor" destino="cierre" etiqueta="Dictar mi compromiso" principal={false}
+              onGrabando={(v) => setGrabando((g) => ({ ...g, c: v }))} onSubido={(a) => setAudioComp(a.id)} onTexto={sumar(setCompromiso)} />
+          </div>
           <textarea id="compromiso" className="input !text-base min-h-[90px] leading-relaxed" maxLength={1000} value={compromiso}
             onChange={(e) => setCompromiso(e.target.value)} placeholder="Ej.: Hacer los 8 feedback antes de las 15 h, empezando por los que tienen líneas sin uso." />
-          <p className="text-[11px] text-brand-slate mt-1">Mañana te preguntamos si lo cumpliste. Lo ven tus jefes.</p>
+          <p className="text-[11px] text-brand-slate mt-1">Mañana te preguntamos si lo cumpliste. Lo ven tus jefes (y escuchan lo que dictes).</p>
         </div>
         {error && <Fallo>{error}</Fallo>}
       </div>

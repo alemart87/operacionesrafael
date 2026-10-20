@@ -83,6 +83,10 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE sup_coaching_eventos ALTER COLUMN tipo TYPE VARCHAR(30)",
     # v1.4 · usuarios registrados con un link de creación rápida
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS invitacion_id VARCHAR(36)",
+    # v1.4.1 · el cierre del día del supervisor se puede dictar: sus audios no son de un coaching
+    "ALTER TABLE sup_audios ALTER COLUMN coaching_id DROP NOT NULL",
+    "ALTER TABLE sup_cierres_dia ADD COLUMN IF NOT EXISTS audio_resultados_id VARCHAR(36)",
+    "ALTER TABLE sup_cierres_dia ADD COLUMN IF NOT EXISTS audio_compromiso_id VARCHAR(36)",
 ]
 
 

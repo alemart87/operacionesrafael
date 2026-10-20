@@ -592,7 +592,9 @@ en el **Control de supervisores** y el **Coaching del día**.
   (`objetivo_feedback_dia`, **8** por defecto; se cambia en **Supervisión → Calendario**), con los **hitos** (primer
   feedback, la mitad y el objetivo) y una estrella para el **punto extra** del cierre del día (8 + 1 puntos). Debajo,
   los últimos 7 días (en verde los días con el objetivo cumplido) y la racha de días hábiles seguidos con el objetivo.
-  Cuenta cada ítem de tipo *feedback* de un coaching no anulado (los monitoreos no).
+  Cuenta **cada asesor al que le dio feedback ese día**: cada coaching (no anulado) en el que cargó algo ese día
+  (monitoreo o feedback, como sea que lo haya marcado) o registró el seguimiento; el mismo coaching cuenta una vez por
+  día. La calidad se mide sobre esa devolución completa (todo lo que cargó ese día en ese coaching).
 - **Calidad de mis feedback** (últimos 7 días): un puntaje de 0 a 100 y, por cada señal, qué parte de sus feedback la
   cumple: **largo justo** (25 a 120 palabras: menos le falta profundidad, más de 160 o frases de más de 30 palabras le
   falta concisión), **evidencia** (la llamada, la hora, un número o lo que dijo el cliente), **acción concreta**,
@@ -601,8 +603,16 @@ en el **Control de supervisores** y el **Coaching del día**.
   una conducta, una cosa a mejorar y una acción»). Mientras escribe un feedback, la hoja le muestra la calidad y el
   consejo **al instante**. Las reglas están en `supervision/calidad.py`: no usa IA (responde al instante, sin costo y
   siempre igual).
+- **Rachas** («Mis rachas», debajo de la barra): **diaria** (días hábiles seguidos con el objetivo), **semanal**
+  (semanas de lunes a domingo con la meta de la semana: el objetivo por los días hábiles, con el sábado valiendo lo que
+  vale en el calendario) y **mensual** (meses con la meta del mes). Cada una con su récord de los últimos 12 meses y el
+  avance del día, la semana y el mes en curso; el período en curso suma cuando se cumple y, mientras no, no corta la
+  racha. Los jefes ven las tres rachas de cada supervisor en su tarjeta.
 - **Cierre del día** (una fila en «Para hoy», suma **1 punto**): cómo terminó el día (bien, normal, difícil), cómo le
-  fue y su **compromiso para mañana**; al día siguiente le pregunta si **cumplió** el compromiso anterior (sí, en parte,
+  fue y su **compromiso para mañana**, escritos o **dictados**: como en el coaching, el audio queda guardado como
+  registro (con su huella, en el disco persistente) y se transcribe en segundo plano con el mismo servicio y los mismos
+  topes; si guarda antes de que llegue el texto, el campo se completa solo (y se recalcula el ánimo). Los jefes lo
+  escuchan desde la tarjeta del supervisor (queda en la auditoría). `POST /portal/cierre/audios`; al día siguiente le pregunta si **cumplió** el compromiso anterior (sí, en parte,
   no). Lo puede corregir ese mismo día. Tabla `sup_cierres_dia`, auditoría `cierre_dia` y `cierre_dia_corregido`.
 - **Ánimo (sentimiento) por supervisor:** al guardar el cierre se combina lo que eligió con lo que dice el texto (un
   léxico de emociones del trabajo: motivación, satisfacción, cansancio, frustración, preocupación y estrés, con las

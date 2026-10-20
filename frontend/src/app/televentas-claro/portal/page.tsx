@@ -4,7 +4,7 @@ import { CalendarClock, CircleCheck, CircleDashed, ClipboardCheck, MessageSquare
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSession } from "@/components/AppShell";
 import { diaCorto, hoyPy } from "@/components/portal/coaching";
-import { BarraObjetivo, CalidadFeedback, FilaCierre, HojaCierre } from "@/components/portal/mi-dia";
+import { BarraObjetivo, CalidadFeedback, FilaCierre, HojaCierre, MisRachas } from "@/components/portal/mi-dia";
 import { PortalShell } from "@/components/portal/nav";
 import { Cargando, Encabezado, Fallo, Fila, Lista, PORTAL, Seccion, plural, useAviso } from "@/components/portal/ui";
 import { BotonCoaching, hrefNuevoCoaching } from "@/components/supervision/hacer-coaching";
@@ -62,7 +62,12 @@ function Hoy() {
     <div className="max-w-xl md:max-w-none mx-auto">
       <Encabezado sobre={fecha} titulo={<>Hola, <span className="text-brand-primary">{nombre}</span></>}
         accion={d && <CriticoBadge critico={d.critico} enAlerta={d.asesores_en_alerta} />} />
-      {m && <div className="mb-4 md:max-w-md"><BarraObjetivo d={m} onCierre={() => setCierre(true)} /></div>}
+      {m && (
+        <div className="mb-4 md:max-w-md space-y-3">
+          <BarraObjetivo d={m} onCierre={() => setCierre(true)} />
+          <MisRachas d={m} />
+        </div>
+      )}
       <div className="md:max-w-md">
         <BotonCoaching href={hrefNuevoCoaching()} className="w-full !py-4 !text-xl rounded-xl" />
       </div>

@@ -332,7 +332,8 @@ async def escuchar(audio_id: str, request: Request, user: CurrentUser = Depends(
     if not a:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Audio no encontrado")
     r = archivo_audio(a)
-    await record_action(db, user_id=user.id, action="audio_escuchado", resource_type="coaching", resource_id=a.coaching_id,
+    await record_action(db, user_id=user.id, action="audio_escuchado", resource_type="coaching" if a.coaching_id else "cierre_dia",
+                        resource_id=a.coaching_id or a.id,
                         ip=client_ip(request), extra={"audio": a.id, "hablante": a.hablante})
     return r
 

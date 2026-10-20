@@ -12,7 +12,7 @@ import { ApiError, apiFetch, getToken } from "@/lib/api";
 import { cx } from "./ui";
 
 export type Hablante = "supervisor" | "asesor";
-export type Destino = "item" | "compromiso" | "comentario";
+export type Destino = "item" | "compromiso" | "comentario" | "cierre";
 
 export const MAX_SEGUNDOS = 300;
 const MIMES = ["audio/webm;codecs=opus", "audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm", "audio/ogg;codecs=opus"];
@@ -187,8 +187,12 @@ export async function borrarLocal(id: string): Promise<void> {
 // ------------------------------------------------------------------ subir y esperar la transcripción
 const sinRed = (e: unknown) => e instanceof TypeError || (typeof navigator !== "undefined" && !navigator.onLine);
 
+/** El «coaching» de los audios del cierre del día del supervisor (no son de un coaching: van a su propio endpoint). */
+export const CIERRE = "cierre";
+
 export async function subirAudio(coachingId: string, g: { blob: Blob; mime: string; duracion: number }, hablante: Hablante,
   destino: Destino): Promise<AudioCoaching> {
+  const url = coachingId === CIERRE ? `${SUP_API}/portal/cierre/audios` : `${SUP_API}/portal/coaching/${coachingId}/audios`;
   const ext = g.mime.includes("mp4") ? "m4a" : g.mime.includes("ogg") ? "ogg" : g.mime.includes("wav") ? "wav" : "webm";
   let espera = 1000;
   for (let intento = 0; ; intento++) {
@@ -198,7 +202,7 @@ export async function subirAudio(coachingId: string, g: { blob: Blob; mime: stri
     fd.append("hablante", hablante);
     fd.append("destino", destino);
     try {
-      return await apiFetch<AudioCoaching>(`${SUP_API}/portal/coaching/${coachingId}/audios`, { method: "POST", body: fd });
+      return await apiFetch<AudioCoaching>(url, { method: "POST", body: fd });
     } catch (e) {
       if (!sinRed(e) || intento >= 2) throw e;
       await new Promise((ok) => setTimeout(ok, espera));
@@ -245,7 +249,7 @@ export function Dictado({ coachingId, hablante, destino, etiqueta = "Dictar", ay
     try {
       audio = await subirAudio(coachingId, grabado, hablante, destino);
     } catch (e) {
-      if (sinRed(e)) {
+      if (sinRed(e) && coachingId !== CIERRE) {
         const local: AudioLocal = { id: crypto.randomUUID?.() ?? String(Date.now()), coachingId, hablante, destino,
           duracion: grabado.duracion, mime: grabado.mime, blob: grabado.blob, at: Date.now() };
         pendienteLocal.current = local;

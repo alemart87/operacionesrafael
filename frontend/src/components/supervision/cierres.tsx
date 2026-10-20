@@ -5,9 +5,10 @@
  * cada uno al terminar el día, su compromiso para mañana, si cumplió el anterior, cuántos feedback hizo contra el
  * objetivo y el ánimo detectado de la última semana, con una alerta cuando conviene hablar con él.
  */
-import { AlertTriangle, Flag, Frown, Meh, MessageSquareText, Smile } from "lucide-react";
+import { AlertTriangle, Flag, Flame, Frown, Meh, MessageSquareText, Mic, Smile } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { Escuchar } from "@/components/portal/grabadora";
 import { Etiqueta, cx, hora, plural } from "@/components/portal/ui";
 import {
   ANIMO, EMOCION, NIVEL_CALIDAD, RESULTADO_COMPROMISO, SUP_API, type CierreSupervisor, type CierresJefes, type ComoTermino, type EtiquetaAnimo,
@@ -36,6 +37,15 @@ function Semana({ s }: { s: CierreSupervisor["animo"] }) {
   );
 }
 
+function Rotulo({ texto, audio }: { texto: string; audio?: { id: string; duracion_s: number; archivo: boolean } }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[10px] uppercase tracking-wider2 text-brand-slate inline-flex items-center gap-1">{texto}{audio && <Mic size={11} aria-label="dictado" />}</span>
+      {audio?.archivo && <Escuchar url={`${SUP_API}/control/audios/${audio.id}/archivo`} duracion={audio.duracion_s} compacto />}
+    </div>
+  );
+}
+
 function Tarjeta({ f, hoy }: { f: CierreSupervisor; hoy: boolean }) {
   const c = f.cierre;
   const pct = Math.min(100, (f.feedbacks / f.objetivo) * 100);
@@ -58,6 +68,17 @@ function Tarjeta({ f, hoy }: { f: CierreSupervisor; hoy: boolean }) {
         {f.calidad !== null && f.calidad_nivel && <Etiqueta tono={NIVEL_CALIDAD[f.calidad_nivel].tono}>Calidad {f.calidad}</Etiqueta>}
       </div>
 
+      {f.rachas && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-brand-slate" aria-label="Rachas con el objetivo">
+          {([["diaria", "d", "Diaria"], ["semanal", "sem", "Semanal"], ["mensual", "m", "Mensual"]] as const).map(([k, u, n]) => (
+            <span key={k} className="inline-flex items-center gap-0.5" title={`Racha ${n.toLowerCase()} · récord ${f.rachas![k].record}`}>
+              <Flame size={12} className={f.rachas![k].actual ? "text-[#E07B00]" : "text-brand-mist"} aria-hidden />
+              <b className="text-brand-ink tabular-nums">{f.rachas![k].actual}</b> {u}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="mt-3 flex items-center justify-between gap-3">
         <Semana s={f.animo} />
         {como && <span className="inline-flex items-center gap-1 text-xs text-brand-slate"><como.icono size={14} aria-hidden /> {como.label}</span>}
@@ -72,12 +93,12 @@ function Tarjeta({ f, hoy }: { f: CierreSupervisor; hoy: boolean }) {
       {c ? (
         <div className="mt-3 space-y-2.5 text-sm">
           <div>
-            <div className="text-[10px] uppercase tracking-wider2 text-brand-slate">Cómo le fue</div>
-            <p className="text-brand-ink break-words whitespace-pre-line">{c.resultados}</p>
+            <Rotulo texto="Cómo le fue" audio={c.audios?.resultados} />
+            <p className="text-brand-ink break-words whitespace-pre-line">{c.resultados || <span className="text-brand-slate">Transcribiendo lo dictado…</span>}</p>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wider2 text-brand-slate">Compromiso para mañana</div>
-            <p className="text-brand-ink break-words">{c.compromiso}</p>
+            <Rotulo texto="Compromiso para mañana" audio={c.audios?.compromiso} />
+            <p className="text-brand-ink break-words">{c.compromiso || <span className="text-brand-slate">Transcribiendo lo dictado…</span>}</p>
           </div>
           {f.anterior && (
             <div className="rounded-md bg-brand-bg-soft px-2.5 py-2">

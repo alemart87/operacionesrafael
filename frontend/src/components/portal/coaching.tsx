@@ -212,7 +212,7 @@ export function HojaItem({ c, item, dictar, onClose, onGuardado }: {
             onChange={(e) => setTexto(e.target.value)} placeholder="Qué viste, qué hizo bien y qué tiene que corregir." />
           <div className="text-[11px] text-brand-slate mt-1 text-right tabular-nums">{texto.length} / 2000</div>
         </div>
-        {tipo === "feedback" && <PistaCalidad texto={texto} />}
+        <PistaCalidad texto={texto} />
         {error && <Fallo>{error}</Fallo>}
       </div>
     </Hoja>
