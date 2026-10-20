@@ -238,7 +238,7 @@ export function TabUsuarios({ modoHorario, onCambio }: { modoHorario: string; on
       />
 
       {excepcion && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
           <div className="absolute inset-0 bg-brand-ink/50 backdrop-blur-[2px] animate-fade" onClick={() => !procesando && setExcepcion(null)} />
           <div role="dialog" aria-modal="true" className="relative w-full max-w-md card shadow-elevated animate-pop overflow-hidden">
             <div className="h-1.5 bg-brand-cyan" />

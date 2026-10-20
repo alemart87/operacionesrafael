@@ -91,7 +91,7 @@ function Informe() {
             {r.status === "draft" && <> · borrador: <span className="text-brand-cyan">solo lo ve gestión hasta que se publique</span></>}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {isSuperadmin && (
             // Prueba del superadmin: recalcula desde los datos guardados en la base, sin volver a subir el archivo.
             <button

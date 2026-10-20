@@ -310,7 +310,7 @@ function Actividad({ r, filas, sel, onSel, refresco }: {
   }
   const nombre = filas.find((f) => f.id === sel)?.nombre;
   return (
-    <section className="card" id="actividad">
+    <section className="card min-w-0" id="actividad">
       <div className="px-5 pt-5 pb-3 flex items-end justify-between gap-3 flex-wrap">
         <div className="min-w-0">
           <h2 className="font-display text-xl uppercase text-brand-ink leading-tight">Actividad{nombre ? ` de ${nombre}` : ""}</h2>
@@ -396,7 +396,7 @@ function Pendientes({ refresco, onCambio }: { refresco: number; onCambio: () => 
   if (!d) return error ? <p className="text-sm text-brand-primary">{error}</p> : null;
   const total = d.altas.length + d.pases.length;
   return (
-    <section className="card" id="pendientes">
+    <section className="card min-w-0" id="pendientes">
       <div className="px-5 pt-5 pb-3">
         <h2 className="font-display text-xl uppercase text-brand-ink leading-tight">Altas y pases por resolver</h2>
         <p className="text-xs text-brand-slate mt-0.5">

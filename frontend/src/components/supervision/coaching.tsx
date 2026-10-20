@@ -2,7 +2,7 @@
 
 import {
   Ban, CalendarCheck, CalendarClock, CircleCheck, CircleDashed, ClipboardCheck, CornerDownRight, Fingerprint, History,
-  Info, Mic, MessageSquarePlus, MessageSquareText, NotebookPen, PenLine, Pencil, Plus, Target, Ticket, TriangleAlert, Users,
+  Info, Mic, MessageSquarePlus, MessageSquareText, NotebookPen, PenLine, Pencil, Plus, Target, ThumbsUp, Ticket, TriangleAlert, Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -396,6 +396,7 @@ const EVENTO: Record<EventoCoaching["tipo"], { label: string; icono: typeof Plus
   audio: { label: "Grabó un audio", icono: Mic },
   transcripcion: { label: "Transcripción lista", icono: Mic },
   firmado: { label: "Firmaron la devolución", icono: PenLine },
+  revision: { label: "Revisó el coaching", icono: ThumbsUp },
 };
 const CAMPO: Record<string, string> = {
   tipo: "tipo", metrica: "métrica", metricas: "métricas", diagnostico: "diagnóstico", compromiso: "compromiso", seguimiento_fecha: "fecha de seguimiento",
@@ -413,6 +414,7 @@ function textoEvento(e: EventoCoaching): ReactNode {
   if (e.tipo === "creado" && d.fuera_de_termino) return <span className="text-[#8A5200]">Con más de 48 h de atraso: fuera de término.</span>;
   if (e.tipo === "item" || e.tipo === "compromiso") return d.texto || (d.audio_id ? "Dictado: el texto llega con la transcripción." : null);
   if (e.tipo === "audio") return `${d.hablante === "asesor" ? "Voz del asesor" : "Voz del supervisor"} · ${Math.round(d.segundos ?? 0)} s`;
+  if (e.tipo === "revision") return <>{d.valoracion === "mejorar" ? <b className="text-[#8A5200]">A mejorar</b> : <b className="text-emerald-800">Bien hecho</b>}{d.comentario ? ` · ${d.comentario}` : ""}</>;
   if (e.tipo === "firmado") return d.huella ? <span className="font-mono text-[11px] break-all">Huella {String(d.huella).slice(0, 24)}…</span> : null;
   return null;
 }

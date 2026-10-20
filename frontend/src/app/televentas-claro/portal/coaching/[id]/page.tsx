@@ -2,7 +2,7 @@
 
 import {
   ArrowLeft, ArrowRight, Ban, CircleCheck, ClipboardCheck, CloudUpload, Fingerprint, History, Keyboard, MessageSquarePlus,
-  MessageSquareText, Mic, PenLine, Save, TriangleAlert,
+  MessageSquareText, MessageSquareWarning, Mic, PenLine, Save, ThumbsUp, TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -282,6 +282,7 @@ function Terminado({ c, onHoja }: { c: CoachingDetalle; onHoja: (h: HojaAbierta)
   const hoy = hoyPy();
   const s = c.seguimiento ? SEGUIMIENTO[c.seguimiento] : null;
   const sinMejora = c.estado === "cerrado" && (c.resultado === "igual" || c.resultado === "empeoro");
+  const revision = [...c.eventos].reverse().find((e) => e.tipo === "revision");
   return (
     <div className="space-y-6">
       {c.estado === "anulado" ? (
@@ -300,6 +301,18 @@ function Terminado({ c, onHoja }: { c: CoachingDetalle; onHoja: (h: HojaAbierta)
         </div>
       ) : (
         <p className="text-xs text-brand-slate">Registrado el {fechaHoraPy(c.created_at)}, antes de la firma: vale igual.</p>
+      )}
+
+      {revision && (
+        <div className={`rounded-xl border px-4 py-4 ${revision.datos.valoracion === "mejorar" ? "border-brand-orange/40 bg-brand-orange/5" : "border-brand-border bg-white"}`}>
+          <div className="flex items-center gap-2 font-semibold text-[15px] text-brand-ink">
+            {revision.datos.valoracion === "mejorar"
+              ? <><MessageSquareWarning size={19} className="text-[#8A5200]" aria-hidden /> Tu jefe: a mejorar</>
+              : <><ThumbsUp size={19} className="text-emerald-700" aria-hidden /> Tu jefe: bien hecho</>}
+          </div>
+          {revision.datos.comentario && <p className="text-[15px] text-brand-graphite mt-1.5 whitespace-pre-line break-words">{revision.datos.comentario}</p>}
+          <p className="text-xs text-brand-slate mt-2">{revision.por} · {fechaHoraCorta(revision.at)}</p>
+        </div>
       )}
 
       {c.estado !== "anulado" && (
@@ -379,6 +392,9 @@ function Terminado({ c, onHoja }: { c: CoachingDetalle; onHoja: (h: HojaAbierta)
               <span className="text-brand-slate text-xs tabular-nums">{fechaHoraPy(e.at)}</span> · <b className="text-brand-ink">{e.por}</b> · {EVENTO[e.tipo] ?? e.tipo}
               {e.tipo === "aclaracion" && e.datos.texto && <div className="text-xs mt-0.5">{e.datos.texto}</div>}
               {e.tipo === "anulado" && e.datos.motivo && <div className="text-xs mt-0.5">{e.datos.motivo}</div>}
+              {e.tipo === "revision" && (
+                <div className="text-xs mt-0.5">{e.datos.valoracion === "mejorar" ? "A mejorar" : "Bien hecho"}{e.datos.comentario ? ` · ${e.datos.comentario}` : ""}</div>
+              )}
             </li>
           ))}
         </ol>
@@ -393,4 +409,5 @@ const EVENTO: Record<string, string> = {
   aclaracion: "agregó una aclaración", item: "sumó un monitoreo o feedback", item_editado: "corrigió un monitoreo o feedback",
   item_quitado: "quitó un monitoreo o feedback", compromiso: "sumó un compromiso", compromiso_editado: "corrigió un compromiso",
   compromiso_quitado: "quitó un compromiso", audio: "grabó un audio", transcripcion: "transcripción lista", firmado: "firmaron la devolución",
+  revision: "revisó el coaching",
 };

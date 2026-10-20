@@ -122,7 +122,8 @@ existentes según el modelo definido, y no se repite aunque el superadmin las ca
 | SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
 | Supervisión · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | 🔒 | ✓ / | ✓ / | |
 | Supervisión · Tickets de revisión | ✓ | ✓ | ✓ | ✓ | 🔒 | | ✓ | |
-| Supervisión · Control de supervisores (restringida) | ✓ | ✓ | ✓ | ✓ | 🔒 | 🔒 | 🔒 | 🔒 |
+| Supervisión · Control de supervisores y Coaching del día (restringida) | ✓ | ✓ | ✓ | ✓ | 🔒 | 🔒 | 🔒 | 🔒 |
+| Supervisión · Analizador de coaching (restringida) | ✓ | ✓ | 🔒 | ✓ | 🔒 | 🔒 | 🔒 | 🔒 |
 | Supervisión · Parámetros del modelo (restringida) | 🔒 | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
 | Operadores · Vincular | ✓ | ✓ | ✓ | ✓ | 🔒 | ✓ | | |
 | Logística · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
@@ -152,7 +153,8 @@ existentes según el modelo definido, y no se repite aunque el superadmin las ca
 
 Las utilidades con `solo_perfiles` en el catálogo son **restringidas**: además del
 superadmin, solo las pueden tener los perfiles listados (hoy: **Facturación e
-Integraciones → Sub gerente**; **Control de supervisores → Gerente, Sub gerente, Coordinador y Controller**). La matriz las muestra bloqueadas para el resto, la API rechaza el cambio
+Integraciones → Sub gerente**; **Control de supervisores → Gerente, Sub gerente, Coordinador y Controller**;
+**Analizador de coaching → Gerente, Sub gerente y Coordinador**). La matriz las muestra bloqueadas para el resto, la API rechaza el cambio
 y, aunque figuren en la base, no se hacen efectivas; a los demás usuarios ni
 siquiera se les listan. Con la lista vacía son exclusivas del superadmin. La
 administración (usuarios, perfiles, auditoría y seguridad) sigue siendo solo del
@@ -363,6 +365,8 @@ con SLA; y el centro de comandos de los jefes.
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
 | Control de supervisores | `…/supervision/control` | **Qué hace cada supervisor, contado y en vivo** (se actualiza solo cada minuto): hoy, ayer, 7 días, el mes o un rango (hasta 93 días). Supervisores con actividad y sin actividad, coachings abiertos y **firmados**, monitoreos, feedback, compromisos, **audios y minutos grabados** (y su costo), devoluciones sin firmar (y vencidas), seguimientos (y vencidos), tickets, notas y altas; actividad por día; la tabla por supervisor (tarjetas en el celular) con la cobertura del mes y la última actividad; el **registro de actividad** de todos o de uno, con los audios para escuchar y el detalle de cada coaching; y las **altas de asesores por validar** y los **pedidos de pase**. Gerente, sub gerente, coordinador, controller y superadmin |
+| Coaching del día | `…/supervision/coaching/hoy` | **Cómo van los coachings de hoy (o de otro día), de un vistazo y desde el celular** (se actualiza solo cada minuto): firmados (con el tiempo estimado de cada uno), **en curso** (abiertos sin firmar con movimiento del día), sin firmar, seguimientos registrados y para hoy, y **por revisar**; los indicadores filtran la lista, y hay una tira por supervisor. Cada tarjeta muestra el asesor, el supervisor, monitoreos, feedback, compromisos, audios, el primer texto y el compromiso; **Ver** abre el coaching completo y **Revisar** abre la hoja de la **revisión del jefe**: «Bien hecho» o «A mejorar» con lo que tiene que cambiar (obligatorio en «A mejorar»). El supervisor la ve en su portal (las «A mejorar» de la última semana aparecen en «Para hoy») y en el coaching. Gerente, sub gerente, coordinador, controller y superadmin |
+| Analizador de coaching | `…/supervision/analisis` | **Estadísticas, evaluación de cada supervisor, mapa de palabras e informes de Claude** sobre los coachings firmados (por el asesor y el supervisor). Este mes, el anterior, 7 o 30 días o un rango (hasta 186 días), toda la operación o un supervisor. Pestañas: **Resumen** (indicadores y gráficos: firmados por día, tiempo estimado, hora de la firma, qué se trabajó), **Supervisores** (evaluación 0–100 por componentes), **Palabras** (mapa de palabras del feedback y los compromisos, las 15 más frecuentes y las frases que se repiten; tocar una palabra muestra sus coachings), **Coachings** (búsqueda en los textos) e **Informe IA**. Gerente, sub gerente, coordinador y superadmin |
 | Centro de comandos | `…/supervision/comando` | El día de la operación: cabecera (score, avance y proyección, % sin uso contra el umbral, supervisores en crítico, líneas a recuperar, tickets y cobertura de coaching), **semáforo de supervisores** con sus motivos y **alertas del día** (tomar y anotar qué se hizo, **pedir revisión** con un clic, descartar con el motivo); rutina de seguimiento |
 | Objetivos y proyección | `/televentas-claro/supervision` | Por supervisor: vendido / objetivo, proyección al cierre, ritmo necesario por día hábil, semáforo y alertas; la operación completa; **Cargar objetivos** en la misma tabla |
 | Tablero | `…/supervision/tablero` | Scoring 0–100 de la operación, ranking de supervisores y de asesores, con la tendencia contra el mes anterior |
@@ -460,6 +464,16 @@ con SLA; y el centro de comandos de los jefes.
   hábiles o más sin registrar nada), la cobertura del mes con coachings terminados y la actividad por día.
   `GET /control`, `GET /control/actividad`, `GET /control/audios/{id}/archivo`, `GET /control/pendientes`,
   `POST /control/altas/{id}/validar`, `POST /control/altas/{id}/unir`, `POST /control/pases/{id}/resolver`.
+- **Coaching del día** (`dia_api.py`, con el permiso del control): `GET /control/dia?fecha&supervisor_id` arma la
+  lista del día con el estado de cada coaching (`firmado`, `en_curso`, `sin_firmar`, `seguimiento`,
+  `seguimiento_pendiente`, `movimiento`), sus cuentas, el tiempo estimado y la última revisión, más los indicadores y
+  la tira por supervisor. `POST /control/coaching/{id}/revision` (`valoracion`: `bien` | `mejorar`, `comentario`) guarda
+  la **revisión del jefe** como un evento `revision` del coaching (no cambia lo firmado; queda en el historial y en la
+  auditoría como `coaching_revisado`). El supervisor recibe las de los últimos 7 días en su vista (`revisiones`).
+  La columna `sup_coaching_eventos.tipo` pasó a `VARCHAR(30)` (tipos como `compromiso_editado` no entraban en 15; en
+  Postgres lo ajusta el arranque con `ALTER COLUMN … TYPE VARCHAR(30)`).
+- **Analizador de coaching** (`analisis.py`, `analisis_api.py`; tabla `sup_analisis_informes`; utilidad restringida
+  `analisis_coaching`): ver la sección siguiente.
 - **Coaching y bitácora** (`supervision/coaching.py`, `coaching_api.py`; tablas
   `sup_coachings`, `sup_coaching_eventos`, `sup_bitacora`, `sup_alertas`):
   - Lo registra el supervisor desde su portal, solo para los asesores que tenía en su
@@ -541,8 +555,8 @@ con SLA; y el centro de comandos de los jefes.
 - **Permisos:** `supervision` (ver, también los tickets), `supervision_gestion` (equipos,
   objetivos, calendario, aprobar pases), `tickets` (enviar y seguir tickets), `operadores` (vínculos, validar y unir
   altas), `control_supervisores` (el control; gerente, sub gerente, coordinador y controller),
-  `supervision_parametros` (pesos del scoring, solo sub gerente) y `portal_supervisor`
-  (solo el perfil Supervisor).
+  `supervision_parametros` (pesos del scoring, solo sub gerente), `analisis_coaching` (el analizador; gerente, sub
+  gerente y coordinador) y `portal_supervisor` (solo el perfil Supervisor).
 
 ### Transcripción de voz con OpenAI (modelos y costos)
 
@@ -568,6 +582,49 @@ En Render: cargar `OPENAI_API_KEY` en el servicio (Environment) y reiniciar. Var
 (15), `TRANSCRIPCION_MINUTOS_DIA` (90) y `TRANSCRIPCION_RETENCION_DIAS` (365). `TRANSCRIPCION_SIMULADOR=true` es solo
 para desarrollo y pruebas (texto fijo, sin llamar a OpenAI; en producción se ignora). Los audios se guardan en el
 disco persistente: sin disco, se pierden en cada deploy.
+
+### Analizador de coaching (estadísticas e informes con Claude Haiku)
+
+Cuenta solo los coachings **terminados**: los que firmaron el asesor y el supervisor en la devolución (por la fecha de
+la firma). Los abiertos sin firmar se muestran como «en curso»; los anulados y los registrados antes de la firma no
+entran.
+
+- **Estadísticas** (cuentas puras, sin IA): monitoreos y feedback por coaching y palabras del feedback, compromisos con
+  fecha y con métrica, voz del asesor (dijo su compromiso y quedó grabado), devolución a tiempo (firma dentro de los 2
+  días hábiles), seguimientos a tiempo, compromisos cumplidos, revisados por los jefes y en curso.
+- **Tiempo estimado de cada coaching:** los pasos que registró el supervisor (abrir, cada monitoreo o feedback,
+  compromiso, audio, correcciones y la firma) se agrupan en sesiones: entre dos pasos seguidos cuenta el tiempo si
+  pasaron hasta 20 minutos; una pausa más larga (guardó sin firmar y siguió otro día) no cuenta. Se suma 1 minuto de
+  arranque y el tope es 120 minutos. Es una estimación: no hay cronómetro.
+- **Evaluación de cada supervisor (0–100)** con componentes y pesos: cobertura del equipo (20), devolución a tiempo
+  (15), profundidad (15), compromisos medibles (15), voz del asesor (10), seguimiento a tiempo (15) y compromisos
+  cumplidos (10). Los componentes sin datos todavía (por ejemplo, sin seguimientos vencidos) no cuentan y los pesos se
+  reparten entre los demás (se marca «parcial»). Niveles: muy bien (80 o más), bien (60), a mejorar (40) y crítico.
+- **Palabras:** las más frecuentes del feedback y de los compromisos sin palabras vacías ni los nombres de las
+  personas, con el color según dónde aparecen más; y las frases (pares de palabras seguidas) que se repiten, sin
+  cruzar la puntuación.
+- **Informe IA:** el jefe lo pide para el rango y el supervisor elegidos; corre en segundo plano (worker
+  `analisis_coaching`, hasta 2 intentos) y queda compartido entre los jefes. Claude (`ANALISIS_MODELO`, por defecto
+  `claude-haiku-5-5`, con esfuerzo `medium` y salida JSON con esquema) lee los textos escritos y transcriptos y
+  devuelve: resumen, hallazgos (fortaleza, riesgo u oportunidad) con los coachings que los respaldan, temas del
+  feedback, tono (constructivo, reconocimiento, crítico), calidad de los compromisos (específicos, medibles, con plazo),
+  la evaluación de cada supervisor (1 a 5, fortalezas, a mejorar, una recomendación y un ejemplo), alertas y
+  recomendaciones. Las citas (C1, C2…) abren el coaching.
+- **Privacidad:** a Claude no le llegan nombres. Los supervisores van como S1…, los asesores como A1… y los coachings
+  como C1…; los nombres que aparecen en los textos se reemplazan y los teléfonos y correos se tapan. Al guardar, los
+  códigos de personas vuelven a sus nombres. Nunca se mandan datos de Facturación. Pedir y ver un informe queda en la
+  auditoría (`analisis_informe_pedido`, `analisis_informe_visto`).
+- **Costo:** Haiku 5.5 cuesta US$ 0,10 por millón de tokens de entrada y US$ 0,50 de salida (con pedidos de hasta 100
+  mil tokens; más arriba, US$ 0,50 y 2,50). Cada texto va hasta 700 caracteres y el pedido hasta 320 mil (unos 90 mil
+  tokens, para quedar en la tarifa baja): un informe de un mes de la operación cuesta alrededor de **US$ 0,01 a 0,02**. Cada informe guarda sus tokens y su costo. Topes:
+  `ANALISIS_MAX_COACHINGS` (300, los más nuevos del rango) y `ANALISIS_INFORMES_DIA` (20 por día para toda la
+  gerencia).
+- **API:** `GET /analisis?desde&hasta&supervisor_id` (estadísticas, evaluación, palabras y coachings),
+  `POST /analisis/informes`, `GET /analisis/informes` y `GET /analisis/informes/{id}`.
+
+Usa la misma `ANTHROPIC_API_KEY` de Voi: sin ella, las estadísticas funcionan y el informe IA avisa que no está
+configurado. `ANALISIS_SIMULADOR=true` es solo para desarrollo (arma un informe con las estadísticas, sin llamar a
+Anthropic; en producción se ignora).
 
 ## Televentas CLARO · Informe diario
 
@@ -1725,6 +1782,20 @@ caerse ni flotar.
   corre con la misma curva y el mismo tiempo, así se mueven juntos. El lienzo aparece con un fundido y un leve
   crecimiento; los diálogos y la burbuja de Voi, igual (sin desplazarse).
 
+### Mobile first (toda la app)
+
+Todas las pantallas se arman primero para el celular y se ensanchan en la computadora:
+
+- **Barra inferior** (`components/NavInferior.tsx`, solo en el celular) para jefes y administradores: Inicio, Control,
+  **Hoy** al centro (el coaching del día), Análisis y Menú; sin el control, los primeros submódulos habilitados. El
+  supervisor tiene la suya en el portal. Con una hoja o un diálogo abierto se esconde para no tapar sus botones.
+- **El menú** sube desde abajo como una hoja, con renglones de 48 px.
+- **Los diálogos** son hojas que suben desde abajo en el celular (esquinas redondeadas arriba, hasta el 92% de la
+  pantalla y con el margen del iPhone); los botones miden al menos 48 px y los campos usan letra de 16 px para que
+  iOS no haga zoom.
+- Márgenes de 16 px en el celular, sin desborde horizontal: se revisa con una auditoría automática en un iPhone 13
+  que recorre todas las pantallas (las tablas anchas se desplazan dentro de su tarjeta).
+
 ## Identidad visual
 
 Paleta oficial Voicenter, definida en `frontend/tailwind.config.js` y `globals.css`:
@@ -1801,7 +1872,12 @@ Opcionales:
 | `TRANSCRIPCION_MINUTOS_DIA` | Tope de minutos transcriptos por supervisor y por día (por defecto 90) |
 | `TRANSCRIPCION_RETENCION_DIAS` | Días que se guarda el archivo de audio (por defecto 365; después queda el texto) |
 | `TRANSCRIPCION_SIMULADOR` | Solo desarrollo: transcripción simulada, sin llamar a OpenAI (se ignora en producción) |
-| `ANTHROPIC_API_KEY` | Voi, el agente de la plataforma (Claude Managed Agents). Sin ella Voi se ve pero avisa que no está conectado |
+| `ANTHROPIC_API_KEY` | Voi, el agente de la plataforma (Claude Managed Agents), y los informes del Analizador de coaching. Sin ella Voi se ve pero avisa que no está conectado |
 | `ANTHROPIC_WEBHOOK_SIGNING_KEY` | Secreto `whsec_…` del webhook de Anthropic para Voi |
 | `ASISTENTE_MODELO` | Modelo de Voi (por defecto `claude-sonnet-5-5`) |
 | `ASISTENTE_SIMULADOR` | Solo desarrollo: Voi con un motor simulado, sin llamar a Anthropic (se ignora en producción) |
+| `ANALISIS_MODELO` | Modelo del Analizador de coaching (por defecto `claude-haiku-5-5`) |
+| `ANALISIS_ESFUERZO` | Esfuerzo del modelo en los informes (por defecto `medium`) |
+| `ANALISIS_MAX_COACHINGS` | Coachings por informe, los más nuevos del rango (por defecto 300) |
+| `ANALISIS_INFORMES_DIA` | Informes por día para toda la gerencia (por defecto 20) |
+| `ANALISIS_SIMULADOR` | Solo desarrollo: informe simulado, sin llamar a Anthropic (se ignora en producción) |

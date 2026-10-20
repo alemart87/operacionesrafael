@@ -57,7 +57,7 @@ export function PortalNav() {
 /** El marco de cada pantalla del portal: pensado para el celular, con la barra del pulgar. */
 export function PortalShell({ children }: { children: ReactNode }) {
   return (
-    <AppShell movil>
+    <AppShell barraPropia>
       {children}
       <PortalNav />
     </AppShell>

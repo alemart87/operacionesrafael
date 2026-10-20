@@ -513,7 +513,7 @@ export const RESULTADO_COMPROMISO: Record<ResultadoCompromiso, { label: string; 
 export interface EventoCoaching {
   id: string;
   tipo: "creado" | "editado" | "anulado" | "seguimiento" | "aclaracion" | "item" | "item_editado" | "item_quitado"
-    | "compromiso" | "compromiso_editado" | "compromiso_quitado" | "audio" | "transcripcion" | "firmado";
+    | "compromiso" | "compromiso_editado" | "compromiso_quitado" | "audio" | "transcripcion" | "firmado" | "revision";
   at: string | null;
   por: string;
   datos: Record<string, any>;
@@ -598,8 +598,14 @@ export interface VistaCoachingData extends Comun {
   pendientes: Coaching[];
   sin_firmar?: CoachingSinFirmar[];
   notas: NotaBitacora[];
+  /** Las revisiones de los jefes de la última semana (las «A mejorar» aparecen en «Para hoy»). */
+  revisiones?: RevisionRecibida[];
   reglas: ReglasCoaching;
   puede_registrar: boolean;
+}
+
+export interface RevisionRecibida {
+  coaching_id: string; operador: string; valoracion: Valoracion; comentario: string | null; por: string; at: string | null;
 }
 
 export interface FilaGestion extends SupervisorRef {
@@ -1220,3 +1226,111 @@ export interface PasePendiente {
 }
 
 export interface PendientesControl { altas: AltaPorValidar[]; pases: PasePendiente[]; puede_validar: boolean; puede_asignar: boolean }
+
+// ------------------------------------------------------------------ coaching del día (jefes)
+export type EstadoDia = "firmado" | "en_curso" | "sin_firmar" | "seguimiento" | "seguimiento_pendiente" | "movimiento";
+export type Valoracion = "bien" | "mejorar";
+
+export interface RevisionJefe { valoracion: Valoracion; comentario: string | null; por: string; por_id: string; at: string | null }
+
+export interface CoachingDia {
+  id: string; supervisor_id: string; supervisor: string; operador_id: string; operador: string; tipo: TipoCoaching;
+  metricas: MetricaCoaching[]; fecha: string; created_at: string | null; firmado_at: string | null; estado: EstadoCoaching;
+  devolucion: Devolucion; estado_dia: EstadoDia; monitoreos: number; feedback: number; compromisos: number; audios: number;
+  voz_asesor: boolean; minutos: number | null; vence_devolucion: string | null; devolucion_vencida: boolean;
+  seguimiento: EstadoSeguimiento | null; seguimiento_fecha: string; resultado: ResultadoImpacto | null;
+  resumen: string | null; compromiso: string | null; cumplimiento: Partial<Record<ResultadoCompromiso, number>>;
+  revision: RevisionJefe | null; revisiones: number; ultima_actividad: string | null;
+}
+
+export interface SupervisorDia extends Omit<SupervisorRef, "activo"> {
+  asesores: number; firmados: number; en_curso: number; sin_firmar: number; vencidas: number; seguimientos: number;
+  seguimientos_pendientes: number; seguimientos_vencidos: number; por_revisar: number;
+}
+
+export interface CoachingDelDia {
+  fecha: string; hoy: string; actualizado: string;
+  kpis: {
+    firmados: number; en_curso: number; sin_firmar: number; sin_firmar_vencidos: number; seguimientos: number;
+    seguimientos_pendientes: number; seguimientos_vencidos: number; por_revisar: number; revisados: number;
+    minutos_prom: number | null; supervisores_activos: number; supervisores: number;
+  };
+  supervisores: SupervisorDia[];
+  coachings: CoachingDia[];
+}
+
+// ------------------------------------------------------------------ analizador semántico de coaching
+export type NivelEvaluacion = "muy_bien" | "bien" | "a_mejorar" | "critico";
+
+export interface ComponenteEvaluacion { clave: string; nombre: string; peso: number; ayuda: string; valor: number | null }
+
+export interface ResumenAnalisis {
+  coachings: number; asesores: number; monitoreos: number; feedback: number; compromisos: number;
+  prom_items: number | null; prom_compromisos: number | null; prom_palabras_feedback: number | null;
+  pct_con_voz: number | null; pct_voz_asesor: number | null; minutos_audio: number;
+  minutos_prom: number | null; minutos_mediana: number | null; minutos_total: number; horas_firma_mediana: number | null;
+  pct_firma_a_tiempo: number | null; pct_compromisos_con_fecha: number | null; pct_compromisos_con_metrica: number | null;
+  pct_compromiso_dicho: number | null; seguimientos: Record<EstadoSeguimiento, number>; pct_seguimiento_a_tiempo: number | null;
+  cumplimiento: Record<ResultadoCompromiso, number>; pct_cumplimiento: number | null; revisados: number;
+}
+
+export interface SupervisorAnalisis extends ResumenAnalisis {
+  id: string; nombre: string; equipo: number; en_curso: number;
+  evaluacion: { total: number | null; nivel: NivelEvaluacion | null; componentes: ComponenteEvaluacion[]; parcial: boolean };
+}
+
+export interface PalabraAnalisis { texto: string; n: number; feedback: number; compromiso: number }
+
+export interface CoachingAnalisis {
+  id: string; firmado_at: string | null; fecha: string; tipo: TipoCoaching; metricas: MetricaCoaching[];
+  supervisor_id: string; supervisor: string; operador_id: string; operador: string; monitoreos: number; feedback: number;
+  compromisos: number; audios: number; voz_asesor: boolean; minutos: number; horas_firma: number; firma_a_tiempo: boolean;
+  estado: EstadoCoaching; resultado: ResultadoImpacto | null; cumplimiento: Partial<Record<ResultadoCompromiso, number>>;
+  revisado: boolean; revision: Valoracion | null; texto: string;
+}
+
+export interface AnalisisCoaching {
+  desde: string; hasta: string; hoy: string;
+  kpis: ResumenAnalisis & { en_curso: number; supervisores: number };
+  supervisores: SupervisorAnalisis[];
+  por_dia: { dia: string; coachings: number }[];
+  por_hora: { hora: number; coachings: number }[];
+  duraciones: { tramo: string; coachings: number }[];
+  por_metrica: { metrica: MetricaCoaching; coachings: number }[];
+  por_tipo: { tipo: TipoCoaching; coachings: number }[];
+  palabras: { palabras: PalabraAnalisis[]; pares: { texto: string; n: number }[]; total: number };
+  coachings: CoachingAnalisis[];
+  total_coachings: number;
+  componentes: Omit<ComponenteEvaluacion, "valor">[];
+  reglas: { pausa_sesion_min: number; minuto_arranque: number };
+  opciones: { supervisores: { id: string; nombre: string; activo: boolean }[] };
+  servicio: { disponible: boolean; modelo: string; simulador: boolean; informes_dia: number };
+}
+
+export interface ResultadoInforme {
+  resumen: string;
+  hallazgos: { titulo: string; detalle: string; tipo: "fortaleza" | "riesgo" | "oportunidad"; evidencia: string[] }[];
+  temas: { tema: string; descripcion: string; frecuencia: "alta" | "media" | "baja"; sentimiento: "positivo" | "neutro" | "negativo"; ejemplos: string[] }[];
+  tono: { constructivo: number; positivo: number; critico: number; explicacion: string };
+  calidad_compromisos: { especificos: number; medibles: number; con_plazo: number; comentario: string };
+  supervisores: { codigo: string; supervisor_id: string | null; supervisor: string; calificacion: number; fortalezas: string[];
+    a_mejorar: string[]; recomendacion: string; ejemplo: string }[];
+  alertas: { coaching: string; motivo: string }[];
+  recomendaciones: string[];
+  /** Código del coaching que cita el informe («C12») → su id. */
+  coachings: Record<string, string>;
+}
+
+export interface InformeAnalisis {
+  id: string; desde: string; hasta: string; supervisor_id: string | null; supervisor: string | null;
+  estado: "pendiente" | "procesando" | "listo" | "error"; coachings: number; modelo: string | null;
+  resultado: ResultadoInforme | null; resumen?: string | null; error: string | null; entrada_tokens: number;
+  salida_tokens: number; costo_usd: number; pedido_por: string; created_at: string | null; terminado_at: string | null;
+}
+
+export const NIVEL: Record<NivelEvaluacion, { label: string; chip: string; color: string }> = {
+  muy_bien: { label: "Muy bien", chip: "bg-emerald-50 text-emerald-800 border-emerald-200", color: "#10b981" },
+  bien: { label: "Bien", chip: "bg-[#2A78D6]/10 text-[#1D5BA6] border-[#2A78D6]/30", color: "#2A78D6" },
+  a_mejorar: { label: "A mejorar", chip: "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40", color: "#F39200" },
+  critico: { label: "Crítico", chip: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30", color: "#E6332A" },
+};

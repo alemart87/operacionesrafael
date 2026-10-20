@@ -73,7 +73,7 @@ export function VariablesGpon({ p, setP, defaults, titulo = "Variables GPON", co
   const mixTotal = p.planes.reduce((s: number, x: any) => s + Number(x.mix_pct || 0), 0);
   return (
     <section className="space-y-2 no-print">
-      <div className="flex items-baseline justify-between mb-1">
+      <div className="flex items-baseline justify-between gap-x-3 mb-1 flex-wrap">
         <h2 className="font-display text-xl text-brand-ink uppercase">{titulo}</h2>
         {defaults && <button onClick={() => setP(defaults)} className="text-[11px] text-brand-primary font-semibold hover:underline">Restaurar valores reales</button>}
       </div>

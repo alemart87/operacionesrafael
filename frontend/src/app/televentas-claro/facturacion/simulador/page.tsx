@@ -85,14 +85,14 @@ export default function SimuladorFacturacionPage() {
       {!p && !error && <div className="text-brand-slate">Cargando variables de negocio…</div>}
 
       {p && (
-        <div className="grid lg:grid-cols-5 gap-6 print:block">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 print:block">
           {/* ===== Zona de variables de negocio (editables) ===== */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 min-w-0">
             <VariablesNegocio p={p} setP={setP} defaults={defaults} />
           </div>
 
           {/* ===== Resultados ===== */}
-          <div className="lg:col-span-3 space-y-6">
+          <div className="lg:col-span-3 space-y-6 min-w-0">
             {res && d && b && (
               <>
                 <div className={`flex flex-wrap items-center justify-between gap-3 rounded-md border-2 px-4 py-3 ${p.bonos_activos === false ? "border-brand-ink bg-brand-ink text-white" : "border-brand-border bg-white"}`}>

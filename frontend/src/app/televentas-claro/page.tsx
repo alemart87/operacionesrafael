@@ -95,12 +95,12 @@ function Tarjeta({ m, u, gestion }: { m: Submodulo; u: OperativaInfo["utilidades
   return (
     <Box
       {...(habilitada ? { href: m.href } : {})}
-      className={`group card p-6 flex flex-col gap-4 border-t-[3px] ${
+      className={`group card p-5 sm:p-6 min-w-0 flex flex-col gap-4 border-t-[3px] ${
         habilitada ? "border-t-brand-primary hover:shadow-elevated hover:border-brand-primary transition-all" : "border-t-brand-mist border-dashed bg-brand-bg-soft"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <h3 className={`font-display text-3xl uppercase leading-none ${habilitada ? "text-brand-ink group-hover:text-brand-primary transition-colors" : "text-brand-mist"}`}>
+      <div className="flex items-start justify-between gap-x-3 gap-y-2 flex-wrap">
+        <h3 className={`font-display text-3xl uppercase leading-none min-w-0 break-words ${habilitada ? "text-brand-ink group-hover:text-brand-primary transition-colors" : "text-brand-mist"}`}>
           {m.label}
         </h3>
         {u.solo_perfiles && !u.solo_perfiles.length ? (

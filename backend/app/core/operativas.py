@@ -85,6 +85,12 @@ OPERATIVAS: list[dict] = [
                 "solo_perfiles": ["gerente", "sub_gerente", "coordinador", "controller"],
             },
             {
+                "key": "analisis_coaching",
+                "name": "Supervisión · Analizador de coaching",
+                "description": "Análisis semántico de los coachings firmados: estadísticas, tiempo estimado, evaluación de cada supervisor, mapa de palabras del feedback y de los compromisos, e informes escritos por Claude (Haiku) con los textos y las transcripciones, sin nombres.",
+                "solo_perfiles": ["gerente", "sub_gerente", "coordinador"],
+            },
+            {
                 "key": "supervision_parametros",
                 "name": "Supervisión · Parámetros del modelo",
                 "description": "Pesos y umbrales del scoring de asesores, supervisores y operación (cada cambio es una versión nueva y queda en el historial).",

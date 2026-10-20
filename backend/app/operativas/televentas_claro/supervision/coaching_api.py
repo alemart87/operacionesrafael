@@ -29,7 +29,8 @@ from .calculo import mes_de, supervisor_en
 from .impacto import METRICAS as METRICAS_ORDEN
 from . import audios as audios_srv
 from .models import (
-    OPERATIVA, BitacoraNota, Coaching, CoachingAudio, CoachingCompromiso, CoachingFirma, CoachingItem, Operador,
+    OPERATIVA, BitacoraNota, Coaching, CoachingAudio, CoachingCompromiso, CoachingEvento, CoachingFirma, CoachingItem,
+    Operador,
 )
 
 router = APIRouter(prefix="/televentas-claro/supervision", tags=["televentas-claro · coaching"])
@@ -37,6 +38,8 @@ router = APIRouter(prefix="/televentas-claro/supervision", tags=["televentas-cla
 Tipo = Literal["diario", "semanal", "mensual"]
 Metrica = Literal["pospago", "gpon", "uso", "conversacion", "otra"]
 TipoNota = Literal["novedad", "ausencia", "incidencia", "reconocimiento", "otro"]
+
+DIAS_REVISIONES = 7   # las revisiones de los jefes que el supervisor ve en su portal
 
 REGLAS = {
     "horas_edicion": srv.HORAS_EDICION, "dias_termino": srv.DIAS_TERMINO, "dias_seguimiento_max": srv.DIAS_SEGUIMIENTO_MAX,
@@ -103,6 +106,16 @@ async def _vista(db: AsyncSession, periodo: str, sid: str, *, portal: bool) -> d
         })
     equipo.sort(key=lambda x: (not x["actual"], not (x["uso"] or {}).get("alerta"), x["coachings"] > 0, x["nombre"].lower()))
 
+    # Las revisiones de los jefes de la última semana (las ve el supervisor en «Para hoy» y en cada coaching).
+    desde_rev = momento - timedelta(days=DIAS_REVISIONES)
+    revs = (await db.execute(select(CoachingEvento, Coaching.operador_id).join(Coaching, Coaching.id == CoachingEvento.coaching_id)
+                             .where(Coaching.supervisor_id == sid, CoachingEvento.tipo == "revision", CoachingEvento.at >= desde_rev)
+                             .order_by(CoachingEvento.at.desc()).limit(20))).all()
+    if revs:
+        nombres.update(await sup._nombres(db, {e.por for e, _ in revs} - set(nombres)))
+        faltan_rev = {o for _, o in revs if o not in ctx.ops}
+        if faltan_rev:
+            ctx.ops.update({o.id: o for o in (await db.execute(select(Operador).where(Operador.id.in_(faltan_rev)))).scalars().all()})
     sup_info = ctx.supervisores.get(sid) or {"id": sid, "nombre": nombres.get(sid, sid), "activo": False}
     return {
         **ctx.comun(), "hoy": dia.isoformat(), "supervisor": sup_info,
@@ -116,6 +129,9 @@ async def _vista(db: AsyncSession, periodo: str, sid: str, *, portal: bool) -> d
                         "vence_devolucion": srv.vence_devolucion(c, ctx.p).isoformat(),
                         "devolucion_vencida": srv.devolucion_vencida(c, dia, ctx.p)} for c in sin_firma],
         "notas": [srv.nota_dict(x, ctx.ops) for x in notas],
+        "revisiones": [{"coaching_id": e.coaching_id, "operador": ctx.ops[o].nombre if o in ctx.ops else "—",
+                        "valoracion": (e.datos or {}).get("valoracion"), "comentario": (e.datos or {}).get("comentario"),
+                        "por": nombres.get(e.por, e.por), "at": srv.iso(e.at)} for e, o in revs],
         "reglas": {**REGLAS, "dias_foco": sup.scoring.DIAS_FOCO},
         "puede_registrar": portal,
     }

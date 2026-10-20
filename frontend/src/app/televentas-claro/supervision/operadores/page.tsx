@@ -269,7 +269,7 @@ function VincularDialog({ o, todos, onClose, onVincular }: { o: Operador; todos:
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-brand-ink/50 backdrop-blur-[2px] animate-fade" onClick={onClose} />
       <div role="dialog" aria-modal="true" aria-label="Vincular" className="relative w-full max-w-lg card shadow-elevated max-h-[88vh] flex flex-col animate-pop">
         <div className="h-1.5 bg-brand-cyan rounded-t-lg" />
@@ -318,7 +318,7 @@ function RenombrarDialog({ o, onClose, onGuardar }: { o: Operador; onClose: () =
   const [nombre, setNombre] = useState(o.nombre);
   const valido = nombre.trim().length >= 2 && nombre.trim() !== o.nombre;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div className="absolute inset-0 bg-brand-ink/50 backdrop-blur-[2px] animate-fade" onClick={onClose} />
       <form role="dialog" aria-modal="true" aria-label="Renombrar" className="relative w-full max-w-md card shadow-elevated animate-pop"
         onSubmit={(e) => { e.preventDefault(); if (valido) onGuardar(nombre.trim()); }}>

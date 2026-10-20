@@ -97,6 +97,14 @@ class Settings(BaseSettings):
     # Solo pruebas y demostración: un motor simulado que no llama a Anthropic (nunca en producción).
     asistente_simulador: bool = False
 
+    # --- Analizador semántico de coaching: informes con Claude (Haiku), con la misma ANTHROPIC_API_KEY. ---
+    analisis_modelo: str = "claude-haiku-5-5"
+    analisis_esfuerzo: str = "medium"             # low | medium | high
+    analisis_max_coachings: int = 300             # por informe (los más recientes del rango)
+    analisis_informes_dia: int = 20               # por usuario y por día: tope de costo
+    # Solo pruebas y demostración: arma el informe con las estadísticas, sin llamar a Anthropic (nunca en producción).
+    analisis_simulador: bool = False
+
     log_level: str = "INFO"
     audit_retention_days: int = 365
     # Política de seguridad inicial (JSON parcial) hasta que el superadmin la cambie desde Seguridad.
