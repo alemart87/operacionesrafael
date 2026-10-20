@@ -1,0 +1,465 @@
+"use client";
+
+/**
+ * Clima del equipo (gerente, sub gerente y coordinador), arriba del Control de supervisores: la moral de un vistazo.
+ * Dos números grandes (equipo y líderes), cómo fluctuó el día (o el rango), cómo se sintió cada líder, el mapa de moral
+ * (ánimo × compromiso) y las alertas con su evidencia. Los asesores se ven siempre agregados por equipo.
+ */
+import { AlertTriangle, Bot, ChevronDown, HeartPulse, ThumbsDown, ThumbsUp } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiFetch } from "@/lib/api";
+import { Boton, Hoja, cx, plural, useAviso } from "@/components/portal/ui";
+import {
+  ESTADO_CLIMA, SUP_API, TONO, type AlertaClima, type ClimaAgregado, type ClimaEquipo, type ClimaFila, type EstadoClima,
+} from "./tipos";
+
+const CYAN = "#00B2BF";
+const TINTA = "#2A2F3A";
+const DIA = ["D", "L", "M", "M", "J", "V", "S"];
+const signo = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Math.round(v))}`);
+const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60) % 60).padStart(2, "0")}`;
+const diaCorto = (iso: string) => { const d = new Date(`${iso}T12:00:00`); return `${DIA[d.getDay()]} ${d.getDate()}`; };
+
+function useAncho<T extends HTMLElement>(): [React.RefObject<T>, number] {
+  const ref = useRef<T>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    if (!ref.current) return;
+    const o = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
+    o.observe(ref.current);
+    return () => o.disconnect();
+  }, []);
+  return [ref, w];
+}
+
+function Chip({ e, corto }: { e: EstadoClima; corto?: boolean }) {
+  const x = ESTADO_CLIMA[e];
+  return (
+    <span className={cx("inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap", x.chip)}>
+      <span className="w-2 h-2 rounded-full" style={{ background: x.color }} aria-hidden />
+      {corto && e === "cansado" ? "Cansado" : x.label}
+    </span>
+  );
+}
+
+// ------------------------------------------------------------------ el vistazo: equipo y líderes
+const PEOR: EstadoClima[] = ["desanimado", "cansado", "neutro", "comprometido", "animado"];
+
+/** El estado que más se repite (a igualdad, el más preocupante); sin reparto, el del promedio. */
+function predominante(a: ClimaAgregado, estados: Partial<Record<EstadoClima, number>>): EstadoClima {
+  const max = Math.max(0, ...Object.values(estados).map((n) => n ?? 0));
+  return max ? PEOR.find((e) => (estados[e] ?? 0) === max)! : a.estado;
+}
+
+function Vistazo({ titulo, a, estados, sub }: { titulo: string; a: ClimaAgregado; estados: Partial<Record<EstadoClima, number>>; sub: string }) {
+  const reparto = PEOR.filter((e) => estados[e]);
+  return (
+    <div className="card p-4 min-w-0">
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold">{titulo}</span>
+        <Chip e={predominante(a, estados)} corto />
+      </div>
+      <div className="mt-2 flex items-end gap-5">
+        <div>
+          <div className="font-display text-4xl leading-none tabular-nums text-brand-ink">{signo(a.animo)}</div>
+          <div className="text-[11px] text-brand-slate mt-1">ánimo (−100 a 100)</div>
+        </div>
+        <div>
+          <div className="font-display text-4xl leading-none tabular-nums text-brand-ink">{a.compromiso === null ? "—" : Math.round(a.compromiso)}</div>
+          <div className="text-[11px] text-brand-slate mt-1">compromiso (0 a 100)</div>
+        </div>
+      </div>
+      {reparto.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-brand-graphite" aria-label="Cuántos en cada estado">
+          {reparto.map((e) => (
+            <span key={e} className="inline-flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full" style={{ background: ESTADO_CLIMA[e].color }} aria-hidden />
+              <b className="tabular-nums">{estados[e]}</b> {e === "cansado" ? "cansado" : ESTADO_CLIMA[e].label.toLowerCase()}{(estados[e] ?? 0) > 1 ? "s" : ""}
+            </span>
+          ))}
+        </div>
+      )}
+      <p className="text-[11px] text-brand-slate mt-2">{sub}</p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ cómo fluctuó: líneas del equipo y de los líderes
+function Lineas({ d }: { d: ClimaEquipo }) {
+  const [ref, ancho] = useAncho<HTMLDivElement>();
+  const [sobre, setSobre] = useState<number | null>(null);
+  const dia = d.modo === "dia";
+  const filas = dia
+    ? d.curva.map((c) => ({ x: String(c.hora), etiqueta: `${c.hora} h`, equipo: c.equipo, lideres: c.lideres, extra: c.feedback }))
+    : d.dias.map((c) => ({ x: c.fecha, etiqueta: diaCorto(c.fecha), equipo: c.equipo, lideres: c.lideres, extra: null as number | null }));
+  const alto = 190, izq = 36, der = 14, arriba = 10, abajo = dia ? 46 : 26;
+  const w = Math.max(0, ancho - izq - der), h = alto - arriba - abajo;
+  const X = (i: number) => izq + (filas.length <= 1 ? w / 2 : (i / (filas.length - 1)) * w);
+  const Xh = (hora: number) => izq + ((hora - 8) / 12) * w;
+  const Y = (v: number) => arriba + ((100 - v) / 200) * h;
+  const trazo = (k: "equipo" | "lideres") => {
+    let p = "", abierto = false;
+    filas.forEach((f, i) => {
+      const v = f[k];
+      if (v === null) { abierto = false; return; }
+      p += `${abierto ? "L" : "M"}${X(i).toFixed(1)},${Y(v).toFixed(1)} `;
+      abierto = true;
+    });
+    return p;
+  };
+  const cada = Math.max(1, Math.ceil(filas.length / Math.max(3, Math.floor(w / 46))));
+  // Los puntos de feedback en la franja de abajo, apilados si caen a la misma hora.
+  const apilados = useMemo(() => {
+    const usados: Record<string, number> = {};
+    return d.puntos.map((p) => {
+      const k = String(Math.round(p.h * 4));
+      usados[k] = (usados[k] ?? 0) + 1;
+      return { ...p, fila: usados[k] - 1 };
+    });
+  }, [d.puntos]);
+  const s = sobre !== null ? filas[sobre] : null;
+  return (
+    <div className="card p-4 min-w-0">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <h3 className="font-semibold text-brand-ink">{dia ? "Cómo estuvo el día" : "Cómo fue cambiando"}</h3>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-brand-slate">
+          <span className="inline-flex items-center gap-1"><span className="w-4 h-0.5 rounded" style={{ background: CYAN }} /> Equipo</span>
+          <span className="inline-flex items-center gap-1"><span className="w-4 border-t-2 border-dashed" style={{ borderColor: TINTA }} /> Líderes</span>
+          {dia && (Object.keys(TONO) as (keyof typeof TONO)[]).map((t) => (
+            <span key={t} className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: TONO[t].color }} /> {TONO[t].label}</span>
+          ))}
+        </div>
+      </div>
+      <div ref={ref} className="relative mt-2" style={{ height: alto }} onMouseLeave={() => setSobre(null)}>
+        {ancho > 0 && (
+          <svg width={ancho} height={alto} role="img" aria-label={dia ? "Ánimo del equipo y de los líderes hora por hora" : "Ánimo del equipo y de los líderes por día"}>
+            {[100, 50, 0, -50, -100].map((v) => (
+              <g key={v}>
+                <line x1={izq} x2={izq + w} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? "#AEB5C2" : "#EEF0F4"} strokeDasharray={v === 0 ? "3 3" : undefined} />
+                {v % 100 === 0 && <text x={izq - 6} y={Y(v) + 3} textAnchor="end" fontSize="10" fill="#6B7280">{signo(v)}</text>}
+              </g>
+            ))}
+            {s && <line x1={X(sobre!)} x2={X(sobre!)} y1={arriba} y2={arriba + h} stroke="#C9CED8" />}
+            <path d={trazo("lideres")} fill="none" stroke={TINTA} strokeWidth={2} strokeDasharray="5 4" strokeLinejoin="round" />
+            <path d={trazo("equipo")} fill="none" stroke={CYAN} strokeWidth={2} strokeLinejoin="round" />
+            {filas.map((f, i) => (
+              <g key={f.x}>
+                {f.lideres !== null && <circle cx={X(i)} cy={Y(f.lideres)} r={sobre === i ? 4.5 : 3} fill={TINTA} stroke="#fff" strokeWidth={1.5} />}
+                {f.equipo !== null && <circle cx={X(i)} cy={Y(f.equipo)} r={sobre === i ? 4.5 : 3.5} fill={CYAN} stroke="#fff" strokeWidth={1.5} />}
+                {(i % cada === 0 || i === filas.length - 1) && (
+                  <text x={X(i)} y={alto - (dia ? 4 : 6)} textAnchor={i === filas.length - 1 && filas.length > 1 ? "end" : i === 0 && filas.length > 1 ? "start" : "middle"}
+                    fontSize="10" fill="#6B7280">{f.etiqueta}</text>
+                )}
+                <rect x={X(i) - Math.max(8, w / filas.length / 2)} y={0} width={Math.max(16, w / filas.length)} height={alto} fill="transparent"
+                  onMouseEnter={() => setSobre(i)} onClick={() => setSobre((x) => (x === i ? null : i))} />
+              </g>
+            ))}
+            {dia && apilados.map((p, i) => (
+              <circle key={i} cx={Xh(Math.min(20, Math.max(8, p.h)))} cy={arriba + h + 10 + Math.min(p.fila, 2) * 7} r={3.5}
+                fill={p.tono ? TONO[p.tono].color : "#C9CED8"} stroke="#fff" strokeWidth={1}>
+                <title>{`${hhmm(p.h)} · ${p.supervisor} · ${p.tono ? TONO[p.tono].label : "sin texto"}`}</title>
+              </circle>
+            ))}
+          </svg>
+        )}
+        {s && (
+          <div className="absolute top-0 z-10 pointer-events-none" style={{ left: X(sobre!), transform: `translateX(${X(sobre!) > ancho * 0.6 ? "-105%" : "8px"})` }}>
+            <div className="rounded-md bg-brand-ink text-white text-xs px-2.5 py-1.5 shadow-elevated whitespace-nowrap">
+              <div className="font-semibold">{dia ? `Hasta las ${Number(s.x) + 1} h` : s.etiqueta}</div>
+              <div>Equipo {signo(s.equipo)} · Líderes {signo(s.lideres)}</div>
+              {dia && <div className="text-white/70">{plural(s.extra ?? 0, "devolución", "devoluciones")} en esa hora</div>}
+            </div>
+          </div>
+        )}
+      </div>
+      {dia && <p className="text-[11px] text-brand-slate">Cada punto de abajo es una devolución, con el tono con que la recibió el asesor.</p>}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ cómo se sintió cada líder
+function Lideres({ filas }: { filas: ClimaFila[] }) {
+  const con = filas.filter((f) => f.estado !== "sin_datos");
+  const sin = filas.length - con.length;
+  const pos = (v: number) => `${50 + Math.max(-100, Math.min(100, v)) / 2}%`;
+  return (
+    <div className="card p-4 min-w-0">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <h3 className="font-semibold text-brand-ink">Cómo se sintió cada líder</h3>
+        <div className="flex gap-3 text-[11px] text-brand-slate">
+          <span className="inline-flex items-center gap-1"><span className="w-0.5 h-3 bg-brand-ink" /> eligió</span>
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rotate-45 border border-brand-ink bg-white" /> escribió</span>
+        </div>
+      </div>
+      {con.length ? (
+        <ul className="mt-3 space-y-3">
+          {con.map((f) => (
+            <li key={f.id} className="min-w-0">
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="truncate text-brand-ink">{f.nombre}</span>
+                <span className="shrink-0 flex items-center gap-2">
+                  {!!f.pulsos?.length && <span className="text-[10px] text-brand-slate" title={f.pulsos.map((p) => `${hhmm(p.h)} ${p.valor}`).join(" · ")}>
+                    {plural(f.pulsos.length, "toque", "toques")}</span>}
+                  <span className="tabular-nums font-semibold text-brand-ink w-9 text-right">{signo(f.animo)}</span>
+                </span>
+              </div>
+              <div className="relative h-3 mt-1 rounded-full bg-brand-bg" role="img"
+                aria-label={`${f.nombre}: ánimo ${signo(f.animo)}, eligió ${signo(f.elegido)}, escribió ${signo(f.detectado)}, ${ESTADO_CLIMA[f.estado].label}`}>
+                <span className="absolute inset-y-0 left-1/2 w-px bg-[#AEB5C2]" aria-hidden />
+                {f.animo !== null && (
+                  <span className="absolute inset-y-0 rounded-full" style={{
+                    left: f.animo >= 0 ? "50%" : pos(f.animo), width: `${Math.abs(f.animo) / 2}%`, background: ESTADO_CLIMA[f.estado].color,
+                  }} />
+                )}
+                {f.elegido !== null && f.elegido !== undefined && <span className="absolute -top-0.5 -bottom-0.5 w-0.5 bg-brand-ink -translate-x-1/2" style={{ left: pos(f.elegido) }} />}
+                {f.detectado !== null && f.detectado !== undefined && (
+                  <span className="absolute top-1/2 w-2.5 h-2.5 rotate-45 border border-brand-ink bg-white -translate-x-1/2 -translate-y-1/2" style={{ left: pos(f.detectado) }} />
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-sm text-brand-slate mt-3">Todavía no hay señales de los líderes.</p>}
+      {sin > 0 && <p className="text-[11px] text-brand-slate mt-3">{plural(sin, "supervisor sin señales", "supervisores sin señales")} todavía (sin devoluciones, termómetro ni cierre).</p>}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ mapa de moral: ánimo × compromiso
+function Mapa({ lideres, equipos }: { lideres: ClimaFila[]; equipos: ClimaFila[] }) {
+  const [ver, setVer] = useState<"lideres" | "equipos">("lideres");
+  const [ref, ancho] = useAncho<HTMLDivElement>();
+  const [sel, setSel] = useState<string | null>(null);
+  const filas = (ver === "lideres" ? lideres : equipos).filter((f) => f.animo !== null && f.compromiso !== null);
+  const alto = 230, m = 22;
+  const w = Math.max(0, ancho - 2 * m), h = alto - 2 * m;
+  const X = (a: number) => m + ((a + 100) / 200) * w;
+  const Y = (c: number) => m + ((100 - c) / 100) * h;
+  const zona = (x1: number, x2: number, y1: number, y2: number, e: EstadoClima) => (
+    <rect x={X(x1)} y={Y(y2)} width={X(x2) - X(x1)} height={Y(y1) - Y(y2)} fill={ESTADO_CLIMA[e].color} opacity={0.07} />
+  );
+  const elegido = filas.find((f) => f.id === sel);
+  return (
+    <div className="card p-4 min-w-0">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-semibold text-brand-ink">Mapa de moral</h3>
+        <div className="inline-flex rounded-lg border border-brand-border p-0.5 text-xs" role="tablist">
+          {(["lideres", "equipos"] as const).map((k) => (
+            <button key={k} type="button" role="tab" aria-selected={ver === k} onClick={() => { setVer(k); setSel(null); }}
+              className={cx("px-2.5 py-1 rounded-md font-semibold", ver === k ? "bg-brand-ink text-white" : "text-brand-slate")}>
+              {k === "lideres" ? "Líderes" : "Equipos"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div ref={ref} className="relative mt-2" style={{ height: alto }}>
+        {ancho > 0 && (
+          <svg width={ancho} height={alto} role="img" aria-label={`Mapa de moral de los ${ver}: ánimo contra compromiso`}>
+            {zona(20, 100, 60, 100, "animado")}
+            {zona(-100, -20, 60, 100, "cansado")}
+            {zona(-100, -20, 0, 60, "desanimado")}
+            {zona(-20, 20, 60, 100, "comprometido")}
+            <rect x={m} y={m} width={w} height={h} fill="none" stroke="#EEF0F4" />
+            {[-20, 20].map((a) => <line key={a} x1={X(a)} x2={X(a)} y1={m} y2={m + h} stroke="#DDE1E8" strokeDasharray="3 3" />)}
+            {[40, 60].map((c) => <line key={c} x1={m} x2={m + w} y1={Y(c)} y2={Y(c)} stroke="#DDE1E8" strokeDasharray="3 3" />)}
+            <text x={X(100) - 4} y={m + 12} textAnchor="end" fontSize="10" fill={ESTADO_CLIMA.animado.color} fontWeight={700}>Animado</text>
+            <text x={X(-100) + 4} y={m + 12} fontSize="10" fill={ESTADO_CLIMA.cansado.color} fontWeight={700}>Cansado</text>
+            <text x={X(-100) + 4} y={m + h - 5} fontSize="10" fill={ESTADO_CLIMA.desanimado.color} fontWeight={700}>Desanimado</text>
+            <text x={X(0)} y={m + 12} textAnchor="middle" fontSize="10" fill={ESTADO_CLIMA.comprometido.color} fontWeight={700}>Comprometido</text>
+            <text x={m + w / 2} y={alto - 4} textAnchor="middle" fontSize="10" fill="#6B7280">← ánimo →</text>
+            <text x={10} y={m + h / 2} textAnchor="middle" fontSize="10" fill="#6B7280" transform={`rotate(-90 10 ${m + h / 2})`}>compromiso</text>
+            {filas.map((f) => (
+              <g key={f.id} onClick={() => setSel((s) => (s === f.id ? null : f.id))} onMouseEnter={() => setSel(f.id)} style={{ cursor: "pointer" }}>
+                <circle cx={X(f.animo!)} cy={Y(f.compromiso!)} r={sel === f.id ? 9 : 7} fill={ESTADO_CLIMA[f.estado].color} stroke="#fff" strokeWidth={2} />
+                {filas.length <= 12 && (
+                  <text x={X(f.animo!) + (f.animo! > 60 ? -11 : 11)} y={Y(f.compromiso!) + 3.5} textAnchor={f.animo! > 60 ? "end" : "start"}
+                    fontSize="10" fill="#2A2F3A">{f.nombre.split(" ")[0]}</text>
+                )}
+              </g>
+            ))}
+          </svg>
+        )}
+        {!filas.length && ancho > 0 && <p className="absolute inset-0 grid place-items-center text-sm text-brand-slate">Sin datos para ubicar todavía.</p>}
+      </div>
+      <p className="text-xs text-brand-slate min-h-[18px]">
+        {elegido ? <><b className="text-brand-ink">{elegido.nombre}</b>{ver === "equipos" ? " (su equipo)" : ""}: ánimo {signo(elegido.animo)} · compromiso {Math.round(elegido.compromiso!)} · {ESTADO_CLIMA[elegido.estado].label}</>
+          : ver === "equipos" ? "Cada punto es un equipo entero: los asesores nunca se ven uno por uno." : "Tocá un punto para ver el detalle."}
+      </p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ alertas con evidencia
+const SEV = [
+  { label: "Alta", barra: "bg-brand-primary" },
+  { label: "Media", barra: "bg-[#C27A00]" },
+  { label: "Para mirar", barra: "bg-[#8A93A3]" },
+];
+const ESTADO_ALERTA: Record<AlertaClima["estado"], string> = {
+  abierta: "Abierta", tomada: "Tomada", derivada: "Derivada", descartada: "Descartada", cerrada: "Cerrada",
+};
+
+function Alertas({ d, onCambio }: { d: ClimaEquipo; onCambio: () => void }) {
+  const [todas, setTodas] = useState(false);
+  const [anotar, setAnotar] = useState<AlertaClima | null>(null);
+  const [nota, setNota] = useState("");
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [aviso, avisar] = useAviso();
+  const lista = todas ? d.alertas : d.alertas.slice(0, 4);
+  const calibrar = async (a: AlertaClima, util: boolean) => {
+    setOcupado(a.id);
+    try {
+      await apiFetch(`${SUP_API}/control/clima/alertas/${a.id}/calibrar`, { method: "POST", body: JSON.stringify({ util }) });
+      avisar(util ? "Gracias: marcada como útil." : "Marcada como falsa alarma (y descartada).");
+      onCambio();
+    } catch (e: any) { avisar(e.message, "error"); } finally { setOcupado(null); }
+  };
+  const guardar = async () => {
+    if (!anotar) return;
+    setOcupado(anotar.id);
+    try {
+      await apiFetch(`${SUP_API}/comando/alertas/${anotar.id}/tomar`, { method: "POST", body: JSON.stringify({ nota: nota.trim() || null }) });
+      avisar("Alerta tomada.");
+      setAnotar(null);
+      onCambio();
+    } catch (e: any) { avisar(e.message, "error"); } finally { setOcupado(null); }
+  };
+  const c = d.calibracion;
+  return (
+    <div className="card p-4 min-w-0" id="alertas-clima">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <h3 className="font-semibold text-brand-ink flex items-center gap-1.5"><AlertTriangle size={16} aria-hidden /> Lo que llama la atención</h3>
+        <span className="text-[11px] text-brand-slate">
+          {c.nivel === "alta" ? "Calibrando: solo alertas altas" : c.nivel === "media" ? "Alertas altas y medias" : "Todas las alertas"}
+          {c.pct_util !== null && ` · ${c.pct_util}% útiles (${c.marcadas})`}
+        </span>
+      </div>
+      {!d.alertas.length ? <p className="text-sm text-brand-slate mt-3">Nada para charlar en este período.</p> : (
+        <ul className="mt-3 space-y-2.5">
+          {lista.map((a) => {
+            const sev = SEV[Math.min(2, a.severidad)];
+            const viva = a.estado === "abierta" || a.estado === "tomada";
+            return (
+              <li key={a.id} className={cx("relative rounded-lg border border-brand-border pl-4 pr-3 py-3 overflow-hidden", !viva && "opacity-70")}>
+                <span className={cx("absolute left-0 inset-y-0 w-1", sev.barra)} aria-hidden />
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider2 text-brand-slate">{sev.label} · {ESTADO_ALERTA[a.estado]}{a.tomada_por ? ` por ${a.tomada_por}` : ""}</div>
+                    <div className="font-semibold text-brand-ink text-sm break-words">{a.titulo}</div>
+                  </div>
+                </div>
+                <p className="text-xs text-brand-graphite mt-1 break-words">{a.detalle}</p>
+                {a.nota && <p className="text-xs text-brand-slate mt-1 break-words">Qué se hizo: {a.nota}</p>}
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  {d.puede_actuar && viva && (
+                    <button type="button" className="btn-secondary !py-1 !px-3 !text-xs" onClick={() => { setAnotar(a); setNota(a.nota ?? ""); }}>
+                      {a.estado === "abierta" ? "Tomar" : "Anotar"}
+                    </button>
+                  )}
+                  {a.util === null ? (
+                    <>
+                      <button type="button" disabled={ocupado === a.id} onClick={() => calibrar(a, true)}
+                        className="inline-flex items-center gap-1 text-xs text-brand-slate hover:text-emerald-700 px-1.5 py-1" aria-label="Fue útil">
+                        <ThumbsUp size={14} aria-hidden /> Útil
+                      </button>
+                      <button type="button" disabled={ocupado === a.id} onClick={() => calibrar(a, false)}
+                        className="inline-flex items-center gap-1 text-xs text-brand-slate hover:text-brand-primary-dark px-1.5 py-1" aria-label="Falsa alarma">
+                        <ThumbsDown size={14} aria-hidden /> Falsa alarma
+                      </button>
+                    </>
+                  ) : <span className="text-[11px] text-brand-slate">{a.util ? "Marcada útil" : "Falsa alarma"}</span>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {d.alertas.length > 4 && (
+        <button type="button" className="mt-2 text-xs font-semibold text-brand-primary inline-flex items-center gap-1" onClick={() => setTodas((t) => !t)}>
+          <ChevronDown size={14} className={todas ? "rotate-180" : ""} aria-hidden /> {todas ? "Ver menos" : `Ver las ${d.alertas.length}`}
+        </button>
+      )}
+      {anotar && (
+        <Hoja titulo={anotar.estado === "abierta" ? "Tomar la alerta" : "Anotar qué se hizo"} sobre={anotar.titulo} onClose={() => setAnotar(null)}
+          ocupada={ocupado === anotar.id}
+          pie={<Boton onClick={guardar} ocupado={ocupado === anotar.id}>{anotar.estado === "abierta" ? "Tomarla" : "Guardar"}</Boton>}>
+          <label className="block text-sm text-brand-slate mb-1.5" htmlFor="nota-clima">Qué se hizo (opcional)</label>
+          <textarea id="nota-clima" className="input min-h-[110px]" maxLength={1000} value={nota} onChange={(e) => setNota(e.target.value)}
+            placeholder="Ej.: charlamos en privado y acordamos…" />
+        </Hoja>
+      )}
+      {aviso}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ la sección
+export function ClimaDelEquipo({ desde, hasta, refresco }: { desde: string; hasta: string; refresco?: number }) {
+  const [d, setD] = useState<ClimaEquipo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const primera = useRef(true);
+  const cargar = useCallback(async (auto: boolean) => {
+    try {
+      setD(await apiFetch<ClimaEquipo>(`${SUP_API}/control/clima?desde=${desde}&hasta=${hasta}${auto ? "&auto=true" : ""}`));
+      setError(null);
+    } catch (e: any) { setError(e.message); }
+  }, [desde, hasta]);
+  useEffect(() => { primera.current = true; cargar(false); }, [cargar]);
+  useEffect(() => {
+    if (primera.current) { primera.current = false; return; }
+    cargar(true);
+  }, [refresco, cargar]);
+  if (error) return <p className="card p-4 text-sm text-brand-primary">{error}</p>;
+  if (!d) return <div className="card p-6 text-sm text-brand-slate">Midiendo el clima…</div>;
+  const r = d.resumen;
+  const cuando = d.modo === "dia" ? (d.desde === d.hoy ? "hoy" : `el ${diaCorto(d.desde)}`) : `del ${diaCorto(d.desde)} al ${diaCorto(d.hasta)}`;
+  const abiertas = d.alertas.filter((a) => a.estado === "abierta").length;
+  const ia = d.ia.estado === "activa" || d.ia.estado === "simulador"
+    ? `IA de noche (${d.ia.hora} h)${r.con_ia ? " · afinado" : ""}` : "Medido con reglas";
+  return (
+    <section className="space-y-3" id="clima" aria-label="Clima del equipo">
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h2 className="font-display text-2xl uppercase text-brand-ink leading-tight flex items-center gap-2"><HeartPulse size={20} aria-hidden /> Clima del equipo</h2>
+          <p className="text-sm text-brand-slate">Ánimo y compromiso de los líderes y de sus equipos, {cuando}.</p>
+        </div>
+        <span className="text-[11px] text-brand-slate inline-flex items-center gap-1"><Bot size={12} aria-hidden /> {ia}</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto] gap-3">
+        <Vistazo titulo="Equipos" a={r.equipo} estados={r.estados_equipos} sub="La voz de los asesores (al firmar y en sus compromisos) y el tono del feedback que recibieron." />
+        <Vistazo titulo="Líderes" a={r.lideres} estados={r.estados_lideres} sub={`${r.con_datos} de ${r.supervisores} supervisores con señales: termómetro, cierre del día, devoluciones y compromisos.`} />
+        <a href="#alertas-clima" className={cx("card p-4 flex flex-col justify-between min-w-[150px] sm:col-span-2 xl:col-span-1", abiertas > 0 && "border-brand-orange/50")}>
+          <span className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold">Para charlar</span>
+          <span className="font-display text-4xl leading-none tabular-nums text-brand-ink mt-2">{abiertas}</span>
+          <span className="text-[11px] text-brand-slate mt-1">{plural(abiertas, "alerta abierta", "alertas abiertas")}</span>
+        </a>
+      </div>
+      <div className="grid lg:grid-cols-2 gap-3">
+        <Lineas d={d} />
+        <Lideres filas={d.lideres} />
+      </div>
+      <div className="grid lg:grid-cols-2 gap-3 items-start">
+        <Mapa lideres={d.lideres} equipos={d.equipos} />
+        <Alertas d={d} onCambio={() => cargar(true)} />
+      </div>
+      {d.cambios.length > 0 && (
+        <div className="card p-4">
+          <h3 className="font-semibold text-brand-ink">Quién mejoró y quién bajó</h3>
+          <ul className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+            {d.cambios.map((c) => (
+              <li key={c.id} className="flex items-center justify-between gap-2">
+                <span className="truncate text-brand-ink">{c.nombre}</span>
+                <span className={cx("tabular-nums font-semibold shrink-0", c.delta > 0 ? "text-emerald-700" : "text-brand-primary-dark")}>
+                  {signo(c.antes)} → {signo(c.despues)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="text-[11px] text-brand-slate">
+        Los asesores se ven siempre agregados por equipo. Cada consulta queda registrada. Los supervisores saben que su termómetro y su cierre los ven sus jefes.
+      </p>
+    </section>
+  );
+}

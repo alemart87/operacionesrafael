@@ -91,6 +91,12 @@ OPERATIVAS: list[dict] = [
                 "solo_perfiles": ["gerente", "sub_gerente", "coordinador"],
             },
             {
+                "key": "clima_equipo",
+                "name": "Supervisión · Clima del equipo",
+                "description": "La moral del equipo de un vistazo: el ánimo y el compromiso de cada supervisor y de su equipo (los asesores, siempre agregados), cómo fluctuó el día (feedback, termómetro y cierre), el mapa de moral, la tendencia y las alertas que llaman la atención, con su evidencia. Se mide con reglas al instante y de noche con Claude (Haiku), sin nombres.",
+                "solo_perfiles": ["gerente", "sub_gerente", "coordinador"],
+            },
+            {
                 "key": "supervision_parametros",
                 "name": "Supervisión · Parámetros del modelo",
                 "description": "Pesos y umbrales del scoring de asesores, supervisores y operación (cada cambio es una versión nueva y queda en el historial).",

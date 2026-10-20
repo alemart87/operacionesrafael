@@ -196,6 +196,7 @@ export interface ParametrosCompletos extends ParametrosSup {
   horario: HorarioAtencion;
   /** Feedback por día que tiene que cargar cada supervisor (los hitos de «Hoy»). */
   objetivo_feedback_dia?: number;
+  clima_alertas?: "alta" | "media" | "todas";
   no_laborables: { fecha: string; motivo: string }[];
   feriados_seguridad: string[];
   feriados: string[];
@@ -1378,7 +1379,11 @@ export interface MiDia {
   calidad: CalidadResumen;
   cierre: CierreDia | null;
   anterior: { fecha: string; compromiso: string } | null;
+  termometro?: Termometro;
 }
+
+/** El termómetro de mitad del día del supervisor («¿Cómo vas?»). */
+export interface Termometro { mostrar: boolean; pulsos: number; ultimo: { valor: ComoTermino; at: string } | null }
 
 export interface CierreSupervisor {
   id: string; nombre: string; feedbacks: number; objetivo: number; puntos: number; calidad: number | null;
@@ -1406,3 +1411,50 @@ export const EMOCION: Record<string, string> = {
 export const NIVEL_CALIDAD: Record<CalidadUno["nivel"], { label: string; tono: "verde" | "azul" | "naranja" }> = {
   muy_bien: { label: "Muy bien", tono: "verde" }, bien: { label: "Bien", tono: "azul" }, a_mejorar: { label: "A mejorar", tono: "naranja" },
 };
+
+
+// ------------------------------------------------------------------ clima del equipo
+export type EstadoClima = "animado" | "comprometido" | "neutro" | "cansado" | "desanimado" | "sin_datos";
+export type TonoFeedback = "reconocimiento" | "constructivo" | "critico";
+
+export const ESTADO_CLIMA: Record<EstadoClima, { label: string; color: string; chip: string }> = {
+  animado: { label: "Animado", color: "#0E8F5E", chip: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+  comprometido: { label: "Comprometido", color: "#00808A", chip: "bg-[#E5F6F7] text-[#005F66] border-[#9FD9DD]" },
+  neutro: { label: "Neutro", color: "#8A93A3", chip: "bg-brand-bg text-brand-slate border-brand-border" },
+  cansado: { label: "Comprometido pero cansado", color: "#C27A00", chip: "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40" },
+  desanimado: { label: "Desanimado", color: "#C8231B", chip: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30" },
+  sin_datos: { label: "Sin datos", color: "#C9CED8", chip: "bg-white text-brand-mist border-brand-border" },
+};
+export const TONO: Record<TonoFeedback, { label: string; color: string }> = {
+  reconocimiento: { label: "Reconocimiento", color: "#0E8F5E" },
+  constructivo: { label: "Constructivo", color: "#8A93A3" },
+  critico: { label: "Crítico", color: "#C8231B" },
+};
+
+export interface ClimaAgregado { animo: number | null; compromiso: number | null; estado: EstadoClima; dias: number }
+export interface ClimaFila extends ClimaAgregado {
+  id: string; nombre: string;
+  elegido?: number | null; detectado?: number | null; pulsos?: { h: number; valor: ComoTermino }[]; cierre?: boolean;
+  feedbacks?: number; objetivo?: number | null; voces?: number; tonos?: Partial<Record<TonoFeedback, number>>;
+  componentes: Record<string, number | null>;
+}
+export interface AlertaClima {
+  id: string; tipo: string; tipo_nombre: string; severidad: number; estado: "abierta" | "tomada" | "derivada" | "descartada" | "cerrada";
+  titulo: string; detalle: string; supervisor: string | null; desde: string; nueva: boolean; tomada_por: string | null;
+  nota: string | null; descartada_motivo: string | null; util: boolean | null;
+}
+export interface ClimaEquipo {
+  modo: "dia" | "rango"; desde: string; hasta: string; hoy: string; actualizado: string;
+  resumen: { equipo: ClimaAgregado; lideres: ClimaAgregado; estados_lideres: Partial<Record<EstadoClima, number>>;
+             estados_equipos: Partial<Record<EstadoClima, number>>; supervisores: number; con_datos: number; con_ia: boolean };
+  curva: { hora: number; equipo: number | null; lideres: number | null; feedback: number }[];
+  puntos: { h: number; tono: TonoFeedback | null; supervisor: string }[];
+  lideres: ClimaFila[]; equipos: ClimaFila[];
+  dias: { fecha: string; equipo: number | null; lideres: number | null; compromiso_equipo: number | null; compromiso_lideres: number | null;
+          estados: Partial<Record<EstadoClima, number>> }[];
+  cambios: { id: string; nombre: string; antes: number; despues: number; delta: number }[];
+  alertas: AlertaClima[];
+  calibracion: { nivel: "alta" | "media" | "todas"; marcadas: number; utiles: number; pct_util: number | null };
+  ia: { estado: "activa" | "simulador" | "sin_clave" | "apagada"; ultimo: string | null; hora: number };
+  puede_actuar: boolean;
+}

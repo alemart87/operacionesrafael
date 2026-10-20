@@ -4,7 +4,7 @@ import { CalendarClock, CircleCheck, CircleDashed, ClipboardCheck, MessageSquare
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSession } from "@/components/AppShell";
 import { diaCorto, hoyPy } from "@/components/portal/coaching";
-import { BarraObjetivo, CalidadFeedback, FilaCierre, HojaCierre, MisRachas } from "@/components/portal/mi-dia";
+import { BarraObjetivo, CalidadFeedback, FilaCierre, HojaCierre, MisRachas, Termometro } from "@/components/portal/mi-dia";
 import { PortalShell } from "@/components/portal/nav";
 import { Cargando, Encabezado, Fallo, Fila, Lista, PORTAL, Seccion, plural, useAviso } from "@/components/portal/ui";
 import { BotonCoaching, hrefNuevoCoaching } from "@/components/supervision/hacer-coaching";
@@ -65,6 +65,7 @@ function Hoy() {
       {m && (
         <div className="mb-4 md:max-w-md space-y-3">
           <BarraObjetivo d={m} onCierre={() => setCierre(true)} />
+          {m.termometro && <Termometro d={m.termometro} onRespondido={(t) => { setM({ ...m, termometro: t }); avisar("¡Gracias! Seguimos."); }} />}
           <MisRachas d={m} />
         </div>
       )}

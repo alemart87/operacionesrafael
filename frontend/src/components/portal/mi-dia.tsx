@@ -8,13 +8,49 @@ import { CircleCheck, Flag, Flame, Frown, Lightbulb, Meh, MoonStar, Smile, Star 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import {
-  NIVEL_CALIDAD, SUP_API, type ComoTermino, type MiDia, type ResultadoCompromiso,
+  NIVEL_CALIDAD, SUP_API, type ComoTermino, type MiDia, type ResultadoCompromiso, type Termometro as TermometroDatos,
 } from "@/components/supervision/tipos";
 import { Boton, Etiqueta, Fallo, Fila, Hoja, Seccion, cx, plural } from "./ui";
 import { diaCorto } from "./coaching";
 import { CIERRE, Dictado } from "./grabadora";
 
 const DIAS_CORTOS = ["D", "L", "M", "M", "J", "V", "S"];
+
+// ------------------------------------------------------------------ termómetro de mitad del día
+const PULSO: { valor: ComoTermino; label: string; icono: typeof Smile; color: string }[] = [
+  { valor: "bien", label: "Bien", icono: Smile, color: "text-emerald-700" },
+  { valor: "normal", label: "Normal", icono: Meh, color: "text-brand-slate" },
+  { valor: "dificil", label: "Difícil", icono: Frown, color: "text-brand-primary-dark" },
+];
+
+/** «¿Cómo vas?»: un toque a mitad del día (aparece entre las 10 y las 18, y se va al responder). */
+export function Termometro({ d, onRespondido }: { d: TermometroDatos; onRespondido: (t: TermometroDatos) => void }) {
+  const [enviando, setEnviando] = useState<ComoTermino | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (!d.mostrar) return null;
+  const tocar = async (valor: ComoTermino) => {
+    setEnviando(valor);
+    setError(null);
+    try { onRespondido(await apiFetch<TermometroDatos>(`${SUP_API}/portal/termometro`, { method: "POST", body: JSON.stringify({ valor }) })); }
+    catch (e: any) { setError(e.message); } finally { setEnviando(null); }
+  };
+  return (
+    <section className="card p-4" aria-label="¿Cómo vas?">
+      <div className="font-semibold text-brand-ink">¿Cómo vas hoy?</div>
+      <div className="text-[11px] text-brand-slate">Un toque. Lo ven tus jefes para acompañarte.</div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {PULSO.map(({ valor, label, icono: I, color }) => (
+          <button key={valor} type="button" onClick={() => tocar(valor)} disabled={!!enviando}
+            className={cx("min-h-[64px] rounded-xl border border-brand-border bg-white flex flex-col items-center justify-center gap-1 text-sm font-semibold",
+              "active:scale-[0.98] transition-transform disabled:opacity-60", color, enviando === valor && "ring-2 ring-[#00B2BF]")}>
+            <I size={24} aria-hidden /> {label}
+          </button>
+        ))}
+      </div>
+      {error && <div className="mt-2"><Fallo>{error}</Fallo></div>}
+    </section>
+  );
+}
 
 // ------------------------------------------------------------------ barra del objetivo de feedback
 export function BarraObjetivo({ d, onCierre }: { d: MiDia; onCierre: () => void }) {

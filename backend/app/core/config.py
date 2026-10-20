@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     analisis_informes_dia: int = 20               # por usuario y por día: tope de costo
     # Solo pruebas y demostración: arma el informe con las estadísticas, sin llamar a Anthropic (nunca en producción).
     analisis_simulador: bool = False
+    # --- Clima del equipo: de noche, Claude (Haiku) relee los textos del día (sin nombres) y afina el ánimo. ---
+    clima_ia: bool = True                         # con ANTHROPIC_API_KEY (o el simulador del analizador)
+    clima_ia_hora: int = 21                       # hora local desde la que se analiza el día
+    clima_ia_dias: int = 14                       # días hacia atrás que se completan si faltan (historia)
 
     log_level: str = "INFO"
     audit_retention_days: int = 365

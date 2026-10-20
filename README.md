@@ -626,6 +626,62 @@ en el **Control de supervisores** y el **Coaching del día**.
 - **API:** `GET /portal/mi-dia`, `POST /portal/calidad`, `PUT /portal/cierre` (supervisor) y `GET /control/cierres?fecha`
   (jefes). Código en `supervision/mi_dia_api.py` y `supervision/calidad.py`.
 
+### Clima del equipo (moral, compromiso y alertas)
+
+Arriba del **Control de supervisores**, solo para **superadmin, Gerente, Sub gerente y Coordinador** (utilidad restringida
+`televentas_claro.clima_equipo`; el Controller no la tiene). Usa el mismo rango del Control: un día muestra cómo fluctuó
+ese día; varios días, cómo fue cambiando.
+
+- **De un vistazo:** dos tarjetas, **Equipos** y **Líderes**, con el ánimo (−100 a 100), el compromiso (0 a 100), el estado
+  que más se repite y cuántos hay en cada uno (animado, comprometido, neutro, «comprometido pero cansado», desanimado), y
+  las alertas abiertas.
+- **Cómo estuvo el día:** la línea del equipo y la de los líderes hora por hora (8 a 20 h) y, abajo, cada devolución con el
+  tono con que la recibió el asesor (reconocimiento, constructivo, crítico). En un rango, una línea por día.
+- **Cómo se sintió cada líder:** su ánimo, lo que eligió (termómetro y cierre) y lo que escribió.
+- **Mapa de moral:** ánimo × compromiso, un punto por líder o por equipo (un solo selector).
+- **Lo que llama la atención:** las alertas con su evidencia; se toman y anotan (como en el centro de comandos) y se marcan
+  «útil» o «falsa alarma» para calibrar. También aparecen en el **Centro de comandos**, pero solo para quien ve el clima
+  (ni el auditor ni el controller las ven ni pueden actuar sobre ellas, tampoco desde Voi). Nunca se derivan a un ticket.
+
+**Señales** (ya se registran; lo único nuevo es el termómetro):
+
+- **Termómetro «¿Cómo vas?»** en «Hoy» del portal: un toque (bien, normal, difícil), en día hábil entre las 10 y las 18,
+  y no vuelve a preguntar por 3 horas. Un segundo toque dentro de 30 minutos corrige el anterior.
+- **Líder:** ánimo = 0,6 · lo que eligió (termómetro y cierre, que pesa doble) + 0,4 · el texto de su cierre. Compromiso:
+  devoluciones contra el objetivo (prorrateado durante el día) 30, calidad del feedback y revisión del jefe 20, compromiso
+  de ayer cumplido 20, devoluciones firmadas a tiempo 15, cierre cargado 15.
+- **Equipo** (los asesores, siempre agregados por equipo; nunca uno por uno ni sus textos): ánimo = 0,6 · lo que dijo el
+  asesor al firmar y los compromisos que dictó + 0,4 · el tono del feedback recibido. Compromiso: compromisos cumplidos en
+  los seguimientos 35, compromiso dicho por el asesor 25, aceptó y firmó 25, comentario propositivo 15.
+- Los componentes sin datos no cuentan. Estados: animado (ánimo ≥ 20 y compromiso ≥ 60), comprometido (compromiso ≥ 60),
+  cansado (compromiso ≥ 60 y ánimo ≤ −20), desanimado (ánimo ≤ −20, o compromiso < 40 con ánimo ≤ 0), neutro.
+
+**Alertas:**
+
+| Nivel | Cuándo |
+|---|---|
+| Alta | palabras de riesgo (renuncia, «me voy», maltrato, acoso, injusto…) en el cierre o de un asesor del equipo; dos cierres seguidos negativos; «comprometido pero cansado» en 3 de los últimos 5 días |
+| Media | caída de 35 puntos o más contra el promedio de los 7 días anteriores; más del 60% del feedback crítico; 2 o más asesores del mismo equipo negativos el mismo día; dos días hábiles con devoluciones y sin cierre; dos veces sin cumplir su propio compromiso |
+| Para mirar | eligió «bien» pero el texto es negativo; la mitad de las devoluciones muy cortas o todas cargadas después de las 17 h; ningún compromiso dicho por los asesores en la semana |
+
+Mientras se calibra se abren **solo las altas**; en **Calendario → Alertas del clima del equipo** se pasa a «altas y
+medias» o «todas». La sección muestra qué porcentaje de las marcadas fue útil (meta: 70% o más).
+
+**Medición:** al instante con reglas (léxico de emociones, tono del feedback y voz del asesor en `calidad.py`) y **de noche
+con Claude Haiku** (`ANALISIS_MODELO`, con la misma `ANTHROPIC_API_KEY`): desde las 21 h (`CLIMA_IA_HORA`) relee los textos
+del día **sin nombres** (S1, A1…; teléfonos y correos tapados) y devuelve sentimiento, emoción, intensidad, tono, riesgo y
+por qué de cada texto; cuando está, reemplaza la lectura por reglas de ese texto. También completa los últimos 14 días que
+falten (`CLIMA_IA_DIAS`). Costo estimado: centavos de dólar por día (queda guardado en `sup_clima_ia`). Sin clave, todo
+funciona con las reglas.
+
+**Fotos del día** (`sup_clima_dia`): una por supervisor y día. El día en curso se recalcula (el worker `clima_equipo`, cada
+10 minutos, también sincroniza las alertas); los anteriores quedan guardados y se recalculan si llega el análisis de esa
+noche. Al arrancar se completa la historia de 90 días. Cada consulta de la sección queda en la auditoría (`clima_visto`;
+el refresco automático no), igual que cada calibración. El supervisor sabe (lo dice el termómetro) que sus jefes lo ven.
+
+API: `GET /control/clima?desde&hasta`, `POST /control/clima/alertas/{id}/calibrar` (`{util}`), `POST /portal/termometro`
+(`{valor}`); tomar o anotar una alerta del clima es `POST /comando/alertas/{id}/tomar`.
+
 ### Analizador de coaching (estadísticas e informes con Claude Haiku)
 
 Cuenta solo los coachings **terminados**: los que firmaron el asesor y el supervisor en la devolución (por la fecha de
@@ -1961,3 +2017,6 @@ Opcionales:
 | `ANALISIS_MAX_COACHINGS` | Coachings por informe, los más nuevos del rango (por defecto 300) |
 | `ANALISIS_INFORMES_DIA` | Informes por día para toda la gerencia (por defecto 20) |
 | `ANALISIS_SIMULADOR` | Solo desarrollo: informe simulado, sin llamar a Anthropic (se ignora en producción) |
+| `CLIMA_IA` | Clima del equipo: análisis nocturno con Claude Haiku (por defecto `true`; necesita `ANTHROPIC_API_KEY`) |
+| `CLIMA_IA_HORA` | Hora local desde la que se analiza el día (por defecto 21) |
+| `CLIMA_IA_DIAS` | Días hacia atrás que el análisis completa si faltan (por defecto 14) |

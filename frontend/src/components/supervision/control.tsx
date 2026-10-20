@@ -15,7 +15,9 @@ import { hoyPy } from "@/components/portal/coaching";
 import { Escuchar } from "@/components/portal/grabadora";
 import { fechaCorta } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/components/AppShell";
 import { CierresDelDia } from "./cierres";
+import { ClimaDelEquipo } from "./clima";
 import { VerCoachingDialog } from "./coaching";
 import {
   SUP_API, SUP_HREF, dm, fechaHoraCorta, num, sumarDias,
@@ -498,6 +500,7 @@ export function ControlSupervisoresVista() {
   const [sel, setSel] = useState<string | null>(null);
   const [refresco, setRefresco] = useState(0);
   const enCurso = useRef(false);
+  const verClima = useSession().can("televentas_claro.clima_equipo");
 
   const cargar = useCallback(async (rr: Rango) => {
     if (enCurso.current) return;
@@ -543,6 +546,7 @@ export function ControlSupervisoresVista() {
       {error && <div className="card p-4 text-sm text-brand-primary mt-4">{error}</div>}
       {!d || !k ? (!error && <div className="card p-10 text-brand-slate mt-5">Cargando…</div>) : (
         <div className="space-y-6 mt-5">
+          {verClima && <ClimaDelEquipo desde={d.desde} hasta={d.hasta} refresco={refresco} />}
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <Tile titulo="Supervisores" icono={Users} valor={<>{k.activos}<span className="text-xl text-brand-slate"> / {k.supervisores}</span></>}
               sub={<>con actividad {rangoTexto}{k.sin_actividad > 0 && <b className="text-brand-primary-dark"> · {k.sin_actividad} sin actividad hace {d.reglas.dias_sin_gestion}+ días</b>}</>}
