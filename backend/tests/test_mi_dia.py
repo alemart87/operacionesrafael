@@ -11,7 +11,12 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.database import AsyncSessionLocal, Base, engine
 from app.main import app
+from collections import Counter
+
+from app.core.config import settings
 from app.operativas.televentas_claro.supervision import api as sup_api
+from app.operativas.televentas_claro.supervision import audios as audios_srv
+from app.operativas.televentas_claro.supervision import mi_dia_api as mi
 from app.operativas.televentas_claro.supervision import calidad as cal
 from app.operativas.televentas_claro.supervision import coaching as coaching_srv
 from app.operativas.televentas_claro.supervision.models import Operador
@@ -67,6 +72,27 @@ def test_animo():
     assert cal.detectar_animo("No estoy cansado, todo tranquilo.")["etiqueta"] != "negativo"   # la negación cuenta
     assert cal.detectar_animo("Un desastre, estoy harta.", "bien")["etiqueta"] == "mixto"
     assert cal.alerta_animo([{"etiqueta": "negativo"}, {"etiqueta": "negativo"}]).startswith("Dos cierres")
+
+
+WEBM = b"\x1a\x45\xdf\xa3" + b"\x00" * 4000
+
+
+def test_rachas_diaria_semanal_mensual():
+    # Objetivo 1 por día, de lunes a viernes; todos los días hábiles cumplidos desde el 1/9 hasta ayer (13/10).
+    p = {"pesos_dia": [1, 1, 1, 1, 1, 0, 0], "feriados": []}
+    d, por_dia = date(2026, 9, 1), Counter()
+    while d <= date(2026, 10, 13):
+        if d.weekday() < 5:
+            por_dia[d] = 1
+        d += timedelta(days=1)
+    r = mi.rachas(por_dia, p, 1, date(2026, 10, 14))
+    assert r["diaria"]["actual"] == 31 and r["diaria"]["record"] == 31        # hoy todavía no: no corta la racha
+    assert r["semanal"]["actual"] == 5 and r["semanal"]["en_curso"] == {"hechos": 2, "meta": 5, "cumplido": False}
+    assert r["mensual"]["actual"] == 1 and r["mensual"]["en_curso"]["meta"] == 22
+    # Un día hábil sin el objetivo corta la diaria y la semana.
+    por_dia[date(2026, 10, 7)] = 0
+    r = mi.rachas(por_dia, p, 1, date(2026, 10, 14))
+    assert r["diaria"]["actual"] == 4 and r["diaria"]["record"] == 26 and r["semanal"]["actual"] == 0
 
 
 @pytest.mark.asyncio
@@ -156,6 +182,27 @@ async def test_mi_dia_cierre_y_jefes(monkeypatch):
         assert r.status_code == 200 and r.json()["cierre"]["cumplio_anterior"] == "parcial"
         assert r.json()["cierre"]["animo"]["etiqueta"] == "positivo"
 
+        # Dictado: el compromiso se dicta; se guarda antes de que llegue la transcripción y se completa solo.
+        monkeypatch.setattr(settings, "transcripcion_simulador", True)
+        r = await ac.post(f"{BASE}/portal/cierre/audios", headers=sup1, data={"duracion": "6.5"},
+                          files={"archivo": ("cierre.webm", WEBM, "audio/webm")})
+        assert r.status_code == 201, r.text
+        au = r.json()
+        assert au["destino"] == "cierre" and au["coaching_id"] is None
+        r = await ac.post(f"{BASE}/portal/cierre/audios", headers=sup2, data={"duracion": "3"},
+                          files={"archivo": ("otro.webm", WEBM, "audio/webm")})
+        ajeno = r.json()["id"]
+        assert (await ac.put(f"{BASE}/portal/cierre", headers=sup1, json={**manana, "cumplio_anterior": "parcial",
+                                                                          "audio_compromiso_id": ajeno})).status_code == 400
+        r = await ac.put(f"{BASE}/portal/cierre", headers=sup1, json={**manana, "compromiso": "", "cumplio_anterior": "parcial",
+                                                                      "audio_compromiso_id": au["id"]})
+        assert r.status_code == 200, r.text
+        assert r.json()["cierre"]["compromiso"] == "" and r.json()["cierre"]["audios"]["compromiso"]["id"] == au["id"]
+        assert await audios_srv.procesar_pendientes() >= 1
+        d = (await ac.get(f"{BASE}/portal/mi-dia", headers=sup1)).json()
+        assert d["cierre"]["compromiso"] == audios_srv.SIMULADO and d["cierre"]["audios"]["compromiso"]["estado"] == "listo"
+        assert set(d["rachas"]) == {"diaria", "semanal", "mensual"}
+
         # Los jefes ven los cierres, el compromiso anterior y el ánimo de la semana.
         assert (await ac.get(f"{BASE}/control/cierres", headers=sup1)).status_code == 403
         assert (await ac.get(f"{BASE}/control/cierres", headers=auditor)).status_code == 403
@@ -166,6 +213,9 @@ async def test_mi_dia_cierre_y_jefes(monkeypatch):
         f1 = filas[s1]
         assert f1["cierre"]["resultados"].startswith("Muy buen día") and f1["anterior"]["compromiso"].endswith("14 h.")
         assert [x["etiqueta"] for x in f1["animo"]][-2:] == ["negativo", "positivo"]
+        assert f1["cierre"]["audios"]["compromiso"]["estado"] == "listo" and "semanal" in f1["rachas"]
+        r = await ac.get(f"{BASE}/control/audios/{au['id']}/archivo", headers=gerente)
+        assert r.status_code == 200 and r.content == WEBM                       # el jefe lo escucha (queda auditado)
         j = (await ac.get(f"{BASE}/control/cierres?fecha=2026-10-12", headers=gerente)).json()
         f1 = next(f for f in j["supervisores"] if f["id"] == s1)
         assert f1["feedbacks"] == 3 and f1["alerta"] == "Cerró el día con ánimo negativo." and f1["calidad"] is not None

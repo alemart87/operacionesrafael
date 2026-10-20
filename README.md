@@ -603,8 +603,16 @@ en el **Control de supervisores** y el **Coaching del día**.
   una conducta, una cosa a mejorar y una acción»). Mientras escribe un feedback, la hoja le muestra la calidad y el
   consejo **al instante**. Las reglas están en `supervision/calidad.py`: no usa IA (responde al instante, sin costo y
   siempre igual).
+- **Rachas** («Mis rachas», debajo de la barra): **diaria** (días hábiles seguidos con el objetivo), **semanal**
+  (semanas de lunes a domingo con la meta de la semana: el objetivo por los días hábiles, con el sábado valiendo lo que
+  vale en el calendario) y **mensual** (meses con la meta del mes). Cada una con su récord de los últimos 12 meses y el
+  avance del día, la semana y el mes en curso; el período en curso suma cuando se cumple y, mientras no, no corta la
+  racha. Los jefes ven las tres rachas de cada supervisor en su tarjeta.
 - **Cierre del día** (una fila en «Para hoy», suma **1 punto**): cómo terminó el día (bien, normal, difícil), cómo le
-  fue y su **compromiso para mañana**; al día siguiente le pregunta si **cumplió** el compromiso anterior (sí, en parte,
+  fue y su **compromiso para mañana**, escritos o **dictados**: como en el coaching, el audio queda guardado como
+  registro (con su huella, en el disco persistente) y se transcribe en segundo plano con el mismo servicio y los mismos
+  topes; si guarda antes de que llegue el texto, el campo se completa solo (y se recalcula el ánimo). Los jefes lo
+  escuchan desde la tarjeta del supervisor (queda en la auditoría). `POST /portal/cierre/audios`; al día siguiente le pregunta si **cumplió** el compromiso anterior (sí, en parte,
   no). Lo puede corregir ese mismo día. Tabla `sup_cierres_dia`, auditoría `cierre_dia` y `cierre_dia_corregido`.
 - **Ánimo (sentimiento) por supervisor:** al guardar el cierre se combina lo que eligió con lo que dice el texto (un
   léxico de emociones del trabajo: motivación, satisfacción, cansancio, frustración, preocupación y estrés, con las

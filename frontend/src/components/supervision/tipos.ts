@@ -1360,10 +1360,19 @@ export interface CalidadResumen {
 export interface CierreDia {
   id: string; fecha: string; resultados: string; compromiso: string; como_termino: ComoTermino | null;
   cumplio_anterior: ResultadoCompromiso | null; feedbacks: number; animo: AnimoDetectado; at: string | null;
+  /** Lo dictado: el audio de cada campo (se puede escuchar). */
+  audios?: Partial<Record<"resultados" | "compromiso", AudioCoaching>>;
+}
+
+export interface Periodo { hechos: number; meta: number; cumplido: boolean }
+export interface Rachas {
+  diaria: { actual: number; record: number; hoy: Periodo };
+  semanal: { actual: number; record: number; en_curso: Periodo };
+  mensual: { actual: number; record: number; en_curso: Periodo };
 }
 
 export interface MiDia {
-  fecha: string; habil: boolean; objetivo: number; feedbacks: number; puntos: number; puntos_max: number; racha: number;
+  fecha: string; habil: boolean; objetivo: number; feedbacks: number; puntos: number; puntos_max: number; racha: number; rachas: Rachas;
   hitos: { clave: string; nombre: string; meta: number | null; logrado: boolean; extra?: boolean }[];
   semana: { dia: string; feedbacks: number; habil: boolean }[];
   calidad: CalidadResumen;
@@ -1374,7 +1383,7 @@ export interface MiDia {
 export interface CierreSupervisor {
   id: string; nombre: string; feedbacks: number; objetivo: number; puntos: number; calidad: number | null;
   calidad_nivel: CalidadUno["nivel"] | null; cierre: CierreDia | null; anterior: CierreDia | null;
-  animo: { dia: string; etiqueta: EtiquetaAnimo | null }[]; alerta: string | null;
+  animo: { dia: string; etiqueta: EtiquetaAnimo | null }[]; alerta: string | null; rachas?: Rachas;
 }
 
 export interface CierresJefes {

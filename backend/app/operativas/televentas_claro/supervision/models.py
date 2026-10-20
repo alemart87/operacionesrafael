@@ -209,10 +209,11 @@ class CoachingAudio(Base):
     __tablename__ = "sup_audios"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    coaching_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    # Vacío en los audios del cierre del día del supervisor (no son de un coaching).
+    coaching_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     supervisor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     hablante: Mapped[str] = mapped_column(String(12), nullable=False)       # supervisor | asesor
-    destino: Mapped[str] = mapped_column(String(12), nullable=False)        # item | compromiso | comentario
+    destino: Mapped[str] = mapped_column(String(12), nullable=False)        # item | compromiso | comentario | cierre
     ruta: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     mime: Mapped[str] = mapped_column(String(60), nullable=False)
     bytes: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -452,6 +453,9 @@ class CierreDia(Base):
     cumplio_anterior: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)    # cumplido | parcial | no_cumplido
     anterior_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)         # el cierre cuyo compromiso evalúa
     feedbacks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)            # los que llevaba al cerrar
+    # Si lo dictó: el audio de cada campo (queda como registro, con su transcripción).
+    audio_resultados_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    audio_compromiso_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     animo: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
