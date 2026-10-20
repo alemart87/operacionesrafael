@@ -2,10 +2,10 @@
 
 /**
  * Clima del equipo (gerente, sub gerente y coordinador), arriba del Control de supervisores: la moral de un vistazo.
- * Dos números grandes (equipo y líderes), cómo fluctuó el día (o el rango), cómo se sintió cada líder, el mapa de moral
+ * Dos tarjetas en palabras (equipos y líderes: cómo están, ánimo y compromiso en una escala de 5), cómo fluctuó el día (o el rango), cómo se sintió cada líder, el mapa de moral
  * (ánimo × compromiso) y las alertas con su evidencia. Los asesores se ven siempre agregados por equipo.
  */
-import { AlertTriangle, Bot, ChevronDown, HeartPulse, ThumbsDown, ThumbsUp } from "lucide-react";
+import { AlertTriangle, Annoyed, Bot, ChevronDown, Frown, HeartPulse, Laugh, Meh, Smile, ThumbsDown, ThumbsUp, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Boton, Hoja, cx, plural, useAviso } from "@/components/portal/ui";
@@ -16,9 +16,44 @@ import {
 const CYAN = "#00B2BF";
 const TINTA = "#2A2F3A";
 const DIA = ["D", "L", "M", "M", "J", "V", "S"];
-const signo = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Math.round(v))}`);
 const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60) % 60).padStart(2, "0")}`;
 const diaCorto = (iso: string) => { const d = new Date(`${iso}T12:00:00`); return `${DIA[d.getDay()]} ${d.getDate()}`; };
+
+// El cálculo es numérico; en pantalla se lee en palabras y en una escala de 5 puntos.
+interface Nivel { label: string; puntos: number; color: string; icono: LucideIcon }
+export function nivelAnimo(v: number | null | undefined): Nivel | null {
+  if (v === null || v === undefined) return null;
+  if (v >= 40) return { label: "Muy bien", puntos: 5, color: "#0E8F5E", icono: Laugh };
+  if (v >= 15) return { label: "Bien", puntos: 4, color: "#0E8F5E", icono: Smile };
+  if (v > -15) return { label: "Normal", puntos: 3, color: "#8A93A3", icono: Meh };
+  if (v > -40) return { label: "Bajo", puntos: 2, color: "#C27A00", icono: Frown };
+  return { label: "Muy bajo", puntos: 1, color: "#C8231B", icono: Annoyed };
+}
+export function nivelCompromiso(v: number | null | undefined): Nivel | null {
+  if (v === null || v === undefined) return null;
+  if (v >= 80) return { label: "Muy alto", puntos: 5, color: "#00808A", icono: Smile };
+  if (v >= 60) return { label: "Alto", puntos: 4, color: "#00808A", icono: Smile };
+  if (v >= 40) return { label: "Medio", puntos: 3, color: "#8A93A3", icono: Meh };
+  if (v >= 20) return { label: "Bajo", puntos: 2, color: "#C27A00", icono: Frown };
+  return { label: "Muy bajo", puntos: 1, color: "#C8231B", icono: Annoyed };
+}
+const palabra = (v: number | null | undefined) => nivelAnimo(v)?.label ?? "sin datos";
+const CARA: Record<EstadoClima, LucideIcon> = { animado: Laugh, comprometido: Smile, neutro: Meh, cansado: Frown, desanimado: Annoyed, sin_datos: Meh };
+
+/** «Ánimo ●●●●○ Bien»: cinco puntos y la palabra. */
+function Escala({ titulo, n }: { titulo: string; n: Nivel | null }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-sm text-brand-slate w-[92px] shrink-0">{titulo}</span>
+      <span className="flex gap-1" aria-hidden>
+        {[1, 2, 3, 4, 5].map((k) => (
+          <span key={k} className="w-3.5 h-3.5 rounded-full" style={{ background: n && k <= n.puntos ? n.color : "#E4E7EC" }} />
+        ))}
+      </span>
+      <span className="text-sm font-semibold" style={{ color: n?.color ?? "#8A93A3" }}>{n?.label ?? "Sin datos"}</span>
+    </div>
+  );
+}
 
 function useAncho<T extends HTMLElement>(): [React.RefObject<T>, number] {
   const ref = useRef<T>(null);
@@ -30,16 +65,6 @@ function useAncho<T extends HTMLElement>(): [React.RefObject<T>, number] {
     return () => o.disconnect();
   }, []);
   return [ref, w];
-}
-
-function Chip({ e, corto }: { e: EstadoClima; corto?: boolean }) {
-  const x = ESTADO_CLIMA[e];
-  return (
-    <span className={cx("inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap", x.chip)}>
-      <span className="w-2 h-2 rounded-full" style={{ background: x.color }} aria-hidden />
-      {corto && e === "cansado" ? "Cansado" : x.label}
-    </span>
-  );
 }
 
 // ------------------------------------------------------------------ el vistazo: equipo y líderes
@@ -57,17 +82,23 @@ function Vistazo({ titulo, a, estados, sub }: { titulo: string; a: ClimaAgregado
     <div className="card p-4 min-w-0">
       <div className="flex items-start justify-between gap-2">
         <span className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold">{titulo}</span>
-        <Chip e={predominante(a, estados)} corto />
       </div>
-      <div className="mt-2 flex items-end gap-5">
-        <div>
-          <div className="font-display text-4xl leading-none tabular-nums text-brand-ink">{signo(a.animo)}</div>
-          <div className="text-[11px] text-brand-slate mt-1">ánimo (−100 a 100)</div>
-        </div>
-        <div>
-          <div className="font-display text-4xl leading-none tabular-nums text-brand-ink">{a.compromiso === null ? "—" : Math.round(a.compromiso)}</div>
-          <div className="text-[11px] text-brand-slate mt-1">compromiso (0 a 100)</div>
-        </div>
+      {(() => {
+        const e = predominante(a, estados);
+        const I = CARA[e];
+        const plural_ = e === "cansado" ? "cansados" : `${ESTADO_CLIMA[e].label.toLowerCase()}s`;
+        return (
+          <div className="mt-2 flex items-center gap-3">
+            <I size={40} strokeWidth={1.75} style={{ color: ESTADO_CLIMA[e].color }} aria-hidden />
+            <div className="text-xl font-semibold text-brand-ink leading-tight">
+              {e === "sin_datos" ? "Todavía sin señales" : <>{titulo === "Equipos" ? "Los equipos están" : "Los líderes están"} <span style={{ color: ESTADO_CLIMA[e].color }}>{plural_}</span></>}
+            </div>
+          </div>
+        );
+      })()}
+      <div className="mt-3 space-y-1.5">
+        <Escala titulo="Ánimo" n={nivelAnimo(a.animo)} />
+        <Escala titulo="Compromiso" n={nivelCompromiso(a.compromiso)} />
       </div>
       {reparto.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-brand-graphite" aria-label="Cuántos en cada estado">
@@ -92,7 +123,7 @@ function Lineas({ d }: { d: ClimaEquipo }) {
   const filas = dia
     ? d.curva.map((c) => ({ x: String(c.hora), etiqueta: `${c.hora} h`, equipo: c.equipo, lideres: c.lideres, extra: c.feedback }))
     : d.dias.map((c) => ({ x: c.fecha, etiqueta: diaCorto(c.fecha), equipo: c.equipo, lideres: c.lideres, extra: null as number | null }));
-  const alto = 190, izq = 36, der = 14, arriba = 10, abajo = dia ? 46 : 26;
+  const alto = 190, izq = 46, der = 14, arriba = 10, abajo = dia ? 46 : 26;
   const w = Math.max(0, ancho - izq - der), h = alto - arriba - abajo;
   const X = (i: number) => izq + (filas.length <= 1 ? w / 2 : (i / (filas.length - 1)) * w);
   const Xh = (hora: number) => izq + ((hora - 8) / 12) * w;
@@ -136,7 +167,7 @@ function Lineas({ d }: { d: ClimaEquipo }) {
             {[100, 50, 0, -50, -100].map((v) => (
               <g key={v}>
                 <line x1={izq} x2={izq + w} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? "#AEB5C2" : "#EEF0F4"} strokeDasharray={v === 0 ? "3 3" : undefined} />
-                {v % 100 === 0 && <text x={izq - 6} y={Y(v) + 3} textAnchor="end" fontSize="10" fill="#6B7280">{signo(v)}</text>}
+                {v % 100 === 0 && <text x={izq - 6} y={Y(v) + 3} textAnchor="end" fontSize="10" fill="#6B7280">{v > 0 ? "Bien" : v < 0 ? "Bajo" : "Normal"}</text>}
               </g>
             ))}
             {s && <line x1={X(sobre!)} x2={X(sobre!)} y1={arriba} y2={arriba + h} stroke="#C9CED8" />}
@@ -166,7 +197,7 @@ function Lineas({ d }: { d: ClimaEquipo }) {
           <div className="absolute top-0 z-10 pointer-events-none" style={{ left: X(sobre!), transform: `translateX(${X(sobre!) > ancho * 0.6 ? "-105%" : "8px"})` }}>
             <div className="rounded-md bg-brand-ink text-white text-xs px-2.5 py-1.5 shadow-elevated whitespace-nowrap">
               <div className="font-semibold">{dia ? `Hasta las ${Number(s.x) + 1} h` : s.etiqueta}</div>
-              <div>Equipo {signo(s.equipo)} · Líderes {signo(s.lideres)}</div>
+              <div>Equipo: {palabra(s.equipo)} · Líderes: {palabra(s.lideres)}</div>
               {dia && <div className="text-white/70">{plural(s.extra ?? 0, "devolución", "devoluciones")} en esa hora</div>}
             </div>
           </div>
@@ -186,10 +217,7 @@ function Lideres({ filas }: { filas: ClimaFila[] }) {
     <div className="card p-4 min-w-0">
       <div className="flex items-baseline justify-between gap-2 flex-wrap">
         <h3 className="font-semibold text-brand-ink">Cómo se sintió cada líder</h3>
-        <div className="flex gap-3 text-[11px] text-brand-slate">
-          <span className="inline-flex items-center gap-1"><span className="w-0.5 h-3 bg-brand-ink" /> eligió</span>
-          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rotate-45 border border-brand-ink bg-white" /> escribió</span>
-        </div>
+        <span className="text-[11px] text-brand-slate">← bajo · bien →</span>
       </div>
       {con.length ? (
         <ul className="mt-3 space-y-3">
@@ -197,23 +225,23 @@ function Lideres({ filas }: { filas: ClimaFila[] }) {
             <li key={f.id} className="min-w-0">
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span className="truncate text-brand-ink">{f.nombre}</span>
-                <span className="shrink-0 flex items-center gap-2">
-                  {!!f.pulsos?.length && <span className="text-[10px] text-brand-slate" title={f.pulsos.map((p) => `${hhmm(p.h)} ${p.valor}`).join(" · ")}>
-                    {plural(f.pulsos.length, "toque", "toques")}</span>}
-                  <span className="tabular-nums font-semibold text-brand-ink w-9 text-right">{signo(f.animo)}</span>
-                </span>
+                {(() => {
+                  const n = nivelAnimo(f.animo);
+                  const I = n?.icono ?? Meh;
+                  return (
+                    <span className="shrink-0 inline-flex items-center gap-1 font-semibold text-sm" style={{ color: n?.color ?? "#8A93A3" }}>
+                      <I size={16} aria-hidden /> {n?.label ?? "Sin datos"}
+                    </span>
+                  );
+                })()}
               </div>
               <div className="relative h-3 mt-1 rounded-full bg-brand-bg" role="img"
-                aria-label={`${f.nombre}: ánimo ${signo(f.animo)}, eligió ${signo(f.elegido)}, escribió ${signo(f.detectado)}, ${ESTADO_CLIMA[f.estado].label}`}>
+                aria-label={`${f.nombre}: ánimo ${palabra(f.animo)}, ${ESTADO_CLIMA[f.estado].label}`}>
                 <span className="absolute inset-y-0 left-1/2 w-px bg-[#AEB5C2]" aria-hidden />
                 {f.animo !== null && (
                   <span className="absolute inset-y-0 rounded-full" style={{
-                    left: f.animo >= 0 ? "50%" : pos(f.animo), width: `${Math.abs(f.animo) / 2}%`, background: ESTADO_CLIMA[f.estado].color,
+                    left: f.animo >= 0 ? "50%" : pos(f.animo), width: `${Math.abs(f.animo) / 2}%`, background: nivelAnimo(f.animo)!.color,
                   }} />
-                )}
-                {f.elegido !== null && f.elegido !== undefined && <span className="absolute -top-0.5 -bottom-0.5 w-0.5 bg-brand-ink -translate-x-1/2" style={{ left: pos(f.elegido) }} />}
-                {f.detectado !== null && f.detectado !== undefined && (
-                  <span className="absolute top-1/2 w-2.5 h-2.5 rotate-45 border border-brand-ink bg-white -translate-x-1/2 -translate-y-1/2" style={{ left: pos(f.detectado) }} />
                 )}
               </div>
             </li>
@@ -282,7 +310,7 @@ function Mapa({ lideres, equipos }: { lideres: ClimaFila[]; equipos: ClimaFila[]
         {!filas.length && ancho > 0 && <p className="absolute inset-0 grid place-items-center text-sm text-brand-slate">Sin datos para ubicar todavía.</p>}
       </div>
       <p className="text-xs text-brand-slate min-h-[18px]">
-        {elegido ? <><b className="text-brand-ink">{elegido.nombre}</b>{ver === "equipos" ? " (su equipo)" : ""}: ánimo {signo(elegido.animo)} · compromiso {Math.round(elegido.compromiso!)} · {ESTADO_CLIMA[elegido.estado].label}</>
+        {elegido ? <><b className="text-brand-ink">{elegido.nombre}</b>{ver === "equipos" ? " (su equipo)" : ""}: ánimo {palabra(elegido.animo).toLowerCase()} · compromiso {nivelCompromiso(elegido.compromiso)?.label.toLowerCase()} · {ESTADO_CLIMA[elegido.estado].label}</>
           : ver === "equipos" ? "Cada punto es un equipo entero: los asesores nunca se ven uno por uno." : "Tocá un punto para ver el detalle."}
       </p>
     </div>
@@ -450,7 +478,7 @@ export function ClimaDelEquipo({ desde, hasta, refresco }: { desde: string; hast
               <li key={c.id} className="flex items-center justify-between gap-2">
                 <span className="truncate text-brand-ink">{c.nombre}</span>
                 <span className={cx("tabular-nums font-semibold shrink-0", c.delta > 0 ? "text-emerald-700" : "text-brand-primary-dark")}>
-                  {signo(c.antes)} → {signo(c.despues)}
+                  {palabra(c.antes)} → {palabra(c.despues)}
                 </span>
               </li>
             ))}
