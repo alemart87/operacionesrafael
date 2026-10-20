@@ -12,7 +12,7 @@ from sqlalchemy import text
 from . import models  # noqa: F401  (registra los modelos en Base.metadata)
 from . import asistente as voi  # Voi, el agente de la plataforma (Claude Managed Agents)
 from . import operativas as modulos_operativas  # routers, workers y modelos de cada operativa
-from .api.v1 import audit, auth, operativas, perfiles, seguridad, sistema, users
+from .api.v1 import audit, auth, invitaciones, operativas, perfiles, seguridad, sistema, users
 from .core.config import APP_NAME, settings
 from .core.database import AsyncSessionLocal, Base, engine
 from .core.logging import configure_logging, logger
@@ -81,6 +81,8 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE sup_operadores ADD COLUMN IF NOT EXISTS documento VARCHAR(30)",
     # v1.3.1 · el tipo de evento del coaching admite los nombres largos (compromiso_editado, compromiso_quitado)
     "ALTER TABLE sup_coaching_eventos ALTER COLUMN tipo TYPE VARCHAR(30)",
+    # v1.4 · usuarios registrados con un link de creación rápida
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS invitacion_id VARCHAR(36)",
 ]
 
 
@@ -241,6 +243,8 @@ app.include_router(perfiles.router, prefix="/api/v1")
 app.include_router(operativas.router, prefix="/api/v1")
 app.include_router(seguridad.router, prefix="/api/v1")
 app.include_router(sistema.router, prefix="/api/v1")
+app.include_router(invitaciones.admin, prefix="/api/v1")
+app.include_router(invitaciones.publico, prefix="/api/v1")
 
 # --- Operativas (módulos independientes, ver app/operativas/) ---
 for r in modulos_operativas.ROUTERS:

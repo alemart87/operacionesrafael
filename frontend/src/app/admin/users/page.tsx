@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { QrCode } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { CreacionRapida, LinksRapidos, type Invitacion, type ListaInvitaciones } from "@/components/admin/CreacionRapida";
 import { Avatar } from "@/components/Avatar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ROLE_LABELS, apiFetch } from "@/lib/api";
@@ -131,8 +133,23 @@ export default function AdminUsersPage() {
   const [confirmToggle, setConfirmToggle] = useState<UserRow | null>(null);
   const photoRef = useRef<HTMLInputElement>(null);
   const [photoUser, setPhotoUser] = useState<UserRow | null>(null);
+  // Creación rápida: la hoja (con el perfil elegido o un link ya creado) y la lista de links.
+  const [rapida, setRapida] = useState<{ perfil?: string; abrir?: Invitacion } | null>(null);
+  const [links, setLinks] = useState<ListaInvitaciones | null>(null);
 
   const load = () => apiFetch<UserRow[]>("/api/v1/users").then(setUsers).catch((e) => setError(e.message));
+  const cargarLinks = useCallback(() => apiFetch<ListaInvitaciones>("/api/v1/invitaciones").then(setLinks).catch(() => {}), []);
+  const alCambiarLink = useCallback(() => { cargarLinks(); load(); }, [cargarLinks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    cargarLinks();
+    // Desde Perfiles: /admin/users?rapida=<perfil> abre la creación rápida con ese perfil elegido.
+    const q = new URLSearchParams(window.location.search).get("rapida");
+    if (q !== null) {
+      setRapida({ perfil: q || undefined });
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, [cargarLinks]);
 
   useEffect(() => {
     load();
@@ -222,12 +239,17 @@ export default function AdminUsersPage() {
 
   return (
     <AppShell>
-      <div className="mb-6">
-        <h1 className="font-display text-3xl text-brand-ink uppercase">Gestión de usuarios</h1>
-        <p className="text-sm text-brand-slate mt-1">
-          Cada usuario tiene un perfil y las operativas en las que trabaja. Los permisos de cada perfil se configuran
-          en Perfiles.
-        </p>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-display text-3xl text-brand-ink uppercase">Gestión de usuarios</h1>
+          <p className="text-sm text-brand-slate mt-1">
+            Cada usuario tiene un perfil y las operativas en las que trabaja. Los permisos de cada perfil se configuran
+            en Perfiles.
+          </p>
+        </div>
+        <button type="button" onClick={() => setRapida({})} className="btn-primary min-h-[48px] shrink-0">
+          <QrCode size={18} aria-hidden /> Creación rápida
+        </button>
       </div>
 
       {error && (
@@ -321,6 +343,13 @@ export default function AdminUsersPage() {
           </ul>
         </div>
       </div>
+
+      <LinksRapidos lista={links} onAbrir={(inv) => setRapida({ abrir: inv })} />
+
+      {rapida && links && (
+        <CreacionRapida perfiles={perfiles} operativas={operativas} cfg={links} perfilInicial={rapida.perfil}
+          abrir={rapida.abrir ?? null} onClose={() => setRapida(null)} onCambio={alCambiarLink} />
+      )}
 
       <input ref={photoRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="hidden" onChange={onPhotoPicked} />
 

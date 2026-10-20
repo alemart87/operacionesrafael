@@ -133,6 +133,26 @@ export async function login(email: string, password: string): Promise<LoginResul
   return resultadoLogin(r);
 }
 
+/** Registro con un link de creación rápida: crea el usuario con el perfil del link y, si puede, deja la sesión iniciada. */
+export type RegistroResult = { ingreso: true; user: CurrentUserInfo } | { ingreso: false; mensaje: string };
+
+export async function registrarConLink(token: string, datos: { full_name: string; email: string; password: string }): Promise<RegistroResult> {
+  const r = await fetch(`/api/v1/registro/${encodeURIComponent(token)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(datos),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e = new Error(Array.isArray(body?.detail) ? "Revisá los datos: el correo tiene que ser válido y la contraseña de al menos 8 caracteres." : mensajeDe(body, "No se pudo crear el usuario"));
+    (e as any).code = body?.detail?.code;
+    throw e;
+  }
+  if (!body.ingreso) return { ingreso: false, mensaje: body.mensaje };
+  setSession(body as TokenPair);
+  return { ingreso: true, user: userFromTokens(body) };
+}
+
 /** Segundo paso: código de la app autenticadora o un código de recuperación. */
 export async function login2fa(desafio: string, codigo: string): Promise<LoginResult> {
   const r = await fetch("/api/v1/auth/login/2fa", {

@@ -1762,6 +1762,41 @@ el mural de puntos de la fachada que respira despacio. Es SVG con animaciones CS
 GPU): no es un video, pesa unos pocos KB, no descarga nada y quien pidió menos movimiento en su sistema lo ve quieto.
 En el teléfono aparece en chico sobre el formulario.
 
+### Creación rápida de usuarios (link y QR de 30 minutos)
+
+Para dar de alta a varias personas sin cargarlas una por una (por ejemplo, en una capacitación):
+
+1. El superadmin, en **Administración → Usuarios → Creación rápida** (o desde **Perfiles**, con el acceso «Creación
+   rápida» de cada perfil), elige el **perfil**, las **operativas** y **cuántas personas** pueden usar el link
+   (cupo, hasta 100). Opcional: un nombre para reconocer el link y **solo correos de un dominio**
+   (p. ej. `voicenter.com.py`).
+2. **Generar link y QR** muestra el QR grande, el link (copiar o compartir), la **cuenta regresiva** de 30 minutos y
+   la lista de **registrados en vivo** (se actualiza sola). Se puede **anular** en cualquier momento; la lista
+   «Links de creación rápida» muestra los últimos con su estado (vigente, vencido, anulado o cupo completo) y quién
+   se registró con cada uno.
+3. Quien escanea el QR (o abre el link) ve con qué perfil entra y hasta cuándo vale el link, escribe su **nombre y
+   apellido, su correo y su contraseña** (con la política de Seguridad a la vista) y **entra directo** a la plataforma
+   con ese perfil: el supervisor, a su portal. Si su perfil está fuera del horario de acceso (en modo bloquear), el
+   usuario queda creado y entra en su horario. Después ingresa con su correo y contraseña como cualquiera.
+
+Seguridad:
+
+- El token del link es aleatorio de 256 bits. Se busca por su **SHA-256**; el token en claro solo se guarda
+  **cifrado** (Fernet, con `SECRET_KEY`) para volver a mostrar el QR mientras está vigente, y se borra al vencer,
+  completarse o anularse.
+- El link vence a los `INVITACION_MINUTOS` (30) y el **cupo se descuenta de forma atómica** (dos personas a la vez
+  no pasan el tope). El perfil y las operativas los fija el link: quien se registra no los puede cambiar.
+- Los perfiles que ven Facturación o Integraciones (Sub gerente) se marcan como **sensibles**: el cupo arranca en 1 y
+  se avisa que el QR se muestre solo a la persona indicada.
+- La contraseña cumple la política de Seguridad; un correo ya registrado no se puede volver a usar. Los intentos con
+  links inválidos se limitan por IP (como el login). Quien se registra no tiene que cambiar la contraseña al entrar:
+  la eligió él.
+- Auditoría: `invitacion_creada`, `invitacion_revocada` y `usuario_registrado_con_link` (con el link usado y quién lo
+  creó). Cada usuario guarda el link con el que se registró (`users.invitacion_id`).
+- API: `POST /invitaciones`, `GET /invitaciones`, `GET /invitaciones/{id}`, `POST /invitaciones/{id}/revocar`
+  (superadmin); `GET /registro/{token}` y `POST /registro/{token}` (públicos, solo con un link vigente). Tabla
+  `invitaciones_registro`.
+
 ### Transiciones (movimiento de la interfaz)
 
 Una sola familia de curvas para todo (`--mov-entrada`, `--mov-salida`, `--mov-estandar` en `globals.css`, las de
@@ -1876,6 +1911,8 @@ Opcionales:
 | `ANTHROPIC_WEBHOOK_SIGNING_KEY` | Secreto `whsec_…` del webhook de Anthropic para Voi |
 | `ASISTENTE_MODELO` | Modelo de Voi (por defecto `claude-sonnet-5-5`) |
 | `ASISTENTE_SIMULADOR` | Solo desarrollo: Voi con un motor simulado, sin llamar a Anthropic (se ignora en producción) |
+| `INVITACION_MINUTOS` | Vigencia del link y el QR de la creación rápida de usuarios (por defecto 30) |
+| `INVITACION_MAX_USOS` | Cupo máximo de personas por link de creación rápida (por defecto 100) |
 | `ANALISIS_MODELO` | Modelo del Analizador de coaching (por defecto `claude-haiku-5-5`) |
 | `ANALISIS_ESFUERZO` | Esfuerzo del modelo en los informes (por defecto `medium`) |
 | `ANALISIS_MAX_COACHINGS` | Coachings por informe, los más nuevos del rango (por defecto 300) |

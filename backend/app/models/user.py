@@ -47,3 +47,5 @@ class User(Base):
     # Excepción de horario que da el superadmin (vence sola)
     access_exception_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     access_exception_note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    # Si se registró solo con un link de creación rápida: cuál.
+    invitacion_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)

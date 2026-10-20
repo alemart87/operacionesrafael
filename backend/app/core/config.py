@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     login_max_attempts: int = 8
     login_window_minutes: int = 15
 
+    # Creación rápida de usuarios: vigencia del link y del QR, y cupo máximo de registros por link.
+    invitacion_minutos: int = 30
+    invitacion_max_usos: int = 100
+
     upload_dir: str = "./uploads"
     max_upload_size_mb: int = 20
 
