@@ -592,7 +592,9 @@ en el **Control de supervisores** y el **Coaching del día**.
   (`objetivo_feedback_dia`, **8** por defecto; se cambia en **Supervisión → Calendario**), con los **hitos** (primer
   feedback, la mitad y el objetivo) y una estrella para el **punto extra** del cierre del día (8 + 1 puntos). Debajo,
   los últimos 7 días (en verde los días con el objetivo cumplido) y la racha de días hábiles seguidos con el objetivo.
-  Cuenta cada ítem de tipo *feedback* de un coaching no anulado (los monitoreos no).
+  Cuenta **cada asesor al que le dio feedback ese día**: cada coaching (no anulado) en el que cargó algo ese día
+  (monitoreo o feedback, como sea que lo haya marcado) o registró el seguimiento; el mismo coaching cuenta una vez por
+  día. La calidad se mide sobre esa devolución completa (todo lo que cargó ese día en ese coaching).
 - **Calidad de mis feedback** (últimos 7 días): un puntaje de 0 a 100 y, por cada señal, qué parte de sus feedback la
   cumple: **largo justo** (25 a 120 palabras: menos le falta profundidad, más de 160 o frases de más de 30 palabras le
   falta concisión), **evidencia** (la llamada, la hora, un número o lo que dijo el cliente), **acción concreta**,

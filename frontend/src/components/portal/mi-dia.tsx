@@ -50,6 +50,8 @@ export function BarraObjetivo({ d, onCierre }: { d: MiDia; onCierre: () => void 
         </button>
       </div>
 
+      <p className="mt-2 text-[11px] text-brand-slate">Cuenta cada asesor al que le diste feedback hoy: lo que cargaste en su coaching o su seguimiento.</p>
+
       <ul className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5">
         {d.hitos.map((h) => (
           <li key={h.clave} className={cx("inline-flex items-center gap-1 text-xs", h.logrado ? "text-emerald-700 font-semibold" : "text-brand-slate")}>

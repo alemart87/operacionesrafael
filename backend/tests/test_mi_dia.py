@@ -15,6 +15,7 @@ from app.operativas.televentas_claro.supervision import api as sup_api
 from app.operativas.televentas_claro.supervision import calidad as cal
 from app.operativas.televentas_claro.supervision import coaching as coaching_srv
 from app.operativas.televentas_claro.supervision.models import Operador
+from tests.firma_helper import firmar
 
 BASE = "/api/v1/televentas-claro/supervision"
 TC = "televentas_claro"
@@ -74,10 +75,11 @@ async def test_mi_dia_cierre_y_jefes(monkeypatch):
     monkeypatch.setattr(sup_api, "hoy", lambda: reloj["hoy"])
     monkeypatch.setattr(coaching_srv, "ahora", lambda: reloj["ahora"])
     async with AsyncSessionLocal() as db:
-        ops = [Operador(nombre=n, agente_clave=n.upper(), agente_nombre=n, cruce="sin_cruce") for n in ("Perez, Ana", "Gomez, Carla")]
+        ops = [Operador(nombre=n, agente_clave=n.upper(), agente_nombre=n, cruce="sin_cruce")
+               for n in ("Perez, Ana", "Gomez, Carla", "Benitez, Beto", "Sosa, Dani")]
         db.add_all(ops)
         await db.commit()
-        ana, carla = (o.id for o in ops)
+        ana, carla, beto, dani = (o.id for o in ops)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
@@ -86,7 +88,7 @@ async def test_mi_dia_cierre_y_jefes(monkeypatch):
         _, auditor = await _new_user(ac, admin, "auditor")
         s1, sup1 = await _new_user(ac, admin, "supervisor", "Silvia Uno")
         s2, sup2 = await _new_user(ac, admin, "supervisor", "Sergio Dos")
-        for ids, sid in (([ana], s1), ([carla], s2)):
+        for ids, sid in (([ana, beto, dani], s1), ([carla], s2)):
             r = await ac.post(f"{BASE}/equipos/asignar", headers=coord, json={"periodo": "2026-10", "operador_ids": ids, "supervisor_id": sid})
             assert r.status_code == 200, r.text
 
@@ -95,16 +97,35 @@ async def test_mi_dia_cierre_y_jefes(monkeypatch):
         assert d["objetivo"] == 8 and d["feedbacks"] == 0 and d["puntos"] == 0 and d["puntos_max"] == 9
         assert [h["clave"] for h in d["hitos"]] == ["f1", "f4", "f8", "cierre"] and not any(h["logrado"] for h in d["hitos"])
 
-        c = (await ac.post(f"{BASE}/portal/coaching", headers=sup1, json={"operador_id": ana, "tipo": "diario"})).json()["id"]
-        for tipo, texto in (("feedback", CORTO), ("feedback", BUENO), ("feedback", LARGO), ("monitoreo", "Escuché dos llamadas de la mañana.")):
-            reloj["ahora"] += timedelta(minutes=2)
-            r = await ac.post(f"{BASE}/portal/coaching/{c}/items", headers=sup1, json={"tipo": tipo, "metricas": ["pospago"], "texto": texto})
-            assert r.status_code == 201, r.text
+        # Cada coaching con algo cargado hoy es un feedback dado, marcado como monitoreo o como feedback.
+        cargas = {ana: [("feedback", CORTO)], beto: [("feedback", BUENO), ("monitoreo", "Escuché dos llamadas de la mañana.")],
+                  dani: [("monitoreo", LARGO)]}
+        for op, items in cargas.items():
+            c = (await ac.post(f"{BASE}/portal/coaching", headers=sup1, json={"operador_id": op, "tipo": "diario"})).json()["id"]
+            for tipo, texto in items:
+                reloj["ahora"] += timedelta(minutes=2)
+                r = await ac.post(f"{BASE}/portal/coaching/{c}/items", headers=sup1, json={"tipo": tipo, "metricas": ["pospago"], "texto": texto})
+                assert r.status_code == 201, r.text
         d = (await ac.get(f"{BASE}/portal/mi-dia", headers=sup1)).json()
-        assert d["feedbacks"] == 3 and d["puntos"] == 3                        # el monitoreo no es un feedback
+        assert d["feedbacks"] == 3 and d["puntos"] == 3                        # 3 asesores: el de dos ítems cuenta una vez
         assert {h["clave"]: h["logrado"] for h in d["hitos"]} == {"f1": True, "f4": False, "f8": False, "cierre": False}
         q = d["calidad"]
         assert q["feedbacks"] == 3 and q["cortos"] == 1 and q["largos"] == 1 and q["recomendaciones"] and len(q["ultimos"]) == 3
+
+        # El seguimiento registrado también es una devolución (un coaching de ayer, con su seguimiento hoy).
+        reloj["hoy"], reloj["ahora"] = date(2026, 10, 9), datetime(2026, 10, 9, 14, tzinfo=timezone.utc)
+        r = await ac.post(f"{BASE}/portal/coaching", headers=sup2, json={"operador_id": carla, "tipo": "diario"})
+        assert r.status_code == 201, r.text
+        cs = r.json()["id"]
+        await ac.post(f"{BASE}/portal/coaching/{cs}/items", headers=sup2, json={"tipo": "monitoreo", "metricas": ["gpon"], "texto": "No ofreció GPON."})
+        await ac.post(f"{BASE}/portal/coaching/{cs}/compromisos", headers=sup2, json={"texto": "Ofrecer GPON en cada llamada", "metrica": "gpon"})
+        comp = (await firmar(ac, sup2, cs))["compromisos"][0]["id"]
+        reloj["hoy"], reloj["ahora"] = date(2026, 10, 12), datetime(2026, 10, 12, 15, tzinfo=timezone.utc)
+        r = await ac.post(f"{BASE}/portal/coaching/{cs}/seguimiento", headers=sup2, json={"comentario": "Ya ofrece GPON en todas las llamadas que escuché.",
+                                                                                       "compromisos": [{"id": comp, "resultado": "cumplido"}]})
+        assert r.status_code == 200, r.text
+        d2 = (await ac.get(f"{BASE}/portal/mi-dia", headers=sup2)).json()
+        assert d2["feedbacks"] == 1 and d2["semana"][-4]["feedbacks"] == 1    # el viernes (el coaching) y hoy (el seguimiento)
 
         # La calidad mientras se escribe.
         r = await ac.post(f"{BASE}/portal/calidad", headers=sup1, json={"texto": CORTO})

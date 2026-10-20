@@ -2,8 +2,8 @@
 
 Va dentro de «Hoy» del portal (no es una pantalla aparte):
 
-* `GET /portal/mi-dia`: el objetivo de feedback del día (`objetivo_feedback_dia`, por defecto 8) con los hitos (primer
-  feedback, la mitad, el objetivo y el punto extra del cierre), la racha de días con el objetivo cumplido, la calidad
+* `GET /portal/mi-dia`: el objetivo de feedback del día (`objetivo_feedback_dia`, por defecto 8; cada coaching con algo
+  cargado ese día es un feedback dado) con los hitos (primer feedback, la mitad, el objetivo y el punto extra del cierre), la racha de días con el objetivo cumplido, la calidad
   de sus feedback de los últimos 7 días con qué hacer, y su cierre del día (o el compromiso del cierre anterior).
 * `POST /portal/calidad`: la calidad de un feedback mientras lo escribe (consejos al instante).
 * `PUT /portal/cierre`: carga o corrige el cierre de hoy (resultados, compromiso para mañana, cómo terminó el día y si
@@ -62,18 +62,38 @@ def _habil(d: date, p: dict[str, Any]) -> bool:
 
 
 async def feedbacks(db: AsyncSession, desde: date, hasta: date, supervisor_id: str | None = None) -> list[tuple[str, datetime, str]]:
-    """Los feedback cargados en coachings no anulados en el rango: (supervisor, hora, texto)."""
+    """Las devoluciones del rango: cada coaching (no anulado) en el que el supervisor cargó algo ese día (monitoreos o
+    feedback, como sea que los haya marcado, o el seguimiento) cuenta como **un** feedback dado al asesor. Devuelve (supervisor, hora del
+    último registro del día, el texto de la devolución: todo lo que cargó ese día en ese coaching, en orden)."""
     ini, fin = _limites(desde, hasta)
-    q = (select(Coaching.supervisor_id, CoachingItem.at, CoachingItem.texto).join(Coaching, Coaching.id == CoachingItem.coaching_id)
-         .where(Coaching.operativa == OPERATIVA, Coaching.estado != "anulado", CoachingItem.tipo == "feedback",
-                CoachingItem.at >= ini, CoachingItem.at < fin))
+    q = (select(Coaching.supervisor_id, CoachingItem.coaching_id, CoachingItem.at, CoachingItem.texto)
+         .join(Coaching, Coaching.id == CoachingItem.coaching_id)
+         .where(Coaching.operativa == OPERATIVA, Coaching.estado != "anulado", CoachingItem.at >= ini, CoachingItem.at < fin)
+         .order_by(CoachingItem.at))
     if supervisor_id:
         q = q.where(Coaching.supervisor_id == supervisor_id)
-    return [(s, a, t or "") for s, a, t in (await db.execute(q)).all()]
+    filas = [(s, cid, a, t) for s, cid, a, t in (await db.execute(q)).all()]
+    # El seguimiento registrado también es una devolución al asesor (con su comentario).
+    qs = (select(Coaching.supervisor_id, Coaching.id, Coaching.seguimiento_at, Coaching.seguimiento_comentario)
+          .where(Coaching.operativa == OPERATIVA, Coaching.estado != "anulado", Coaching.seguimiento_at >= ini, Coaching.seguimiento_at < fin))
+    if supervisor_id:
+        qs = qs.where(Coaching.supervisor_id == supervisor_id)
+    filas += [(s, cid, a, t) for s, cid, a, t in (await db.execute(qs)).all()]
+    grupos: dict[tuple[str, date], list[Any]] = {}
+    for s, cid, a, t in sorted(filas, key=lambda x: _utc(x[2])):
+        g = grupos.setdefault((cid, _dia(a)), [s, a, []])
+        g[1] = a
+        if (t or "").strip():
+            g[2].append(t.strip())
+    return [(s, a, "\n".join(ts)) for s, a, ts in grupos.values()]
+
+
+def _utc(d: datetime) -> datetime:
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
 def _dia(d: datetime) -> date:
-    return (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).astimezone(ZONA).date()
+    return _utc(d).astimezone(ZONA).date()
 
 
 def hitos(hechos: int, obj: int, con_cierre: bool) -> list[dict[str, Any]]:
