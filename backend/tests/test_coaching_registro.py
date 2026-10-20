@@ -20,6 +20,8 @@ from app.operativas.televentas_claro.supervision.migraciones import coaching_met
 from app.operativas.televentas_claro.supervision.models import Coaching, Operador
 from app.operativas.televentas_claro.supervision.scoring import SCORING_DEFECTO, gestion_supervisor
 
+from tests.firma_helper import firmar  # noqa: E402
+
 BASE = "/api/v1/televentas-claro/supervision"
 TC = "televentas_claro"
 D = lambda m, d: date(2026, m, d)  # noqa: E731
@@ -135,7 +137,8 @@ async def test_varias_metricas_registro_por_rango_e_historial(monkeypatch):
         # Varias métricas: se guardan sin repetir, en orden, y la primera es la principal.
         r = await ac.post(f"{BASE}/portal/coaching", headers=sup1, json={**nuevo, "metricas": ["gpon", "pospago", "gpon"]})
         assert r.status_code == 201, r.text
-        c1 = r.json()
+        assert r.json()["impacto"] is None              # sin firmar no se mide
+        c1 = await firmar(ac, sup1, r.json()["id"])
         assert c1["metricas"] == ["pospago", "gpon"] and c1["metrica"] == "pospago"
         assert c1["eventos"][0]["datos"]["metricas"] == ["pospago", "gpon"]
         # El impacto en vivo trae cada métrica y el resultado de todas juntas.
@@ -157,14 +160,16 @@ async def test_varias_metricas_registro_por_rango_e_historial(monkeypatch):
         r = await ac.post(f"{BASE}/portal/coaching", headers=sup2, json={
             **nuevo, "operador_id": caro, "tipo": "diario", "metricas": ["conversacion", "uso"], "seguimiento_fecha": "2026-10-13"})
         assert r.status_code == 201, r.text
-        c4 = r.json()
+        c4 = await firmar(ac, sup2, r.json()["id"])
 
-        # Corregir las métricas dentro de las 24 h: queda en el historial.
+        # Corregir las métricas mientras está sin firmar: queda en el historial. Después se firma.
         r = await ac.patch(f"{BASE}/portal/coaching/{c2['id']}", headers=sup1, json={"metricas": ["conversacion", "gpon"]})
         assert r.status_code == 200, r.text
         assert r.json()["metricas"] == ["gpon", "conversacion"] and r.json()["metrica"] == "gpon"
         assert r.json()["eventos"][-1]["datos"] == {"antes": {"metricas": ["conversacion"]}, "despues": {"metricas": ["gpon", "conversacion"]}}
         assert (await ac.patch(f"{BASE}/portal/coaching/{c2['id']}", headers=sup1, json={"metricas": []})).status_code == 400
+        c2 = await firmar(ac, sup1, c2["id"])
+        assert c2["metricas"] == ["gpon", "conversacion"]
 
         # Lo que el supervisor tiene que atender hoy: el seguimiento del 14 llega en los próximos 2 días hábiles.
         hoy1 = (await ac.get(f"{BASE}/portal", headers=sup1)).json()["coaching"]
@@ -175,7 +180,8 @@ async def test_varias_metricas_registro_por_rango_e_historial(monkeypatch):
         # Pasan dos días: Sergio registra el seguimiento (uso mejoró, conversación empeoró → mixto).
         reloj["hoy"], reloj["ahora"] = D(10, 14), datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc)
         r = await ac.post(f"{BASE}/portal/coaching/{c4['id']}/seguimiento", headers=sup2,
-                          json={"comentario": "Mejoró el chequeo de uso; todavía corta antes de presentar la oferta."})
+                          json={"comentario": "Mejoró el chequeo de uso; todavía corta antes de presentar la oferta.",
+                                "compromisos": [{"id": x["id"], "resultado": "parcial"} for x in c4["compromisos"]]})
         assert r.status_code == 200, r.text
         cerrado = r.json()
         assert cerrado["resultado"] == "mixto" and cerrado["seguimiento"] == "a_tiempo"
@@ -247,7 +253,7 @@ async def test_varias_metricas_registro_por_rango_e_historial(monkeypatch):
 
         # El detalle (con el historial de aclaraciones) lo ven los jefes desde el registro.
         d = (await ac.get(f"{BASE}/coaching/{c2['id']}", headers=subg)).json()
-        assert [e["tipo"] for e in d["eventos"]] == ["creado", "editado"] and d["metricas"] == ["gpon", "conversacion"]
+        assert [e["tipo"] for e in d["eventos"]] == ["creado", "editado", "firmado"] and d["metricas"] == ["gpon", "conversacion"]
 
         # La línea de tiempo de los jefes dice sobre qué se trabajó.
         lt = (await ac.get(f"{BASE}/supervisores/{s2}/linea", headers=coord, params={"periodo": "2026-10"})).json()

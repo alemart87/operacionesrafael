@@ -107,7 +107,8 @@ function Gestion() {
           <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <Kpi titulo="Cobertura de la operación" valor={cobertura === null ? "—" : `${num(cobertura, 0)}%`} barra={cobertura}
               sub={`${n(op.con_coaching)} de los ${pl(op.asesores, "asesor", "asesores")} con supervisor ${op.con_coaching === 1 ? "tuvo" : "tuvieron"} coaching en el mes.`} />
-            <Kpi titulo="Coachings del mes" valor={n(op.coachings)} sub="Registrados por los supervisores (sin los anulados)." />
+            <Kpi titulo="Coachings del mes" valor={n(op.coachings)} alerta={(op.sin_firmar_vencidos ?? 0) > 0}
+              sub={`Terminados: firmados por el asesor (sin los anulados).${op.sin_firmar ? ` ${pl(op.sin_firmar, "espera", "esperan")} la firma${op.sin_firmar_vencidos ? `, ${n(op.sin_firmar_vencidos)} vencido(s)` : ""}.` : ""}`} />
             <Kpi titulo="Seguimientos vencidos" valor={n(op.seguimientos_vencidos)} alerta={op.seguimientos_vencidos > 0}
               sub="Compromisos que pasaron su fecha (y el día siguiente) sin seguimiento." />
             <Kpi titulo="Alertas sin coaching a tiempo" valor={n(op.alertas_vencidas)} alerta={op.alertas_vencidas > 0}
@@ -142,7 +143,7 @@ function Gestion() {
                   <tbody>
                     {d.supervisores.map((f) => {
                       const partes = Object.fromEntries(f.partes.map((p) => [p.clave, p]));
-                      const vencido = f.seguimientos_vencidos + f.alertas.vencida > 0;
+                      const vencido = f.seguimientos_vencidos + f.alertas.vencida + (f.sin_firmar_vencidos ?? 0) > 0;
                       return (
                         <tr key={f.id} className={`border-t border-brand-border align-top ${vencido ? "shadow-[inset_3px_0_0_#E6332A]" : ""}`}>
                           <td className="px-5 py-3 min-w-[200px]">
@@ -161,11 +162,13 @@ function Gestion() {
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex flex-wrap gap-1 max-w-[260px]">
+                              {(f.sin_firmar_vencidos ?? 0) > 0 && <span className={`inline-flex items-center gap-1 rounded border px-1.5 text-[10px] font-semibold ${ROJO}`}><TriangleAlert size={10} aria-hidden />{pl(f.sin_firmar_vencidos!, "devolución sin firmar vencida", "devoluciones sin firmar vencidas")}</span>}
+                              {(f.sin_firmar ?? 0) - (f.sin_firmar_vencidos ?? 0) > 0 && <span className={`inline-flex items-center rounded border px-1.5 text-[10px] font-semibold ${NARANJA}`}>{pl(f.sin_firmar! - (f.sin_firmar_vencidos ?? 0), "sin firmar", "sin firmar")}</span>}
                               {f.seguimientos_vencidos > 0 && <span className={`inline-flex items-center gap-1 rounded border px-1.5 text-[10px] font-semibold ${ROJO}`}><TriangleAlert size={10} aria-hidden />{pl(f.seguimientos_vencidos, "seguimiento vencido", "seguimientos vencidos")}</span>}
                               {f.alertas.vencida > 0 && <span className={`inline-flex items-center gap-1 rounded border px-1.5 text-[10px] font-semibold ${ROJO}`}><TriangleAlert size={10} aria-hidden />{pl(f.alertas.vencida, "alerta sin coaching", "alertas sin coaching")}</span>}
                               {f.alertas.en_plazo > 0 && <span className={`inline-flex items-center rounded border px-1.5 text-[10px] font-semibold ${NARANJA}`}>{pl(f.alertas.en_plazo, "alerta en plazo", "alertas en plazo")}</span>}
                               {f.seguimientos_abiertos - f.seguimientos_vencidos > 0 && <span className="text-[10px] text-brand-slate self-center">{pl(f.seguimientos_abiertos - f.seguimientos_vencidos, "seguimiento por venir", "seguimientos por venir")}</span>}
-                              {!vencido && !f.alertas.en_plazo && f.seguimientos_abiertos === 0 && <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700"><CircleCheck size={12} aria-hidden /> Al día</span>}
+                              {!vencido && !f.alertas.en_plazo && f.seguimientos_abiertos === 0 && !f.sin_firmar && <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700"><CircleCheck size={12} aria-hidden /> Al día</span>}
                             </div>
                           </td>
                           <td className="px-5 py-3 text-right"><Actividad f={f} /></td>

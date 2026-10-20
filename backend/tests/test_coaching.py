@@ -25,6 +25,7 @@ from app.operativas.televentas_claro.supervision.impacto import (
 )
 from app.operativas.televentas_claro.supervision.scoring import SCORING_DEFECTO, calcular, gestion_supervisor
 from app.operativas.televentas_claro.ventas_netas.models import VentasNetasReport
+from tests.firma_helper import firmar
 from tests.test_productividad import corte, fila, reporte
 
 BASE = "/api/v1/televentas-claro/supervision"
@@ -257,7 +258,7 @@ async def test_flujo_coaching_seguimiento_bitacora_y_gestion(monkeypatch):
         # El portal resume lo que hay que atender hoy.
         assert (await ac.get(f"{BASE}/portal", headers=sup1)).json()["coaching"] == {
             "seguimientos_vencidos": 0, "seguimientos_hoy": 0, "seguimientos_proximos": 0, "proximos_hasta": "2026-10-14",
-            "alertas_vencidas": 0, "alertas_en_plazo": 1, "sin_coaching": 2,
+            "alertas_vencidas": 0, "alertas_en_plazo": 1, "sin_coaching": 2, "sin_firmar": 0, "sin_firmar_vencidos": 0,
             "tickets_nuevos": 0, "tickets_por_vencer": 0, "tickets_vencidos": 0}
 
         nuevo = {"operador_id": rob, "fecha": "2026-10-12", "tipo": "semanal", "metrica": "uso",
@@ -272,27 +273,41 @@ async def test_flujo_coaching_seguimiento_bitacora_y_gestion(monkeypatch):
         r = await ac.post(f"{BASE}/portal/coaching", headers=sup1, json=nuevo)
         assert r.status_code == 201, r.text
         c_uso = r.json()
-        assert c_uso["estado"] == "abierto" and not c_uso["fuera_de_termino"] and c_uso["editable"]
+        # Nace sin firmar: con el diagnóstico como feedback y el compromiso del asesor; todavía no cuenta en la gestión.
+        assert c_uso["estado"] == "pendiente" and c_uso["devolucion"] == "pendiente" and not c_uso["fuera_de_termino"] and c_uso["editable"]
         assert c_uso["base"]["score"] is not None and [e["tipo"] for e in c_uso["eventos"]] == ["creado"]
+        assert [(i["tipo"], i["texto"]) for i in c_uso["items"]] == [("feedback", nuevo["diagnostico"])]
+        assert [x["texto"] for x in c_uso["compromisos"]] == [nuevo["compromiso"]] and c_uso["puede_firmar"]
+        assert c_uso["seguimiento"] is None and c_uso["impacto"] is None and c_uso["fecha_gestion"] is None
+        assert (await ac.get(f"{BASE}/portal", headers=sup1)).json()["coaching"]["sin_firmar"] == 1
+        # Sin firmar no hay seguimiento.
+        assert (await ac.post(f"{BASE}/portal/coaching/{c_uso['id']}/seguimiento", headers=sup1,
+                              json={"comentario": "Todavía no corresponde"})).status_code == 409
         # Conversación de Ana, del viernes 9: con más de 48 h, cuenta pero queda fuera de término.
         r = await ac.post(f"{BASE}/portal/coaching", headers=sup1, json={
             **nuevo, "operador_id": ana, "fecha": "2026-10-09", "tipo": "diario", "metrica": "conversacion",
             "diagnostico": "Corta las llamadas antes de presentar la oferta.", "compromiso": "Presentar la oferta completa.",
             "seguimiento_fecha": "2026-10-19"})
         assert r.status_code == 201 and r.json()["fuera_de_termino"]
-        c_conv = r.json()
-        # Uno cargado por error se anula (dentro de las 24 h): queda tachado y no suma.
+        c_conv = await firmar(ac, sup1, r.json()["id"])
+        assert c_conv["estado"] == "abierto" and c_conv["devolucion"] == "firmada" and c_conv["fecha_gestion"] == "2026-10-12"
+        # Uno cargado por error se anula (mientras está sin firmar): queda tachado y no suma.
         r = await ac.post(f"{BASE}/portal/coaching", headers=sup1, json={**nuevo, "metrica": "otra"})
         c_error = r.json()
         assert (await ac.post(f"{BASE}/portal/coaching/{c_error['id']}/anular", headers=sup1, json={"motivo": "Cargado dos veces"})).json()["estado"] == "anulado"
 
-        # Edición: libre durante 24 h (queda en el historial); después, solo aclaraciones.
+        # Edición: libre mientras está sin firmar (queda en el historial); firmado, solo aclaraciones.
         r = await ac.patch(f"{BASE}/portal/coaching/{c_uso['id']}", headers=sup1, json={"compromiso": "Confirmar el uso en cada venta y avisar dudas."})
         assert r.status_code == 200 and [e["tipo"] for e in r.json()["eventos"]] == ["creado", "editado"]
         assert r.json()["eventos"][1]["datos"]["antes"]["compromiso"].startswith("Confirmar en cada venta")
+        assert r.json()["compromisos"][0]["texto"] == "Confirmar el uso en cada venta y avisar dudas."
+        firmado = await firmar(ac, sup1, c_uso["id"])
+        assert firmado["estado"] == "abierto" and len(firmado["huella"]) == 64 and not firmado["editable"]
+        assert {f["firmante"] for f in firmado["firmas"]} == {"asesor", "supervisor"}
         reloj["ahora"] += timedelta(hours=25)
         assert (await ac.patch(f"{BASE}/portal/coaching/{c_uso['id']}", headers=sup1, json={"tipo": "diario"})).status_code == 409
         assert (await ac.post(f"{BASE}/portal/coaching/{c_uso['id']}/anular", headers=sup1, json={"motivo": "Tarde"})).status_code == 409
+        assert (await ac.post(f"{BASE}/portal/coaching/{c_uso['id']}/firmar", headers=sup1, json={"imagen": "x", "acepto": True})).status_code == 409
         r = await ac.post(f"{BASE}/portal/coaching/{c_uso['id']}/aclaracion", headers=sup1, json={"texto": "Se revisaron las 3 líneas."})
         assert r.status_code == 200 and r.json()["eventos"][-1]["tipo"] == "aclaracion" and not r.json()["editable"]
         # Otro supervisor no ve ni toca los coachings de Silvia.
@@ -329,10 +344,16 @@ async def test_flujo_coaching_seguimiento_bitacora_y_gestion(monkeypatch):
 
         # Seguimiento de la conversación de Ana (acordado para el 19, registrado el 20: a tiempo).
         assert (await ac.post(f"{BASE}/portal/coaching/{c_conv['id']}/seguimiento", headers=sup1, json={"comentario": "ok"})).status_code == 400
+        # Firmado: el seguimiento marca cómo le fue con cada compromiso del asesor.
         r = await ac.post(f"{BASE}/portal/coaching/{c_conv['id']}/seguimiento", headers=sup1,
                           json={"comentario": "Ya presenta la oferta completa; mejoró la conversación."})
+        assert r.status_code == 400 and "cada compromiso" in r.json()["detail"]
+        r = await ac.post(f"{BASE}/portal/coaching/{c_conv['id']}/seguimiento", headers=sup1,
+                          json={"comentario": "Ya presenta la oferta completa; mejoró la conversación.",
+                                "compromisos": [{"id": c_conv["compromisos"][0]["id"], "resultado": "cumplido", "nota": "Lo sostuvo toda la semana"}]})
         assert r.status_code == 200, r.text
         cerrado = r.json()
+        assert [(x["resultado"], x["nota"]) for x in cerrado["compromisos"]] == [("cumplido", "Lo sostuvo toda la semana")]
         assert cerrado["estado"] == "cerrado" and cerrado["seguimiento"] == "a_tiempo" and cerrado["resultado"] == "mejoro"
         assert cerrado["impacto"]["antes"]["valor"] == 25.0 and cerrado["impacto"]["despues"]["valor"] == 35.0
         assert (await ac.post(f"{BASE}/portal/coaching/{c_conv['id']}/seguimiento", headers=sup1,
@@ -350,7 +371,7 @@ async def test_flujo_coaching_seguimiento_bitacora_y_gestion(monkeypatch):
         assert j.status_code == 200 and not j.json()["puede_registrar"] and not any(c["editable"] for c in j.json()["items"])
         assert (await ac.get(f"{BASE}/coaching", headers=sup1, params={"supervisor_id": s1})).status_code == 403
         d = (await ac.get(f"{BASE}/coaching/{c_uso['id']}", headers=coord)).json()
-        assert [e["tipo"] for e in d["eventos"]] == ["creado", "editado", "aclaracion"] and d["eventos"][0]["por"] == "Silvia Uno"
+        assert [e["tipo"] for e in d["eventos"]] == ["creado", "editado", "firmado", "aclaracion"] and d["eventos"][0]["por"] == "Silvia Uno"
         t = (await ac.get(f"{BASE}/tablero", headers=coord, params={"periodo": "2026-10"})).json()
         silvia = next(s for s in t["supervisores"] if s["id"] == s1)
         assert {p["clave"]: p["rel"] for p in silvia["partes"]}["cobertura"] == 1.0

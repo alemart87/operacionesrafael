@@ -6,21 +6,14 @@ import { useEffect, useState, type ReactNode, type RefObject } from "react";
 
 export const COACHING_PORTAL = "/televentas-claro/portal/coaching";
 
-/** Abre el registro de un coaching en el portal (si se indica, ya con el asesor elegido). */
-export const hrefNuevoCoaching = (operadorId?: string) =>
-  `${COACHING_PORTAL}?nuevo=1${operadorId ? `&operador=${encodeURIComponent(operadorId)}` : ""}`;
-
-/** Lee y limpia de la URL el pedido de abrir un coaching nuevo (`?nuevo=1&operador=…`): al recargar no se repite. */
-export function leerNuevoCoaching(): { operador_id?: string } | null {
-  if (typeof window === "undefined") return null;
-  const q = new URLSearchParams(window.location.search);
-  if (q.get("nuevo") !== "1") return null;
-  const operador = q.get("operador") || undefined;
-  q.delete("nuevo");
-  q.delete("operador");
-  const resto = q.toString();
-  window.history.replaceState(null, "", `${window.location.pathname}${resto ? `?${resto}` : ""}`);
-  return { operador_id: operador };
+/** Abre un coaching nuevo en el portal (si se indica, ya con el asesor elegido; con `anterior`, continúa uno sin mejora). */
+export function hrefNuevoCoaching(operadorId?: string, extra?: { metrica?: string; anterior?: string }): string {
+  const q = new URLSearchParams();
+  if (operadorId) q.set("operador", operadorId);
+  if (extra?.metrica) q.set("metrica", extra.metrica);
+  if (extra?.anterior) q.set("anterior", extra.anterior);
+  const s = q.toString();
+  return `${COACHING_PORTAL}/nuevo${s ? `?${s}` : ""}`;
 }
 
 type Props = { children?: ReactNode; className?: string; title?: string; tabIndex?: number } & (

@@ -31,7 +31,7 @@ services:
         sync: false
       - key: SUPERADMIN_PASSWORD
         sync: false
-      - key: OPENAI_API_KEY        # Agente de Facturación (opcional)
+      - key: OPENAI_API_KEY        # Agente de Facturación y transcripción de voz del portal (opcional)
         sync: false
       - key: ANTHROPIC_API_KEY     # Voi, el agente de la plataforma (Claude Managed Agents)
         sync: false

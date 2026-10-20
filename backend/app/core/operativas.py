@@ -79,6 +79,12 @@ OPERATIVAS: list[dict] = [
                 "description": "Enviar casos a revisión a los supervisores (venta observada, línea sin uso, calidad de atención, reclamo, conducta u otro) y seguirlos: comentar, reabrir, reasignar y cancelar. Los plazos se miden en horas hábiles.",
             },
             {
+                "key": "control_supervisores",
+                "name": "Supervisión · Control de supervisores",
+                "description": "Control rápido de lo que hacen los supervisores: coachings registrados, firmados y sin firmar, monitoreos y feedback, compromisos, audios y minutos grabados, seguimientos, notas y tickets, por supervisor y en la actividad del día; escuchar los audios y ver las firmas; validar las altas de asesores y los pedidos de pase.",
+                "solo_perfiles": ["gerente", "sub_gerente", "coordinador", "controller"],
+            },
+            {
                 "key": "supervision_parametros",
                 "name": "Supervisión · Parámetros del modelo",
                 "description": "Pesos y umbrales del scoring de asesores, supervisores y operación (cada cambio es una versión nueva y queda en el historial).",

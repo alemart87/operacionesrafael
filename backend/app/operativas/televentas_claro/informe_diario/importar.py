@@ -245,9 +245,11 @@ def _bordes(dia: date) -> tuple[datetime, datetime]:
 async def _coaching(db: AsyncSession, dia: date) -> dict[str, Any]:
     ini, fin = _bordes(dia)
     cs = (await db.execute(select(Coaching).where(
-        Coaching.operativa == SUP_OPERATIVA, Coaching.estado != "anulado",
-        or_(Coaching.fecha == dia, and_(Coaching.seguimiento_at >= ini, Coaching.seguimiento_at < fin))))).scalars().all()
-    del_dia = [c for c in cs if c.fecha == dia]
+        Coaching.operativa == SUP_OPERATIVA, Coaching.estado.notin_(("anulado", coaching_srv.PENDIENTE)),
+        or_(Coaching.fecha == dia, and_(Coaching.firmado_at >= ini, Coaching.firmado_at < fin),
+            and_(Coaching.seguimiento_at >= ini, Coaching.seguimiento_at < fin))))).scalars().all()
+    # Los coachings del día son los terminados ese día: firmados ese día (o, los anteriores a la firma, con esa fecha).
+    del_dia = [c for c in cs if coaching_srv.fecha_gestion(c) == dia]
     seguidos = [c for c in cs if c.seguimiento_at and ini <= (c.seguimiento_at if c.seguimiento_at.tzinfo else c.seguimiento_at.replace(tzinfo=timezone.utc)) < fin]
     abiertos = (await db.execute(select(Coaching).where(Coaching.operativa == SUP_OPERATIVA, Coaching.estado == "abierto",
                                                         Coaching.seguimiento_fecha < dia))).scalars().all()

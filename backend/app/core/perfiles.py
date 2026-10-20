@@ -7,10 +7,11 @@ perfil nuevo); nunca pisa lo que el superadmin ya configuró.
 """
 from __future__ import annotations
 
-from .operativas import OPERATIVAS
+from .operativas import OPERATIVAS, asignables
 
 
 PERFILES: list[dict] = [
+    {"slug": "gerente", "name": "Gerente", "description": "Dirige la gerencia: todos los módulos menos Facturación e Integraciones, con el control de lo que hacen los supervisores."},
     {"slug": "sub_gerente", "name": "Sub gerente", "description": "Conduce la operación: todos los módulos, incluida Facturación."},
     {"slug": "controller", "name": "Controller", "description": "Controla la operación: todos los módulos menos Facturación (el informe diario y el asistente se le pueden asignar). Puede tener varias operativas."},
     {"slug": "coordinador", "name": "Coordinador", "description": "Coordina la operativa. Acceso amplio."},
@@ -28,13 +29,16 @@ _TC = "televentas_claro"
 _TODAS_TC = [u["key"] for o in OPERATIVAS if o["slug"] == _TC for u in o["utilidades"]]
 
 DEFAULT_PERMISSIONS: dict[str, list[str]] = {
+    # El gerente arranca con todo lo que su perfil puede tener: nunca las restringidas a otros perfiles (Facturación,
+    # Integraciones, el portal del supervisor).
+    "gerente": [f"{_TC}.{u}" for u in _TODAS_TC if f"{_TC}.{u}" in asignables("gerente")],
     "sub_gerente": [f"{_TC}.{u}" for u in _TODAS_TC],
     # El informe diario lo preparan el coordinador y el sub gerente (y el superadmin); el controller no, salvo que se le asigne.
     # El asistente (Voi) arranca con sub gerente, coordinador y auditor; al resto se le puede asignar.
     "controller": [f"{_TC}.{u}" for u in _TODAS_TC if u not in ("facturacion", "informe_diario", "asistente", "integraciones")],
     "coordinador": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "productividad", "sph", "supervision",
-                                            "supervision_gestion", "tickets", "operadores", "informe_diario", "asistente",
-                                            "logistica")],
+                                            "supervision_gestion", "tickets", "control_supervisores", "operadores",
+                                            "informe_diario", "asistente", "logistica")],
     # El supervisor solo entra a su portal (ver core/operativas.PERFILES_SOLO_PORTAL).
     "supervisor": [f"{_TC}.{u}" for u in ("ver", "portal_supervisor")],
     "analista": [f"{_TC}.{u}" for u in ("ver", "ventas_netas", "ventas_netas_gestion", "auditoria",

@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal, Base, engine
 from app.core.operativas import RESTRINGIDAS, asignables
+from app.core.perfiles import DEFAULT_PERMISSIONS
 from app.main import app
 from app.models.audit import AuditLog
 from app.operativas.televentas_claro.informe_diario.models import FIRMADO, InformeDiario
@@ -85,6 +86,7 @@ def _bearer(secreto: str) -> dict:
 def test_la_utilidad_es_solo_de_sub_gerente_y_superadmin():
     assert RESTRINGIDAS[PERM] == {"sub_gerente"}
     assert PERM in asignables("sub_gerente") and PERM not in asignables("controller") and PERM not in asignables("coordinador")
+    assert PERM not in asignables("gerente") and PERM not in DEFAULT_PERMISSIONS["gerente"]
     assert "facturacion" not in " ".join(ds.CATALOGO)   # ningún dataset de facturación
 
 

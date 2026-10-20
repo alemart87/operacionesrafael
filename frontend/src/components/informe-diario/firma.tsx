@@ -10,7 +10,7 @@ const TINTA = "#0F1116";
 const ANCHO_MAX = 600; // px de la imagen guardada (liviana para el PDF)
 
 /** Recorta lo dibujado (sin márgenes transparentes) y lo devuelve como PNG de hasta 600 px de ancho. */
-function exportar(lienzo: HTMLCanvasElement): string | null {
+export function exportar(lienzo: HTMLCanvasElement): string | null {
   const ctx = lienzo.getContext("2d");
   if (!ctx) return null;
   const { width: w, height: h } = lienzo;

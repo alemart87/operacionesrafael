@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from . import sla
 from .alertas import ZONA, dia_local
 from .calculo import limites, peso_dia, proyeccion
-from .coaching import NOMBRE_RESULTADO, ORDEN_EVENTO, estado_seguimiento, metricas_de
+from .coaching import NOMBRE_RESULTADO, ORDEN_EVENTO, devolucion_vencida, estado_seguimiento, metricas_de, vence_devolucion
 from .impacto import METRICAS
 from .models import (
     OPERATIVA, AlertaComando, BitacoraNota, Coaching, CoachingEvento, EquipoAsignacion, ObjetivoSupervisor, Ticket,
@@ -40,6 +40,7 @@ TIPOS: dict[str, tuple[int, str, str | None]] = {
     "supervisor_critico": (0, "Supervisor en crítico", "linea_sin_uso"),
     "proyeccion_bajo": (0, "Proyección bajo el 90%", "otro"),
     "seguimiento_vencido": (1, "Seguimiento vencido", "otro"),
+    "devolucion_vencida": (1, "Devolución sin firmar", "otro"),
     "asesor_alerta": (1, "Asesor en alerta", "linea_sin_uso"),
     "sin_actividad": (1, "Sin registrar gestión", "otro"),
     "sin_supervisor": (1, "Asesores sin supervisor", None),
@@ -105,6 +106,12 @@ async def ultima_gestion(db: AsyncSession) -> dict[str, datetime]:
     for sid, c, s in (await db.execute(select(Coaching.supervisor_id, func.max(Coaching.created_at), func.max(Coaching.seguimiento_at))
                                        .where(Coaching.operativa == OPERATIVA).group_by(Coaching.supervisor_id))).all():
         sumar(sid, c, s)
+    # Lo que suma a un coaching sin firmar (monitoreos, compromisos, audios, firma) también es gestión.
+    for sid, m in (await db.execute(select(Coaching.supervisor_id, func.max(CoachingEvento.at))
+                                    .join(Coaching, Coaching.id == CoachingEvento.coaching_id)
+                                    .where(Coaching.operativa == OPERATIVA, CoachingEvento.por == Coaching.supervisor_id)
+                                    .group_by(Coaching.supervisor_id))).all():
+        sumar(sid, m)
     for sid, c in (await db.execute(select(BitacoraNota.supervisor_id, func.max(BitacoraNota.created_at))
                                     .where(BitacoraNota.operativa == OPERATIVA).group_by(BitacoraNota.supervisor_id))).all():
         sumar(sid, c)
@@ -145,7 +152,7 @@ def cabecera(ctx: Any, prev: Any, *, tickets: list[tuple[Ticket, dict[str, Any]]
 def semaforo_fila(*, info: dict[str, Any], sc: dict[str, Any], anterior: float | None, pospago: dict[str, Any],
                   gpon: dict[str, Any], asesores: int, en_alerta: int, a_recuperar: int, alertas: Counter,
                   tickets: Counter, seguimientos_vencidos: int, ultima: datetime | None, dias_sin_gestion: float | None,
-                  umbral: float) -> dict[str, Any]:
+                  umbral: float, sin_firmar: int = 0, sin_firmar_vencidos: int = 0) -> dict[str, Any]:
     """Una fila del semáforo: estado (atención / revisar / al día) y los motivos, del más urgente al menos."""
     rojo: list[str] = []
     amarillo: list[str] = []
@@ -155,6 +162,8 @@ def semaforo_fila(*, info: dict[str, Any], sc: dict[str, Any], anterior: float |
         rojo.append(_pl(alertas["vencida"], "alerta de uso sin coaching a tiempo", "alertas de uso sin coaching a tiempo"))
     if seguimientos_vencidos:
         rojo.append(_pl(seguimientos_vencidos, "seguimiento vencido", "seguimientos vencidos"))
+    if sin_firmar_vencidos:
+        rojo.append(_pl(sin_firmar_vencidos, "devolución sin firmar vencida", "devoluciones sin firmar vencidas"))
     for nombre, pr in (("Pospago", pospago), ("GPON", gpon)):
         if pr["estado"] == "bajo_objetivo" and not pr["provisoria"]:
             rojo.append(f"{nombre} proyecta {pr['pct_proyeccion']:.0f}% del objetivo")
@@ -176,7 +185,7 @@ def semaforo_fila(*, info: dict[str, Any], sc: dict[str, Any], anterior: float |
         "pospago": pospago, "gpon": gpon, "asesores": asesores, "asesores_en_alerta": en_alerta, "a_recuperar": a_recuperar,
         "cobertura": partes.get("cobertura"), "tickets": {"abiertos": sum(tickets.values()), "vencidos": tickets.get("vencido", 0),
                                                         "por_vencer": tickets.get("por_vencer", 0)},
-        "seguimientos_vencidos": seguimientos_vencidos,
+        "seguimientos_vencidos": seguimientos_vencidos, "sin_firmar": sin_firmar, "sin_firmar_vencidos": sin_firmar_vencidos,
         "ultima_gestion": ultima.isoformat() if ultima else None, "dias_sin_gestion": dias_sin_gestion,
     }
 
@@ -198,7 +207,8 @@ def _cond(tipo: str, clave: str, titulo: str, detalle: str, *, periodo: str | No
 
 def condiciones(ctx: Any, *, dia: date, nombres: dict[str, str], tickets: list[tuple[Ticket, dict[str, Any]]],
                 coachings_abiertos: list[Coaching], filas: list[dict[str, Any]], alertas_uso: list[Any],
-                pendientes_vincular: int, horario: sla.Horario) -> dict[tuple[str, str], dict[str, Any]]:
+                pendientes_vincular: int, horario: sla.Horario,
+                sin_firmar: list[Coaching] | tuple = ()) -> dict[tuple[str, str], dict[str, Any]]:
     """Las condiciones que hoy piden atención (cada una, con la clave que la identifica dentro de su tipo)."""
     out: dict[tuple[str, str], dict[str, Any]] = {}
     per, umbral = ctx.periodo, ctx.p["umbral_sin_uso"]
@@ -227,6 +237,16 @@ def condiciones(ctx: Any, *, dia: date, nombres: dict[str, str], tickets: list[t
                   f"Coaching a {asesor(c.operador_id)} del {_dm(c.fecha)} sobre {_sobre(c)}: "
                   f"el seguimiento era el {_dm(c.seguimiento_fecha)}.",
                   supervisor_id=c.supervisor_id, operador_id=c.operador_id, desde=_medianoche(c.seguimiento_fecha + timedelta(days=2)),
+                  coaching_id=c.id))
+    # Coachings abiertos que esperan la firma del asesor más de lo previsto.
+    for c in sin_firmar:
+        if not devolucion_vencida(c, dia, ctx.p):
+            continue
+        vence = vence_devolucion(c, ctx.p)
+        add(_cond("devolucion_vencida", c.id, f"Devolución sin firmar · {sup(c.supervisor_id)}",
+                  f"Coaching a {asesor(c.operador_id)} abierto el {_dm(dia_local(c.created_at) or c.fecha)}: el asesor todavía "
+                  f"no firmó (vencía el {_dm(vence)}). Hasta la firma no cuenta como coaching hecho.",
+                  supervisor_id=c.supervisor_id, operador_id=c.operador_id, desde=_medianoche(vence + timedelta(days=1)),
                   coaching_id=c.id))
     if ctx.periodo != dia.strftime("%Y-%m"):
         return out  # lo que sigue es del mes en curso

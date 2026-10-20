@@ -27,6 +27,8 @@ from app.operativas.televentas_claro.supervision.models import (
 from app.operativas.televentas_claro.ventas_netas.models import VentasNetasReport
 
 Z = ZoneInfo("America/Asuncion")
+from tests.firma_helper import firmar  # noqa: E402
+
 BASE = "/api/v1/televentas-claro/supervision"
 TC = "televentas_claro"
 PESOS = PARAMETROS_DEFECTO["pesos_dia"]
@@ -191,7 +193,7 @@ async def test_centro_de_comandos_semaforo_alertas_acciones_y_trazabilidad(monke
             "diagnostico": "Vende líneas a clientes que no las usan.", "compromiso": "Confirmar el uso en cada venta.",
             "seguimiento_fecha": "2026-10-12"})
         assert r.status_code == 201, r.text
-        coaching = r.json()
+        coaching = await firmar(ac, sup1, r.json()["id"])
         # Lunes 9 h: la coordinadora le envía un ticket de prioridad alta (2 h para la primera respuesta).
         a(12, 9)
         t1 = (await ac.post(f"{BASE}/tickets", headers=coord, json={
@@ -299,7 +301,8 @@ async def test_centro_de_comandos_semaforo_alertas_acciones_y_trazabilidad(monke
         r = await ac.post(f"{BASE}/portal/tickets/{t1['id']}/resolver", headers=sup1, json={"texto": "Se anuló la venta con el cliente."})
         assert r.json()["estado"] == "resuelto"
         r = await ac.post(f"{BASE}/portal/coaching/{coaching['id']}/seguimiento", headers=sup1,
-                          json={"comentario": "Ya confirma el uso en cada venta."})
+                          json={"comentario": "Ya confirma el uso en cada venta.",
+                                "compromisos": [{"id": x["id"], "resultado": "cumplido"} for x in coaching["compromisos"]]})
         assert r.status_code == 200, r.text
         c = (await ac.get(f"{BASE}/comando", headers=coord)).json()
         estados = {(x["tipo"], x["supervisor"]): x["estado"] for x in c["alertas"]}

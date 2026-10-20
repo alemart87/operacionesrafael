@@ -1,31 +1,26 @@
 "use client";
 
 import {
-  Ban, CalendarCheck, CalendarClock, CircleCheck, CircleDashed, ClipboardCheck, CornerDownRight, History, Info, MessageSquarePlus,
-  MessageSquareText, NotebookPen, Pencil, Plus, Target, Ticket, TriangleAlert, Users,
+  Ban, CalendarCheck, CalendarClock, CircleCheck, CircleDashed, ClipboardCheck, CornerDownRight, Fingerprint, History,
+  Info, Mic, MessageSquarePlus, MessageSquareText, NotebookPen, PenLine, Pencil, Plus, Target, Ticket, TriangleAlert, Users,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { CompromisoCard, ItemCard, useConstancia } from "@/components/portal/coaching";
 import { fechaCorta, fechaLarga, n } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
-import { CoachingDialog, Modal, NotaDialog, SeguimientoDialog, TextoDialog, type Inicial } from "./dialogos";
-import { BotonCoaching, CoachingFlotante, leerNuevoCoaching } from "./hacer-coaching";
+import { Modal, NotaDialog, type Inicial } from "./dialogos";
+import { BotonCoaching, COACHING_PORTAL, hrefNuevoCoaching } from "./hacer-coaching";
 import { ImpactoVista, ResultadoChip } from "./impacto";
 import { MedidorScore, ScoreCelda } from "./scoring";
 import {
-  ALERTA, METRICA, SEGUIMIENTO, SUP_API, TIPO_COACHING, TIPO_NOTA, diasEntre, dm, fechaHoraPy, metricasDe, nombreMetricas, num,
-  type AlertaFoco, type Coaching, type CoachingDetalle, type Componente, type EventoCoaching, type MiembroCoaching,
-  type NotaBitacora, type ReglasCoaching, type VistaCoachingData,
+  ALERTA, METRICA, SEGUIMIENTO, SUP_API, TIPO_COACHING, TIPO_NOTA, diasEntre, dm, fechaHoraCorta, fechaHoraPy, metricasDe, nombreMetricas, num,
+  type AlertaFoco, type Coaching, type CoachingDetalle, type CoachingSinFirmar, type Componente, type EventoCoaching,
+  type MiembroCoaching, type NotaBitacora, type ReglasCoaching, type VistaCoachingData,
 } from "./tipos";
 
-type Dialogo =
-  | { tipo: "nuevo"; inicial?: Inicial }
-  | { tipo: "editar"; c: Coaching }
-  | { tipo: "seguimiento"; c: Coaching }
-  | { tipo: "anular"; c: Coaching }
-  | { tipo: "aclaracion"; c: Coaching }
-  | { tipo: "detalle"; id: string }
-  | { tipo: "nota" }
-  | null;
+type Dialogo = { tipo: "detalle"; id: string } | { tipo: "nota" } | null;
 
 function Chip({ label, chip, ayuda, icono }: { label: string; chip: string; ayuda?: string; icono?: ReactNode }) {
   return (
@@ -182,6 +177,35 @@ function SeguimientosCard({ pendientes, hoy, proximosHasta, onSeguimiento, onAbr
   );
 }
 
+// ------------------------------------------------------------------ devoluciones sin firmar
+function SinFirmarCard({ items, onAbrir }: { items: CoachingSinFirmar[]; onAbrir: (c: Coaching) => void }) {
+  const vencidas = items.filter((c) => c.devolucion_vencida).length;
+  return (
+    <section className="card min-w-0 flex flex-col">
+      <Cabecera titulo="Devoluciones sin firmar"
+        sub={<>Coachings abiertos que esperan la devolución con la firma del asesor: no cuentan hasta que firma. Hay 2 días hábiles.
+          {vencidas > 0 && <b className="text-brand-primary-dark"> {plural(vencidas, "vencida", "vencidas")}.</b>}</>} />
+      {!items.length ? <Vacio>No hay devoluciones pendientes.</Vacio> : (
+        <ul className="divide-y divide-brand-border border-t border-brand-border">
+          {items.map((c) => (
+            <li key={c.id} className={c.devolucion_vencida ? "shadow-[inset_3px_0_0_#E6332A]" : ""}>
+              <button type="button" onClick={() => onAbrir(c)} className="w-full text-left px-5 py-3 flex items-center gap-x-3 gap-y-2 flex-wrap hover:bg-brand-bg-soft">
+                <span className="min-w-0 flex-1 basis-48">
+                  <span className="block font-semibold text-sm text-brand-ink truncate">{c.operador}</span>
+                  <span className="block text-[11px] text-brand-slate truncate">{TIPO_COACHING[c.tipo].label} · abierto el {dm(c.fecha)} · {nombreMetricas(c)}</span>
+                </span>
+                <Chip label={c.devolucion_vencida ? `Venció el ${dm(c.vence_devolucion)}` : `Hasta el ${dm(c.vence_devolucion)}`}
+                  chip={c.devolucion_vencida ? "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30" : "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40"}
+                  icono={<PenLine size={11} aria-hidden />} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 // ------------------------------------------------------------------ equipo y cobertura
 function EquipoCoaching({ equipo, nombreMes, onCoaching }: { equipo: MiembroCoaching[]; nombreMes: string; onCoaching?: (i: Inicial) => void }) {
   const actuales = equipo.filter((m) => m.actual);
@@ -238,6 +262,9 @@ function EquipoCoaching({ equipo, nombreMes, onCoaching }: { equipo: MiembroCoac
 // ------------------------------------------------------------------ coachings del mes
 export function EstadoCoaching({ c }: { c: Coaching }) {
   if (c.estado === "anulado") return <Chip label="Anulado" chip="bg-brand-bg text-brand-slate border-brand-border" icono={<Ban size={11} aria-hidden />} />;
+  if (c.estado === "pendiente") {
+    return <Chip label="Sin firmar" chip="bg-brand-orange/10 text-[#8A5200] border-brand-orange/40" ayuda="Espera la devolución con la firma del asesor: todavía no cuenta" icono={<PenLine size={11} aria-hidden />} />;
+  }
   const s = c.seguimiento ? SEGUIMIENTO[c.seguimiento] : null;
   return (
     <>
@@ -248,11 +275,11 @@ export function EstadoCoaching({ c }: { c: Coaching }) {
 }
 
 function ListaCoachings({ items, nombreMes, onAbrir }: { items: Coaching[]; nombreMes: string; onAbrir: (c: Coaching) => void }) {
-  const validos = items.filter((c) => c.estado !== "anulado");
+  const validos = items.filter((c) => c.estado !== "anulado" && c.estado !== "pendiente");
   return (
     <section className="card min-w-0">
       <Cabecera titulo={`Coachings de ${nombreMes.toLowerCase().split(" ")[0]}`}
-        sub={validos.length ? `${plural(validos.length, "coaching registrado", "coachings registrados")}${validos.some((c) => c.fuera_de_termino) ? ` · ${n(validos.filter((c) => c.fuera_de_termino).length)} fuera de término` : ""}.` : undefined} />
+        sub={validos.length ? `${plural(validos.length, "coaching terminado", "coachings terminados")}${validos.some((c) => c.fuera_de_termino) ? ` · ${n(validos.filter((c) => c.fuera_de_termino).length)} fuera de término` : ""}.` : undefined} />
       {!items.length ? <Vacio>Todavía no hay coachings registrados en {nombreMes.toLowerCase()}.</Vacio> : (
         <ul className="divide-y divide-brand-border border-t border-brand-border">
           {items.map((c) => {
@@ -270,7 +297,7 @@ function ListaCoachings({ items, nombreMes, onAbrir }: { items: Coaching[]; nomb
                       <span className={`font-semibold text-sm text-brand-ink ${anulado ? "line-through" : ""}`}>{c.operador}</span>
                       <span className="text-[11px] text-brand-slate">{TIPO_COACHING[c.tipo].label} · {nombreMetricas(c)}</span>
                     </div>
-                    <p className="text-xs text-brand-graphite mt-0.5 line-clamp-2">{c.compromiso}</p>
+                    <p className="text-xs text-brand-graphite mt-0.5 line-clamp-2">{c.compromiso || <span className="text-brand-slate">Todavía sin compromisos.</span>}</p>
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       <EstadoCoaching c={c} />
                       {c.fuera_de_termino && <Chip label="Fuera de término" chip="bg-brand-orange/10 text-[#8A5200] border-brand-orange/40"
@@ -327,9 +354,9 @@ export function MetodoCoaching({ r }: { r: ReglasCoaching }) {
         <div>
           <div className="font-semibold text-brand-ink text-sm">Registro</div>
           <p className="mt-1">
-            La hora la pone el sistema. Un coaching se carga con hasta 48 h de atraso; después cuenta igual, pero queda «fuera de
-            término». Se corrige o se anula durante {r.horas_edicion} h; después solo se agregan el seguimiento y aclaraciones, y todo
-            queda en el historial. Cada supervisor registra solo para los asesores que tenía ese día.
+            La hora la pone el sistema. Un coaching junta monitoreos y feedback (escritos o dictados) y los compromisos del asesor, y
+            se termina cuando el asesor firma la devolución: hasta entonces no cuenta, y hay 2 días hábiles para hacerla. Lo firmado
+            queda bloqueado con su huella; después solo se agregan el seguimiento y aclaraciones, y todo queda en el historial.
           </p>
         </div>
         <div>
@@ -355,11 +382,20 @@ export function MetodoCoaching({ r }: { r: ReglasCoaching }) {
 
 // ------------------------------------------------------------------ detalle de un coaching (con su historial)
 const EVENTO: Record<EventoCoaching["tipo"], { label: string; icono: typeof Plus }> = {
-  creado: { label: "Registró el coaching", icono: Plus },
+  creado: { label: "Abrió el coaching", icono: Plus },
   editado: { label: "Corrigió", icono: Pencil },
   anulado: { label: "Anuló el coaching", icono: Ban },
   seguimiento: { label: "Registró el seguimiento", icono: ClipboardCheck },
   aclaracion: { label: "Agregó una aclaración", icono: MessageSquarePlus },
+  item: { label: "Sumó un monitoreo o feedback", icono: MessageSquareText },
+  item_editado: { label: "Corrigió un monitoreo o feedback", icono: Pencil },
+  item_quitado: { label: "Quitó un monitoreo o feedback", icono: Ban },
+  compromiso: { label: "Sumó un compromiso", icono: CalendarCheck },
+  compromiso_editado: { label: "Corrigió un compromiso", icono: Pencil },
+  compromiso_quitado: { label: "Quitó un compromiso", icono: Ban },
+  audio: { label: "Grabó un audio", icono: Mic },
+  transcripcion: { label: "Transcripción lista", icono: Mic },
+  firmado: { label: "Firmaron la devolución", icono: PenLine },
 };
 const CAMPO: Record<string, string> = {
   tipo: "tipo", metrica: "métrica", metricas: "métricas", diagnostico: "diagnóstico", compromiso: "compromiso", seguimiento_fecha: "fecha de seguimiento",
@@ -375,6 +411,9 @@ function textoEvento(e: EventoCoaching): ReactNode {
   if (e.tipo === "aclaracion") return d.texto;
   if (e.tipo === "seguimiento") return <>{d.comentario}{d.a_tiempo === false && <span className="text-[#8A5200]"> · fuera de la fecha acordada</span>}</>;
   if (e.tipo === "creado" && d.fuera_de_termino) return <span className="text-[#8A5200]">Con más de 48 h de atraso: fuera de término.</span>;
+  if (e.tipo === "item" || e.tipo === "compromiso") return d.texto || (d.audio_id ? "Dictado: el texto llega con la transcripción." : null);
+  if (e.tipo === "audio") return `${d.hablante === "asesor" ? "Voz del asesor" : "Voz del supervisor"} · ${Math.round(d.segundos ?? 0)} s`;
+  if (e.tipo === "firmado") return d.huella ? <span className="font-mono text-[11px] break-all">Huella {String(d.huella).slice(0, 24)}…</span> : null;
   return null;
 }
 
@@ -417,24 +456,24 @@ function FotoBase({ base }: { base: Coaching["base"] }) {
   );
 }
 
-function DetalleDialog({ id, portal, soloLectura, onClose, onAccion, onAbrir }: {
-  id: string; portal: boolean; soloLectura?: boolean; onClose: () => void; onAccion: (d: Dialogo) => void; onAbrir: (id: string) => void;
-}) {
+function DetalleDialog({ id, portal, onClose, onAbrir }: { id: string; portal: boolean; onClose: () => void; onAbrir: (id: string) => void }) {
   const [c, setC] = useState<CoachingDetalle | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setC(null);
     apiFetch<CoachingDetalle>(`${SUP_API}/${portal ? "portal/" : ""}coaching/${id}`).then(setC).catch((e) => setError(e.message));
   }, [id, portal]);
-  const acciones = c && portal && !soloLectura && c.estado !== "anulado";
+  const { boton: constancia, error: errConstancia } = useConstancia(c?.firmado_at ? c : null, portal);
+  const items = c?.items ?? [];
+  const comps = c?.compromisos ?? [];
+  const audio = (aid: string | null) => (aid ? c?.audios?.find((a) => a.id === aid) : undefined);
+  const asesor = c?.firmas?.find((f) => f.firmante === "asesor");
   return (
     <Modal onClose={onClose} ancho="max-w-3xl" sobre={c ? `${TIPO_COACHING[c.tipo].label} · ${fechaLarga(c.fecha)}` : "Coaching"}
-      titulo={c?.operador ?? "…"} acento={c?.estado === "anulado" ? "bg-brand-mist" : "bg-brand-cyan"}
-      pie={acciones ? <>
-        {c.editable && <button type="button" className="btn-ghost text-brand-primary" onClick={() => onAccion({ tipo: "anular", c })}><Ban size={15} /> Anular</button>}
-        <button type="button" className="btn-secondary" onClick={() => onAccion({ tipo: "aclaracion", c })}><MessageSquarePlus size={15} /> Aclaración</button>
-        {c.editable && <button type="button" className="btn-secondary" onClick={() => onAccion({ tipo: "editar", c })}><Pencil size={15} /> Corregir</button>}
-        {c.estado === "abierto" && <button type="button" className="btn-primary" onClick={() => onAccion({ tipo: "seguimiento", c })}><ClipboardCheck size={15} /> Registrar seguimiento</button>}
+      titulo={c?.operador ?? "…"} acento={c?.estado === "anulado" ? "bg-brand-mist" : c?.estado === "pendiente" ? "bg-brand-orange" : "bg-brand-cyan"}
+      pie={c && (portal || c.firmado_at) ? <>
+        {c.firmado_at && <div className="w-full sm:w-auto">{constancia}</div>}
+        {portal && <Link href={`${COACHING_PORTAL}/${c.id}`} className="btn-primary">Abrir el coaching</Link>}
       </> : undefined}>
       {error && <p className="text-sm text-brand-primary">{error}</p>}
       {!c && !error && <p className="text-sm text-brand-slate">Cargando…</p>}
@@ -443,9 +482,23 @@ function DetalleDialog({ id, portal, soloLectura, onClose, onAccion, onAbrir }: 
           <div className="flex flex-wrap items-center gap-1.5">
             {metricasDe(c).map((m) => <Chip key={m} label={METRICA[m].label} chip="bg-brand-ink text-white border-brand-ink" />)}
             <EstadoCoaching c={c} />
+            {c.estado === "pendiente" && c.devolucion_vencida && <Chip label="Devolución vencida" chip="bg-brand-primary-light text-brand-primary-dark border-brand-primary/30" icono={<TriangleAlert size={11} aria-hidden />} />}
             {c.fuera_de_termino && <Chip label="Fuera de término" chip="bg-brand-orange/10 text-[#8A5200] border-brand-orange/40" ayuda="Se registró con más de 48 h de atraso: cuenta igual" />}
-            <span className="text-[11px] text-brand-slate">Registrado por {c.supervisor} el {fechaHoraPy(c.created_at)}</span>
+            <span className="text-[11px] text-brand-slate">Abierto por {c.supervisor} el {fechaHoraPy(c.created_at)}</span>
           </div>
+          {c.firmado_at && (
+            <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 flex items-start gap-2">
+              <Fingerprint size={14} className="shrink-0 mt-0.5" aria-hidden />
+              <span>Firmado por {asesor?.nombre ?? c.operador} y {c.supervisor} · {fechaHoraCorta(c.firmado_at)}.
+                {c.huella && <> Huella <code className="font-mono break-all">{c.huella.slice(0, 16)}…</code></>}</span>
+            </p>
+          )}
+          {errConstancia && <p className="text-xs text-brand-primary-dark">{errConstancia}</p>}
+          {c.estado === "pendiente" && (
+            <p className="text-xs text-[#8A5200] bg-brand-orange/10 border border-brand-orange/40 rounded-md px-3 py-2">
+              Espera la devolución con la firma del asesor (hasta el {dm(c.vence_devolucion)}). Hasta entonces no cuenta como coaching hecho.
+            </p>
+          )}
           {(c.anterior_id || c.siguientes.length > 0) && (
             <div className="flex flex-wrap gap-3 text-xs">
               {c.anterior_id && (
@@ -460,10 +513,43 @@ function DetalleDialog({ id, portal, soloLectura, onClose, onAccion, onAbrir }: 
               ))}
             </div>
           )}
-          <div className="grid md:grid-cols-2 gap-3">
-            <Bloque titulo="Diagnóstico">{c.diagnostico}</Bloque>
-            <Bloque titulo="Compromiso">{c.compromiso}</Bloque>
-          </div>
+          {items.length || comps.length ? (
+            <div className="grid md:grid-cols-2 gap-4 items-start">
+              <div className="space-y-2 min-w-0">
+                <div className="label !mb-0">Monitoreos y feedback ({items.length})</div>
+                {items.map((it) => <ItemCard key={it.id} it={it} audio={audio(it.audio_id)} portal={portal} />)}
+                {!items.length && <p className="text-sm text-brand-slate">Todavía nada.</p>}
+              </div>
+              <div className="space-y-2 min-w-0">
+                <div className="label !mb-0">Compromisos del asesor ({comps.length})</div>
+                {comps.map((x, k) => <CompromisoCard key={x.id} x={x} n={k + 1} audio={audio(x.audio_id)} portal={portal} />)}
+                {!comps.length && <p className="text-sm text-brand-slate">Todavía sin compromisos.</p>}
+              </div>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-3">
+              <Bloque titulo="Diagnóstico">{c.diagnostico}</Bloque>
+              <Bloque titulo="Compromiso">{c.compromiso}</Bloque>
+            </div>
+          )}
+          {asesor && (
+            <div>
+              <div className="label">Firmas</div>
+              {asesor.comentario && <p className="text-sm text-brand-ink mb-2"><span className="text-brand-slate">Comentario del asesor: </span>{asesor.comentario}</p>}
+              <div className="flex flex-wrap gap-3">
+                {(c.firmas ?? []).map((f) => (
+                  <figure key={f.id} className="rounded-md border border-brand-border px-3 py-2 w-44">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={f.imagen} alt={`Firma de ${f.nombre}`} className="h-14 w-full object-contain" />
+                    <figcaption className="text-[11px] text-brand-slate border-t border-brand-border mt-1 pt-1 truncate">
+                      <b className="text-brand-ink">{f.nombre}</b> · {f.firmante === "asesor" ? "asesor" : "supervisor"}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+              {asesor.consentimiento_audio && <p className="text-[11px] text-brand-slate mt-1.5">El asesor aceptó que su voz quede grabada.</p>}
+            </div>
+          )}
           <div>
             <div className="label">Seguimiento</div>
             <p className="text-sm text-brand-ink">
@@ -472,7 +558,7 @@ function DetalleDialog({ id, portal, soloLectura, onClose, onAccion, onAbrir }: 
             </p>
             {c.seguimiento_comentario && <p className="text-sm text-brand-graphite mt-1 whitespace-pre-line break-words">{c.seguimiento_comentario}</p>}
           </div>
-          {c.estado !== "anulado" && (
+          {c.estado !== "anulado" && c.estado !== "pendiente" && (
             <div>
               <div className="label">{c.impacto_guardado ? "Impacto medido al registrar el seguimiento" : "Impacto medido hasta hoy"}</div>
               <ImpactoVista i={c.impacto} />
@@ -482,8 +568,8 @@ function DetalleDialog({ id, portal, soloLectura, onClose, onAccion, onAbrir }: 
           <div>
             <div className="label">Historial</div>
             <ol className="space-y-3">
-              {c.eventos.map((e) => {
-                const ev = EVENTO[e.tipo];
+              {c.eventos.filter((e) => e.tipo !== "transcripcion").map((e) => {
+                const ev = EVENTO[e.tipo] ?? { label: e.tipo, icono: Plus };
                 const I = ev.icono;
                 const extra = textoEvento(e);
                 return (
@@ -507,36 +593,35 @@ function DetalleDialog({ id, portal, soloLectura, onClose, onAccion, onAbrir }: 
 }
 
 /**
- * El detalle de un coaching en solo lectura: los jefes (desde el centro de comandos, la ficha del asesor o el registro) y
- * el supervisor desde su historial (`portal`: lo pide por el portal, que solo le da los suyos).
+ * El detalle de un coaching en solo lectura: los jefes (desde el centro de comandos, la ficha del asesor, el registro o el
+ * control de supervisores) y el supervisor desde su historial (`portal`: lo pide por el portal, que solo le da los suyos).
  */
 export function VerCoachingDialog({ id, portal = false, onClose }: { id: string; portal?: boolean; onClose: () => void }) {
   const [actual, setActual] = useState(id);
   useEffect(() => setActual(id), [id]);
-  return <DetalleDialog id={actual} portal={portal} soloLectura onClose={onClose} onAccion={() => undefined} onAbrir={setActual} />;
+  return <DetalleDialog id={actual} portal={portal} onClose={onClose} onAbrir={setActual} />;
 }
 
 // ------------------------------------------------------------------ la vista completa
-/** Coaching y bitácora de un supervisor en el mes: el portal (registra) y los jefes (solo lectura). */
+/**
+ * Coaching y bitácora de un supervisor en el mes. En el portal («Mi mes»), cada coaching se abre en su pantalla (donde se
+ * suma lo observado, los compromisos, la firma y el seguimiento); los jefes lo ven en solo lectura.
+ */
 export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; portal: boolean; onCambio: () => void }) {
+  const router = useRouter();
   const [dialogo, setDialogo] = useState<Dialogo>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const mesEnCurso = d.periodo === d.hoy.slice(0, 7);
   const puede = portal && d.puede_registrar && mesEnCurso;
   const cerrar = useCallback(() => setDialogo(null), []);
-  const nuevo = useCallback((inicial?: Inicial) => setDialogo({ tipo: "nuevo", inicial }), []);
-  const abrir = useCallback((c: Coaching) => setDialogo({ tipo: "detalle", id: c.id }), []);
-  const ancla = useRef<HTMLDivElement>(null);
-  // Desde «Mi equipo» (botón «Hacer coaching» o el de un asesor) se llega con ?nuevo=1: se abre el registro una vez.
-  const pedido = useRef(false);
-  useEffect(() => {
-    if (!puede || pedido.current) return;
-    pedido.current = true;
-    const x = leerNuevoCoaching();
-    if (x) nuevo(x.operador_id && d.equipo.some((m) => m.id === x.operador_id && m.actual) ? { operador_id: x.operador_id } : undefined);
-  }, [puede, nuevo, d.equipo]);
+  const nuevo = useCallback((i?: Inicial) => router.push(hrefNuevoCoaching(i?.operador_id, { metrica: i?.metricas?.[0], anterior: i?.anterior_id })), [router]);
+  const abrir = useCallback((c: Coaching) => {
+    if (portal) router.push(`${COACHING_PORTAL}/${c.id}`);
+    else setDialogo({ tipo: "detalle", id: c.id });
+  }, [portal, router]);
   const sinCoaching = d.equipo.filter((m) => m.actual && !m.coachings).length;
   const alertasEsperando = d.alertas.filter((a) => a.estado === "en_plazo" || a.estado === "vencida").length;
+  const sinFirmar = d.sin_firmar ?? [];
   const listo = (msg: string) => { setDialogo(null); setAviso(msg); onCambio(); };
   const ultimo = `${d.periodo}-31`;
   const gestionDespues = d.gestion_desde && d.gestion_desde > ultimo;
@@ -556,8 +641,10 @@ export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; p
           <div className="min-w-0 max-w-2xl">
             <h2 className="font-display text-2xl sm:text-3xl uppercase text-brand-ink leading-tight">¿Con quién hacés coaching hoy?</h2>
             <p className="text-sm text-brand-graphite mt-1">
-              {sinCoaching || alertasEsperando ? (
+              {sinCoaching || alertasEsperando || sinFirmar.length ? (
                 <>
+                  {sinFirmar.length > 0 && <b className="text-brand-primary-dark">{plural(sinFirmar.length, "devolución sin firmar", "devoluciones sin firmar")}</b>}
+                  {sinFirmar.length > 0 && (sinCoaching > 0 || alertasEsperando > 0) && " · "}
                   {sinCoaching > 0 && <b className="text-brand-primary-dark">{plural(sinCoaching, "asesor sin coaching", "asesores sin coaching")} este mes</b>}
                   {sinCoaching > 0 && alertasEsperando > 0 && " · "}
                   {alertasEsperando > 0 && <b className="text-brand-primary-dark">{plural(alertasEsperando, "alerta de uso esperando coaching", "alertas de uso esperando coaching")}</b>}
@@ -565,17 +652,16 @@ export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; p
               ) : "Todo el equipo tiene coaching este mes: seguí con los compromisos y sus seguimientos."}
             </p>
             <p className="text-xs text-brand-slate mt-1">
-              Cada coaching parte de un dato, termina en un compromiso con fecha y se cierra cuando el dato del asesor mejora.
+              Cada coaching parte de lo que observaste, termina en compromisos que el asesor firma y se cierra con el seguimiento.
             </p>
           </div>
           {/* En el celular, el botón principal arriba y a lo ancho (a mano del pulgar). */}
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-            <button type="button" className="btn-secondary" onClick={() => setDialogo({ tipo: "nota" })}><NotebookPen size={15} /> Nota de bitácora</button>
-            <div ref={ancla} className="flex"><BotonCoaching onClick={() => nuevo()} className="w-full sm:w-auto" /></div>
+            <button type="button" className="btn-secondary min-h-[48px]" onClick={() => setDialogo({ tipo: "nota" })}><NotebookPen size={15} /> Nota de bitácora</button>
+            <BotonCoaching href={hrefNuevoCoaching()} className="w-full sm:w-auto" />
           </div>
         </section>
       )}
-      {puede && <CoachingFlotante ancla={ancla} onClick={() => nuevo()} />}
       {portal && !mesEnCurso && (
         <p className="text-xs text-brand-slate flex items-center gap-1.5"><Info size={13} aria-hidden /> Estás viendo otro mes: para registrar, volvé a este mes.</p>
       )}
@@ -597,10 +683,11 @@ export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; p
         </section>
       )}
 
+      {(sinFirmar.length > 0 || !portal) && <SinFirmarCard items={sinFirmar} onAbrir={abrir} />}
       <div className="grid lg:grid-cols-2 gap-5">
         <AlertasCard alertas={d.alertas} diasFoco={d.reglas.dias_foco} onCoaching={puede ? nuevo : undefined} />
         <SeguimientosCard pendientes={d.pendientes} hoy={d.hoy} proximosHasta={d.proximos_hasta} onAbrir={abrir}
-          onSeguimiento={portal && d.puede_registrar ? (c) => setDialogo({ tipo: "seguimiento", c }) : undefined} />
+          onSeguimiento={portal && d.puede_registrar ? abrir : undefined} />
       </div>
       <EquipoCoaching equipo={d.equipo} nombreMes={d.nombre_mes} onCoaching={puede ? nuevo : undefined} />
       <div className="grid xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-5 items-start">
@@ -608,38 +695,12 @@ export function VistaCoaching({ d, portal, onCambio }: { d: VistaCoachingData; p
         <BitacoraCard notas={d.notas} onNueva={puede ? () => setDialogo({ tipo: "nota" }) : undefined} />
       </div>
       <MetodoCoaching r={d.reglas} />
-      {puede && <div className="h-16 print:hidden" aria-hidden />}{/* lugar para el botón flotante al final */}
 
-      {dialogo?.tipo === "nuevo" && (
-        <CoachingDialog vista={d} inicial={dialogo.inicial} onClose={cerrar}
-          onGuardado={(c) => listo(`Coaching de ${c.operador} registrado${c.fuera_de_termino ? " (fuera de término)" : ""}. Seguimiento el ${dm(c.seguimiento_fecha)}.`)} />
-      )}
-      {dialogo?.tipo === "editar" && (
-        <CoachingDialog vista={d} editar={dialogo.c} onClose={cerrar} onGuardado={(c) => listo(`Coaching de ${c.operador} corregido.`)} />
-      )}
-      {dialogo?.tipo === "seguimiento" && (
-        <SeguimientoDialog c={dialogo.c} vista={d} onClose={() => { setDialogo(null); onCambio(); }}
-          onGuardado={() => onCambio()}
-          onNuevo={(c, metricas) => setDialogo({ tipo: "nuevo", inicial: { operador_id: c.operador_id, metricas, anterior_id: c.id } })} />
-      )}
-      {dialogo?.tipo === "anular" && (
-        <TextoDialog titulo={dialogo.c.operador} sobre={`Anular el coaching del ${dm(dialogo.c.fecha)}`} label="Motivo"
-          ayuda="Solo si se cargó por error. No se borra: queda tachado y en el historial." min={5} max={500} accion="Anular coaching" peligro
-          url={`${SUP_API}/portal/coaching/${dialogo.c.id}/anular`} campo="motivo" onClose={cerrar}
-          onGuardado={(c) => listo(`Coaching de ${c.operador} anulado.`)} />
-      )}
-      {dialogo?.tipo === "aclaracion" && (
-        <TextoDialog titulo={dialogo.c.operador} sobre={`Aclaración al coaching del ${dm(dialogo.c.fecha)}`} label="Aclaración"
-          ayuda="No cambia lo registrado: se agrega al historial con la fecha y hora de hoy." min={5} max={1000} accion="Agregar aclaración"
-          url={`${SUP_API}/portal/coaching/${dialogo.c.id}/aclaracion`} campo="texto" onClose={cerrar}
-          onGuardado={(c) => listo(`Aclaración agregada al coaching de ${c.operador}.`)} />
-      )}
       {dialogo?.tipo === "nota" && (
         <NotaDialog vista={d} onClose={cerrar} onGuardado={() => listo("Nota agregada a la bitácora.")} />
       )}
       {dialogo?.tipo === "detalle" && (
-        <DetalleDialog id={dialogo.id} portal={portal} onClose={cerrar} onAccion={setDialogo}
-          onAbrir={(id) => setDialogo({ tipo: "detalle", id })} />
+        <DetalleDialog id={dialogo.id} portal={portal} onClose={cerrar} onAbrir={(id) => setDialogo({ tipo: "detalle", id })} />
       )}
     </div>
   );

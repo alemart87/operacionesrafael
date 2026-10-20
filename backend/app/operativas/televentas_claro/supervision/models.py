@@ -25,6 +25,9 @@ def gen_uuid() -> str:
 VINCULADO = ("exacto", "probable", "manual")
 AGENTE_PENDIENTE = ("ambiguo", "sin_cruce", "incompleto")
 VENDEDOR_PENDIENTE = ("sin_agente",)
+#   cargado por un supervisor desde el portal, sin nombre en llamadas ni en ventas → alta_supervisor (por validar)
+#   | alta_validada (un jefe confirmó que es una persona nueva; se une cuando aparezca en los informes)
+ALTA_PENDIENTE = ("alta_supervisor",)
 
 
 class Operador(Base):
@@ -50,6 +53,11 @@ class Operador(Base):
     cruce: Mapped[str] = mapped_column(String(20), nullable=False, default="sin_cruce")
     candidatos: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Alta desde el portal: el supervisor lo cargó porque no lo encontraba (`origen` = "alta_supervisor").
+    origen: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    alta_por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    alta_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    documento: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)   # cédula o legajo que cargó el supervisor
     primera_vez: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     ultima_vez: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -114,6 +122,13 @@ class OperadoresSync(Base):
 class Coaching(Base):
     """Un coaching del supervisor a un asesor: qué se trabajó, el compromiso y su seguimiento.
 
+    Desde la devolución con firma: se crea «pendiente» (sin firmar) y junta varios monitoreos y feedback
+    (`sup_coaching_items`) y los compromisos del asesor (`sup_coaching_compromisos`). Termina cuando el asesor
+    firma (`sup_coaching_firmas`): pasa a «abierto» (espera el seguimiento), queda bloqueado y guarda la huella
+    SHA-256 de lo firmado. Recién ahí cuenta en la gestión, con la fecha de la firma. `diagnostico` y
+    `compromiso` resumen los ítems y los compromisos (para el registro y las vistas anteriores). Los coachings
+    anteriores a la firma (`firmado_at` vacío y estado distinto de «pendiente») siguen como estaban.
+
     La hora de registro la pone el servidor; con más de 48 h de atraso queda «fuera de término».
     Se edita (o se anula, si se cargó por error) durante 24 h; después solo se agregan el seguimiento y
     aclaraciones. Todo queda en `sup_coaching_eventos`. `base` es la foto del asesor al registrarlo (sus
@@ -132,7 +147,7 @@ class Coaching(Base):
     diagnostico: Mapped[str] = mapped_column(Text, nullable=False)
     compromiso: Mapped[str] = mapped_column(Text, nullable=False)
     seguimiento_fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    estado: Mapped[str] = mapped_column(String(10), nullable=False, default="abierto")  # abierto | cerrado | anulado
+    estado: Mapped[str] = mapped_column(String(10), nullable=False, default="abierto")  # pendiente | abierto | cerrado | anulado
     anterior_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # el coaching sin mejora que continúa
     seguimiento_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     seguimiento_comentario: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -140,9 +155,117 @@ class Coaching(Base):
     base: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     impacto: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     fuera_de_termino: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    firmado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    huella: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)    # SHA-256 de lo que firmó el asesor
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CoachingItem(Base):
+    """Un monitoreo de llamada o un feedback dentro de un coaching. La hora la pone el servidor.
+    Se agregan, corrigen o quitan mientras el coaching está sin firmar (todo queda en el historial)."""
+    __tablename__ = "sup_coaching_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    coaching_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(12), nullable=False)          # monitoreo | feedback
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    metricas: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    referencia: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)   # llamada, hora o número de venta
+    audio_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CoachingCompromiso(Base):
+    """Un compromiso del asesor (lo puede dictar él): qué va a hacer y para cuándo. En el seguimiento se marca
+    cumplido, parcial o no cumplido."""
+    __tablename__ = "sup_coaching_compromisos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    coaching_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    para: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    metrica: Mapped[Optional[str]] = mapped_column(String(15), nullable=True)
+    origen: Mapped[str] = mapped_column(String(12), nullable=False, default="asesor")   # asesor | supervisor
+    audio_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    resultado: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)         # cumplido | parcial | no_cumplido
+    nota: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CoachingAudio(Base):
+    """Un audio grabado en el celular (del supervisor o del asesor) y su transcripción.
+
+    El archivo vive en el disco persistente (`UPLOAD_DIR/supervision/audios/…`) con su huella SHA-256; la ruta la
+    arma el servidor. La transcripción la hace el servicio configurado (OpenAI) en segundo plano: pendiente →
+    transcribiendo → listo | error | sin_servicio. Quedan el texto original y el costo. Pasado el plazo de
+    retención se borra el archivo y quedan el texto y la huella (`borrado_at`)."""
+    __tablename__ = "sup_audios"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    coaching_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    supervisor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    hablante: Mapped[str] = mapped_column(String(12), nullable=False)       # supervisor | asesor
+    destino: Mapped[str] = mapped_column(String(12), nullable=False)        # item | compromiso | comentario
+    ruta: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    mime: Mapped[str] = mapped_column(String(60), nullable=False)
+    bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    duracion_s: Mapped[float] = mapped_column(Float, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    estado: Mapped[str] = mapped_column(String(14), nullable=False, default="pendiente", index=True)
+    texto: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    modelo: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    intentos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    costo_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    transcrito_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    borrado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CoachingFirma(Base):
+    """Una firma del coaching: la del asesor (dibujada en el celular del supervisor) y la del supervisor.
+    Guarda la imagen (PNG validado, en la base: tiene respaldo continuo), la hora del servidor, la huella de lo
+    firmado, si aceptó los compromisos, su comentario (texto o audio) y el dispositivo."""
+    __tablename__ = "sup_coaching_firmas"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    coaching_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    firmante: Mapped[str] = mapped_column(String(12), nullable=False)       # asesor | supervisor
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False)
+    imagen: Mapped[str] = mapped_column(Text, nullable=False)               # data:image/png;base64,…
+    firmado_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    huella: Mapped[str] = mapped_column(String(64), nullable=False)
+    acepto: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    comentario: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    comentario_audio_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    consentimiento_audio: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dispositivo: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+
+
+class PedidoPase(Base):
+    """Un supervisor pide que le pasen a su equipo un asesor que figura en otro equipo (lo resuelven los jefes)."""
+    __tablename__ = "sup_pedidos_pase"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    operador_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    pedido_por: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    supervisor_actual: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    estado: Mapped[str] = mapped_column(String(12), nullable=False, default="pendiente", index=True)  # pendiente | resuelto | rechazado
+    nota: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    resuelto_por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    resuelto_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class CoachingEvento(Base):

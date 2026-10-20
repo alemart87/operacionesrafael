@@ -123,6 +123,19 @@ h3,
 .animate-fade {
   animation: vc-fade 0.18s var(--mov-entrada) both;
 }
+
+/* Hoja del portal del supervisor: sube desde abajo en el celular (en pantallas anchas, aparece). */
+@keyframes vc-hoja {
+  from { transform: translateY(24px); opacity: 0.4; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.hoja-sube { animation: vc-hoja 0.22s var(--mov-entrada) both; }
+/* Grabando: las barras del nivel de voz y el punto rojo que late. */
+@keyframes vc-latido { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.grabando-punto { animation: vc-latido 1.1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .hoja-sube, .grabando-punto { animation: none; }
+}
 .animate-pop {
   animation: vc-pop 0.2s var(--mov-entrada) both;
 }

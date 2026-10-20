@@ -192,7 +192,8 @@ async def _items_supervision(db: AsyncSession) -> list[dict[str, Any]]:
     for per in sorted(meses, reverse=True)[:MAX_MESES]:
         desde, hasta = _rango_mes(per)
         alertas = (await db.execute(select(func.count()).select_from(AlertaAsesor).where(AlertaAsesor.periodo == per))).scalar() or 0
-        coachings = (await db.execute(select(func.count()).select_from(Coaching).where(Coaching.fecha >= desde, Coaching.fecha <= hasta))).scalar() or 0
+        coachings = (await db.execute(select(func.count()).select_from(Coaching).where(
+            Coaching.fecha >= desde, Coaching.fecha <= hasta, Coaching.estado != "pendiente"))).scalar() or 0
         tickets = (await db.execute(select(func.count()).select_from(Ticket).where(
             Ticket.created_at >= datetime.combine(desde, datetime.min.time(), tzinfo=timezone.utc),
             Ticket.created_at < datetime.combine(hasta + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)))).scalar() or 0
@@ -480,7 +481,8 @@ async def _cargar_supervision(db: AsyncSession, periodos: list[str], user: Curre
             "gpon": {k: (op.get("gpon") or {}).get(k) for k in ("vendido", "objetivo", "proyeccion", "pct_objetivo", "estado", "falta")},
             "supervisores": sups,
             "alertas": {"total": len(alertas), "abiertas": sum(1 for a in alertas if a.hasta is None), "por_tipo": dict(Counter(a.tipo for a in alertas))},
-            "coaching": {"total": len(coachings), "abiertos": c_estado.get("abierto", 0), "cerrados": c_estado.get("cerrado", 0),
+            "coaching": {"total": len(coachings) - c_estado.get("pendiente", 0), "sin_firmar": c_estado.get("pendiente", 0),
+                         "firmados": sum(1 for c in coachings if c.firmado_at), "abiertos": c_estado.get("abierto", 0), "cerrados": c_estado.get("cerrado", 0),
                          "anulados": c_estado.get("anulado", 0), "seguimiento_vencido": c_seg.get("vencido", 0), "seguimiento_tarde": c_seg.get("tarde", 0),
                          "fuera_de_termino": sum(1 for c in coachings if c.fuera_de_termino), "resultado": dict(c_res)},
             "tickets": {"total": len(tickets), "por_estado": dict(t_estado), "por_tipo": dict(Counter(t.tipo for t in tickets)),

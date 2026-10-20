@@ -57,7 +57,7 @@ def _set_perms(client, admin, role, perms):
 def test_perfiles_sembrados_con_defaults(client, admin):
     body = client.get("/api/v1/perfiles", headers=admin).json()
     slugs = [p["slug"] for p in body["perfiles"]]
-    assert slugs == ["sub_gerente", "controller", "coordinador", "supervisor", "analista", "auditor", "cliente"]
+    assert slugs == ["gerente", "sub_gerente", "controller", "coordinador", "supervisor", "analista", "auditor", "cliente"]
     assert body["operativas"][0]["slug"] == TC
     cliente = next(p for p in body["perfiles"] if p["slug"] == "cliente")
     assert cliente["permissions"] == sorted(DEFAULT_PERMISSIONS["cliente"])
@@ -73,10 +73,10 @@ def test_superadmin_ve_todo(client, admin):
 
 
 def test_crear_usuarios_de_cada_perfil(client, admin):
-    for role in ("sub_gerente", "controller", "coordinador", "supervisor", "analista", "auditor", "cliente"):
+    for role in ("gerente", "sub_gerente", "controller", "coordinador", "supervisor", "analista", "auditor", "cliente"):
         _new_user(client, admin, role, [TC])
     r = client.post("/api/v1/users", headers=admin, json={
-        "email": "x@voicenter.com.py", "password": "Clave1234!", "full_name": "X", "role": "gerente",
+        "email": "x@voicenter.com.py", "password": "Clave1234!", "full_name": "X", "role": "director",
     })
     assert r.status_code == 422
 
@@ -121,7 +121,7 @@ def test_cambio_de_perfil_de_un_usuario(client, admin):
 def test_validaciones_de_perfiles(client, admin):
     r = client.put("/api/v1/perfiles/cliente", headers=admin, json={"permissions": ["inventado.ver"]})
     assert r.status_code == 400
-    assert client.put("/api/v1/perfiles/gerente", headers=admin, json={"permissions": []}).status_code == 404
+    assert client.put("/api/v1/perfiles/director", headers=admin, json={"permissions": []}).status_code == 404
     _, tok = _new_user(client, admin, "coordinador", [TC])
     assert client.get("/api/v1/perfiles", headers=tok).status_code == 403
     assert client.put("/api/v1/perfiles/cliente", headers=tok, json={"permissions": []}).status_code == 403

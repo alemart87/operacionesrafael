@@ -27,7 +27,10 @@ from . import coaching as srv
 from . import operadores as maestro
 from .calculo import mes_de, supervisor_en
 from .impacto import METRICAS as METRICAS_ORDEN
-from .models import OPERATIVA, BitacoraNota, Coaching, Operador
+from . import audios as audios_srv
+from .models import (
+    OPERATIVA, BitacoraNota, Coaching, CoachingAudio, CoachingCompromiso, CoachingFirma, CoachingItem, Operador,
+)
 
 router = APIRouter(prefix="/televentas-claro/supervision", tags=["televentas-claro · coaching"])
 
@@ -57,8 +60,9 @@ async def _vista(db: AsyncSession, periodo: str, sid: str, *, portal: bool) -> d
     dia, momento = sup.hoy(), srv.ahora()
     cs = await srv.del_supervisor(db, sid, periodo)
     pendientes = await srv.abiertos(db, sid)
+    sin_firma = await srv.sin_firmar(db, sid)
     notas = await srv.notas(db, sid, periodo)
-    faltan = {c.operador_id for c in [*cs, *pendientes] if c.operador_id not in ctx.ops}
+    faltan = {c.operador_id for c in [*cs, *pendientes, *sin_firma] if c.operador_id not in ctx.ops}
     if faltan:
         ctx.ops.update({o.id: o for o in (await db.execute(select(Operador).where(Operador.id.in_(faltan)))).scalars().all()})
     nombres = await sup._nombres(db, {sid})
@@ -71,9 +75,11 @@ async def _vista(db: AsyncSession, periodo: str, sid: str, *, portal: bool) -> d
             impactos[c.id] = await medidor.medir(c, ctx.ops.get(c.operador_id))
         return srv.a_dict(c, nombres=nombres, ops=ctx.ops, hoy=dia, impacto=impactos.get(c.id), momento=momento, mio=portal)
 
-    # ---- equipo del mes: cada asesor que estuvo con este supervisor, con sus coachings
-    validos = [c for c in cs if c.estado != "anulado"]
+    # ---- equipo del mes: cada asesor que estuvo con este supervisor, con sus coachings (terminados: firmados o
+    # anteriores a la firma) y los que esperan la devolución
+    validos = [c for c in cs if c.estado not in ("anulado", srv.PENDIENTE)]
     cuenta = Counter(c.operador_id for c in validos)
+    cuenta_sf = Counter(c.operador_id for c in sin_firma)
     ultimo = {}
     for c in sorted(validos, key=lambda c: c.fecha):
         ultimo[c.operador_id] = c.fecha.isoformat()
@@ -89,7 +95,7 @@ async def _vista(db: AsyncSession, periodo: str, sid: str, *, portal: bool) -> d
         equipo.append({
             **sup._op_corto(o), "actual": op_id in actuales,
             "tramos": [{"desde": t["desde"].isoformat(), "hasta": t["hasta"].isoformat()} for t in mios],
-            "coachings": cuenta.get(op_id, 0), "ultimo_coaching": ultimo.get(op_id),
+            "coachings": cuenta.get(op_id, 0), "ultimo_coaching": ultimo.get(op_id), "sin_firmar": cuenta_sf.get(op_id, 0),
             "uso": ctx.uso(op_id) if ctx.reporte else None,
             "conversacion": {"valor": conv["valor"], "roja": conv["rel"] == 0, "sobre_meta": bool(conv.get("sobre_meta"))}
             if conv and conv["rel"] is not None else None,
@@ -106,6 +112,9 @@ async def _vista(db: AsyncSession, periodo: str, sid: str, *, portal: bool) -> d
         "equipo": equipo, "alertas": _alertas_de(ctx, sid, dia),
         "items": [await item(c) for c in cs],
         "pendientes": [await item(c) for c in pendientes],
+        "sin_firmar": [{**srv.a_dict(c, nombres=nombres, ops=ctx.ops, hoy=dia, momento=momento, mio=portal),
+                        "vence_devolucion": srv.vence_devolucion(c, ctx.p).isoformat(),
+                        "devolucion_vencida": srv.devolucion_vencida(c, dia, ctx.p)} for c in sin_firma],
         "notas": [srv.nota_dict(x, ctx.ops) for x in notas],
         "reglas": {**REGLAS, "dias_foco": sup.scoring.DIAS_FOCO},
         "puede_registrar": portal,
@@ -142,17 +151,20 @@ async def gestion(periodo: Optional[str] = Query(None), user: CurrentUser = Depe
         Coaching.operativa == OPERATIVA, Coaching.estado == "abierto"))).scalars().all())
     notas = list((await db.execute(select(BitacoraNota).where(
         BitacoraNota.operativa == OPERATIVA, BitacoraNota.fecha >= primero, BitacoraNota.fecha <= ultimo))).scalars().all())
+    sin_firma = await srv.sin_firmar(db)
     filas = []
     for sid, x in ctx.sc["supervisores"].items():
         info = ctx.supervisores.get(sid) or {"id": sid, "nombre": sid, "activo": False}
         equipo = ctx.equipo(sid)
-        mios = [c for c in del_mes if c.supervisor_id == sid and c.estado != "anulado"]
+        mios = [c for c in del_mes if c.supervisor_id == sid and c.estado not in ("anulado", srv.PENDIENTE)]
+        sin_firma_sid = [c for c in sin_firma if c.supervisor_id == sid]
         if not equipo and not mios and not info["activo"]:
             continue
         abiertos_sid = [c for c in abiertos if c.supervisor_id == sid]
         notas_sid = [n for n in notas if n.supervisor_id == sid]
         alertas = Counter(a["estado"] for a in _alertas_de(ctx, sid, dia))
-        momentos = [m for m in [*(c.created_at for c in mios), *(c.seguimiento_at for c in mios), *(n.created_at for n in notas_sid)] if m]
+        momentos = [m for m in [*(c.created_at for c in mios), *(c.seguimiento_at for c in mios), *(n.created_at for n in notas_sid),
+                                *(c.updated_at or c.created_at for c in sin_firma_sid)] if m]
         ultima = srv.dia_local(max(momentos)) if momentos else None
         filas.append({
             **info, "asesores": len(equipo), "total": x["total"], "partes": x["partes"][1:],
@@ -160,6 +172,8 @@ async def gestion(periodo: Optional[str] = Query(None), user: CurrentUser = Depe
             "fuera_de_termino": sum(1 for c in mios if c.fuera_de_termino),
             "sin_mejora": sum(1 for c in mios if c.estado == "cerrado" and c.resultado in ("igual", "empeoro")),
             "seguimientos_abiertos": len(abiertos_sid),
+            "sin_firmar": len(sin_firma_sid),
+            "sin_firmar_vencidos": sum(1 for c in sin_firma_sid if srv.devolucion_vencida(c, dia, ctx.p)),
             "seguimientos_vencidos": sum(1 for c in abiertos_sid if srv.estado_seguimiento(c, dia) == "vencido"),
             "alertas": {k: alertas.get(k, 0) for k in alertas_srv.ORDEN_ESTADO}, "notas": len(notas_sid),
             "ultima_actividad": ultima.isoformat() if ultima else None,
@@ -167,7 +181,7 @@ async def gestion(periodo: Optional[str] = Query(None), user: CurrentUser = Depe
         })
     filas.sort(key=lambda f: (-(f["alertas"]["vencida"] + f["seguimientos_vencidos"]), not f["asesores"], f["nombre"].lower()))
     con_equipo = {op for op in ctx.tramos if ctx.actual(op)}
-    con_coaching = {c.operador_id for c in del_mes if c.estado != "anulado" and c.fecha <= min(ultimo, dia)}
+    con_coaching = {c.operador_id for c in del_mes if c.estado not in ("anulado", srv.PENDIENTE) and c.fecha <= min(ultimo, dia)}
     return {
         **ctx.comun(), "hoy": dia.isoformat(),
         "gestion_desde": ctx.inicio_gestion.isoformat() if ctx.inicio_gestion else None,
@@ -175,6 +189,8 @@ async def gestion(periodo: Optional[str] = Query(None), user: CurrentUser = Depe
             "asesores": len(con_equipo), "con_coaching": len(con_equipo & con_coaching),
             "coachings": sum(f["coachings"] for f in filas),
             "seguimientos_vencidos": sum(f["seguimientos_vencidos"] for f in filas),
+            "sin_firmar": sum(f["sin_firmar"] for f in filas),
+            "sin_firmar_vencidos": sum(f["sin_firmar_vencidos"] for f in filas),
             "alertas_vencidas": sum(f["alertas"]["vencida"] for f in filas),
             "alertas_en_plazo": sum(f["alertas"]["en_plazo"] for f in filas),
         },
@@ -190,7 +206,8 @@ LOTE = 500                    # ids por consulta (los textos de la lista)
 # Lo que necesitan los indicadores: sin los textos ni la foto al registrar (se leen solo para lo que se lista).
 _LIVIANAS = (Coaching.id, Coaching.supervisor_id, Coaching.operador_id, Coaching.fecha, Coaching.tipo, Coaching.metrica,
              Coaching.metricas, Coaching.seguimiento_fecha, Coaching.seguimiento_at, Coaching.estado, Coaching.resultado,
-             Coaching.impacto, Coaching.fuera_de_termino, Coaching.anterior_id, Coaching.created_at, Coaching.updated_at)
+             Coaching.impacto, Coaching.fuera_de_termino, Coaching.anterior_id, Coaching.created_at, Coaching.updated_at,
+             Coaching.firmado_at, Coaching.huella)
 DIAS_PROXIMOS_REGISTRO = 7    # en el registro, «próximos»: los seguimientos de la próxima semana
 SeguimientoFiltro = Literal["pendientes", "proximos", "vencidos", "a_tiempo", "tarde"]
 ResultadoFiltro = Literal["mejoro", "igual", "empeoro", "mixto", "sin_datos", "sin_mejora"]
@@ -227,6 +244,7 @@ def _item(c: Coaching, textos: tuple[str, str, str | None], *, nombres: dict[str
         "resultados": _resultados_por_metrica(c) if c.estado == "cerrado" else [], "impacto_guardado": c.estado == "cerrado",
         "fuera_de_termino": c.fuera_de_termino, "anterior_id": c.anterior_id, "created_at": srv.iso(c.created_at),
         "updated_at": srv.iso(c.updated_at), "editable": False,
+        "devolucion": srv.devolucion(c), "firmado_at": srv.iso(c.firmado_at), "huella": c.huella,
     }
 
 
@@ -291,10 +309,13 @@ async def _registro(db: AsyncSession, *, desde: date, hasta: date, supervisor_id
         return True
 
     cs = [c for c in cs if pasa(c)]
-    validos = [c for c in cs if c.estado != "anulado"]
-    n_anulados = len(cs) - len(validos)   # los anulados se cuentan siempre; se listan solo si se piden
+    # Los indicadores cuentan los coachings terminados (firmados o anteriores a la firma); los que esperan la
+    # devolución se cuentan aparte y se listan; los anulados se cuentan siempre y se listan solo si se piden.
+    sin_firma = [c for c in cs if c.estado == srv.PENDIENTE]
+    validos = [c for c in cs if c.estado not in ("anulado", srv.PENDIENTE)]
+    n_anulados = sum(1 for c in cs if c.estado == "anulado")
     if not anulados:
-        cs = validos
+        cs = [c for c in cs if c.estado != "anulado"]
 
     # Nombres y opciones de los filtros (los supervisores y asesores con coachings en el rango, sin los demás filtros).
     pares = (await db.execute(select(Coaching.supervisor_id, Coaching.operador_id).where(base.whereclause).distinct())).all()
@@ -310,7 +331,8 @@ async def _registro(db: AsyncSession, *, desde: date, hasta: date, supervisor_id
     con_datos = sum(res[r] for r in ("mejoro", "mixto", "igual", "empeoro"))
     exigibles = est["a_tiempo"] + est["tarde"] + est["vencido"]
     kpis = {
-        "coachings": len(validos), "anulados": n_anulados,
+        "coachings": len(validos), "anulados": n_anulados, "sin_firmar": len(sin_firma),
+        "firmados": sum(1 for c in validos if c.firmado_at),
         "asesores": len({c.operador_id for c in validos}), "supervisores": len({c.supervisor_id for c in validos}),
         "fuera_de_termino": sum(1 for c in validos if c.fuera_de_termino),
         "por_tipo": {t: n for t, n in Counter(c.tipo for c in validos).items()},
@@ -415,6 +437,34 @@ async def portal_registro(desde: Optional[date] = Query(None), hasta: Optional[d
                            seguimiento=seguimiento, resultado=resultado, anulados=anulados, solo_supervisor=user.id)
 
 
+def _item_dict(i: CoachingItem) -> dict[str, Any]:
+    return {"id": i.id, "tipo": i.tipo, "at": srv.iso(i.at), "metricas": list(i.metricas or []), "texto": i.texto,
+            "referencia": i.referencia, "audio_id": i.audio_id, "updated_at": srv.iso(i.updated_at)}
+
+
+def _compromiso_dict(x: CoachingCompromiso) -> dict[str, Any]:
+    return {"id": x.id, "orden": x.orden, "texto": x.texto, "para": x.para.isoformat() if x.para else None,
+            "metrica": x.metrica, "origen": x.origen, "audio_id": x.audio_id, "resultado": x.resultado, "nota": x.nota}
+
+
+def _firma_dict(f: CoachingFirma) -> dict[str, Any]:
+    return {"id": f.id, "firmante": f.firmante, "nombre": f.nombre, "imagen": f.imagen, "firmado_at": srv.iso(f.firmado_at),
+            "huella": f.huella, "acepto": f.acepto, "comentario": f.comentario, "comentario_audio_id": f.comentario_audio_id,
+            "consentimiento_audio": f.consentimiento_audio}
+
+
+async def partes(db: AsyncSession, c: Coaching) -> dict[str, Any]:
+    """Los monitoreos y feedback, los compromisos, las firmas y los audios de un coaching."""
+    items = await srv.items_de(db, c.id)
+    comps = await srv.compromisos_de(db, c.id)
+    firmas = list((await db.execute(select(CoachingFirma).where(CoachingFirma.coaching_id == c.id)
+                                    .order_by(CoachingFirma.firmado_at))).scalars().all())
+    auds = list((await db.execute(select(CoachingAudio).where(CoachingAudio.coaching_id == c.id)
+                                  .order_by(CoachingAudio.created_at))).scalars().all())
+    return {"items": [_item_dict(i) for i in items], "compromisos": [_compromiso_dict(x) for x in comps],
+            "firmas": [_firma_dict(f) for f in firmas], "audios": [audios_srv.a_dict(a) for a in auds]}
+
+
 async def _detalle(db: AsyncSession, c: Coaching, *, portal: bool) -> dict[str, Any]:
     dia = sup.hoy()
     o = await db.get(Operador, c.operador_id)
@@ -424,7 +474,12 @@ async def _detalle(db: AsyncSession, c: Coaching, *, portal: bool) -> dict[str, 
     impacto = await srv.Medidor(db, dia).medir(c, o) if c.estado == "abierto" else None
     siguientes = (await db.execute(select(Coaching.id, Coaching.fecha).where(Coaching.anterior_id == c.id)
                                    .order_by(Coaching.fecha))).all()
+    extra: dict[str, Any] = {}
+    if c.estado == srv.PENDIENTE:
+        p = await sup.parametros(db)
+        extra = {"vence_devolucion": srv.vence_devolucion(c, p).isoformat(), "devolucion_vencida": srv.devolucion_vencida(c, dia, p)}
     return {**srv.a_dict(c, nombres=nombres, ops=ops, hoy=dia, impacto=impacto, momento=srv.ahora(), mio=portal),
+            **await partes(db, c), **extra, "puede_firmar": bool(portal and c.estado == srv.PENDIENTE),
             "eventos": [srv.evento_dict(e, nombres) for e in evs],
             "siguientes": [{"id": i, "fecha": f.isoformat()} for i, f in siguientes]}
 
@@ -451,51 +506,65 @@ async def ver_detalle(coaching_id: str, user: CurrentUser = Depends(sup.require_
 
 # ------------------------------------------------------------------ registrar y editar
 class CoachingPayload(BaseModel):
+    """Abre un coaching (queda sin firmar). Desde el celular alcanza con el asesor y el tipo: los monitoreos, el feedback
+    y los compromisos se suman después. Con `diagnostico` y `compromiso` (como antes) se cargan como un feedback y un
+    compromiso del asesor."""
     operador_id: str = Field(..., min_length=1, max_length=36)
-    fecha: date
-    tipo: Tipo
+    fecha: Optional[date] = None                                   # hoy, si no se indica
+    tipo: Tipo = "diario"
     metricas: Optional[list[Metrica]] = Field(None, max_length=5)  # las que se trabajaron (una o varias)
     metrica: Optional[Metrica] = None  # una sola (como antes de poder elegir varias)
-    diagnostico: str = Field(..., max_length=srv.MAX_TEXTO)
-    compromiso: str = Field(..., max_length=srv.MAX_TEXTO)
-    seguimiento_fecha: date
+    diagnostico: Optional[str] = Field(None, max_length=srv.MAX_TEXTO)
+    compromiso: Optional[str] = Field(None, max_length=srv.MAX_TEXTO)
+    seguimiento_fecha: Optional[date] = None                       # sugerido según el tipo, si no se indica
     anterior_id: Optional[str] = Field(None, max_length=36)
 
 
 @router.post("/portal/coaching", status_code=status.HTTP_201_CREATED)
 async def registrar(payload: CoachingPayload, request: Request, user: CurrentUser = Depends(sup.require_portal),
                     db: AsyncSession = Depends(get_db)) -> dict:
-    """Registra un coaching. La hora la pone el servidor; con más de 48 h de atraso queda fuera de término."""
+    """Abre un coaching: queda sin firmar hasta la devolución con el asesor. La hora la pone el servidor; con más de
+    48 h de atraso queda fuera de término."""
     dia = sup.hoy()
+    fecha = payload.fecha or dia
+    seguimiento_fecha = payload.seguimiento_fecha or fecha + timedelta(days=srv.SEGUIMIENTO_SUGERIDO[payload.tipo])
+    elegidas = payload.metricas or ([payload.metrica] if payload.metrica else [])
     try:
-        fuera = srv.validar_fecha(payload.fecha, dia)
-        srv.validar_seguimiento(payload.fecha, payload.seguimiento_fecha, dia)
-        metricas = srv.normalizar_metricas(payload.metricas or ([payload.metrica] if payload.metrica else []))
-        diagnostico = srv.texto(payload.diagnostico, "el diagnóstico")
-        compromiso = srv.texto(payload.compromiso, "el compromiso")
+        fuera = srv.validar_fecha(fecha, dia)
+        srv.validar_seguimiento(fecha, seguimiento_fecha, dia)
+        metricas = srv.normalizar_metricas(elegidas or ["otra"]) if not (payload.diagnostico or payload.compromiso) or elegidas \
+            else srv.normalizar_metricas(elegidas)
+        diagnostico = srv.texto(payload.diagnostico, "el diagnóstico") if payload.diagnostico is not None else None
+        compromiso = srv.texto(payload.compromiso, "el compromiso") if payload.compromiso is not None else None
     except srv.ReglaInvalida as exc:
         raise _regla(exc) from exc
-    ctx = await sup.contexto(db, mes_de(payload.fecha))
+    ctx = await sup.contexto(db, mes_de(fecha))
     op = ctx.ops.get(payload.operador_id)
-    if not op or supervisor_en(ctx.tramos.get(op.id, []), payload.fecha) != user.id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Ese asesor no estaba en tu equipo el {payload.fecha:%d/%m}")
+    if not op or supervisor_en(ctx.tramos.get(op.id, []), fecha) != user.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Ese asesor no estaba en tu equipo el {fecha:%d/%m}")
     if payload.anterior_id:
         prev = await db.get(Coaching, payload.anterior_id)
         if not prev or prev.supervisor_id != user.id or prev.operador_id != op.id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "El coaching anterior no es de ese asesor")
-    c = Coaching(operativa=OPERATIVA, supervisor_id=user.id, operador_id=op.id, fecha=payload.fecha, tipo=payload.tipo,
-                 metrica=metricas[0], metricas=metricas, diagnostico=diagnostico, compromiso=compromiso,
-                 seguimiento_fecha=payload.seguimiento_fecha, estado="abierto", anterior_id=payload.anterior_id,
-                 base=await srv.foto(db, op, payload.fecha, ctx.sc["asesores"].get(op.id)), impacto={},
-                 fuera_de_termino=fuera, created_at=srv.ahora(), created_by=user.id)
+    momento = srv.ahora()
+    c = Coaching(operativa=OPERATIVA, supervisor_id=user.id, operador_id=op.id, fecha=fecha, tipo=payload.tipo,
+                 metrica=metricas[0], metricas=metricas, diagnostico=diagnostico or "", compromiso=compromiso or "",
+                 seguimiento_fecha=seguimiento_fecha, estado=srv.PENDIENTE, anterior_id=payload.anterior_id,
+                 base=await srv.foto(db, op, fecha, ctx.sc["asesores"].get(op.id)), impacto={},
+                 fuera_de_termino=fuera, created_at=momento, created_by=user.id)
     db.add(c)
     await db.flush()
+    if diagnostico:
+        db.add(CoachingItem(coaching_id=c.id, tipo="feedback", at=momento, metricas=metricas, texto=diagnostico, created_by=user.id))
+    if compromiso:
+        db.add(CoachingCompromiso(coaching_id=c.id, orden=1, texto=compromiso, origen="supervisor", created_at=momento,
+                                  created_by=user.id))
     srv.evento(db, c, "creado", user.id, tipo=c.tipo, metrica=c.metrica, metricas=metricas, fecha=c.fecha, seguimiento_fecha=c.seguimiento_fecha,
                diagnostico=diagnostico, compromiso=compromiso, fuera_de_termino=fuera)
     await db.commit()
     await record_action(db, user_id=user.id, action="coaching_registrado", resource_type="coaching", resource_id=c.id,
                         ip=client_ip(request), extra={"asesor": op.nombre, "fecha": c.fecha.isoformat(), "tipo": c.tipo,
-                                                     "metricas": metricas, "fuera_de_termino": fuera})
+                                                     "metricas": metricas, "fuera_de_termino": fuera, "sin_firmar": True})
     return await _detalle(db, c, portal=True)
 
 
@@ -511,10 +580,12 @@ class CoachingPatch(BaseModel):
 @router.patch("/portal/coaching/{coaching_id}")
 async def editar(coaching_id: str, payload: CoachingPatch, request: Request, user: CurrentUser = Depends(sup.require_portal),
                  db: AsyncSession = Depends(get_db)) -> dict:
-    """Corrige un coaching dentro de las 24 h del registro (cada versión queda en el historial)."""
+    """Corrige un coaching sin firmar (o uno anterior a la firma dentro de las 24 h). Cada versión queda en el historial.
+    Con un solo feedback o un solo compromiso, `diagnostico` y `compromiso` los corrigen."""
     c = await _propio(db, coaching_id, user)
     if not srv.editable(c, srv.ahora()):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Pasaron más de 24 h desde el registro: agregá una aclaración")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya está firmado: agregá una aclaración" if c.firmado_at
+                            else "Pasaron más de 24 h desde el registro: agregá una aclaración")
     antes, despues = {}, {}
     try:
         nuevos: dict[str, Any] = {}
@@ -534,10 +605,22 @@ async def editar(coaching_id: str, payload: CoachingPatch, request: Request, use
             nuevos["seguimiento_fecha"] = payload.seguimiento_fecha
     except srv.ReglaInvalida as exc:
         raise _regla(exc) from exc
+    pendiente = c.estado == srv.PENDIENTE
+    items = await srv.items_de(db, c.id) if pendiente else []
+    comps = await srv.compromisos_de(db, c.id) if pendiente else []
+    for campo, lista in (("diagnostico", items), ("compromiso", comps)):
+        if pendiente and campo in nuevos:
+            if len(lista) != 1:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Corregí cada monitoreo, feedback o compromiso por separado")
+            lista[0].texto, lista[0].updated_at = nuevos[campo], srv.ahora()
+    if pendiente and "metricas" in despues and len(items) == 1:
+        items[0].metricas = despues["metricas"]   # registrado como antes: las métricas son las de su único feedback
     for k, v in nuevos.items():
         if getattr(c, k) != v:
             antes[k], despues[k] = getattr(c, k), v
             setattr(c, k, v)
+    if pendiente and items + comps:
+        srv.resumir(c, items, comps)
     if despues:
         c.updated_at = srv.ahora()
         srv.evento(db, c, "editado", user.id, antes=antes, despues=despues)
@@ -554,10 +637,12 @@ class AnularPayload(BaseModel):
 @router.post("/portal/coaching/{coaching_id}/anular")
 async def anular(coaching_id: str, payload: AnularPayload, request: Request, user: CurrentUser = Depends(sup.require_portal),
                  db: AsyncSession = Depends(get_db)) -> dict:
-    """Anula un coaching cargado por error (dentro de las 24 h). No se borra: queda tachado y en el historial."""
+    """Anula un coaching cargado por error (sin firmar, o uno anterior a la firma dentro de las 24 h). No se borra: queda
+    tachado y en el historial."""
     c = await _propio(db, coaching_id, user)
     if not srv.editable(c, srv.ahora()):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Solo se anula dentro de las 24 h del registro")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Un coaching firmado no se anula" if c.firmado_at
+                            else "Solo se anula dentro de las 24 h del registro")
     try:
         motivo = srv.texto(payload.motivo, "el motivo", minimo=5, maximo=500)
     except srv.ReglaInvalida as exc:
@@ -570,8 +655,15 @@ async def anular(coaching_id: str, payload: AnularPayload, request: Request, use
     return await _detalle(db, c, portal=True)
 
 
+class ResultadoCompromiso(BaseModel):
+    id: str = Field(..., max_length=36)
+    resultado: Literal["cumplido", "parcial", "no_cumplido"]
+    nota: Optional[str] = Field(None, max_length=1000)
+
+
 class SeguimientoPayload(BaseModel):
     comentario: str = Field(..., max_length=srv.MAX_TEXTO)
+    compromisos: list[ResultadoCompromiso] = Field(default_factory=list, max_length=srv.MAX_COMPROMISOS)
 
 
 @router.post("/portal/coaching/{coaching_id}/seguimiento")
@@ -579,6 +671,8 @@ async def seguimiento(coaching_id: str, payload: SeguimientoPayload, request: Re
                       user: CurrentUser = Depends(sup.require_portal), db: AsyncSession = Depends(get_db)) -> dict:
     """Registra el seguimiento del compromiso: el sistema mide el impacto con los datos y lo guarda."""
     c = await _propio(db, coaching_id, user)
+    if c.estado == srv.PENDIENTE:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Primero la devolución: el asesor tiene que firmar")
     if c.estado != "abierto":
         raise HTTPException(status.HTTP_409_CONFLICT, "Este coaching está anulado" if c.estado == "anulado"
                             else "Este coaching ya tiene su seguimiento")
@@ -589,12 +683,21 @@ async def seguimiento(coaching_id: str, payload: SeguimientoPayload, request: Re
         comentario = srv.texto(payload.comentario, "el comentario del seguimiento")
     except srv.ReglaInvalida as exc:
         raise _regla(exc) from exc
+    comps = {x.id: x for x in await srv.compromisos_de(db, c.id)}
+    resultados = {r.id: r for r in payload.compromisos}
+    if any(i not in comps for i in resultados):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ese compromiso no es de este coaching")
+    if c.firmado_at and comps and set(resultados) != set(comps):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Marcá cómo le fue con cada compromiso")
+    for i, r in resultados.items():
+        comps[i].resultado, comps[i].nota, comps[i].updated_at = r.resultado, (r.nota or "").strip() or None, srv.ahora()
     impacto = await srv.Medidor(db, dia).medir(c, await db.get(Operador, c.operador_id))
     c.impacto, c.resultado = impacto, impacto["resultado"]
     c.seguimiento_at, c.seguimiento_comentario, c.estado = srv.ahora(), comentario, "cerrado"
     c.updated_at = c.seguimiento_at
     a_tiempo = srv.estado_seguimiento(c, dia) == "a_tiempo"
-    srv.evento(db, c, "seguimiento", user.id, comentario=comentario, resultado=c.resultado, a_tiempo=a_tiempo)
+    srv.evento(db, c, "seguimiento", user.id, comentario=comentario, resultado=c.resultado, a_tiempo=a_tiempo,
+               compromisos={i: r.resultado for i, r in resultados.items()})
     await db.commit()
     await record_action(db, user_id=user.id, action="coaching_seguimiento", resource_type="coaching", resource_id=c.id,
                         ip=client_ip(request), extra={"resultado": c.resultado, "a_tiempo": a_tiempo})

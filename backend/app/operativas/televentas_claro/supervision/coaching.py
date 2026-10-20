@@ -8,6 +8,15 @@ Reglas (las de la guía del modelo Líder Coach Comercial):
   aclaraciones; cada versión queda en el historial (`sup_coaching_eventos`).
 - El seguimiento se registra desde el día siguiente al coaching; el sistema mide el impacto con los
   datos y lo guarda con el seguimiento (mejoró, igual, empeoró o sin datos).
+
+Devolución con firma (desde octubre 2026):
+- Un coaching nuevo nace «pendiente» (sin firmar). Junta varios monitoreos y feedback y los compromisos del asesor,
+  y se puede corregir o anular mientras no se firma.
+- Termina cuando el asesor firma en el celular del supervisor: pasa a «abierto» (espera el seguimiento), queda
+  bloqueado (solo aclaraciones y el seguimiento) y guarda la huella SHA-256 de lo firmado.
+- Cuenta en la gestión (cobertura y foco) recién con la firma, y con la fecha de la firma.
+- Sin firmar, avisa a los DIAS_DEVOLUCION días hábiles (en «Para hoy» y en el centro de comandos).
+- Los coachings anteriores (sin firma) siguen con la regla de las 24 h.
 """
 from __future__ import annotations
 
@@ -17,13 +26,18 @@ from typing import Any
 from sqlalchemy import and_, case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .alertas import dia_local
-from .calculo import _fecha, limites, mes_anterior, mes_de, mes_siguiente
+import hashlib
+import json
+
+from .alertas import ZONA, dia_local
+from .calculo import _fecha, limites, mes_anterior, mes_de, mes_siguiente, sumar_habiles
 from .datos import productividad_del_mes, ventas_del_mes
 from .impacto import (
     DIAS_ATRAS, DIAS_MADURACION, METRICAS, combinar, histograma, impacto_conversacion, impacto_uso, impacto_ventas, sin_medicion,
 )
-from .models import OPERATIVA, BitacoraNota, Coaching, CoachingEvento, Operador, SupParametros
+from .models import (
+    OPERATIVA, BitacoraNota, Coaching, CoachingCompromiso, CoachingEvento, CoachingItem, Operador, SupParametros,
+)
 
 HORAS_EDICION = 24
 DIAS_TERMINO = 2            # más de 48 h de atraso: fuera de término
@@ -36,6 +50,12 @@ MIN_TEXTO, MAX_TEXTO = 10, 2000
 PRODUCTO = {"pospago": "Pospago", "gpon": "GPON"}
 NOMBRE_METRICA = {"pospago": "Pospago", "gpon": "GPON", "uso": "Uso de líneas", "conversacion": "Conversación", "otra": "Otra"}
 NOMBRE_RESULTADO = {"mejoro": "mejoró", "igual": "igual", "empeoro": "empeoró", "mixto": "mixto", "sin_datos": "sin datos"}
+PENDIENTE = "pendiente"
+DIAS_DEVOLUCION = 2         # días hábiles para hacer la devolución (firmar) desde que se abrió el coaching
+TIPOS_ITEM = ("monitoreo", "feedback")
+NOMBRE_ITEM = {"monitoreo": "Monitoreo", "feedback": "Feedback"}
+RESULTADOS_COMPROMISO = ("cumplido", "parcial", "no_cumplido")
+MAX_ITEMS, MAX_COMPROMISOS = 30, 10
 
 
 class ReglaInvalida(ValueError):
@@ -88,14 +108,45 @@ def texto(valor: str | None, campo: str, minimo: int = MIN_TEXTO, maximo: int = 
     return t
 
 
+def firmado(c: Coaching) -> bool:
+    return c.firmado_at is not None
+
+
+def devolucion(c: Coaching) -> str:
+    """pendiente (sin firmar) | firmada | anterior (registrado antes de la firma: no la tiene)."""
+    if c.estado == PENDIENTE:
+        return "pendiente"
+    return "firmada" if c.firmado_at else "anterior"
+
+
+def fecha_gestion(c: Any) -> date:
+    """El día que cuenta en la gestión: el de la firma (la devolución); los anteriores, su fecha."""
+    return dia_local(getattr(c, "firmado_at", None)) or c.fecha
+
+
 def editable(c: Coaching, momento: datetime) -> bool:
+    """Sin firmar: siempre (lo corrige o lo anula su supervisor). Firmado: nunca. Anterior a la firma: 24 h."""
+    if c.estado == PENDIENTE:
+        return True
+    if c.firmado_at:
+        return False
     creado = c.created_at if c.created_at.tzinfo else c.created_at.replace(tzinfo=timezone.utc)
     return c.estado == "abierto" and momento - creado <= timedelta(hours=HORAS_EDICION)
 
 
+def vence_devolucion(c: Coaching, p: dict[str, Any]) -> date:
+    """Hasta qué día se puede hacer la devolución sin que avise (días hábiles desde que se abrió)."""
+    inicio = dia_local(c.created_at) or c.fecha
+    return sumar_habiles(inicio, DIAS_DEVOLUCION, p["pesos_dia"], p["feriados"])
+
+
+def devolucion_vencida(c: Coaching, hoy: date, p: dict[str, Any]) -> bool:
+    return c.estado == PENDIENTE and hoy > vence_devolucion(c, p)
+
+
 def estado_seguimiento(c: Coaching, hoy: date) -> str | None:
-    """a_tiempo | tarde (registrado) · vencido | hoy | proximo (sin registrar) · None si está anulado."""
-    if c.estado == "anulado":
+    """a_tiempo | tarde (registrado) · vencido | hoy | proximo (sin registrar) · None si está anulado o sin firmar."""
+    if c.estado in ("anulado", PENDIENTE):
         return None
     limite = c.seguimiento_fecha + timedelta(days=1)
     dia = dia_local(c.seguimiento_at)
@@ -117,17 +168,21 @@ async def para_scoring_del_mes(db: AsyncSession, periodo: str) -> list[Coaching]
     """Los que pesan en la gestión del mes: con fecha en el mes (o hasta 14 días después, para el foco de las
     alertas de fin de mes) o con el seguimiento en el mes. Sin los anulados."""
     primero, ultimo = limites(periodo)
+    desde = datetime.combine(primero - timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    hasta = datetime.combine(ultimo + timedelta(days=16), datetime.min.time(), tzinfo=timezone.utc)
     q = select(Coaching).where(
-        Coaching.operativa == OPERATIVA, Coaching.estado != "anulado",
+        Coaching.operativa == OPERATIVA, Coaching.estado.notin_(("anulado", PENDIENTE)),
         or_(and_(Coaching.fecha >= primero, Coaching.fecha <= ultimo + timedelta(days=14)),
+            and_(Coaching.firmado_at >= desde, Coaching.firmado_at < hasta),
             and_(Coaching.seguimiento_fecha >= primero, Coaching.seguimiento_fecha <= ultimo)))
     return list((await db.execute(q)).scalars().all())
 
 
 def para_scoring(cs: list[Coaching]) -> list[dict[str, Any]]:
-    return [{"operador_id": c.operador_id, "supervisor_id": c.supervisor_id, "metrica": c.metrica, "metricas": metricas_de(c), "fecha": c.fecha,
-             "seguimiento_fecha": c.seguimiento_fecha, "seguimiento_dia": dia_local(c.seguimiento_at)}
-            for c in cs if c.estado != "anulado"]
+    """La gestión cuenta los coachings terminados (firmados o anteriores a la firma), con el día de la devolución."""
+    return [{"operador_id": c.operador_id, "supervisor_id": c.supervisor_id, "metrica": c.metrica, "metricas": metricas_de(c),
+             "fecha": fecha_gestion(c), "seguimiento_fecha": c.seguimiento_fecha, "seguimiento_dia": dia_local(c.seguimiento_at)}
+            for c in cs if c.estado not in ("anulado", PENDIENTE)]
 
 
 async def del_supervisor(db: AsyncSession, supervisor_id: str, periodo: str) -> list[Coaching]:
@@ -146,6 +201,60 @@ async def abiertos(db: AsyncSession, supervisor_id: str) -> list[Coaching]:
     return list((await db.execute(q)).scalars().all())
 
 
+async def sin_firmar(db: AsyncSession, supervisor_id: str | None = None) -> list[Coaching]:
+    """Los coachings que esperan la devolución con firma (de cualquier mes), del más viejo al más nuevo."""
+    q = select(Coaching).where(Coaching.operativa == OPERATIVA, Coaching.estado == PENDIENTE)
+    if supervisor_id:
+        q = q.where(Coaching.supervisor_id == supervisor_id)
+    return list((await db.execute(q.order_by(Coaching.created_at))).scalars().all())
+
+
+async def items_de(db: AsyncSession, coaching_id: str) -> list[CoachingItem]:
+    q = select(CoachingItem).where(CoachingItem.coaching_id == coaching_id).order_by(CoachingItem.at, CoachingItem.id)
+    return list((await db.execute(q)).scalars().all())
+
+
+async def compromisos_de(db: AsyncSession, coaching_id: str) -> list[CoachingCompromiso]:
+    q = select(CoachingCompromiso).where(CoachingCompromiso.coaching_id == coaching_id).order_by(
+        CoachingCompromiso.orden, CoachingCompromiso.created_at)
+    return list((await db.execute(q)).scalars().all())
+
+
+def _hora(d: datetime) -> str:
+    return (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).astimezone(ZONA).strftime("%d/%m %H:%M")
+
+
+def resumir(c: Coaching, items: list[CoachingItem], comps: list[CoachingCompromiso]) -> None:
+    """`diagnostico`, `compromiso` y las métricas del coaching salen de sus monitoreos, feedback y compromisos
+    (las vistas del registro, el informe diario y la línea de tiempo los siguen leyendo de ahí)."""
+    c.diagnostico = "\n".join(f"{NOMBRE_ITEM.get(i.tipo, i.tipo)} {_hora(i.at)}: {i.texto}" for i in items)
+    c.compromiso = "\n".join(f"{k}. {x.texto}" + (f" (para el {x.para:%d/%m})" if x.para else "")
+                              for k, x in enumerate(comps, start=1))
+    elegidas = [m for i in items for m in (i.metricas or [])] + [x.metrica for x in comps if x.metrica]
+    if elegidas:
+        ms = normalizar_metricas(elegidas)
+        c.metricas, c.metrica = ms, ms[0]
+
+
+def contenido_firmado(c: Coaching, items: list[CoachingItem], comps: list[CoachingCompromiso], audios: dict[str, str],
+                      *, asesor: str, firmado_at: datetime, comentario: str | None, comentario_audio: str | None) -> dict[str, Any]:
+    """Lo que firma el asesor, en una forma estable (la huella SHA-256 se calcula sobre esto)."""
+    return {
+        "coaching": c.id, "operativa": c.operativa, "supervisor_id": c.supervisor_id, "operador_id": c.operador_id,
+        "asesor": asesor, "tipo": c.tipo, "metricas": metricas_de(c), "seguimiento_fecha": c.seguimiento_fecha.isoformat(),
+        "items": [{"tipo": i.tipo, "at": iso(i.at), "metricas": list(i.metricas or []), "texto": i.texto,
+                   "referencia": i.referencia, "audio": audios.get(i.audio_id or "")} for i in items],
+        "compromisos": [{"texto": x.texto, "para": x.para.isoformat() if x.para else None, "metrica": x.metrica,
+                         "origen": x.origen, "audio": audios.get(x.audio_id or "")} for x in comps],
+        "comentario": comentario, "comentario_audio": audios.get(comentario_audio or "") if comentario_audio else None,
+        "firmado_at": iso(firmado_at),
+    }
+
+
+def huella(contenido: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(contenido, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 async def notas(db: AsyncSession, supervisor_id: str, periodo: str) -> list[BitacoraNota]:
     primero, ultimo = limites(periodo)
     q = select(BitacoraNota).where(BitacoraNota.operativa == OPERATIVA, BitacoraNota.supervisor_id == supervisor_id,
@@ -154,7 +263,9 @@ async def notas(db: AsyncSession, supervisor_id: str, periodo: str) -> list[Bita
     return list((await db.execute(q)).scalars().all())
 
 
-ORDEN_EVENTO = {"creado": 0, "editado": 1, "anulado": 2, "seguimiento": 3, "aclaracion": 4}  # a igual hora
+ORDEN_EVENTO = {"creado": 0, "editado": 1, "item": 2, "item_editado": 2, "item_quitado": 2, "compromiso": 3,
+                "compromiso_editado": 3, "compromiso_quitado": 3, "audio": 4, "transcripcion": 4, "firmado": 5, "anulado": 6, "seguimiento": 7,
+                "aclaracion": 8}  # a igual hora
 
 
 async def eventos(db: AsyncSession, coaching_id: str) -> list[CoachingEvento]:
@@ -331,6 +442,8 @@ def a_dict(c: Coaching, *, nombres: dict[str, str], ops: dict[str, Operador], ho
         "fuera_de_termino": c.fuera_de_termino, "anterior_id": c.anterior_id,
         "created_at": iso(c.created_at), "updated_at": iso(c.updated_at),
         "editable": bool(mio and momento and editable(c, momento)),
+        "devolucion": devolucion(c), "firmado_at": iso(c.firmado_at), "huella": c.huella,
+        "fecha_gestion": fecha_gestion(c).isoformat() if c.estado not in ("anulado", PENDIENTE) else None,
     }
 
 
