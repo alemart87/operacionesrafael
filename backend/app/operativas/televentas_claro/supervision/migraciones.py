@@ -87,6 +87,22 @@ async def coaching_metricas(db: AsyncSession) -> dict[str, Any]:
     return {"coachings": n}
 
 
+async def permisos_control(db: AsyncSession) -> dict[str, Any]:
+    """Los perfiles que ya existían reciben el Control de supervisores según lo definido (gerente, sub gerente,
+    coordinador y controller: es una utilidad restringida a ellos)."""
+    perm = f"{OPERATIVA}.control_supervisores"
+    cambios: list[str] = []
+    for row in (await db.execute(select(Profile))).scalars().all():
+        antes = set(row.permissions or [])
+        if perm in DEFAULT_PERMISSIONS.get(row.slug, []) and perm not in antes:
+            despues = filter_permissions(sorted(antes | {perm}), row.slug)
+            if perm in despues:
+                row.permissions = despues
+                cambios.append(row.slug)
+    await db.commit()
+    return {"perfiles": sorted(cambios)}
+
+
 MIGRACIONES = [
     ("2026-10-supervision-permisos", permisos_supervision),
     ("2026-10-operadores-desde-sph", vinculos_sph_al_maestro),
@@ -94,4 +110,5 @@ MIGRACIONES = [
     ("2026-10-gestion-desde", inicio_gestion),
     ("2026-10-tickets-permisos", permisos_tickets),
     ("2026-10-coaching-metricas", coaching_metricas),
+    ("2026-10-control-supervisores", permisos_control),
 ]

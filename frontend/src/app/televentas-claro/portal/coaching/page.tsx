@@ -3,18 +3,18 @@
 import { History } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { AppShell } from "@/components/AppShell";
+import { PortalShell } from "@/components/portal/nav";
 import { VistaCoaching } from "@/components/supervision/coaching";
 import { SUP_API, mesActual, periodoDeUrl, periodoEnUrl, type VistaCoachingData } from "@/components/supervision/tipos";
 import { SelectorMes } from "@/components/supervision/ui";
 import { apiFetch } from "@/lib/api";
 
-/** Portal del supervisor · coaching y bitácora: registra, sigue y mide su gestión. */
+/** Portal del supervisor · Mi mes: el coaching y la bitácora del mes (cada coaching se abre en su pantalla). */
 export default function CoachingPortalPage() {
   return (
-    <AppShell>
+    <PortalShell>
       <Coaching />
-    </AppShell>
+    </PortalShell>
   );
 }
 
@@ -34,10 +34,10 @@ function Coaching() {
       <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
         <div>
           <div className="text-[11px] uppercase tracking-wider2 text-brand-slate mb-2">Mi portal · Líder Coach Comercial</div>
-          <h1 className="font-display text-4xl sm:text-5xl text-brand-ink uppercase leading-tight">Coaching y bitácora</h1>
+          <h1 className="font-display text-[34px] sm:text-5xl text-brand-ink uppercase leading-tight">Mi mes</h1>
           <p className="text-sm text-brand-slate mt-2 max-w-2xl">
-            Registrá cada coaching con su compromiso y su seguimiento. El sistema mide el impacto con los datos de llamadas y ventas, y
-            tu gestión suma al scoring.
+            Tu gestión de coaching: devoluciones sin firmar, seguimientos, alertas de uso, el equipo y la bitácora. El sistema mide el
+            impacto con los datos de llamadas y ventas, y tu gestión suma al scoring.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap print:hidden">

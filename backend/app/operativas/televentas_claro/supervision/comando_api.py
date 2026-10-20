@@ -82,11 +82,14 @@ def _dias_sin_gestion(ctx: sup.Contexto, sid: str, ultima: datetime | None, dia:
 
 
 def _semaforo(ctx: sup.Contexto, prev: sup.Contexto, *, dia: date, tickets: list[tuple[Ticket, dict[str, Any]]],
-              coachings_abiertos: list[Coaching], ultima: dict[str, datetime]) -> list[dict[str, Any]]:
+              coachings_abiertos: list[Coaching], ultima: dict[str, datetime],
+              sin_firmar: list[Coaching] | tuple = ()) -> list[dict[str, Any]]:
     por_sup: dict[str | None, Counter] = defaultdict(Counter)
     for t, e in tickets:
         por_sup[t.supervisor_id][e["situacion"]] += 1
     seguimientos = Counter(c.supervisor_id for c in coachings_abiertos if coaching_srv.estado_seguimiento(c, dia) == "vencido")
+    sf = Counter(c.supervisor_id for c in sin_firmar)
+    sf_vencidos = Counter(c.supervisor_id for c in sin_firmar if coaching_srv.devolucion_vencida(c, dia, ctx.p))
     ids = {s for s in (ctx.actual(op) for op in ctx.tramos) if s} | {i for i, s in ctx.supervisores.items() if s["activo"]}
     filas = []
     for sid in ids:
@@ -103,7 +106,8 @@ def _semaforo(ctx: sup.Contexto, prev: sup.Contexto, *, dia: date, tickets: list
             gpon=proyeccion(ctx.vendido(sid, "gpon"), obj["gpon"], ctx.cal, ctx.p),
             asesores=len(equipo), en_alerta=en_alerta, a_recuperar=a_recuperar, alertas=alertas, tickets=por_sup[sid],
             seguimientos_vencidos=seguimientos[sid], ultima=ultima.get(sid),
-            dias_sin_gestion=_dias_sin_gestion(ctx, sid, ultima.get(sid), dia), umbral=ctx.p["umbral_sin_uso"]))
+            dias_sin_gestion=_dias_sin_gestion(ctx, sid, ultima.get(sid), dia), umbral=ctx.p["umbral_sin_uso"],
+            sin_firmar=sf[sid], sin_firmar_vencidos=sf_vencidos[sid]))
     filas.sort(key=srv.orden_semaforo)
     return filas
 
@@ -121,12 +125,13 @@ async def centro(user: CurrentUser = Depends(sup.require_ver), db: AsyncSession 
     abiertos = [(t, sla.estado(t, ctx.horario, momento)) for t in await tickets_srv.abiertos(db)]
     coachings_abiertos = list((await db.execute(select(Coaching).where(
         Coaching.operativa == OPERATIVA, Coaching.estado == "abierto"))).scalars().all())
+    sin_firmar = await coaching_srv.sin_firmar(db)
     nombres = await _nombres(db)
     filas = _semaforo(ctx, prev, dia=dia, tickets=abiertos, coachings_abiertos=coachings_abiertos,
-                      ultima=await srv.ultima_gestion(db))
+                      ultima=await srv.ultima_gestion(db), sin_firmar=sin_firmar)
     pendientes = sum(1 for o in ctx.ops.values() if o.activo and o.cruce in AGENTE_PENDIENTE + VENDEDOR_PENDIENTE and _del_mes(o, ctx))
     conds = srv.condiciones(ctx, dia=dia, nombres=nombres, tickets=abiertos, coachings_abiertos=coachings_abiertos, filas=filas,
-                            alertas_uso=ctx.alertas, pendientes_vincular=pendientes, horario=ctx.horario)
+                            alertas_uso=ctx.alertas, pendientes_vincular=pendientes, horario=ctx.horario, sin_firmar=sin_firmar)
     await srv.sincronizar(db, conds, momento)
     recientes = await srv.alertas_recientes(db, dia)
     numeros = await _numeros(db, {a.ticket_id for a in recientes})

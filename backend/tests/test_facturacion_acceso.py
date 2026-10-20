@@ -67,6 +67,9 @@ def test_facturacion_es_restringida_en_el_catalogo():
     assert RESTRINGIDAS[FACT] == {"sub_gerente"}
     assert FACT not in ASSIGNABLE_PERMISSIONS
     assert FACT in asignables("sub_gerente") and FACT not in asignables("controller")
+    # El Gerente tiene todo menos Facturación: ni de fábrica ni asignable, ni aunque se cuele en la DB.
+    assert FACT not in asignables("gerente") and FACT not in DEFAULT_PERMISSIONS["gerente"]
+    assert FACT not in effective_permissions([f"{TC}.ver", FACT], [TC], "gerente")
     # Aunque el permiso aparezca en la DB del perfil, solo se hace efectivo para el Sub gerente.
     assert FACT not in effective_permissions([f"{TC}.ver", FACT], [TC], "coordinador")
     assert FACT in effective_permissions([f"{TC}.ver", FACT], [TC], "sub_gerente")

@@ -48,10 +48,13 @@ function Pagina({ ruta, className, children }: { ruta: string | null; className:
   return <div className={`${conFundido ? "pagina-entra" : ""} ${className}`}>{children}</div>;
 }
 
-export function AppShell({ children, workspace = false }: {
+export function AppShell({ children, workspace = false, movil = false }: {
   children: React.ReactNode;
   /** Pantalla completa sin márgenes ni footer (chat del agente). */
   workspace?: boolean;
+  /** Pensada primero para el celular (portal del supervisor): márgenes justos, sin footer en el teléfono y lugar abajo
+   *  para la barra de navegación del pulgar. */
+  movil?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -290,7 +293,9 @@ export function AppShell({ children, workspace = false }: {
 
         {/* La pantalla: aparece con un fundido suave y, al cambiar de ruta, pasa como una hoja (View Transitions). */}
         <main
-          className={`${workspace ? "flex-1 flex min-h-0 w-full" : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 py-8"}`}
+          className={`${workspace ? "flex-1 flex min-h-0 w-full"
+            : movil ? "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 pt-4 sm:pt-8 pb-28 md:pb-8"
+              : "flex-1 w-full max-w-screen-2xl mx-auto px-4 sm:px-6 py-8"}`}
           style={{ viewTransitionName: "contenido" }}
         >
           <Pagina key={pathname} ruta={pathname} className={workspace ? "flex-1 flex min-h-0 w-full" : "w-full"}>
@@ -299,7 +304,7 @@ export function AppShell({ children, workspace = false }: {
         </main>
 
         {!workspace && (
-        <footer className="border-t border-brand-border bg-white">
+        <footer className={`border-t border-brand-border bg-white ${movil ? "hidden md:block" : ""}`}>
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 text-[11px] uppercase tracking-wider2 text-brand-slate flex flex-wrap justify-between gap-2">
             <span>Operaciones Voicenter · Gerencia Expansión RM</span>
             <span>© {new Date().getFullYear()} Voicenter S.A.</span>

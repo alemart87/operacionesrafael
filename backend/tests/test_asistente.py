@@ -48,7 +48,7 @@ def _usuario(rol: str, perms: list[str] | None = None) -> CurrentUser:
 
 def test_quien_usa_voi_por_defecto():
     con = {r for r, ps in DEFAULT_PERMISSIONS.items() if f"{TC}.asistente" in ps}
-    assert con == {"sub_gerente", "coordinador", "auditor"}
+    assert con == {"gerente", "sub_gerente", "coordinador", "auditor"}
     # Al controller, al analista y al cliente se les puede asignar; al supervisor (solo portal), no.
     for rol in ("controller", "analista", "cliente"):
         assert f"{TC}.asistente" in asignables(rol)

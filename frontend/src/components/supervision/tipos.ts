@@ -7,7 +7,8 @@ export type EstadoObjetivo = "en_camino" | "en_riesgo" | "bajo_objetivo" | "sin_
 export type Cruce =
   | "exacto" | "probable" | "manual"
   | "descartado" | "ambiguo" | "sin_cruce" | "incompleto"
-  | "sin_agente" | "solo_ventas";
+  | "sin_agente" | "solo_ventas"
+  | "alta_supervisor" | "alta_validada";
 
 export interface Proyeccion {
   vendido: number | null;
@@ -93,6 +94,9 @@ export interface ParaHoy {
   alertas_vencidas: number;
   alertas_en_plazo: number;
   sin_coaching: number;
+  /** Coachings que esperan la devolución con la firma del asesor (los vencidos pasaron los 2 días hábiles). */
+  sin_firmar?: number;
+  sin_firmar_vencidos?: number;
   tickets_nuevos?: number;
   tickets_por_vencer?: number;
   tickets_vencidos?: number;
@@ -231,6 +235,8 @@ export const CRUCE: Record<Cruce, { label: string; chip: string; ayuda: string; 
   sin_cruce: { label: "Sin vendedor", chip: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30", ayuda: "No se encontró un vendedor con ese nombre: vinculalo o confirmá que no vende.", pendiente: true },
   incompleto: { label: "Nombre incompleto", chip: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30", ayuda: "El nombre de llamadas no trae nombre y apellido: vinculalo a mano.", pendiente: true },
   sin_agente: { label: "Sin llamadas", chip: "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40", ayuda: "El vendedor no tiene nombre en la plataforma de llamadas: vinculalo o confirmá que solo vende.", pendiente: true },
+  alta_supervisor: { label: "Alta por validar", chip: "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40", ayuda: "Lo cargó su supervisor desde el portal: validalo o unilo con quien ya figura.", pendiente: true },
+  alta_validada: { label: "Alta validada", chip: "bg-emerald-50 text-emerald-800 border-emerald-200", ayuda: "Lo cargó su supervisor y un jefe lo validó. Se vincula solo cuando aparezca en los informes." },
 };
 
 // ------------------------------------------------------------------ meses y formatos
@@ -411,7 +417,8 @@ export interface Coaching {
   diagnostico: string;
   compromiso: string;
   seguimiento_fecha: string;
-  estado: "abierto" | "cerrado" | "anulado";
+  /** `pendiente`: sin firmar (espera la devolución); `abierto`: firmado, espera el seguimiento. */
+  estado: EstadoCoaching;
   seguimiento: EstadoSeguimiento | null;
   seguimiento_at: string | null;
   seguimiento_comentario: string | null;
@@ -424,11 +431,89 @@ export interface Coaching {
   created_at: string | null;
   updated_at: string | null;
   editable: boolean;
+  /** «anterior»: registrado antes de la firma (no tiene firma y vale igual). */
+  devolucion?: Devolucion;
+  firmado_at?: string | null;
+  huella?: string | null;
+  /** El día en que cuenta para la gestión (el de la firma; con los anteriores, el del registro). */
+  fecha_gestion?: string | null;
 }
+
+export type EstadoCoaching = "pendiente" | "abierto" | "cerrado" | "anulado";
+export type Devolucion = "pendiente" | "firmada" | "anterior";
+export type TipoItemCoaching = "monitoreo" | "feedback";
+export type ResultadoCompromiso = "cumplido" | "parcial" | "no_cumplido";
+export type EstadoAudio = "pendiente" | "procesando" | "listo" | "error" | "sin_servicio";
+
+export interface ItemCoaching {
+  id: string;
+  tipo: TipoItemCoaching;
+  at: string | null;
+  metricas: MetricaCoaching[];
+  texto: string;
+  referencia: string | null;
+  audio_id: string | null;
+  updated_at: string | null;
+}
+
+export interface CompromisoCoaching {
+  id: string;
+  orden: number;
+  texto: string;
+  para: string | null;
+  metrica: MetricaCoaching | null;
+  origen: "asesor" | "supervisor";
+  audio_id: string | null;
+  resultado: ResultadoCompromiso | null;
+  nota: string | null;
+}
+
+export interface FirmaCoaching {
+  id: string;
+  firmante: "asesor" | "supervisor";
+  nombre: string;
+  imagen: string;
+  firmado_at: string | null;
+  huella: string;
+  acepto: boolean;
+  comentario: string | null;
+  comentario_audio_id: string | null;
+  consentimiento_audio: boolean;
+}
+
+export interface AudioCoaching {
+  id: string;
+  coaching_id: string;
+  hablante: "supervisor" | "asesor";
+  destino: "item" | "compromiso" | "comentario";
+  mime: string;
+  bytes: number;
+  duracion_s: number;
+  sha256: string;
+  estado: EstadoAudio;
+  texto: string | null;
+  modelo: string | null;
+  error: string | null;
+  costo_usd: number | null;
+  created_at: string | null;
+  transcrito_at: string | null;
+  /** Todavía se puede escuchar (pasada la retención queda solo la transcripción). */
+  archivo: boolean;
+  borrado_at: string | null;
+}
+
+export const NOMBRE_ITEM: Record<TipoItemCoaching, string> = { monitoreo: "Monitoreo de llamada", feedback: "Feedback" };
+
+export const RESULTADO_COMPROMISO: Record<ResultadoCompromiso, { label: string; chip: string }> = {
+  cumplido: { label: "Cumplido", chip: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+  parcial: { label: "Parcial", chip: "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40" },
+  no_cumplido: { label: "No cumplido", chip: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30" },
+};
 
 export interface EventoCoaching {
   id: string;
-  tipo: "creado" | "editado" | "anulado" | "seguimiento" | "aclaracion";
+  tipo: "creado" | "editado" | "anulado" | "seguimiento" | "aclaracion" | "item" | "item_editado" | "item_quitado"
+    | "compromiso" | "compromiso_editado" | "compromiso_quitado" | "audio" | "transcripcion" | "firmado";
   at: string | null;
   por: string;
   datos: Record<string, any>;
@@ -437,6 +522,20 @@ export interface EventoCoaching {
 export interface CoachingDetalle extends Coaching {
   eventos: EventoCoaching[];
   siguientes: { id: string; fecha: string }[];
+  items?: ItemCoaching[];
+  compromisos?: CompromisoCoaching[];
+  firmas?: FirmaCoaching[];
+  audios?: AudioCoaching[];
+  /** Sin firmar: hasta cuándo hay para la devolución (2 días hábiles) y si ya pasó. */
+  vence_devolucion?: string;
+  devolucion_vencida?: boolean;
+  puede_firmar?: boolean;
+}
+
+/** Un coaching que espera la devolución, en la vista del supervisor. */
+export interface CoachingSinFirmar extends Coaching {
+  vence_devolucion: string;
+  devolucion_vencida: boolean;
 }
 
 export interface MiembroCoaching extends OperadorCorto {
@@ -444,6 +543,8 @@ export interface MiembroCoaching extends OperadorCorto {
   tramos: { desde: string; hasta: string }[];
   coachings: number;
   ultimo_coaching: string | null;
+  /** Coachings abiertos que esperan la firma del asesor. */
+  sin_firmar?: number;
   uso: Uso | null;
   conversacion: { valor: number | null; roja: boolean; sobre_meta: boolean } | null;
   score: number | null;
@@ -495,6 +596,7 @@ export interface VistaCoachingData extends Comun {
   alertas: AlertaFoco[];
   items: Coaching[];
   pendientes: Coaching[];
+  sin_firmar?: CoachingSinFirmar[];
   notas: NotaBitacora[];
   reglas: ReglasCoaching;
   puede_registrar: boolean;
@@ -510,6 +612,8 @@ export interface FilaGestion extends SupervisorRef {
   sin_mejora: number;
   seguimientos_abiertos: number;
   seguimientos_vencidos: number;
+  sin_firmar?: number;
+  sin_firmar_vencidos?: number;
   alertas: Record<EstadoAlerta, number>;
   notas: number;
   ultima_actividad: string | null;
@@ -526,6 +630,8 @@ export interface GestionCoaching extends Comun {
     seguimientos_vencidos: number;
     alertas_vencidas: number;
     alertas_en_plazo: number;
+    sin_firmar?: number;
+    sin_firmar_vencidos?: number;
   };
   supervisores: FilaGestion[];
   reglas: ReglasCoaching;
@@ -545,6 +651,9 @@ export type FiltroResultado = "mejoro" | "igual" | "empeoro" | "mixto" | "sin_da
 export interface KpisRegistro {
   coachings: number;
   anulados: number;
+  /** Los que esperan la firma del asesor (no cuentan en los indicadores). */
+  sin_firmar?: number;
+  firmados?: number;
   asesores: number;
   supervisores: number;
   fuera_de_termino: number;
@@ -872,8 +981,8 @@ export function plazoTexto(p: string): string {
 // ------------------------------------------------------------------ centro de comandos
 export type EstadoSemaforo = "atencion" | "revisar" | "al_dia";
 export type TipoAlertaComando =
-  | "ticket_vencido" | "supervisor_critico" | "proyeccion_bajo" | "seguimiento_vencido" | "asesor_alerta" | "sin_actividad"
-  | "sin_supervisor" | "sin_vincular";
+  | "ticket_vencido" | "supervisor_critico" | "proyeccion_bajo" | "seguimiento_vencido" | "devolucion_vencida"
+  | "asesor_alerta" | "sin_actividad" | "sin_supervisor" | "sin_vincular";
 export type EstadoAlertaComando = "abierta" | "tomada" | "derivada" | "descartada" | "cerrada";
 
 export interface FilaSemaforo extends SupervisorRef {
@@ -891,6 +1000,8 @@ export interface FilaSemaforo extends SupervisorRef {
   cobertura: Componente | null;
   tickets: { abiertos: number; vencidos: number; por_vencer: number };
   seguimientos_vencidos: number;
+  sin_firmar?: number;
+  sin_firmar_vencidos?: number;
   ultima_gestion: string | null;
   dias_sin_gestion: number | null;
 }
@@ -1043,3 +1154,69 @@ export function haceDiasHabiles(d: number | null | undefined): string {
   if (d === 0) return "hoy";
   return `hace ${num(d)} ${d === 1 ? "día hábil" : "días hábiles"}`;
 }
+
+// ------------------------------------------------------------------ control de supervisores
+export type EstadoControl = "activo" | "quieto" | "sin_actividad";
+
+export interface ConteosControl {
+  coachings: number; firmados: number; monitoreos: number; feedback: number; compromisos: number; audios: number;
+  segundos: number; minutos: number; voz_asesor: number; seguimientos: number; anulados: number; aclaraciones: number;
+  notas: number; tickets: number; altas: number; pases: number; costo_usd: number;
+}
+
+export interface FilaControl extends SupervisorRef, ConteosControl {
+  asesores: number;
+  sin_firmar: number;
+  sin_firmar_vencidos: number;
+  seguimientos_vencidos: number;
+  cobertura: { con_coaching: number; asesores: number; pct: number | null };
+  ultima_actividad: string | null;
+  dias_sin_actividad: number | null;
+  estado: EstadoControl;
+}
+
+export interface ControlSupervisores {
+  desde: string;
+  hasta: string;
+  hoy: string;
+  actualizado: string;
+  nombre_mes: string;
+  kpis: ConteosControl & {
+    supervisores: number; activos: number; sin_actividad: number; sin_firmar: number; sin_firmar_vencidos: number;
+    seguimientos_vencidos: number; altas_por_validar: number; pases_pendientes: number;
+  };
+  supervisores: FilaControl[];
+  por_dia: { dia: string; coachings: number; items: number; firmados: number; audios: number; seguimientos: number; notas: number; tickets: number }[];
+  reglas: { dias_devolucion: number; dias_sin_gestion: number };
+}
+
+export interface EventoControl {
+  at: string | null;
+  tipo: string;
+  grupo: "coaching" | "bitacora" | "tickets" | "equipo";
+  supervisor_id: string;
+  supervisor: string;
+  operador_id: string | null;
+  asesor: string | null;
+  coaching_id?: string;
+  ticket_id?: string;
+  titulo: string;
+  detalle: string | null;
+  resultado?: ResultadoImpacto | null;
+  audio?: { id: string; segundos: number; hablante: "supervisor" | "asesor"; estado: EstadoAudio; texto: string | null; archivo: boolean } | null;
+}
+
+export interface ActividadControl { desde: string; hasta: string; items: EventoControl[]; truncado: boolean }
+
+export interface AltaPorValidar {
+  id: string; nombre: string; documento: string | null; subcanal: string | null; alta_por: string; alta_por_id: string;
+  alta_at: string | null; supervisor_hoy: string | null;
+  sugeridos: { id: string; nombre: string; agente: string | null; vendedor: string | null }[];
+}
+
+export interface PasePendiente {
+  id: string; operador_id: string; operador: string; pedido_por: string; pedido_por_id: string; supervisor_actual: string | null;
+  nota: string | null; created_at: string | null;
+}
+
+export interface PendientesControl { altas: AltaPorValidar[]; pases: PasePendiente[]; puede_validar: boolean; puede_asignar: boolean }

@@ -78,6 +78,17 @@ class Settings(BaseSettings):
     def agent_enabled(self) -> bool:
         return bool(self.openai_api_key)
 
+    # --- Transcripción de los audios del coaching (OpenAI, con la misma OPENAI_API_KEY). ---
+    # gpt-transcribe (US$ 0,0045/min) es el vigente; gpt-4o-mini-transcribe es más barato pero sale de la API el 26/02/2027.
+    transcripcion_modelo: str = "gpt-transcribe"
+    transcripcion_max_segundos: int = 300          # por audio
+    transcripcion_max_mb: int = 15                 # por audio (OpenAI acepta hasta 25 MB)
+    transcripcion_minutos_dia: int = 90            # por usuario y por día: tope de costo
+    transcripcion_retencion_dias: int = 365        # después se borra el archivo; quedan el texto y la huella
+    # Solo pruebas y demostración: transcribe con un texto fijo sin llamar a OpenAI (nunca en producción).
+    transcripcion_simulador: bool = False
+    transcripcion_simulador_demora: float = 0.0
+
     # --- Voi, el agente de la plataforma (Claude Managed Agents). Sin API key se ve, pero avisa. ---
     anthropic_api_key: str = ""
     # Secreto `whsec_…` del webhook registrado en la consola de Anthropic (Manage → Webhooks).

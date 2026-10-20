@@ -622,7 +622,8 @@ export function RegistroCoachingVista({ portal }: { portal: boolean }) {
             <Kpi titulo="Coachings" valor={n(k.coachings)}
               sub={<>{pl(k.asesores, "asesor", "asesores")}{!portal && <> · {pl(k.supervisores, "supervisor", "supervisores")}</>}
                 {k.fuera_de_termino > 0 && <> · <span className="text-[#8A5200]">{n(k.fuera_de_termino)} fuera de término</span></>}
-                {k.anulados > 0 && <> · {pl(k.anulados, "anulado", "anulados")}</>}</>} />
+                {k.anulados > 0 && <> · {pl(k.anulados, "anulado", "anulados")}</>}
+                {(k.sin_firmar ?? 0) > 0 && <> · <span className="text-[#8A5200]">{pl(k.sin_firmar!, "espera", "esperan")} la firma</span></>}</>} />
             <Kpi titulo="Seguimientos a tiempo" valor={pct(k.pct_a_tiempo)} alerta={k.seguimientos.vencido > 0}
               activo={f.seguimiento === "vencidos"} onClick={k.seguimientos.vencido > 0 ? () => alternar("seguimiento", "vencidos") : undefined}
               icono={k.seguimientos.vencido > 0 ? <TriangleAlert size={15} className="text-brand-primary" aria-hidden /> : <ClipboardCheck size={15} className="text-brand-slate" aria-hidden />}

@@ -72,6 +72,13 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE logistica_informes ADD COLUMN IF NOT EXISTS entrega_prom FLOAT",
     "ALTER TABLE logistica_informes ADD COLUMN IF NOT EXISTS entrega_max INTEGER",
     "ALTER TABLE logistica_informes ADD COLUMN IF NOT EXISTS entrega_regiones JSON",
+    # v1.3 · Coaching con devolución firmada (monitoreos, compromisos del asesor, firma) y alta de asesores desde el portal
+    "ALTER TABLE sup_coachings ADD COLUMN IF NOT EXISTS firmado_at TIMESTAMPTZ",
+    "ALTER TABLE sup_coachings ADD COLUMN IF NOT EXISTS huella VARCHAR(64)",
+    "ALTER TABLE sup_operadores ADD COLUMN IF NOT EXISTS origen VARCHAR(20)",
+    "ALTER TABLE sup_operadores ADD COLUMN IF NOT EXISTS alta_por VARCHAR(36)",
+    "ALTER TABLE sup_operadores ADD COLUMN IF NOT EXISTS alta_at TIMESTAMPTZ",
+    "ALTER TABLE sup_operadores ADD COLUMN IF NOT EXISTS documento VARCHAR(30)",
 ]
 
 

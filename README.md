@@ -92,7 +92,7 @@ sus propias **utilidades**. La primera operativa es **Televentas CLARO**.
 | Concepto | Dónde se define | Quién lo cambia |
 |---|---|---|
 | Operativas y sus utilidades | `backend/app/core/operativas.py` | Desarrollo |
-| Perfiles (Sub gerente, Controller, Coordinador, Supervisor, Analista, Auditor, Cliente) | `backend/app/core/perfiles.py` | Desarrollo |
+| Perfiles (Gerente, Sub gerente, Controller, Coordinador, Supervisor, Analista, Auditor, Cliente) | `backend/app/core/perfiles.py` | Desarrollo |
 | Utilidades de cada perfil | Tabla `profiles`, pantalla **Administración → Perfiles** | Superadmin |
 | Perfil y operativas de cada usuario | Pantalla **Administración → Usuarios** | Superadmin |
 
@@ -114,24 +114,29 @@ salvo que venga con una **migración de datos de una sola vez** (`MIGRACIONES_DA
 tabla `migraciones_datos`): así se dieron las utilidades de Supervisión a los perfiles
 existentes según el modelo definido, y no se repite aunque el superadmin las cambie.
 
-| Utilidad | Sub gerente | Controller | Coordinador | Supervisor | Analista | Auditor | Cliente |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Acceso a la operativa | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Ventas Netas · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
-| Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
-| SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
-| Supervisión · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | 🔒 | ✓ / | ✓ / | |
-| Supervisión · Tickets de revisión | ✓ | ✓ | ✓ | 🔒 | | ✓ | |
-| Supervisión · Parámetros del modelo (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
-| Operadores · Vincular | ✓ | ✓ | ✓ | 🔒 | ✓ | | |
-| Logística · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
-| Informe diario | ✓ | | ✓ | 🔒 | | ✓ | |
-| Portal del supervisor (restringida) | 🔒 | 🔒 | 🔒 | ✓ | 🔒 | 🔒 | 🔒 |
-| Auditoría de ventas | ✓ | ✓ | | 🔒 | ✓ | ✓ | |
-| Facturación (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
-| Integraciones (restringida) | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
-| Asistente IA (Voi) | ✓ | | ✓ | 🔒 | | ✓ | |
+| Utilidad | Gerente | Sub gerente | Controller | Coordinador | Supervisor | Analista | Auditor | Cliente |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Acceso a la operativa | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Ventas Netas · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
+| Productividad · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
+| SPH · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
+| Supervisión · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | 🔒 | ✓ / | ✓ / | |
+| Supervisión · Tickets de revisión | ✓ | ✓ | ✓ | ✓ | 🔒 | | ✓ | |
+| Supervisión · Control de supervisores (restringida) | ✓ | ✓ | ✓ | ✓ | 🔒 | 🔒 | 🔒 | 🔒 |
+| Supervisión · Parámetros del modelo (restringida) | 🔒 | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
+| Operadores · Vincular | ✓ | ✓ | ✓ | ✓ | 🔒 | ✓ | | |
+| Logística · Ver / Gestión | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / | 🔒 | ✓ / ✓ | ✓ / | |
+| Informe diario | ✓ | ✓ | | ✓ | 🔒 | | ✓ | |
+| Portal del supervisor (restringida) | 🔒 | 🔒 | 🔒 | 🔒 | ✓ | 🔒 | 🔒 | 🔒 |
+| Auditoría de ventas | ✓ | ✓ | ✓ | | 🔒 | ✓ | ✓ | |
+| Facturación (restringida) | 🔒 | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
+| Integraciones (restringida) | 🔒 | ✓ | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 | 🔒 |
+| Asistente IA (Voi) | ✓ | ✓ | | ✓ | 🔒 | | ✓ | |
 
+- **Gerente:** dirige la gerencia: todos los módulos **menos Facturación e Integraciones** (y los exclusivos de
+  otro perfil: parámetros del scoring y el portal del supervisor), con el **Control de supervisores**. Sus
+  permisos de fábrica se arman con lo que su perfil puede tener (`asignables("gerente")`): Facturación e
+  Integraciones no se siembran, no se le pueden asignar y, aunque figuraran en la base, no se hacen efectivas.
 - **Sub gerente:** todos los módulos, incluida Facturación.
 - **Controller:** todos los módulos menos Facturación (el informe diario y el asistente no vienen por
   defecto, pero se le pueden asignar); como cualquier usuario, puede tener varias operativas asignadas.
@@ -147,7 +152,7 @@ existentes según el modelo definido, y no se repite aunque el superadmin las ca
 
 Las utilidades con `solo_perfiles` en el catálogo son **restringidas**: además del
 superadmin, solo las pueden tener los perfiles listados (hoy: **Facturación e
-Integraciones → Sub gerente**). La matriz las muestra bloqueadas para el resto, la API rechaza el cambio
+Integraciones → Sub gerente**; **Control de supervisores → Gerente, Sub gerente, Coordinador y Controller**). La matriz las muestra bloqueadas para el resto, la API rechaza el cambio
 y, aunque figuren en la base, no se hacen efectivas; a los demás usuarios ni
 siquiera se les listan. Con la lista vacía son exclusivas del superadmin. La
 administración (usuarios, perfiles, auditoría y seguridad) sigue siendo solo del
@@ -357,6 +362,7 @@ con SLA; y el centro de comandos de los jefes.
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
+| Control de supervisores | `…/supervision/control` | **Qué hace cada supervisor, contado y en vivo** (se actualiza solo cada minuto): hoy, ayer, 7 días, el mes o un rango (hasta 93 días). Supervisores con actividad y sin actividad, coachings abiertos y **firmados**, monitoreos, feedback, compromisos, **audios y minutos grabados** (y su costo), devoluciones sin firmar (y vencidas), seguimientos (y vencidos), tickets, notas y altas; actividad por día; la tabla por supervisor (tarjetas en el celular) con la cobertura del mes y la última actividad; el **registro de actividad** de todos o de uno, con los audios para escuchar y el detalle de cada coaching; y las **altas de asesores por validar** y los **pedidos de pase**. Gerente, sub gerente, coordinador, controller y superadmin |
 | Centro de comandos | `…/supervision/comando` | El día de la operación: cabecera (score, avance y proyección, % sin uso contra el umbral, supervisores en crítico, líneas a recuperar, tickets y cobertura de coaching), **semáforo de supervisores** con sus motivos y **alertas del día** (tomar y anotar qué se hizo, **pedir revisión** con un clic, descartar con el motivo); rutina de seguimiento |
 | Objetivos y proyección | `/televentas-claro/supervision` | Por supervisor: vendido / objetivo, proyección al cierre, ritmo necesario por día hábil, semáforo y alertas; la operación completa; **Cargar objetivos** en la misma tabla |
 | Tablero | `…/supervision/tablero` | Scoring 0–100 de la operación, ranking de supervisores y de asesores, con la tendencia contra el mes anterior |
@@ -369,8 +375,10 @@ con SLA; y el centro de comandos de los jefes.
 | Operadores | `…/supervision/operadores` | Maestro de operadores: por revisar, vincular, separar, confirmar sin vínculo, renombrar, dar de baja |
 | Calendario | `…/supervision/calendario` | Cuánto vale cada día de la semana, días no laborables (más los feriados de Seguridad) y el **horario de atención** (horas hábiles de los plazos de los tickets) |
 | Parámetros | `…/supervision/parametros` | Pesos y umbrales del scoring, versionados (solo sub gerente y superadmin) |
-| Mi portal | `/televentas-claro/portal` | El portal del supervisor: «Para hoy» (seguimientos vencidos, de hoy y **próximos** —los de los próximos 2 días hábiles—, alertas y tickets por atender) con el botón **Hacer coaching**, su equipo (con «Coaching» en cada asesor), sus objetivos, avance y proyección, asesores en alerta y sus líneas sin uso |
-| Coaching y bitácora | `/televentas-claro/portal/coaching` | El supervisor registra coachings (con compromiso y fecha de seguimiento), seguimientos con el impacto medido, aclaraciones y notas de bitácora; ve su gestión del mes. **Hacer coaching** es la acción principal: brilla con un pulso (fijo si el sistema pide menos movimiento), queda flotante al bajar por la página y cada asesor sin coaching del mes lo tiene destacado |
+| Hoy (Mi portal) | `/televentas-claro/portal` | El portal del supervisor, **pensado primero para el celular** (botones y filas de 56 px o más, barra del pulgar abajo con «Hacer coaching» al centro): **Hacer coaching**, «Para hoy» (devoluciones sin firmar, seguimientos vencidos y de hoy, alertas de uso, tickets, asesores sin coaching y seguimientos próximos), su mes de un vistazo (Pospago, GPON y su score) y, plegado, el detalle del equipo con objetivos, proyección y líneas sin uso |
+| Mi equipo | `/televentas-claro/portal/equipo` | Buscar y filtrar (en alerta, sin coaching, sin firmar); la ficha rápida de cada asesor (score, coachings, % sin uso, sus líneas sin uso, «Hacer coaching» o «Continuar la devolución») y **Agregar asesor nuevo** (`…/equipo/nuevo`) |
+| Hacer coaching | `/televentas-claro/portal/coaching/nuevo` → `…/coaching/{id}` | En 4 pasos: **asesor** (primero los que están en alerta, sin coaching o con la devolución pendiente) y tipo; **lo que observaste** (varios monitoreos de llamadas y feedback, dictados o escritos); **compromisos del asesor** (que los diga él: queda grabado) y fecha de seguimiento; **la devolución** (`…/{id}/firma`): el asesor lee sus compromisos, acepta y firma con el dedo, y después firma el supervisor. Se puede **guardar sin firmar** y seguir después. Firmado: la constancia en PDF para compartir, el seguimiento con el resultado de cada compromiso y aclaraciones |
+| Mi mes | `/televentas-claro/portal/coaching` | Su gestión del mes: devoluciones sin firmar, alertas, seguimientos, el equipo y su cobertura, los coachings y la bitácora (cada coaching se abre en su pantalla) |
 | Mi historial | `/televentas-claro/portal/historial` | El registro por rango de fechas, solo con lo del supervisor: sus coachings, compromisos, devoluciones y resultados, con los mismos filtros, indicadores y CSV |
 | Tickets (portal) | `/televentas-claro/portal/tickets` | La bandeja del supervisor: responde, pide datos y resuelve los tickets que le envían, con sus plazos |
 
@@ -417,6 +425,41 @@ con SLA; y el centro de comandos de los jefes.
     los mismos componentes sobre toda la operación. Tendencia: contra el mes anterior.
   - Los pesos los cambia el sub gerente (utilidad restringida `supervision_parametros`);
     cada cambio es una versión nueva con historial y auditoría.
+- **Devolución con firma, voz y alta de asesores** (`devolucion_api.py`, `audios.py`, `comprobante.py`; tablas
+  `sup_coaching_items`, `sup_coaching_compromisos`, `sup_audios`, `sup_coaching_firmas`, `sup_pedidos_pase`):
+  - Un coaching nace **sin firmar** (`estado = pendiente`) y junta **varios monitoreos y feedback**
+    (`/portal/coaching/{id}/items`) y los **compromisos del asesor** (`…/compromisos`, con fecha opcional). Se
+    considera **terminado cuando el asesor firma** (`…/firmar`): lee sus compromisos, acepta, firma con el dedo y,
+    si quiere, deja un comentario (escrito o dicho); el supervisor firma con su firma guardada (o la dibuja). Desde
+    ese momento queda **bloqueado** con la **huella SHA-256** de lo firmado (textos, fechas y la huella de cada
+    audio) y solo admite el seguimiento y aclaraciones. La firma es **presencial** (el celular del supervisor).
+  - Sin firmar no cuenta: ni en el scoring, ni en la cobertura, ni en el informe diario, ni en las fuentes de la
+    auditoría. Cuenta el día de la firma (`fecha_gestion`). Los coachings registrados antes de la firma quedan como
+    estaban («anterior»: valen igual). Con más de **2 días hábiles** sin firmar, la devolución vence: lo ven el
+    supervisor («Para hoy»), los jefes (gestión de coaching) y el centro de comandos (alerta «Devolución sin firmar»).
+  - El seguimiento de un coaching firmado pide **cómo le fue con cada compromiso** (cumplido, parcial, no cumplido)
+    además del comentario; el impacto en los datos lo sigue midiendo el sistema.
+  - **Constancia** (`…/comprobante`, PDF A4): monitoreos, compromisos, firmas, comentario y huella, para compartir
+    desde el celular (o abrir) y para los jefes (`/coaching/{id}/comprobante`).
+  - **Voz:** el supervisor dicta lo que observó y el asesor dice sus compromisos o su comentario. El celular graba
+    (MediaRecorder: webm/opus o mp4 en iPhone, hasta 5 min, 32 kbps), sube el audio (`…/audios`, se valida por su
+    contenido real: webm, mp4, ogg, wav o mp3, hasta 15 MB) y un worker de fondo (`transcripcion_audios`) lo
+    transcribe con OpenAI; el texto llega solo y se puede corregir. Si no hay señal, el audio queda guardado en el
+    celular (IndexedDB) y se sube cuando vuelve. El audio es registro: se guarda en el disco
+    (`UPLOAD_DIR/supervision/audios/AAAA-MM/`) con su huella SHA-256 durante **12 meses** (después queda el texto) y
+    para grabar la voz del asesor hace falta su consentimiento al firmar. Escucharlo desde el control queda auditado.
+  - **Alta de asesores:** si no lo encuentra, el supervisor lo carga (`/portal/asesores`): nombre y apellido, cédula
+    o legajo y subcanal opcionales. Mientras escribe ve quién se parece en todo el maestro (por nombre, con errores
+    de escritura, o por la misma cédula); si es de otro equipo, **pide el pase** a los jefes. El alta queda en su
+    equipo desde hoy, con `cruce = alta_supervisor`, **por validar**: en el control, quien mantiene el maestro la
+    valida (`alta_validada`) o la **une** con quien ya aparece en los informes (sus coachings, equipos y notas pasan a
+    esa persona); quien arma los equipos aprueba o rechaza los pases.
+- **Control de supervisores** (`control_api.py`, utilidad restringida `control_supervisores`): cuenta en el rango lo
+  que hizo cada supervisor desde los eventos de cada coaching, los audios, las notas, las respuestas a tickets, las
+  altas y los pases (lo quitado por error no cuenta); estado activo, sin nada en el rango o **sin actividad** (3 días
+  hábiles o más sin registrar nada), la cobertura del mes con coachings terminados y la actividad por día.
+  `GET /control`, `GET /control/actividad`, `GET /control/audios/{id}/archivo`, `GET /control/pendientes`,
+  `POST /control/altas/{id}/validar`, `POST /control/altas/{id}/unir`, `POST /control/pases/{id}/resolver`.
 - **Coaching y bitácora** (`supervision/coaching.py`, `coaching_api.py`; tablas
   `sup_coachings`, `sup_coaching_eventos`, `sup_bitacora`, `sup_alertas`):
   - Lo registra el supervisor desde su portal, solo para los asesores que tenía en su
@@ -496,9 +539,35 @@ con SLA; y el centro de comandos de los jefes.
   asesor y cada registro de coaching quedan auditados. Los jefes ven el coaching de cada
   supervisor sin poder cambiarlo.
 - **Permisos:** `supervision` (ver, también los tickets), `supervision_gestion` (equipos,
-  objetivos, calendario), `tickets` (enviar y seguir tickets), `operadores` (vínculos),
+  objetivos, calendario, aprobar pases), `tickets` (enviar y seguir tickets), `operadores` (vínculos, validar y unir
+  altas), `control_supervisores` (el control; gerente, sub gerente, coordinador y controller),
   `supervision_parametros` (pesos del scoring, solo sub gerente) y `portal_supervisor`
   (solo el perfil Supervisor).
+
+### Transcripción de voz con OpenAI (modelos y costos)
+
+La transcripción usa la API de OpenAI con la misma `OPENAI_API_KEY` del agente de Facturación. Nunca se llama
+desde el navegador: el celular sube el audio a nuestro servidor y el worker lo manda a OpenAI. Los textos de
+Facturación nunca pasan por acá.
+
+| Modelo | Precio | Estado | Uso |
+|---|---|---|---|
+| `gpt-transcribe` | US$ 0,0045 / min | Vigente | **Por defecto**: el más nuevo, con pista de idioma (`languages: ["es"]`) |
+| `gpt-4o-mini-transcribe` | US$ 0,003 / min | Deprecado (OpenAI lo retira el 26/02/2027) | El más barato mientras exista |
+| `gpt-4o-transcribe`, `whisper-1` | US$ 0,006 / min | Deprecados | No recomendados |
+
+Con el modelo por defecto, un coaching típico (3 minutos de audio) cuesta menos de US$ 0,02; 20 supervisores con
+5 coachings por día (300 minutos), unos US$ 30 por mes. El costo de cada audio queda guardado y se ve en el control. Topes:
+5 minutos y 15 MB por audio y **90 minutos por supervisor y por día** (con el tope o sin la clave, el audio se
+guarda igual y se escribe el texto a mano). El prompt lleva el vocabulario de la operación (Pospago, GPON, SDS…)
+para que lo transcriba bien. Si la pista de idioma no la acepta un modelo, reintenta sin ella; cada audio tiene
+hasta 3 intentos.
+
+En Render: cargar `OPENAI_API_KEY` en el servicio (Environment) y reiniciar. Variables opcionales:
+`TRANSCRIPCION_MODELO` (por defecto `gpt-transcribe`), `TRANSCRIPCION_MAX_SEGUNDOS` (300), `TRANSCRIPCION_MAX_MB`
+(15), `TRANSCRIPCION_MINUTOS_DIA` (90) y `TRANSCRIPCION_RETENCION_DIAS` (365). `TRANSCRIPCION_SIMULADOR=true` es solo
+para desarrollo y pruebas (texto fijo, sin llamar a OpenAI; en producción se ignora). Los audios se guardan en el
+disco persistente: sin disco, se pierden en cada deploy.
 
 ## Televentas CLARO · Informe diario
 
@@ -1727,7 +1796,11 @@ Opcionales:
 
 | Variable | Descripción |
 |---|---|
-| `OPENAI_API_KEY` | Agente de Facturación |
+| `OPENAI_API_KEY` | Agente de Facturación y la **transcripción de voz** del portal del supervisor |
+| `TRANSCRIPCION_MODELO` | Modelo de transcripción de OpenAI (por defecto `gpt-transcribe`) |
+| `TRANSCRIPCION_MINUTOS_DIA` | Tope de minutos transcriptos por supervisor y por día (por defecto 90) |
+| `TRANSCRIPCION_RETENCION_DIAS` | Días que se guarda el archivo de audio (por defecto 365; después queda el texto) |
+| `TRANSCRIPCION_SIMULADOR` | Solo desarrollo: transcripción simulada, sin llamar a OpenAI (se ignora en producción) |
 | `ANTHROPIC_API_KEY` | Voi, el agente de la plataforma (Claude Managed Agents). Sin ella Voi se ve pero avisa que no está conectado |
 | `ANTHROPIC_WEBHOOK_SIGNING_KEY` | Secreto `whsec_…` del webhook de Anthropic para Voi |
 | `ASISTENTE_MODELO` | Modelo de Voi (por defecto `claude-sonnet-5-5`) |

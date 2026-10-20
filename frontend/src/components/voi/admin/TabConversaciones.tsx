@@ -134,7 +134,7 @@ export function TabConversaciones() {
         </div>
         <select className="input sm:w-48" value={perfil} onChange={(e) => setPerfil(e.target.value)}>
           <option value="">Todos los perfiles</option>
-          {["superadmin", "sub_gerente", "coordinador", "auditor", "controller", "analista"].map((p) => <option key={p} value={p}>{ROLE_LABELS[p]}</option>)}
+          {["superadmin", "gerente", "sub_gerente", "coordinador", "auditor", "controller", "analista"].map((p) => <option key={p} value={p}>{ROLE_LABELS[p]}</option>)}
         </select>
       </div>
       <div className="card overflow-hidden">

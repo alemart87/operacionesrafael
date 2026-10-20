@@ -2,7 +2,7 @@
 
 import {
   ArrowDownRight, ArrowRight, ArrowUpRight, BellRing, CalendarClock, CalendarX, CircleCheck, CircleSlash, ClipboardCheck,
-  Clock3, Hand, History, IdCard, Link2Off, MessageSquareText, Minus, NotebookPen, Send, Siren, Target, Ticket, TicketX,
+  Clock3, Hand, History, IdCard, Link2Off, MessageSquareText, Minus, NotebookPen, PenLine, Send, Siren, Target, Ticket, TicketX,
   TrendingDown, TriangleAlert, UserRoundX, Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -323,7 +323,7 @@ const FILTROS: { k: Filtro; label: string; f: (a: AlertaComando) => boolean }[] 
 
 const ICONO_ALERTA: Record<TipoAlertaComando, typeof Siren> = {
   ticket_vencido: TicketX, supervisor_critico: Siren, proyeccion_bajo: TrendingDown, seguimiento_vencido: CalendarX,
-  asesor_alerta: TriangleAlert, sin_actividad: Clock3, sin_supervisor: UserRoundX, sin_vincular: Link2Off,
+  devolucion_vencida: PenLine, asesor_alerta: TriangleAlert, sin_actividad: Clock3, sin_supervisor: UserRoundX, sin_vincular: Link2Off,
 };
 const COLOR_SEVERIDAD = ["#E6332A", "#F39200", "#5B6275"];
 
@@ -413,7 +413,7 @@ function ItemAlerta({ a, puedeActuar, puedeDerivar, onAccion, onTicket, onCoachi
           )}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {ticketVencido && <EnlaceAlerta icono={Ticket} onClick={() => onTicket(ticketVencido.id)}>Ver ticket {numero(ticketVencido.numero)}</EnlaceAlerta>}
-            {a.tipo === "seguimiento_vencido" && a.datos.coaching_id && (
+            {(a.tipo === "seguimiento_vencido" || a.tipo === "devolucion_vencida") && a.datos.coaching_id && (
               <EnlaceAlerta icono={ClipboardCheck} onClick={() => onCoaching(a.datos.coaching_id!)}>Ver coaching</EnlaceAlerta>
             )}
             {a.operador_id && <EnlaceAlerta icono={IdCard} href={`${SUP_HREF}/asesores/${a.operador_id}`}>Ficha de {a.operador ?? "el asesor"}</EnlaceAlerta>}

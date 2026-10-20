@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AppShell } from "@/components/AppShell";
+import { PortalShell } from "@/components/portal/nav";
 import { KpisTickets, ListaTickets, MetodoTickets, TicketDialog, useCarga } from "@/components/supervision/tickets";
 import { SUP_API, mesActual, periodoDeUrl, periodoEnUrl, type PortalTickets } from "@/components/supervision/tipos";
 import { SelectorMes } from "@/components/supervision/ui";
@@ -9,9 +9,9 @@ import { SelectorMes } from "@/components/supervision/ui";
 /** Portal del supervisor · tickets: los casos que le envían los jefes y el auditor, con sus plazos. */
 export default function TicketsPortalPage() {
   return (
-    <AppShell>
+    <PortalShell>
       <Tickets />
-    </AppShell>
+    </PortalShell>
   );
 }
 

@@ -31,7 +31,7 @@ from ..ventas_netas.models import VentasNetasReport
 from .calculo import limites
 from .models import (
     AGENTE_PENDIENTE, OPERATIVA, VENDEDOR_PENDIENTE, VINCULADO, AlertaAsesor, BitacoraNota, Coaching, EquipoAsignacion,
-    Operador, OperadoresSync,
+    Operador, OperadoresSync, PedidoPase,
 )
 
 _lock = asyncio.Lock()  # un solo proceso atiende la API: una detección a la vez
@@ -173,8 +173,10 @@ async def fusionar(db: AsyncSession, queda: Operador, sale: Operador) -> list[st
             await db.delete(a)
         else:
             a.operador_id = queda.id
-    for modelo in (Coaching, BitacoraNota):
+    for modelo in (Coaching, BitacoraNota, PedidoPase):
         await db.execute(update(modelo).where(modelo.operador_id == sale.id).values(operador_id=queda.id))
+    if sale.documento and not queda.documento:
+        queda.documento = sale.documento
     alertas = (await db.execute(select(AlertaAsesor).where(AlertaAsesor.operador_id.in_([queda.id, sale.id])))).scalars().all()
     ya = {(a.periodo, a.tipo, a.desde) for a in alertas if a.operador_id == queda.id}
     for a in alertas:

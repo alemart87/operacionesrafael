@@ -455,7 +455,9 @@ async def _para_hoy(db: AsyncSession, ctx: Contexto, sid: str) -> dict[str, Any]
     momento = tickets_srv.ahora()
     abiertos = await tickets_srv.abiertos(db, sid)
     situacion = Counter(estado_sla(t, ctx.horario, momento)["situacion"] for t in abiertos)
+    sin_firma = await coaching_srv.sin_firmar(db, sid)
     return {"seguimientos_vencidos": seguimientos.get("vencido", 0), "seguimientos_hoy": seguimientos.get("hoy", 0),
+            "sin_firmar": len(sin_firma), "sin_firmar_vencidos": sum(1 for c in sin_firma if coaching_srv.devolucion_vencida(c, dia, ctx.p)),
             "seguimientos_proximos": proximos, "proximos_hasta": tope.isoformat(),
             "alertas_vencidas": alertas.get("vencida", 0), "alertas_en_plazo": alertas.get("en_plazo", 0),
             "sin_coaching": sum(1 for op in ctx.equipo(sid) if op not in con),
