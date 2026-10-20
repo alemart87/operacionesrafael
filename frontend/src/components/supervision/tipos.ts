@@ -194,6 +194,8 @@ export type HorarioAtencion = Record<string, [string, string] | null>;
 
 export interface ParametrosCompletos extends ParametrosSup {
   horario: HorarioAtencion;
+  /** Feedback por día que tiene que cargar cada supervisor (los hitos de «Hoy»). */
+  objetivo_feedback_dia?: number;
   no_laborables: { fecha: string; motivo: string }[];
   feriados_seguridad: string[];
   feriados: string[];
@@ -1333,4 +1335,65 @@ export const NIVEL: Record<NivelEvaluacion, { label: string; chip: string; color
   bien: { label: "Bien", chip: "bg-[#2A78D6]/10 text-[#1D5BA6] border-[#2A78D6]/30", color: "#2A78D6" },
   a_mejorar: { label: "A mejorar", chip: "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40", color: "#F39200" },
   critico: { label: "Crítico", chip: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30", color: "#E6332A" },
+};
+
+// ------------------------------------------------------------------ mi día del supervisor (objetivo de feedback, calidad, cierre)
+export type ComoTermino = "bien" | "normal" | "dificil";
+export type EtiquetaAnimo = "positivo" | "neutral" | "mixto" | "negativo";
+
+export interface AnimoDetectado {
+  polaridad: number; etiqueta: EtiquetaAnimo; texto: number; elegido: ComoTermino | null; emociones: string[]; indicios: string[];
+}
+
+export interface CalidadUno {
+  puntaje: number; nivel: "muy_bien" | "bien" | "a_mejorar"; palabras: number; palabras_por_frase?: number;
+  problema: "corto" | "largo" | null; senales?: Record<string, boolean>; consejos?: string[]; faltan?: string[];
+}
+
+export interface CalidadResumen {
+  feedbacks: number; puntaje: number | null; nivel: CalidadUno["nivel"] | null; cortos: number; largos: number;
+  palabras_prom?: number; senales: Record<string, number>; recomendaciones: { clave: string; veces: number; texto: string }[];
+  dias: number; criterios: Record<string, string>; reglas: { min_palabras: number; max_palabras: number };
+  ultimos: (Pick<CalidadUno, "puntaje" | "nivel" | "problema" | "palabras"> & { texto: string; at: string | null })[];
+}
+
+export interface CierreDia {
+  id: string; fecha: string; resultados: string; compromiso: string; como_termino: ComoTermino | null;
+  cumplio_anterior: ResultadoCompromiso | null; feedbacks: number; animo: AnimoDetectado; at: string | null;
+}
+
+export interface MiDia {
+  fecha: string; habil: boolean; objetivo: number; feedbacks: number; puntos: number; puntos_max: number; racha: number;
+  hitos: { clave: string; nombre: string; meta: number | null; logrado: boolean; extra?: boolean }[];
+  semana: { dia: string; feedbacks: number; habil: boolean }[];
+  calidad: CalidadResumen;
+  cierre: CierreDia | null;
+  anterior: { fecha: string; compromiso: string } | null;
+}
+
+export interface CierreSupervisor {
+  id: string; nombre: string; feedbacks: number; objetivo: number; puntos: number; calidad: number | null;
+  calidad_nivel: CalidadUno["nivel"] | null; cierre: CierreDia | null; anterior: CierreDia | null;
+  animo: { dia: string; etiqueta: EtiquetaAnimo | null }[]; alerta: string | null;
+}
+
+export interface CierresJefes {
+  fecha: string; hoy: string; objetivo: number; supervisores: CierreSupervisor[];
+  kpis: { supervisores: number; con_cierre: number; objetivo_cumplido: number; feedbacks: number; alertas: number; animo: Record<EtiquetaAnimo, number> };
+}
+
+export const ANIMO: Record<EtiquetaAnimo, { label: string; color: string; chip: string }> = {
+  positivo: { label: "Positivo", color: "#0E8F5E", chip: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+  neutral: { label: "Neutral", color: "#8A93A3", chip: "bg-brand-bg text-brand-slate border-brand-border" },
+  mixto: { label: "Mixto", color: "#C27A00", chip: "bg-brand-orange/10 text-[#8A5200] border-brand-orange/40" },
+  negativo: { label: "Negativo", color: "#C8231B", chip: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30" },
+};
+
+export const EMOCION: Record<string, string> = {
+  motivacion: "Motivación", satisfaccion: "Satisfacción", cansancio: "Cansancio", frustracion: "Frustración",
+  preocupacion: "Preocupación", estres: "Estrés",
+};
+
+export const NIVEL_CALIDAD: Record<CalidadUno["nivel"], { label: string; tono: "verde" | "azul" | "naranja" }> = {
+  muy_bien: { label: "Muy bien", tono: "verde" }, bien: { label: "Bien", tono: "azul" }, a_mejorar: { label: "A mejorar", tono: "naranja" },
 };

@@ -14,6 +14,7 @@ import { diaCorto, hoyPy } from "@/components/portal/coaching";
 import { Boton, Cargando, Etiqueta, Fallo, Hoja, cx, hora, plural, useAviso } from "@/components/portal/ui";
 import { fechaLarga } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
+import { CierresDelDia } from "./cierres";
 import { VerCoachingDialog } from "./coaching";
 import {
   SUP_API, TIPO_COACHING, dm, nombreMetricas, sumarDias,
@@ -235,6 +236,7 @@ export function CoachingDelDiaVista() {
               {lista.map((c) => <Tarjeta key={c.id} c={c} onVer={() => setVer(c.id)} onRevisar={() => setRevisar(c)} />)}
             </ul>
           )}
+          <div className="pt-4"><CierresDelDia fecha={fecha} /></div>
         </div>
       )}
       {ver && <VerCoachingDialog id={ver} onClose={() => setVer(null)} />}

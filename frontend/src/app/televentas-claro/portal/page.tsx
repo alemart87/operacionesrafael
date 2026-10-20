@@ -4,11 +4,12 @@ import { CalendarClock, CircleCheck, CircleDashed, ClipboardCheck, MessageSquare
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSession } from "@/components/AppShell";
 import { diaCorto, hoyPy } from "@/components/portal/coaching";
+import { BarraObjetivo, CalidadFeedback, FilaCierre, HojaCierre } from "@/components/portal/mi-dia";
 import { PortalShell } from "@/components/portal/nav";
 import { Cargando, Encabezado, Fallo, Fila, Lista, PORTAL, Seccion, plural, useAviso } from "@/components/portal/ui";
 import { BotonCoaching, hrefNuevoCoaching } from "@/components/supervision/hacer-coaching";
 import {
-  SUP_API, mesActual, num, type DetalleSupervisor, type Proyeccion, type VistaCoachingData,
+  SUP_API, mesActual, num, type DetalleSupervisor, type MiDia, type Proyeccion, type VistaCoachingData,
 } from "@/components/supervision/tipos";
 import { BarraAvance, CriticoBadge, SelectorMes, VistaSupervisor } from "@/components/supervision/ui";
 import { apiFetch } from "@/lib/api";
@@ -27,18 +28,22 @@ function Hoy() {
   const { user } = useSession();
   const [d, setD] = useState<DetalleSupervisor | null>(null);
   const [v, setV] = useState<VistaCoachingData | null>(null);
+  const [m, setM] = useState<MiDia | null>(null);
+  const [cierre, setCierre] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aviso, avisar] = useAviso();
 
   const cargar = useCallback(async () => {
     setError(null);
     try {
-      const [a, b] = await Promise.all([
+      const [a, b, c] = await Promise.all([
         apiFetch<DetalleSupervisor>(`${SUP_API}/portal`),
         apiFetch<VistaCoachingData>(`${SUP_API}/portal/coaching`),
+        apiFetch<MiDia>(`${SUP_API}/portal/mi-dia`).catch(() => null),
       ]);
       setD(a);
       setV(b);
+      setM(c);
     } catch (e: any) { setError(e.message); }
   }, []);
   useEffect(() => { cargar(); }, [cargar]);
@@ -57,15 +62,27 @@ function Hoy() {
     <div className="max-w-xl md:max-w-none mx-auto">
       <Encabezado sobre={fecha} titulo={<>Hola, <span className="text-brand-primary">{nombre}</span></>}
         accion={d && <CriticoBadge critico={d.critico} enAlerta={d.asesores_en_alerta} />} />
+      {m && <div className="mb-4 md:max-w-md"><BarraObjetivo d={m} onCierre={() => setCierre(true)} /></div>}
       <div className="md:max-w-md">
         <BotonCoaching href={hrefNuevoCoaching()} className="w-full !py-4 !text-xl rounded-xl" />
       </div>
       {error && <div className="mt-4"><Fallo onReintentar={cargar}>{error}</Fallo></div>}
       {!d || !v ? (!error && <div className="mt-6"><Cargando filas={4} /></div>) : (
         <div className="mt-6 grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 items-start">
-          <ParaHoy d={d} v={v} />
+          <div className="space-y-6 min-w-0">
+            <ParaHoy d={d} v={v} m={m} onCierre={() => setCierre(true)} />
+            {m && <CalidadFeedback d={m} />}
+          </div>
           <TuMes d={d} />
         </div>
+      )}
+      {cierre && m && (
+        <HojaCierre d={m} onClose={() => setCierre(false)} onGuardado={(x) => {
+          const nuevo = !m.cierre;
+          setM(x);
+          setCierre(false);
+          avisar(nuevo ? "Día cerrado: sumaste 1 punto. Mañana te preguntamos por tu compromiso." : "Cierre corregido.");
+        }} />
       )}
       {d && <Detalle inicial={d} />}
       {aviso}
@@ -73,10 +90,12 @@ function Hoy() {
   );
 }
 
-function ParaHoy({ d, v }: { d: DetalleSupervisor; v: VistaCoachingData }) {
+function ParaHoy({ d, v, m, onCierre }: { d: DetalleSupervisor; v: VistaCoachingData; m: MiDia | null; onCierre: () => void }) {
   const hoy = hoyPy();
   const x = d.coaching;
   const filas: ReactNode[] = [];
+  // El cierre del día: pendiente arriba de todo (suma un punto); ya hecho, al final.
+  if (m && m.habil && !m.cierre) filas.push(<FilaCierre key="cierre" d={m} onAbrir={onCierre} />);
   for (const c of [...(v.sin_firmar ?? [])].sort((a, b) => Number(b.devolucion_vencida) - Number(a.devolucion_vencida))) {
     filas.push(
       <Fila key={`sf-${c.id}`} href={`${PORTAL}/coaching/${c.id}`} icono={PenLine} tono={c.devolucion_vencida ? "rojo" : "naranja"} marcada={c.devolucion_vencida}
@@ -140,6 +159,7 @@ function ParaHoy({ d, v }: { d: DetalleSupervisor; v: VistaCoachingData }) {
         sub={x.proximos_hasta ? `Hasta ${diaCorto(x.proximos_hasta, hoy)}: preparalos antes.` : undefined} />,
     );
   }
+  if (m && m.cierre) filas.push(<FilaCierre key="cierre" d={m} onAbrir={onCierre} />);
   return (
     <Seccion titulo="Para hoy">
       {filas.length ? <Lista>{filas}</Lista> : (

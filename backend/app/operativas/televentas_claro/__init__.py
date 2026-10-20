@@ -44,6 +44,7 @@ from .supervision import comando_api as supervision_comando_api
 from .supervision import control_api as supervision_control_api
 from .supervision import devolucion_api as supervision_devolucion_api
 from .supervision import dia_api as supervision_dia_api
+from .supervision import mi_dia_api as supervision_mi_dia_api
 from .supervision import tickets_api as supervision_tickets_api
 from .facturacion.migraciones import MIGRACIONES as facturacion_migraciones
 from .supervision.migraciones import MIGRACIONES as supervision_migraciones
@@ -53,7 +54,7 @@ from .ventas_netas.jobs import queue as ventas_netas_queue
 
 ROUTERS = [router, ventas_netas_api.router, productividad_api.router, sph_api.router, supervision_api.router,
            supervision_coaching_api.router, supervision_devolucion_api.router, supervision_control_api.router,
-           supervision_dia_api.router, supervision_analisis_api.router,
+           supervision_dia_api.router, supervision_mi_dia_api.router, supervision_analisis_api.router,
            supervision_tickets_api.router, supervision_comando_api.router,
            informe_diario_api.router, auditoria_api.router, auditoria_evidencias.router, facturacion_api.router,
            facturacion_agent_api.router, integraciones_api.router, logistica_api.router]
