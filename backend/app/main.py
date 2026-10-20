@@ -87,6 +87,9 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE sup_audios ALTER COLUMN coaching_id DROP NOT NULL",
     "ALTER TABLE sup_cierres_dia ADD COLUMN IF NOT EXISTS audio_resultados_id VARCHAR(36)",
     "ALTER TABLE sup_cierres_dia ADD COLUMN IF NOT EXISTS audio_compromiso_id VARCHAR(36)",
+    "ALTER TABLE sup_alertas_comando ADD COLUMN IF NOT EXISTS util BOOLEAN",
+    "ALTER TABLE sup_alertas_comando ADD COLUMN IF NOT EXISTS util_por VARCHAR(36)",
+    "ALTER TABLE sup_alertas_comando ADD COLUMN IF NOT EXISTS util_at TIMESTAMP WITH TIME ZONE",
 ]
 
 

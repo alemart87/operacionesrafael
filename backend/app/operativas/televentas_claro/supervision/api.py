@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -673,6 +673,7 @@ class ParametrosPayload(BaseModel):
     no_laborables: list[NoLaborable] = Field(default_factory=list, max_length=200)
     horario: Optional[dict[str, Optional[list[str]]]] = None  # horario de atención (plazos de los tickets)
     objetivo_feedback_dia: Optional[int] = Field(None, ge=1, le=30)  # feedback por día de cada supervisor
+    clima_alertas: Optional[Literal["alta", "media", "todas"]] = None  # qué alertas del clima se abren
 
 
 @router.put("/parametros")
@@ -692,6 +693,8 @@ async def guardar_parametros(payload: ParametrosPayload, request: Request, user:
                                     key=lambda x: x["fecha"])}
     if payload.objetivo_feedback_dia is not None:
         data["objetivo_feedback_dia"] = payload.objetivo_feedback_dia
+    if payload.clima_alertas is not None:
+        data["clima_alertas"] = payload.clima_alertas
     if payload.horario is not None:
         try:
             data["horario"] = validar_horario(payload.horario)

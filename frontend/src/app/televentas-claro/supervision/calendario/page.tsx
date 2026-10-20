@@ -58,13 +58,14 @@ function Calendario() {
   const [guardando, setGuardando] = useState(false);
 
   const [objetivo, setObjetivo] = useState(8);
+  const [climaAlertas, setClimaAlertas] = useState<"alta" | "media" | "todas">("alta");
   const aplicar = (d: ParametrosCompletos) => {
-    setP(d); setPesos(d.pesos_dia); setDias(d.no_laborables ?? []); setHorario(d.horario ?? {}); setObjetivo(d.objetivo_feedback_dia ?? 8);
+    setP(d); setPesos(d.pesos_dia); setDias(d.no_laborables ?? []); setHorario(d.horario ?? {}); setObjetivo(d.objetivo_feedback_dia ?? 8); setClimaAlertas(d.clima_alertas ?? "alta");
   };
   useEffect(() => { apiFetch<ParametrosCompletos>(`${SUP_API}/parametros`).then(aplicar).catch((e) => setError(e.message)); }, []);
 
   const cambiado = !!p && (JSON.stringify(pesos) !== JSON.stringify(p.pesos_dia) || JSON.stringify(dias) !== JSON.stringify(p.no_laborables ?? [])
-    || JSON.stringify(horario) !== JSON.stringify(p.horario ?? {}) || objetivo !== (p.objetivo_feedback_dia ?? 8));
+    || JSON.stringify(horario) !== JSON.stringify(p.horario ?? {}) || objetivo !== (p.objetivo_feedback_dia ?? 8) || climaAlertas !== (p.clima_alertas ?? "alta"));
   const horarioOk = Object.values(horario).every(franjaValida) && Object.values(horario).some(Boolean);
   const franja = (i: number, f: [string, string] | null) => setHorario((h) => ({ ...h, [String(i)]: f }));
   const feriados = useMemo(() => new Set([...(p?.feriados_seguridad ?? []), ...dias.map((d) => d.fecha)]), [p, dias]);
@@ -80,7 +81,7 @@ function Calendario() {
     setError(null);
     setOk(null);
     try {
-      aplicar(await apiFetch<ParametrosCompletos>(`${SUP_API}/parametros`, { method: "PUT", body: JSON.stringify({ pesos_dia: pesos, no_laborables: dias, horario, objetivo_feedback_dia: objetivo }) }));
+      aplicar(await apiFetch<ParametrosCompletos>(`${SUP_API}/parametros`, { method: "PUT", body: JSON.stringify({ pesos_dia: pesos, no_laborables: dias, horario, objetivo_feedback_dia: objetivo, clima_alertas: climaAlertas }) }));
       setOk("Calendario guardado: las proyecciones, los plazos de los tickets y el objetivo de feedback ya lo usan.");
     } catch (e: any) { setError(e.message); } finally { setGuardando(false); }
   };
@@ -136,6 +137,18 @@ function Calendario() {
               </div>
               <input type="number" min={1} max={30} inputMode="numeric" disabled={!gestion} value={objetivo} aria-label="Feedback por día"
                 onChange={(e) => setObjetivo(Math.max(1, Math.min(30, Number(e.target.value) || 1)))} className="input !w-24 text-center font-semibold tabular-nums" />
+            </div>
+            <div className="mt-4 pt-4 border-t border-brand-border flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-brand-ink">Alertas del clima del equipo</div>
+                <div className="text-xs text-brand-slate">Las primeras semanas, solo las altas: los jefes marcan si fueron útiles y después se suman las demás.</div>
+              </div>
+              <select className="input !w-auto" disabled={!gestion} value={climaAlertas} aria-label="Alertas del clima"
+                onChange={(e) => setClimaAlertas(e.target.value as "alta" | "media" | "todas")}>
+                <option value="alta">Solo altas</option>
+                <option value="media">Altas y medias</option>
+                <option value="todas">Todas</option>
+              </select>
             </div>
             <div className="mt-4 pt-4 border-t border-brand-border grid grid-cols-2 gap-3">
               {meses.map((m) => (

@@ -133,7 +133,7 @@ async def centro(user: CurrentUser = Depends(sup.require_ver), db: AsyncSession 
     conds = srv.condiciones(ctx, dia=dia, nombres=nombres, tickets=abiertos, coachings_abiertos=coachings_abiertos, filas=filas,
                             alertas_uso=ctx.alertas, pendientes_vincular=pendientes, horario=ctx.horario, sin_firmar=sin_firmar)
     await srv.sincronizar(db, conds, momento)
-    recientes = await srv.alertas_recientes(db, dia)
+    recientes = await srv.alertas_recientes(db, dia, con_clima=user.has_perm(srv.PERM_CLIMA))
     numeros = await _numeros(db, {a.ticket_id for a in recientes})
     asesores = {i: o.nombre for i, o in ctx.ops.items()}
     alertas = sorted((srv.alerta_dict(a, nombres, dia, numeros, asesores) for a in recientes), key=srv.orden_alertas)
@@ -161,9 +161,9 @@ async def centro(user: CurrentUser = Depends(sup.require_ver), db: AsyncSession 
 
 
 # ------------------------------------------------------------------ actuar sobre una alerta
-async def _alerta(db: AsyncSession, alerta_id: str) -> AlertaComando:
+async def _alerta(db: AsyncSession, alerta_id: str, user: CurrentUser) -> AlertaComando:
     a = await db.get(AlertaComando, alerta_id)
-    if not a or a.operativa != OPERATIVA:
+    if not a or a.operativa != OPERATIVA or (srv.es_clima(a.tipo) and not user.has_perm(srv.PERM_CLIMA)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Alerta no encontrada")
     await db.refresh(a)  # la pudo cerrar o tomar otro recién
     return a
@@ -192,7 +192,7 @@ async def tomar(alerta_id: str, payload: TomarPayload, request: Request, user: C
     except coaching_srv.ReglaInvalida as exc:
         raise _regla(exc) from exc
     async with _acciones:
-        a = await _alerta(db, alerta_id)
+        a = await _alerta(db, alerta_id, user)
         if a.descartada_at is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "La alerta está descartada")
         if a.tomada_por and nota is None:
@@ -225,7 +225,7 @@ async def pedir_revision(alerta_id: str, payload: RevisionPayload, request: Requ
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No tenés permiso para enviar tickets de revisión")
     dia = sup.hoy()
     async with _acciones:
-        a = await _alerta(db, alerta_id)
+        a = await _alerta(db, alerta_id, user)
         tipo_defecto = srv.TIPOS.get(a.tipo, (0, a.tipo, None))[2]
         if not tipo_defecto or not a.supervisor_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Esta alerta no se deriva con un ticket")
@@ -252,7 +252,7 @@ async def pedir_revision(alerta_id: str, payload: RevisionPayload, request: Requ
                                         referencia=referencia, descripcion=descripcion)
         except tickets_srv.ReglaInvalida as exc:
             raise _regla(exc) from exc
-        a = await _alerta(db, alerta_id)
+        a = await _alerta(db, alerta_id, user)
         momento = tickets_srv.ahora()
         a.ticket_id = t.id
         if not a.tomada_por:
@@ -278,7 +278,7 @@ async def descartar(alerta_id: str, payload: DescartarPayload, request: Request,
     except coaching_srv.ReglaInvalida as exc:
         raise _regla(exc) from exc
     async with _acciones:
-        a = await _alerta(db, alerta_id)
+        a = await _alerta(db, alerta_id, user)
         if a.hasta is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "La alerta ya se cerró: la condición dejó de cumplirse")
         if a.descartada_at is not None:
@@ -303,7 +303,8 @@ async def linea_de_tiempo(supervisor_id: str, periodo: Optional[str] = Query(Non
     if supervisor_id not in sups:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Supervisor no encontrado")
     ops = {o.id: o for o in await maestro.todos(db)}
-    eventos = await srv.linea_de_tiempo(db, supervisor_id, per, nombres=await _nombres(db), ops=ops)
+    eventos = await srv.linea_de_tiempo(db, supervisor_id, per, nombres=await _nombres(db), ops=ops,
+                                        con_clima=user.has_perm(srv.PERM_CLIMA))
     return {"periodo": per, "nombre_mes": sup.nombre_mes(per), "hoy": sup.hoy().isoformat(), "supervisor": sups[supervisor_id],
             "eventos": eventos, "grupos": dict(Counter(e["grupo"] for e in eventos))}
 

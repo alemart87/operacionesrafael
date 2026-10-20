@@ -21,7 +21,7 @@ from ...operativas.televentas_claro.auditoria.schemas import AuditoriaCreate, Ha
 from ...operativas.televentas_claro.informe_diario import api as inf_api
 from ...operativas.televentas_claro.informe_diario import informe as inf_srv
 from ...operativas.televentas_claro.informe_diario.models import FIRMADO, InformeDiario
-from ...operativas.televentas_claro.supervision import comando_api, tickets_api
+from ...operativas.televentas_claro.supervision import comando, comando_api, tickets_api
 from ...operativas.televentas_claro.supervision.models import AlertaComando, Operador, Ticket
 from ...operativas.televentas_claro.supervision import api as sup_api
 from .. import investigacion
@@ -213,6 +213,8 @@ async def _gestionar_alerta(ctx: Ctx, a: dict[str, Any]) -> Any:
 
 async def _resumen_alerta(ctx: Ctx, a: dict[str, Any]) -> str:
     al = await ctx.db.get(AlertaComando, str(a.get("alerta_id") or ""))
+    if al and comando.es_clima(al.tipo) and not ctx.user.has_perm(comando.PERM_CLIMA):
+        al = None   # las del clima del equipo, solo con su permiso
     titulo = f"«{al.titulo}»" if al else "la alerta"
     t = str(a.get("texto") or "")[:300]
     if a.get("accion") == "tomar":

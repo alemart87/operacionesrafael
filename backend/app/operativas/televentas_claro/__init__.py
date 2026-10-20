@@ -40,6 +40,8 @@ from .supervision import coaching_api as supervision_coaching_api
 from .supervision import analisis as supervision_analisis
 from .supervision import analisis_api as supervision_analisis_api
 from .supervision import audios as supervision_audios
+from .supervision import clima as supervision_clima
+from .supervision import clima_api as supervision_clima_api
 from .supervision import comando_api as supervision_comando_api
 from .supervision import control_api as supervision_control_api
 from .supervision import devolucion_api as supervision_devolucion_api
@@ -54,17 +56,18 @@ from .ventas_netas.jobs import queue as ventas_netas_queue
 
 ROUTERS = [router, ventas_netas_api.router, productividad_api.router, sph_api.router, supervision_api.router,
            supervision_coaching_api.router, supervision_devolucion_api.router, supervision_control_api.router,
-           supervision_dia_api.router, supervision_mi_dia_api.router, supervision_analisis_api.router,
+           supervision_dia_api.router, supervision_mi_dia_api.router, supervision_clima_api.router, supervision_analisis_api.router,
            supervision_tickets_api.router, supervision_comando_api.router,
            informe_diario_api.router, auditoria_api.router, auditoria_evidencias.router, facturacion_api.router,
            facturacion_agent_api.router, integraciones_api.router, logistica_api.router]
 
 # Workers de fondo: nombre -> coroutine factory. main.py los supervisa.
 WORKERS = {"ventas_netas": ventas_netas_queue.worker, "facturacion": facturacion_worker,
-           "transcripcion_audios": supervision_audios.worker, "analisis_coaching": supervision_analisis.worker}
+           "transcripcion_audios": supervision_audios.worker, "analisis_coaching": supervision_analisis.worker,
+           "clima_equipo": supervision_clima.worker}
 
 # Tareas de una sola vez al arrancar (en segundo plano): nombre -> coroutine factory.
-AL_ARRANCAR = {"ventas_netas_actualizar": ventas_netas_actualizar}
+AL_ARRANCAR = {"ventas_netas_actualizar": ventas_netas_actualizar, "clima_historia": supervision_clima.historia}
 
 # Migraciones de datos de una sola vez (id, coroutine(db)): main.py las corre al arrancar y las anota.
 MIGRACIONES_DATOS = [*supervision_migraciones, *facturacion_migraciones, *informe_diario_migraciones, *integraciones_migraciones,

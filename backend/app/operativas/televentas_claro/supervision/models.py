@@ -407,6 +407,10 @@ class AlertaComando(Base):
     descartada_por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     descartada_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     descartada_motivo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Calibración de las alertas del clima del equipo: los jefes marcan si fue útil o una falsa alarma.
+    util: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    util_por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    util_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 
@@ -459,3 +463,61 @@ class CierreDia(Base):
     animo: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ------------------------------------------------------------------ clima del equipo
+class PulsoDia(Base):
+    """El termómetro de mitad del día: el supervisor toca cómo va (bien, normal, difícil) desde «Hoy» del portal.
+    Sirve para ver cómo fluctuó su ánimo durante el día (lo ven los jefes con el clima del equipo)."""
+    __tablename__ = "sup_pulsos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    supervisor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valor: Mapped[str] = mapped_column(String(10), nullable=False)      # bien | normal | dificil
+
+
+class ClimaDia(Base):
+    """La foto del clima de un día por supervisor (ver `clima.py`): el ánimo (−100 a 100) y el compromiso (0 a 100) del
+    líder y de su equipo (los asesores, siempre agregados), el estado de cada uno y las señales del día. El día en curso
+    se recalcula; los anteriores quedan guardados (y se recalculan si llega el análisis con IA de esa noche)."""
+    __tablename__ = "sup_clima_dia"
+    __table_args__ = (UniqueConstraint("supervisor_id", "fecha", name="uq_clima_supervisor_fecha"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    supervisor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    lider_animo: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    lider_compromiso: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    lider_estado: Mapped[str] = mapped_column(String(14), nullable=False, default="sin_datos")
+    equipo_animo: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    equipo_compromiso: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    equipo_estado: Mapped[str] = mapped_column(String(14), nullable=False, default="sin_datos")
+    datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    con_ia: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    calculado_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ClimaIA(Base):
+    """El análisis con Claude (Haiku) de los textos de un día para el clima: sentimiento, emoción, intensidad, tono,
+    riesgo y por qué de cada texto (sin nombres: van con códigos). Corre de noche, en segundo plano."""
+    __tablename__ = "sup_clima_ia"
+    __table_args__ = (UniqueConstraint("operativa", "fecha", name="uq_clima_ia_fecha"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    estado: Mapped[str] = mapped_column(String(14), nullable=False, default="pendiente")   # pendiente | listo | error
+    textos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resultados: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    modelo: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    entrada_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    salida_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    costo_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    intentos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    terminado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

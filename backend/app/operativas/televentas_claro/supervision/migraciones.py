@@ -119,6 +119,22 @@ async def permisos_analisis(db: AsyncSession) -> dict[str, Any]:
     return {"perfiles": sorted(cambios)}
 
 
+async def permisos_clima(db: AsyncSession) -> dict[str, Any]:
+    """Los perfiles que ya existían reciben el Clima del equipo según lo definido (gerente, sub gerente y coordinador:
+    es una utilidad restringida a ellos; el controller no)."""
+    perm = f"{OPERATIVA}.clima_equipo"
+    cambios: list[str] = []
+    for row in (await db.execute(select(Profile))).scalars().all():
+        antes = set(row.permissions or [])
+        if perm in DEFAULT_PERMISSIONS.get(row.slug, []) and perm not in antes:
+            despues = filter_permissions(sorted(antes | {perm}), row.slug)
+            if perm in despues:
+                row.permissions = despues
+                cambios.append(row.slug)
+    await db.commit()
+    return {"perfiles": sorted(cambios)}
+
+
 MIGRACIONES = [
     ("2026-10-supervision-permisos", permisos_supervision),
     ("2026-10-operadores-desde-sph", vinculos_sph_al_maestro),
@@ -128,4 +144,5 @@ MIGRACIONES = [
     ("2026-10-coaching-metricas", coaching_metricas),
     ("2026-10-control-supervisores", permisos_control),
     ("2026-10-analisis-coaching", permisos_analisis),
+    ("2026-10-clima-equipo", permisos_clima),
 ]

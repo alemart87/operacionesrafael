@@ -34,7 +34,7 @@ from . import calidad as cal
 from . import coaching as srv
 from .alertas import ZONA
 from .control_api import require_control
-from .models import OPERATIVA, CierreDia, Coaching, CoachingAudio, CoachingItem
+from .models import OPERATIVA, CierreDia, Coaching, CoachingAudio, CoachingItem, PulsoDia
 
 router = APIRouter(prefix="/televentas-claro/supervision", tags=["televentas-claro · mi día del supervisor"])
 
@@ -43,6 +43,8 @@ DIAS_CALIDAD = 7          # los feedback que se miran para «Calidad de mis feed
 DIAS_ANIMO = 7            # el ánimo que ven los jefes
 MESES_RACHA = 12         # la historia que se mira para las rachas (y sus récords)
 MIN_TEXTO = 10
+TERMOMETRO_DESDE, TERMOMETRO_HASTA = 10, 18   # horas locales en que se pregunta «¿Cómo vas?»
+TERMOMETRO_CADA = timedelta(hours=3)          # después de responder, no se vuelve a preguntar por un rato
 
 
 def _limites(desde: date, hasta: date) -> tuple[datetime, datetime]:
@@ -63,10 +65,10 @@ def _habil(d: date, p: dict[str, Any]) -> bool:
     return bool(pesos[d.weekday()]) and d.isoformat() not in set(p.get("feriados") or [])
 
 
-async def feedbacks(db: AsyncSession, desde: date, hasta: date, supervisor_id: str | None = None) -> list[tuple[str, datetime, str]]:
+async def devoluciones(db: AsyncSession, desde: date, hasta: date, supervisor_id: str | None = None) -> list[dict[str, Any]]:
     """Las devoluciones del rango: cada coaching (no anulado) en el que el supervisor cargó algo ese día (monitoreos o
-    feedback, como sea que los haya marcado, o el seguimiento) cuenta como **un** feedback dado al asesor. Devuelve (supervisor, hora del
-    último registro del día, el texto de la devolución: todo lo que cargó ese día en ese coaching, en orden)."""
+    feedback, como sea que los haya marcado, o el seguimiento) cuenta como **una** devolución al asesor: supervisor,
+    coaching, día, hora del primer y del último registro del día y el texto (todo lo que cargó ese día, en orden)."""
     ini, fin = _limites(desde, hasta)
     q = (select(Coaching.supervisor_id, CoachingItem.coaching_id, CoachingItem.at, CoachingItem.texto)
          .join(Coaching, Coaching.id == CoachingItem.coaching_id)
@@ -81,13 +83,18 @@ async def feedbacks(db: AsyncSession, desde: date, hasta: date, supervisor_id: s
     if supervisor_id:
         qs = qs.where(Coaching.supervisor_id == supervisor_id)
     filas += [(s, cid, a, t) for s, cid, a, t in (await db.execute(qs)).all()]
-    grupos: dict[tuple[str, date], list[Any]] = {}
+    grupos: dict[tuple[str, date], dict[str, Any]] = {}
     for s, cid, a, t in sorted(filas, key=lambda x: _utc(x[2])):
-        g = grupos.setdefault((cid, _dia(a)), [s, a, []])
-        g[1] = a
+        g = grupos.setdefault((cid, _dia(a)), {"sid": s, "cid": cid, "dia": _dia(a), "inicio": a, "at": a, "textos": []})
+        g["at"] = a
         if (t or "").strip():
-            g[2].append(t.strip())
-    return [(s, a, "\n".join(ts)) for s, a, ts in grupos.values()]
+            g["textos"].append(t.strip())
+    return [{**{k: v for k, v in g.items() if k != "textos"}, "texto": "\n".join(g["textos"])} for g in grupos.values()]
+
+
+async def feedbacks(db: AsyncSession, desde: date, hasta: date, supervisor_id: str | None = None) -> list[tuple[str, datetime, str]]:
+    """Las devoluciones como (supervisor, hora del último registro del día, texto)."""
+    return [(d["sid"], d["at"], d["texto"]) for d in await devoluciones(db, desde, hasta, supervisor_id)]
 
 
 async def conteos(db: AsyncSession, desde: date, hasta: date, supervisor_id: str | None = None) -> dict[str, Counter]:
@@ -223,6 +230,19 @@ async def _anterior(db: AsyncSession, sid: str, dia: date) -> CierreDia | None:
                              .order_by(CierreDia.fecha.desc()).limit(1))).scalar_one_or_none()
 
 
+async def termometro(db: AsyncSession, sid: str, dia: date, p: dict[str, Any]) -> dict[str, Any]:
+    """El termómetro de mitad del día: se muestra en día hábil, entre las 10 y las 18, si no respondió hace poco."""
+    pulsos = list((await db.execute(select(PulsoDia).where(PulsoDia.supervisor_id == sid, PulsoDia.fecha == dia)
+                                    .order_by(PulsoDia.at))).scalars().all())
+    momento = srv.ahora()
+    local = _utc(momento).astimezone(ZONA)
+    ultimo = pulsos[-1] if pulsos else None
+    mostrar = (_habil(dia, p) and TERMOMETRO_DESDE <= local.hour < TERMOMETRO_HASTA
+               and (ultimo is None or momento - _utc(ultimo.at) >= TERMOMETRO_CADA))
+    return {"mostrar": mostrar, "pulsos": len(pulsos),
+            "ultimo": {"valor": ultimo.valor, "at": srv.iso(ultimo.at)} if ultimo else None}
+
+
 async def mi_dia(db: AsyncSession, sid: str) -> dict[str, Any]:
     dia = sup.hoy()
     p = await sup.parametros(db)
@@ -246,6 +266,7 @@ async def mi_dia(db: AsyncSession, sid: str) -> dict[str, Any]:
                     "criterios": cal.CRITERIOS, "reglas": {"min_palabras": cal.MIN_PALABRAS, "max_palabras": cal.MAX_PALABRAS}},
         "cierre": cierre_dict(hoy_c, await _audios(db, [hoy_c])),
         "anterior": {"fecha": ant.fecha.isoformat(), "compromiso": ant.compromiso} if ant else None,
+        "termometro": await termometro(db, sid, dia, p),
     }
 
 

@@ -45,7 +45,24 @@ TIPOS: dict[str, tuple[int, str, str | None]] = {
     "sin_actividad": (1, "Sin registrar gestión", "otro"),
     "sin_supervisor": (1, "Asesores sin supervisor", None),
     "sin_vincular": (2, "Nombres sin vincular", None),
+    # Clima del equipo (`clima.py`): solo las ven quienes tienen el permiso del clima; nunca se derivan con un ticket.
+    "clima_riesgo": (0, "Clima · palabras de riesgo", None),
+    "clima_negativos": (0, "Clima · dos cierres negativos", None),
+    "clima_cansado": (0, "Clima · comprometido pero cansado", None),
+    "clima_caida": (1, "Clima · caída del ánimo", None),
+    "clima_critico": (1, "Clima · feedback muy crítico", None),
+    "clima_equipo": (1, "Clima · equipo desanimado", None),
+    "clima_sin_cierre": (1, "Clima · sin cierre del día", None),
+    "clima_compromiso": (1, "Clima · compromiso sin cumplir", None),
+    "clima_mixto": (2, "Clima · dice que está bien, el texto no", None),
+    "clima_cumplir": (2, "Clima · ¿cumplir por cumplir?", None),
+    "clima_sin_voz": (2, "Clima · asesores sin compromisos propios", None),
 }
+PERM_CLIMA = f"{OPERATIVA}.clima_equipo"
+
+
+def es_clima(tipo: str) -> bool:
+    return tipo.startswith("clima_")
 NOMBRE_METRICA = {"pospago": "Pospago", "gpon": "GPON", "uso": "uso de líneas", "conversacion": "conversación", "otra": "otra métrica"}
 assert set(NOMBRE_METRICA) == set(METRICAS)
 
@@ -300,14 +317,17 @@ def condiciones(ctx: Any, *, dia: date, nombres: dict[str, str], tickets: list[t
     return out
 
 
-async def sincronizar(db: AsyncSession, conds: dict[tuple[str, str], dict[str, Any]], momento: datetime) -> int:
+async def sincronizar(db: AsyncSession, conds: dict[tuple[str, str], dict[str, Any]], momento: datetime, *,
+                      clima: bool = False) -> int:
     """Abre las alertas nuevas, actualiza las que siguen y cierra las que ya no se cumplen. Devuelve los cambios.
 
     Si una condición se había ido y vuelve con el mismo inicio (el mismo ticket o la misma alerta de uso), se
-    reabre la alerta que ya estaba, con lo que se había hecho."""
+    reabre la alerta que ya estaba, con lo que se había hecho. Las del clima del equipo se sincronizan aparte
+    (`clima=True`): cada lado solo abre y cierra las suyas."""
     async with _lock:
-        abiertas = (await db.execute(select(AlertaComando).where(AlertaComando.operativa == OPERATIVA,
-                                                                 AlertaComando.hasta.is_(None)))).scalars().all()
+        abiertas = [a for a in (await db.execute(select(AlertaComando).where(AlertaComando.operativa == OPERATIVA,
+                                                                             AlertaComando.hasta.is_(None)))).scalars().all()
+                    if es_clima(a.tipo) == clima]
         por_clave = {(a.tipo, a.clave): a for a in abiertas}
         nuevas = [c for k, c in conds.items() if k not in por_clave]
         cerradas: dict[tuple[str, str, datetime], AlertaComando] = {}
@@ -342,12 +362,12 @@ async def sincronizar(db: AsyncSession, conds: dict[tuple[str, str], dict[str, A
         return cambios
 
 
-async def alertas_recientes(db: AsyncSession, dia: date) -> list[AlertaComando]:
-    """Las abiertas y las que se cerraron hoy (para ver qué se resolvió)."""
+async def alertas_recientes(db: AsyncSession, dia: date, *, con_clima: bool = False) -> list[AlertaComando]:
+    """Las abiertas y las que se cerraron hoy (para ver qué se resolvió). Las del clima, solo con su permiso."""
     inicio = _medianoche(dia)
     q = select(AlertaComando).where(AlertaComando.operativa == OPERATIVA,
                                     (AlertaComando.hasta.is_(None)) | (AlertaComando.hasta >= inicio))
-    return list((await db.execute(q)).scalars().all())
+    return [a for a in (await db.execute(q)).scalars().all() if con_clima or not es_clima(a.tipo)]
 
 
 def alerta_dict(a: AlertaComando, nombres: dict[str, str], dia: date, numeros: dict[str, int],
@@ -377,6 +397,7 @@ def alerta_dict(a: AlertaComando, nombres: dict[str, str], dia: date, numeros: d
         "descartada_por": nombres.get(a.descartada_por or "") if a.descartada_por else None,
         "descartada_motivo": a.descartada_motivo,
         "puede_revision": bool(ticket_tipo and a.supervisor_id and a.hasta is None and not a.ticket_id),
+        "clima": es_clima(a.tipo), "util": a.util,
     }
 
 
@@ -390,7 +411,8 @@ def _ev(at: datetime | None, grupo: str, titulo: str, detalle: str | None = None
     return {"at": _iso(at), "grupo": grupo, "titulo": titulo, "detalle": detalle, "por": por, **{k: v for k, v in link.items() if v}}
 
 
-async def linea_de_tiempo(db: AsyncSession, sid: str, periodo: str, *, nombres: dict[str, str], ops: dict[str, Any]) -> list[dict[str, Any]]:
+async def linea_de_tiempo(db: AsyncSession, sid: str, periodo: str, *, nombres: dict[str, str], ops: dict[str, Any],
+                          con_clima: bool = False) -> list[dict[str, Any]]:
     """Todo lo que pasó con un supervisor en el mes, lo más nuevo primero."""
     primero, ultimo = limites(periodo)
     desde, hasta = _medianoche(primero), _medianoche(ultimo + timedelta(days=1))
@@ -504,6 +526,8 @@ async def linea_de_tiempo(db: AsyncSession, sid: str, periodo: str, *, nombres: 
     # Alertas del centro de comandos sobre el supervisor: cuándo aparecieron y quién las tomó.
     for a in (await db.execute(select(AlertaComando).where(AlertaComando.operativa == OPERATIVA, AlertaComando.supervisor_id == sid,
                                                            AlertaComando.desde >= desde, AlertaComando.desde < hasta))).scalars().all():
+        if es_clima(a.tipo) and not con_clima:
+            continue
         nombre_tipo = TIPOS.get(a.tipo, (0, a.tipo))[1]
         out.append(_ev(a.desde, "alerta", f"Alerta: {a.titulo}", a.detalle, None, operador_id=a.operador_id, dia=_es_medianoche(a.desde)))
         if a.tomada_at:

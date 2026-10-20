@@ -201,3 +201,80 @@ def alerta_animo(dias: list[dict[str, Any]]) -> str | None:
     if etiquetas and etiquetas[0] == "mixto":
         return "Dijo que está bien, pero el texto dice otra cosa."
     return None
+
+
+# ------------------------------------------------------------------ clima del equipo: tono del feedback y voz del asesor
+# Tono de una devolución (cómo la recibe el asesor): reconocimiento (destaca lo que hizo bien y no marca faltas),
+# constructivo (lo que tiene que mejorar con una acción) o crítico (marca faltas sin reconocer nada ni proponer cómo).
+_CRITICA = ("mal", "no hizo", "no hace", "no pregunt", "no ofrec", "no presento", "no confirm", "no valid", "no cerro",
+            "error", "otra vez", "de nuevo", "siempre", "nunca", "falta", "falto", "inaceptable", "grave", "pesim",
+            "no puede ser", "no sirve", "llamado de atencion", "advert", "descuid")
+_MEJORA = (" pero ", "aunque", "proxima", "tenes que", "tiene que", "mejorar", "deberia", "hay que", "te falta", "le falta")
+TONOS = ("reconocimiento", "constructivo", "critico")
+TONO_VALOR = {"reconocimiento": 1.0, "constructivo": 0.25, "critico": -0.8}   # cómo pesa en el ánimo del equipo
+
+
+def tono_feedback(texto: str | None) -> str | None:
+    t = f" {plano(texto or '')} "
+    if len(t.strip()) < 3:
+        return None
+    rec = _tiene(t, _RECONOCIMIENTO)
+    acc = _tiene(t, _ACCION)
+    crit = sum(1 for k in _CRITICA if k in t)
+    if crit >= 2 and not rec or crit >= 1 and not rec and not acc:
+        return "critico"
+    if rec and crit == 0 and not _tiene(t, _MEJORA):
+        return "reconocimiento"
+    return "constructivo"
+
+
+# Voz del asesor (lo que dice al firmar y los compromisos que dicta): entusiasmo, desmotivación, desacuerdo y las
+# palabras de riesgo (renuncia, maltrato…), que siempre se miran aunque el resto del texto sea neutro.
+VOZ: dict[str, tuple[int, tuple[str, ...]]] = {
+    "entusiasmo": (1, ("me gusta", "me encanta", "con ganas", "vamos", "dale", "genial", "buenisimo", "gracias", "me sirve",
+                       "me sirvio", "entendi", "clarisimo", "perfecto", "voy a mejorar", "lo voy a", "me comprometo")),
+    "desmotivacion": (-1, ("no tengo ganas", "desmotiv", "para que", "da igual", "no vale la pena", "no se puede", "imposible",
+                           "cansad", "agotad", "harto", "harta", "no doy mas", "aburrid", "sin sentido")),
+    "desacuerdo": (-1, ("no estoy de acuerdo", "no es asi", "no fue asi", "no es justo", "no corresponde", "no me parece",
+                        "siempre a mi", "no es mi culpa", "no fue mi culpa", "me tienen", "me persigu")),
+}
+RIESGO = ("renuncia", "renunciar", "renuncio", "me voy", "me quiero ir", "dejar el trabajo", "maltrato", "maltrata", "acoso",
+          "acosa", "injusto", "injusticia", "discrimin", "me gritaron", "me grito", "humill", "amenaz", "denuncia")
+_PROPOSITIVO = ("voy a", "me comprometo", "lo voy a", "a partir de", "desde manana", "manana", "practicar", "probar",
+                "mejorar", "intentar", "aplicar", "gracias", "entendi", "dale", "de acuerdo")
+
+
+def riesgos(texto: str | None) -> list[str]:
+    """Las palabras de riesgo del texto (sin negación delante: «no me voy» no cuenta)."""
+    t = " ".join(re.findall(r"[a-zñ]+", plano(texto or "")))
+    out = []
+    for r in RIESGO:
+        for m in re.finditer(r"\b" + re.escape(r), t):
+            antes = t[:m.start()].split()[-2:]
+            if not _NEGACION & set(antes):
+                out.append(r)
+                break
+    return out
+
+
+def voz_asesor(texto: str | None) -> dict[str, Any]:
+    """El ánimo de lo que dijo el asesor: polaridad −1 a 1, emociones de la voz, palabras de riesgo y si es propositivo."""
+    base = detectar_animo(texto)
+    t = " ".join(re.findall(r"[a-zñ]+", plano(texto or "")))
+    tokens = t.split()
+    puntos, emociones = 0.0, Counter()
+    for emo, (signo, raices) in VOZ.items():
+        for r in raices:
+            for m in re.finditer(r"\b" + re.escape(r), t):
+                i = len(t[:m.start()].split())
+                if signo > 0 and _negado(tokens, i):
+                    continue
+                puntos += signo * (1.5 if _intenso(tokens, i) else 1.0)
+                emociones[emo] += 1
+    pol = base["texto"] + (puntos / max(2.0, len(tokens) ** 0.5) if tokens else 0.0)
+    rs = riesgos(texto)
+    if rs:
+        pol = min(pol, -0.6)
+    pol = round(max(-1.0, min(1.0, pol)), 2)
+    return {"polaridad": pol, "emociones": [e for e, _ in emociones.most_common()] + [e for e in base["emociones"] if e not in emociones],
+            "riesgo": rs, "propositivo": _tiene(f" {t} ", _PROPOSITIVO), "palabras": len(tokens)}
