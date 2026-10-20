@@ -32,6 +32,7 @@ PARAMETROS_DEFECTO: dict[str, Any] = {
     "semaforo_en_camino": 100.0,             # proyección ÷ objetivo, en %
     "semaforo_en_riesgo": 90.0,
     "min_dias_proyeccion": 3.0,              # con menos días hábiles transcurridos, la proyección es provisoria
+    "objetivo_feedback_dia": 8,              # feedback por día que tiene que cargar cada supervisor (hitos de «Hoy»)
     "horario": dict(HORARIO_DEFECTO),        # horario de atención: horas hábiles de los plazos de los tickets
 }
 

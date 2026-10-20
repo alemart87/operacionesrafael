@@ -431,3 +431,27 @@ class AnalisisInforme(Base):
     pedido_por: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     terminado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ------------------------------------------------------------------ cierre del día del supervisor
+class CierreDia(Base):
+    """El cierre del día del supervisor (desde su portal): cómo le fue (resultados), su compromiso para el día
+    siguiente, cómo terminó el día (bien, normal, difícil) y si cumplió el compromiso de su cierre anterior. Uno por
+    supervisor y día; lo puede corregir ese mismo día. `animo` es lo que detecta el sistema (ver `calidad.py`).
+    Cargarlo suma un punto en los hitos del día. Lo ven los jefes en el control."""
+    __tablename__ = "sup_cierres_dia"
+    __table_args__ = (UniqueConstraint("supervisor_id", "fecha", name="uq_cierre_supervisor_fecha"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    operativa: Mapped[str] = mapped_column(String(40), default=OPERATIVA, nullable=False)
+    supervisor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    resultados: Mapped[str] = mapped_column(Text, nullable=False)
+    compromiso: Mapped[str] = mapped_column(Text, nullable=False)
+    como_termino: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)        # bien | normal | dificil
+    cumplio_anterior: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)    # cumplido | parcial | no_cumplido
+    anterior_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)         # el cierre cuyo compromiso evalúa
+    feedbacks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)            # los que llevaba al cerrar
+    animo: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

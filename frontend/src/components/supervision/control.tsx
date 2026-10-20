@@ -15,6 +15,7 @@ import { hoyPy } from "@/components/portal/coaching";
 import { Escuchar } from "@/components/portal/grabadora";
 import { fechaCorta } from "@/components/productividad/tipos";
 import { apiFetch } from "@/lib/api";
+import { CierresDelDia } from "./cierres";
 import { VerCoachingDialog } from "./coaching";
 import {
   SUP_API, SUP_HREF, dm, fechaHoraCorta, num, sumarDias,
@@ -569,6 +570,7 @@ export function ControlSupervisoresVista() {
           </div>
           {d.por_dia.length > 1 && <PorDia serie={d.por_dia} />}
           <TablaSupervisores filas={filas} dias={d.reglas.dias_sin_gestion} sel={sel} onSel={elegir} nombreMes={d.nombre_mes} />
+          <CierresDelDia fecha={d.hasta} />
           <div className="grid xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-6 items-start">
             <Actividad r={r} filas={filas} sel={sel} onSel={setSel} refresco={refresco} />
             <Pendientes refresco={refresco} onCambio={() => cargar(r)} />

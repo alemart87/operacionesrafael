@@ -672,6 +672,7 @@ class ParametrosPayload(BaseModel):
     pesos_dia: list[float] = Field(..., min_length=7, max_length=7)
     no_laborables: list[NoLaborable] = Field(default_factory=list, max_length=200)
     horario: Optional[dict[str, Optional[list[str]]]] = None  # horario de atención (plazos de los tickets)
+    objetivo_feedback_dia: Optional[int] = Field(None, ge=1, le=30)  # feedback por día de cada supervisor
 
 
 @router.put("/parametros")
@@ -689,6 +690,8 @@ async def guardar_parametros(payload: ParametrosPayload, request: Request, user:
             "pesos_dia": [float(x) for x in payload.pesos_dia],
             "no_laborables": sorted(({"fecha": x.fecha.isoformat(), "motivo": x.motivo.strip()} for x in payload.no_laborables),
                                     key=lambda x: x["fecha"])}
+    if payload.objetivo_feedback_dia is not None:
+        data["objetivo_feedback_dia"] = payload.objetivo_feedback_dia
     if payload.horario is not None:
         try:
             data["horario"] = validar_horario(payload.horario)

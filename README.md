@@ -583,6 +583,39 @@ En Render: cargar `OPENAI_API_KEY` en el servicio (Environment) y reiniciar. Var
 para desarrollo y pruebas (texto fijo, sin llamar a OpenAI; en producción se ignora). Los audios se guardan en el
 disco persistente: sin disco, se pierden en cada deploy.
 
+### Mi día del supervisor (objetivo de feedback, calidad, cierre del día y ánimo)
+
+No es una pantalla aparte: va dentro de **Hoy** del portal del supervisor (celular primero) y del lado de los jefes
+en el **Control de supervisores** y el **Coaching del día**.
+
+- **Barra del objetivo de feedback** arriba de todo: los feedback cargados hoy contra el objetivo
+  (`objetivo_feedback_dia`, **8** por defecto; se cambia en **Supervisión → Calendario**), con los **hitos** (primer
+  feedback, la mitad y el objetivo) y una estrella para el **punto extra** del cierre del día (8 + 1 puntos). Debajo,
+  los últimos 7 días (en verde los días con el objetivo cumplido) y la racha de días hábiles seguidos con el objetivo.
+  Cuenta cada ítem de tipo *feedback* de un coaching no anulado (los monitoreos no).
+- **Calidad de mis feedback** (últimos 7 días): un puntaje de 0 a 100 y, por cada señal, qué parte de sus feedback la
+  cumple: **largo justo** (25 a 120 palabras: menos le falta profundidad, más de 160 o frases de más de 30 palabras le
+  falta concisión), **evidencia** (la llamada, la hora, un número o lo que dijo el cliente), **acción concreta**,
+  **métrica** y **reconocimiento**. Con **«Qué podés hacer»**: los consejos de lo que más le falta (por ejemplo, «Le
+  falta profundidad: contá qué viste, por qué importa y qué tiene que hacer distinto» o «Podés ser más conciso:
+  una conducta, una cosa a mejorar y una acción»). Mientras escribe un feedback, la hoja le muestra la calidad y el
+  consejo **al instante**. Las reglas están en `supervision/calidad.py`: no usa IA (responde al instante, sin costo y
+  siempre igual).
+- **Cierre del día** (una fila en «Para hoy», suma **1 punto**): cómo terminó el día (bien, normal, difícil), cómo le
+  fue y su **compromiso para mañana**; al día siguiente le pregunta si **cumplió** el compromiso anterior (sí, en parte,
+  no). Lo puede corregir ese mismo día. Tabla `sup_cierres_dia`, auditoría `cierre_dia` y `cierre_dia_corregido`.
+- **Ánimo (sentimiento) por supervisor:** al guardar el cierre se combina lo que eligió con lo que dice el texto (un
+  léxico de emociones del trabajo: motivación, satisfacción, cansancio, frustración, preocupación y estrés, con las
+  negaciones y los intensificadores). Queda positivo, neutral, negativo o **mixto** (eligió «bien» pero el texto dice
+  otra cosa). Alertas para los jefes: dos cierres negativos seguidos, cansancio o estrés en 3 de los últimos 5, o un
+  cierre negativo.
+- **Los jefes** (gerente, sub gerente, coordinador y controller, con el permiso del control) ven **«Cierre del día y
+  ánimo»**: cuántos cerraron el día, cuántos llegaron al objetivo, cuántos tienen alerta, el ánimo del día, y por cada
+  supervisor sus feedback contra el objetivo, la calidad del día, el ánimo de los últimos 7 días, lo que contó, su
+  compromiso para mañana y si cumplió el anterior.
+- **API:** `GET /portal/mi-dia`, `POST /portal/calidad`, `PUT /portal/cierre` (supervisor) y `GET /control/cierres?fecha`
+  (jefes). Código en `supervision/mi_dia_api.py` y `supervision/calidad.py`.
+
 ### Analizador de coaching (estadísticas e informes con Claude Haiku)
 
 Cuenta solo los coachings **terminados**: los que firmaron el asesor y el supervisor en la devolución (por la fecha de

@@ -57,11 +57,14 @@ function Calendario() {
   const [ok, setOk] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
-  const aplicar = (d: ParametrosCompletos) => { setP(d); setPesos(d.pesos_dia); setDias(d.no_laborables ?? []); setHorario(d.horario ?? {}); };
+  const [objetivo, setObjetivo] = useState(8);
+  const aplicar = (d: ParametrosCompletos) => {
+    setP(d); setPesos(d.pesos_dia); setDias(d.no_laborables ?? []); setHorario(d.horario ?? {}); setObjetivo(d.objetivo_feedback_dia ?? 8);
+  };
   useEffect(() => { apiFetch<ParametrosCompletos>(`${SUP_API}/parametros`).then(aplicar).catch((e) => setError(e.message)); }, []);
 
   const cambiado = !!p && (JSON.stringify(pesos) !== JSON.stringify(p.pesos_dia) || JSON.stringify(dias) !== JSON.stringify(p.no_laborables ?? [])
-    || JSON.stringify(horario) !== JSON.stringify(p.horario ?? {}));
+    || JSON.stringify(horario) !== JSON.stringify(p.horario ?? {}) || objetivo !== (p.objetivo_feedback_dia ?? 8));
   const horarioOk = Object.values(horario).every(franjaValida) && Object.values(horario).some(Boolean);
   const franja = (i: number, f: [string, string] | null) => setHorario((h) => ({ ...h, [String(i)]: f }));
   const feriados = useMemo(() => new Set([...(p?.feriados_seguridad ?? []), ...dias.map((d) => d.fecha)]), [p, dias]);
@@ -77,8 +80,8 @@ function Calendario() {
     setError(null);
     setOk(null);
     try {
-      aplicar(await apiFetch<ParametrosCompletos>(`${SUP_API}/parametros`, { method: "PUT", body: JSON.stringify({ pesos_dia: pesos, no_laborables: dias, horario }) }));
-      setOk("Calendario guardado: las proyecciones y los plazos de los tickets ya lo usan.");
+      aplicar(await apiFetch<ParametrosCompletos>(`${SUP_API}/parametros`, { method: "PUT", body: JSON.stringify({ pesos_dia: pesos, no_laborables: dias, horario, objetivo_feedback_dia: objetivo }) }));
+      setOk("Calendario guardado: las proyecciones, los plazos de los tickets y el objetivo de feedback ya lo usan.");
     } catch (e: any) { setError(e.message); } finally { setGuardando(false); }
   };
 
@@ -126,6 +129,14 @@ function Calendario() {
                 </li>
               ))}
             </ul>
+            <div className="mt-4 pt-4 border-t border-brand-border flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-brand-ink">Feedback por día de cada supervisor</div>
+                <div className="text-xs text-brand-slate">El objetivo de la barra de «Hoy» en su portal, con sus hitos. El cierre del día suma un punto más.</div>
+              </div>
+              <input type="number" min={1} max={30} inputMode="numeric" disabled={!gestion} value={objetivo} aria-label="Feedback por día"
+                onChange={(e) => setObjetivo(Math.max(1, Math.min(30, Number(e.target.value) || 1)))} className="input !w-24 text-center font-semibold tabular-nums" />
+            </div>
             <div className="mt-4 pt-4 border-t border-brand-border grid grid-cols-2 gap-3">
               {meses.map((m) => (
                 <div key={m} className="rounded-md bg-brand-bg px-3 py-2.5">

@@ -13,6 +13,7 @@ import {
 } from "@/components/supervision/tipos";
 import { ApiError, apiFetch, getToken } from "@/lib/api";
 import { Dictado, Escuchar, type Hablante } from "./grabadora";
+import { PistaCalidad } from "./pista-calidad";
 import { Boton, Chips, Etiqueta, Fallo, Hoja, cx, hora } from "./ui";
 
 export const DIAS_MAX = 45;
@@ -211,6 +212,7 @@ export function HojaItem({ c, item, dictar, onClose, onGuardado }: {
             onChange={(e) => setTexto(e.target.value)} placeholder="Qué viste, qué hizo bien y qué tiene que corregir." />
           <div className="text-[11px] text-brand-slate mt-1 text-right tabular-nums">{texto.length} / 2000</div>
         </div>
+        {tipo === "feedback" && <PistaCalidad texto={texto} />}
         {error && <Fallo>{error}</Fallo>}
       </div>
     </Hoja>
