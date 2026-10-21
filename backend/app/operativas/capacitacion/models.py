@@ -48,8 +48,7 @@ class CapGrupo(Base):
 
 
 class CapPostulante(Base):
-    """Un postulante de un grupo. `pruebas` guarda lo que cargó el capacitador de las pruebas en papel (Dominó y atención)
-    con su corrección."""
+    """Un postulante de un grupo. (`pruebas` queda reservado: las pruebas en papel no se usan por ahora.)"""
     __tablename__ = "cap_postulantes"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -137,7 +136,7 @@ class CapAudio(Base):
 
 
 class CapEvento(Base):
-    """El historial: alta del grupo y del postulante, cambios de estado, link generado, IPV terminado, pruebas cargadas."""
+    """El historial: alta del grupo y del postulante, cambios de estado, link generado, IPV terminado."""
     __tablename__ = "cap_eventos"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)

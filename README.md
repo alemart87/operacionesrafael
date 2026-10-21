@@ -1893,7 +1893,7 @@ la tarde en piso con el mentor. Código en `backend/app/operativas/capacitacion/
 
 | Perfil | Ve | Puede |
 |---|---|---|
-| **Capacitador** (nuevo) | Solo este módulo: los grupos donde es capacitador | Crear grupos y cambiar su estado (en curso, finalizada, cancelada), cargar postulantes, estados de sala (en capacitación, aprobó prueba escrita, abandonó, dado de baja), link del IPV, pruebas en papel, comentarios |
+| **Capacitador** (nuevo) | Solo este módulo: los grupos donde es capacitador | Crear grupos y cambiar su estado (en curso, finalizada, cancelada), cargar postulantes, estados de sala (en capacitación, aprobó prueba escrita, abandonó, dado de baja), link del IPV, comentarios |
 | **Mentor** (nuevo) | Solo este módulo: los grupos donde es mentor | Estados del piso (aprobó mentoría y OJT, alta operativa; abandono o baja una vez en piso), comentarios |
 | **Gerencia de RRHH** (nuevo) | Solo este módulo, completo | Todo, en todos los grupos, y las estadísticas generales |
 | Gerente, Sub gerente, superadmin | Además de lo suyo, este módulo completo | Todo |
@@ -1929,16 +1929,16 @@ cancelado queda de solo lectura y cierra los links.
   `Correccion_IPV`. Escalas: DGV, receptividad (I comprensión, II adaptabilidad, III control de sí mismo, IV tolerancia
   a la frustración), agresividad comercial (V combatividad, VI dominancia, VII seguridad, VIII actividad) y IX
   sociabilidad; puntaje directo → decatipo (1–10) → inferior (1–3), término medio (4–7) o superior (8–10). Corrige
-  errores de la planilla: tolerancia = 8 − coincidencias, los ítems 56 y 86 que leían la celda de al lado, los baremos
-  incompletos del archivo digital y la atención concentrada = (aciertos − (omisiones + errores)) ÷ 230.
+  errores de la planilla: tolerancia = 8 − coincidencias, los ítems 56 y 86 que leían la celda de al lado y los baremos
+  incompletos del archivo digital. Las pruebas en papel de las planillas (Dominó y atención) no se usan por ahora.
 - Señales de calidad en la ficha: completado en menos de 6 minutos o más del 70 % con la misma letra.
-- **Otras pruebas** (en papel, las carga el capacitador): Dominó (0–48 aciertos → percentil), atención concentrada y
-  distribuida (0–51), con su nivel.
 
 ### Ficha y estadísticas
 
 - **Ficha del postulante**: datos, estado, IPV con el gráfico de decatipos (tocar una escala explica qué mide),
-  fortalezas y aspectos a trabajar, otras pruebas, seguimiento e historial.
+  fortalezas y aspectos a trabajar, seguimiento e historial.
+- **En el celular**, Capacitador y Mentor tienen abajo *Grupos*, *Mi grupo* (abre directo el grupo en curso; al mentor,
+  con los que están en piso) y *Estadísticas*.
 - **Grupo**: postulantes en tabla (escritorio) o tarjetas (celular) con filtros, embudo, IPV del grupo, por sexo y por
   edad (18–24, 25–34, 35–44, 45 o más), historial.
 - **Estadísticas** (`/capacitacion/estadisticas`): por período, efectividad, deserción, duración promedio, IPV,
@@ -1948,7 +1948,7 @@ cancelado queda de solo lectura y cierra los links.
 
 `/api/v1/capacitacion`: `GET /resumen`, `GET /personas`, `POST /grupos`, `PATCH|GET /grupos/{id}`,
 `POST /grupos/{id}/estado`, `POST /grupos/{id}/postulantes`, `GET|PATCH|DELETE /postulantes/{id}`,
-`POST /postulantes/{id}/estado`, `PUT /postulantes/{id}/pruebas`, `GET|POST|DELETE /postulantes/{id}/enlace`,
+`POST /postulantes/{id}/estado`, `GET|POST|DELETE /postulantes/{id}/enlace`,
 `POST /postulantes/{id}/comentarios`, `POST /postulantes/{id}/audios`, `GET /audios/{id}[/archivo]`.
 Público (sin sesión): `/api/v1/capacitacion/publico/{token}` (`GET`, `GET|PUT /ipv`, `POST /ipv/terminar`,
 `POST /comentarios`, `POST /audios`, `GET /audios/{id}`). Todo cambio queda en la auditoría.

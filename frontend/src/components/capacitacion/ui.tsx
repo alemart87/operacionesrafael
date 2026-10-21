@@ -292,6 +292,19 @@ export function HojaPostulante({ grupoId, editar, onClose, onListo }: {
   );
 }
 
+/**
+ * Abre WhatsApp con el mensaje listo para elegir el chat. En el celular va directo a la aplicación (`whatsapp://`); si
+ * no está instalada (la página sigue a la vista), cae a la web. En la computadora, WhatsApp Web / Desktop en otra pestaña.
+ */
+export function abrirWhatsapp(mensaje: string) {
+  const t = encodeURIComponent(mensaje);
+  const web = `https://wa.me/?text=${t}`;
+  if (!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) { window.open(web, "_blank", "noopener"); return; }
+  const respaldo = window.setTimeout(() => { if (!document.hidden) window.location.href = web; }, 1500);
+  document.addEventListener("visibilitychange", () => window.clearTimeout(respaldo), { once: true });
+  window.location.href = `whatsapp://send?text=${t}`;
+}
+
 /** El link seguro del test IPV del postulante: QR para escanear en la sala, copiar o mandar por WhatsApp. */
 export function HojaEnlace({ p, onClose, onCambio }: { p: Pick<Postulante, "id" | "nombre" | "apellido">; onClose: () => void; onCambio?: () => void }) {
   const [e, setE] = useState<Enlace | null>(null);
@@ -324,7 +337,7 @@ export function HojaEnlace({ p, onClose, onCambio }: { p: Pick<Postulante, "id" 
               {e.ipv_estado === "en_curso" && <> Lleva {e.respondidas} de {e.total} respondidas.</>}</p>
             <div className="grid grid-cols-2 gap-2">
               <Boton tipo="secundario" icono={Copy} onClick={copiar}>{copiado ? "¡Copiado!" : "Copiar"}</Boton>
-              <Boton tipo="secundario" icono={MessageCircle} href={`https://wa.me/?text=${encodeURIComponent(`${texto} ${e.url}`)}`}>WhatsApp</Boton>
+              <Boton tipo="secundario" icono={MessageCircle} onClick={() => abrirWhatsapp(`${texto} ${e.url}`)}>WhatsApp</Boton>
             </div>
             {typeof navigator !== "undefined" && "share" in navigator && <Boton tipo="fantasma" icono={Share2} onClick={compartir}>Compartir…</Boton>}
             <div className="flex gap-2 pt-1">

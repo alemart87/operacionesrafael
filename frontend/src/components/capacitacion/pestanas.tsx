@@ -14,7 +14,7 @@ const PESTANAS = [
 export function Pestanas() {
   const ruta = usePathname() ?? "";
   return (
-    <nav aria-label="Vistas" className="mb-5 flex gap-1 border-b border-brand-border">
+    <nav aria-label="Vistas" className="mb-5 hidden md:flex gap-1 border-b border-brand-border">
       {PESTANAS.map((p) => {
         const on = p.activa(ruta);
         return (

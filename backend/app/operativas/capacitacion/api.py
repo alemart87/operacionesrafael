@@ -3,14 +3,14 @@
 - Grupos: crear, editar (nombre, operación, fin previsto, mentores; el capacitador lo cambia la gestión) y su estado
   (en curso, finalizada, cancelada). Duración y efectividad (altas operativas sobre ingresados) de cada uno.
 - Postulantes: alta (nombre, apellido, CI, edad, sexo), corrección de datos, estados según el papel (ver
-  `servicio.destinos`), las pruebas en papel (Dominó, atención concentrada y distribuida) que se corrigen solas.
+  `servicio.destinos`).
 - Link seguro del postulante: el token (256 bits) se guarda por su huella y cifrado para volver a mostrarlo con su QR;
   regenerarlo invalida el anterior y conserva lo respondido. Vence a los `DIAS_LINK` días.
 - Seguimiento: comentarios de feedback u oportunidad de mejora, escritos o dictados, y el conteo por postulante.
-- Ficha del postulante (IPV corregido, pruebas, historial y comentarios) y estadísticas por sexo y edad, generales y por
+- Ficha del postulante (IPV corregido, historial y comentarios) y estadísticas por sexo y edad, generales y por
   grupo.
 
-Cada alta, cambio de estado, link y carga de pruebas queda en el historial del grupo y en la auditoría.
+Cada alta, cambio de estado y link queda en el historial del grupo y en la auditoría.
 """
 from __future__ import annotations
 
@@ -340,8 +340,8 @@ async def borrar_postulante(pid: str, request: Request, user: CurrentUser = Depe
     _exigir(roles, "capacitador", "gestion")
     e = (await db.execute(select(CapEnlace).where(CapEnlace.postulante_id == p.id))).scalar_one_or_none()
     hay = (await db.execute(select(CapComentario.id).where(CapComentario.postulante_id == p.id).limit(1))).first()
-    if (e and e.ipv_estado != "pendiente") or hay or p.pruebas:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Ya tiene IPV, pruebas o comentarios: marcá su baja en lugar de borrarlo")
+    if (e and e.ipv_estado != "pendiente") or hay:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya tiene IPV o comentarios: marcá su baja en lugar de borrarlo")
     if e:
         await db.delete(e)
     await db.execute(delete(CapEvento).where(CapEvento.postulante_id == p.id))
@@ -379,35 +379,6 @@ async def estado_postulante(pid: str, payload: EstadoPostulante, request: Reques
     return srv.postulante_fila(p, d, g, roles)
 
 
-class Pruebas(BaseModel):
-    domino_aciertos: Optional[int] = Field(None, ge=0, le=48)
-    concentrada_aciertos: Optional[int] = Field(None, ge=0, le=230)
-    concentrada_omisiones: Optional[int] = Field(None, ge=0, le=230)
-    concentrada_errores: Optional[int] = Field(None, ge=0, le=230)
-    distribuida_aciertos: Optional[int] = Field(None, ge=0, le=51)
-
-
-@router.put("/postulantes/{pid}/pruebas")
-async def cargar_pruebas(pid: str, payload: Pruebas, request: Request, user: CurrentUser = Depends(require_ver),
-                         db: AsyncSession = Depends(get_db)) -> dict:
-    """Los resultados de las pruebas en papel; el sistema calcula el percentil o el puntaje y el nivel."""
-    p, g, roles = await _postulante(db, pid, user)
-    _exigir(roles, "capacitador", "gestion", mensaje="Las pruebas las carga el capacitador")
-    crudo = payload.model_dump()
-    try:
-        corregido = ipv.corregir_pruebas(crudo)
-    except ipv.RespuestasInvalidas as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    p.pruebas = {"datos": {k: v for k, v in crudo.items() if v is not None}, "resultado": corregido,
-                 "cargado_at": srv.iso(srv.ahora()), "cargado_por": user.id} if corregido else {}
-    p.updated_at = srv.ahora()
-    srv.evento(db, grupo_id=g.id, postulante_id=p.id, tipo="pruebas", por=user.id, pruebas=sorted(corregido))
-    await db.commit()
-    await record_action(db, user_id=user.id, action="capacitacion_pruebas", resource_type="cap_postulante", resource_id=p.id,
-                        ip=client_ip(request), extra={"pruebas": sorted(corregido)})
-    return await ficha(pid, user, db)
-
-
 # ------------------------------------------------------------------ ficha del postulante
 def _comentario_dict(c: CapComentario, quien: dict[str, str], audios: dict[str, CapAudio]) -> dict[str, Any]:
     a = audios.get(c.audio_id or "")
@@ -418,7 +389,7 @@ def _comentario_dict(c: CapComentario, quien: dict[str, str], audios: dict[str, 
 @router.get("/postulantes/{pid}")
 async def ficha(pid: str, user: CurrentUser = Depends(require_ver), db: AsyncSession = Depends(get_db)) -> dict:
     """La ficha del postulante: datos, estado y lo que se puede cargar, IPV corregido con la descripción de cada escala,
-    pruebas en papel, comentarios de seguimiento (con sus audios) y el historial."""
+    comentarios de seguimiento (con sus audios) y el historial."""
     p, g, roles = await _postulante(db, pid, user)
     d = await srv.cargar(db, [g.id])
     e = d.enlaces.get(p.id)
@@ -435,11 +406,10 @@ async def ficha(pid: str, user: CurrentUser = Depends(require_ver), db: AsyncSes
                   "capacitador": quien.get(g.capacitador_id, "—"), "dia": srv.duracion_dias(g)},
         "roles": sorted(roles), "rol": srv.rol_principal(roles),
         "puede": {"datos": bool({"capacitador", "gestion"} & roles), "link": bool({"capacitador", "gestion"} & roles) and g.estado != "cancelada",
-                  "pruebas": bool({"capacitador", "gestion"} & roles), "comentar": g.estado != "cancelada"},
+                  "comentar": g.estado != "cancelada"},
         "ipv": {**srv.ipv_de(e), "resultado": resultado, "iniciado_at": srv.iso(e.iniciado_at) if e else None,
                 "vence_at": srv.iso(e.vence_at) if e else None, "dispositivo": e.dispositivo if e else None},
-        "escalas": ipv.ESCALAS, "niveles_ipv": ipv.NIVELES_IPV, "niveles_prueba": ipv.NIVELES_PRUEBA,
-        "pruebas": p.pruebas or None,
+        "escalas": ipv.ESCALAS, "niveles_ipv": ipv.NIVELES_IPV,
         "comentarios": [_comentario_dict(c, quien, audios) for c in comentarios],
         "conteo": srv.conteo(d.comentarios[p.id]),
         "historial": [{"tipo": x.tipo, "de": x.de, "a": x.a, "at": srv.iso(x.at), "por": quien.get(x.por or "", None),

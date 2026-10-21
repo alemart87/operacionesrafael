@@ -70,17 +70,6 @@ def test_correccion_ipv():
     assert len(ipv.cuestionario()) == 87 and "clave" not in str(ipv.cuestionario()[0])
 
 
-def test_pruebas_en_papel():
-    r = ipv.corregir_pruebas({"domino_aciertos": 39, "distribuida_aciertos": 33,
-                              "concentrada_aciertos": 200, "concentrada_omisiones": 30, "concentrada_errores": 10})
-    assert r["domino"]["percentil"] == 75 and r["domino"]["nivel"] == "superior_tm"
-    assert r["distribuida"]["puntaje"] == 64.7 and r["distribuida"]["nivel"] == "termino_medio"
-    assert r["concentrada"]["puntaje"] == round((200 - 40) / 230 * 100, 1)
-    with pytest.raises(ipv.RespuestasInvalidas):
-        ipv.corregir_pruebas({"concentrada_aciertos": 220, "concentrada_omisiones": 20})
-    assert ipv.corregir_pruebas({}) == {}
-
-
 # ------------------------------------------------------------------ perfiles
 @pytest.mark.asyncio
 async def test_perfiles_de_un_solo_modulo():
@@ -231,20 +220,15 @@ async def test_grupo_postulantes_ipv_y_seguimiento(monkeypatch, tmp_path):
         assert (await ac.get(f"{B}/audios/{a2['id']}", headers=men)).json()["estado"] == "listo"
         assert (await ac.get(f"{B}/audios/{a2['id']}/archivo", headers=cap)).content == WEBM
 
-        # Pruebas en papel.
-        r = await ac.put(f"{B}/postulantes/{diego}/pruebas", headers=cap, json={"domino_aciertos": 39, "distribuida_aciertos": 33})
-        assert r.status_code == 200 and r.json()["pruebas"]["resultado"]["domino"]["percentil"] == 75
-        assert (await ac.put(f"{B}/postulantes/{diego}/pruebas", headers=men, json={"domino_aciertos": 1})).status_code == 403
-
         # Ficha del postulante: IPV corregido, comentarios con el texto transcripto y conteos.
         f = (await ac.get(f"{B}/postulantes/{diego}", headers=men)).json()
         assert f["ipv"]["estado"] == "terminado" and len(f["ipv"]["resultado"]["escalas"]) == 12 and f["ipv"]["dgv"]
         assert f["conteo"] == {"feedback": 1, "oportunidad": 1, "postulante": 2, "total": 4}
         assert all(c["texto"] for c in f["comentarios"])                           # el dictado se completó solo
-        assert {h["tipo"] for h in f["historial"]} >= {"alta", "link", "ipv_inicio", "ipv_terminado", "pruebas"}
+        assert {h["tipo"] for h in f["historial"]} >= {"alta", "link", "ipv_inicio", "ipv_terminado"}
         assert not f["puede"]["link"] and f["rol"] == "mentor"
 
-        # Borrar: solo una carga por error (sin IPV, pruebas ni comentarios).
+        # Borrar: solo una carga por error (sin IPV ni comentarios).
         assert (await ac.delete(f"{B}/postulantes/{diego}", headers=cap)).status_code == 409
         extra = (await ac.post(f"{B}/grupos/{gid}/postulantes", headers=cap,
                                json={"nombre": "Error", "apellido": "Carga", "ci": "1111111", "edad": 18, "sexo": "X"})).json()

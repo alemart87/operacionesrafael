@@ -71,7 +71,7 @@ export interface IpvFila {
 export interface Postulante {
   id: string; grupo_id: string; nombre: string; apellido: string; ci: string; edad: number; sexo: Sexo; estado: EstadoPostulante;
   estado_nombre: string; estado_at: string | null; motivo: string | null; etapa_max: number; en_piso: boolean; ipv: IpvFila;
-  pruebas: boolean; comentarios: Feedback; puede: EstadoPostulante[];
+  comentarios: Feedback; puede: EstadoPostulante[];
 }
 export interface Evento { tipo: string; de: string | null; a: string | null; at: string; por: string | null; motivo?: string | null }
 export interface GrupoDetalle extends Grupo {
@@ -89,7 +89,6 @@ export interface Escala {
 export interface ResultadoIpv {
   escalas: Escala[]; fortalezas: string[]; a_trabajar: string[]; senales: string[]; resumen: string; segundos: number | null;
 }
-export interface Prueba { nombre: string; aciertos: number; de: number; puntaje: number; percentil?: number; omisiones?: number; errores?: number; nivel: string }
 export interface Comentario {
   id: string; tipo: "feedback" | "oportunidad" | "postulante"; autor_rol: string; autor: string | null; texto: string; at: string;
   audio: { id: string; estado: string; texto: string | null; duracion_s: number; archivo: boolean } | null;
@@ -98,11 +97,9 @@ export interface Ficha {
   postulante: Postulante;
   grupo: { id: string; nombre: string; estado: EstadoGrupo; fecha_inicio: string; capacitador: string; dia: number };
   roles: string[]; rol: string;
-  puede: { datos: boolean; link: boolean; pruebas: boolean; comentar: boolean };
+  puede: { datos: boolean; link: boolean; comentar: boolean };
   ipv: IpvFila & { resultado: ResultadoIpv | null; iniciado_at: string | null; vence_at: string | null; dispositivo: string | null };
   escalas: { clave: string; nombre: string; romano: string | null; grupo: string; descripcion: string }[];
-  niveles_prueba: Record<string, string>;
-  pruebas: { datos: Record<string, number>; resultado: Record<string, Prueba>; cargado_at: string } | null;
   comentarios: Comentario[]; conteo: Feedback; historial: Evento[];
 }
 export interface Enlace {
