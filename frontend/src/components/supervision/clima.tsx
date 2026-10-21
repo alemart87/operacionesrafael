@@ -5,7 +5,7 @@
  * Dos tarjetas en palabras (equipos y líderes: cómo están, ánimo y compromiso en una escala de 5), cómo fluctuó el día (o el rango), cómo se sintió cada líder, el mapa de moral
  * (ánimo × compromiso) y las alertas con su evidencia. Los asesores se ven siempre agregados por equipo.
  */
-import { AlertTriangle, Annoyed, Bot, ChevronDown, Frown, HeartPulse, Laugh, Meh, Smile, ThumbsDown, ThumbsUp, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Annoyed, Bot, ChevronDown, ChevronRight, Frown, HeartPulse, Laugh, Meh, Smile, ThumbsDown, ThumbsUp, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { Boton, Hoja, cx, plural, useAviso } from "@/components/portal/ui";
@@ -76,8 +76,14 @@ function predominante(a: ClimaAgregado, estados: Partial<Record<EstadoClima, num
   return max ? PEOR.find((e) => (estados[e] ?? 0) === max)! : a.estado;
 }
 
-function Vistazo({ titulo, a, estados, sub }: { titulo: string; a: ClimaAgregado; estados: Partial<Record<EstadoClima, number>>; sub: string }) {
+const corto = (n: string) => n.split(" ")[0];
+
+function Vistazo({ titulo, a, estados, filas, sub, onVer }: {
+  titulo: string; a: ClimaAgregado; estados: Partial<Record<EstadoClima, number>>; filas: ClimaFila[]; sub: string;
+  onVer: (e: EstadoClima | null) => void;
+}) {
   const reparto = PEOR.filter((e) => estados[e]);
+  const equipos = titulo === "Equipos";
   return (
     <div className="card p-4 min-w-0">
       <div className="flex items-start justify-between gap-2">
@@ -101,17 +107,68 @@ function Vistazo({ titulo, a, estados, sub }: { titulo: string; a: ClimaAgregado
         <Escala titulo="Compromiso" n={nivelCompromiso(a.compromiso)} />
       </div>
       {reparto.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-brand-graphite" aria-label="Cuántos en cada estado">
-          {reparto.map((e) => (
-            <span key={e} className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ background: ESTADO_CLIMA[e].color }} aria-hidden />
-              <b className="tabular-nums">{estados[e]}</b> {e === "cansado" ? "cansado" : ESTADO_CLIMA[e].label.toLowerCase()}{(estados[e] ?? 0) > 1 ? "s" : ""}
-            </span>
-          ))}
-        </div>
+        <ul className="mt-3 space-y-1" aria-label="Quiénes están en cada estado">
+          {reparto.map((e) => {
+            const quienes = filas.filter((f) => f.estado === e);
+            const nombres = quienes.slice(0, 3).map((f) => (equipos ? `equipo de ${corto(f.nombre)}` : f.nombre)).join(", ")
+              + (quienes.length > 3 ? ` y ${quienes.length - 3} más` : "");
+            return (
+              <li key={e}>
+                <button type="button" onClick={() => onVer(e)}
+                  className="w-full text-left flex items-center gap-2 rounded-lg px-2 py-1.5 -mx-2 hover:bg-brand-bg active:bg-brand-bg text-sm min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: ESTADO_CLIMA[e].color }} aria-hidden />
+                  <span className="font-semibold text-brand-ink shrink-0">{estados[e]} {e === "cansado" ? "cansado" : ESTADO_CLIMA[e].label.toLowerCase()}{(estados[e] ?? 0) > 1 ? "s" : ""}</span>
+                  <span className="text-brand-slate truncate min-w-0">· {nombres}</span>
+                  <ChevronRight size={16} className="text-brand-mist shrink-0 ml-auto" aria-hidden />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {reparto.length > 0 && (
+        <button type="button" onClick={() => onVer(null)} className="mt-2 text-sm font-semibold text-brand-primary">Ver quiénes y por qué</button>
       )}
       <p className="text-[11px] text-brand-slate mt-2">{sub}</p>
     </div>
+  );
+}
+
+/** Quiénes están en cada estado y por qué (del peor al mejor). Los equipos, por su supervisor. */
+function Quienes({ tipo, filas, estado, onClose }: { tipo: "lideres" | "equipos"; filas: ClimaFila[]; estado: EstadoClima | null; onClose: () => void }) {
+  const lista = filas.filter((f) => f.estado !== "sin_datos" && (!estado || f.estado === estado))
+    .sort((a, b) => PEOR.indexOf(a.estado) - PEOR.indexOf(b.estado) || a.nombre.localeCompare(b.nombre));
+  const equipos = tipo === "equipos";
+  return (
+    <Hoja titulo={estado ? (estado === "cansado" ? "Cansados" : `${ESTADO_CLIMA[estado].label}s`) : equipos ? "Cómo está cada equipo" : "Cómo está cada líder"}
+      sobre={equipos ? "Equipos · los asesores siempre agregados" : "Líderes"} onClose={onClose}>
+      <ul className="space-y-3">
+        {lista.map((f) => {
+          const I = CARA[f.estado];
+          return (
+            <li key={f.id} className="rounded-xl border border-brand-border p-3.5">
+              <div className="flex items-center gap-3">
+                <I size={30} strokeWidth={1.75} style={{ color: ESTADO_CLIMA[f.estado].color }} aria-hidden />
+                <div className="min-w-0">
+                  <div className="font-semibold text-brand-ink truncate">{equipos ? `Equipo de ${f.nombre}` : f.nombre}</div>
+                  <div className="text-xs font-semibold" style={{ color: ESTADO_CLIMA[f.estado].color }}>{ESTADO_CLIMA[f.estado].label}</div>
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-brand-slate">
+                Ánimo <b className="text-brand-ink">{nivelAnimo(f.animo)?.label.toLowerCase() ?? "sin datos"}</b>
+                {" · "}Compromiso <b className="text-brand-ink">{nivelCompromiso(f.compromiso)?.label.toLowerCase() ?? "sin datos"}</b>
+              </div>
+              {f.motivos.length > 0 && (
+                <ul className="mt-2 space-y-1 text-sm text-brand-graphite">
+                  {f.motivos.map((m) => <li key={m} className="flex gap-2"><span className="text-brand-mist" aria-hidden>•</span><span className="break-words min-w-0">{m}</span></li>)}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {!lista.length && <p className="text-sm text-brand-slate">Nadie en este estado.</p>}
+    </Hoja>
   );
 }
 
@@ -209,7 +266,7 @@ function Lineas({ d }: { d: ClimaEquipo }) {
 }
 
 // ------------------------------------------------------------------ cómo se sintió cada líder
-function Lideres({ filas }: { filas: ClimaFila[] }) {
+function Lideres({ filas, onVer }: { filas: ClimaFila[]; onVer: () => void }) {
   const con = filas.filter((f) => f.estado !== "sin_datos");
   const sin = filas.length - con.length;
   const pos = (v: number) => `${50 + Math.max(-100, Math.min(100, v)) / 2}%`;
@@ -223,6 +280,7 @@ function Lideres({ filas }: { filas: ClimaFila[] }) {
         <ul className="mt-3 space-y-3">
           {con.map((f) => (
             <li key={f.id} className="min-w-0">
+              <button type="button" onClick={onVer} className="w-full text-left block rounded-lg -mx-2 px-2 py-1 hover:bg-brand-bg active:bg-brand-bg">
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span className="truncate text-brand-ink">{f.nombre}</span>
                 {(() => {
@@ -244,6 +302,8 @@ function Lideres({ filas }: { filas: ClimaFila[] }) {
                   }} />
                 )}
               </div>
+              {f.motivos[0] && <div className="text-xs text-brand-slate mt-1 truncate">{f.motivos[0]}</div>}
+              </button>
             </li>
           ))}
         </ul>
@@ -424,6 +484,7 @@ function Alertas({ d, onCambio }: { d: ClimaEquipo; onCambio: () => void }) {
 // ------------------------------------------------------------------ la sección
 export function ClimaDelEquipo({ desde, hasta, refresco }: { desde: string; hasta: string; refresco?: number }) {
   const [d, setD] = useState<ClimaEquipo | null>(null);
+  const [ver, setVer] = useState<{ tipo: "lideres" | "equipos"; estado: EstadoClima | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const primera = useRef(true);
   const cargar = useCallback(async (auto: boolean) => {
@@ -454,8 +515,8 @@ export function ClimaDelEquipo({ desde, hasta, refresco }: { desde: string; hast
         <span className="text-[11px] text-brand-slate inline-flex items-center gap-1"><Bot size={12} aria-hidden /> {ia}</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto] gap-3">
-        <Vistazo titulo="Equipos" a={r.equipo} estados={r.estados_equipos} sub="La voz de los asesores (al firmar y en sus compromisos) y el tono del feedback que recibieron." />
-        <Vistazo titulo="Líderes" a={r.lideres} estados={r.estados_lideres} sub={`${r.con_datos} de ${r.supervisores} supervisores con señales: termómetro, cierre del día, devoluciones y compromisos.`} />
+        <Vistazo titulo="Equipos" a={r.equipo} estados={r.estados_equipos} filas={d.equipos} onVer={(e) => setVer({ tipo: "equipos", estado: e })} sub="La voz de los asesores (al firmar y en sus compromisos) y el tono del feedback que recibieron." />
+        <Vistazo titulo="Líderes" a={r.lideres} estados={r.estados_lideres} filas={d.lideres} onVer={(e) => setVer({ tipo: "lideres", estado: e })} sub={`${r.con_datos} de ${r.supervisores} supervisores con señales: termómetro, cierre del día, devoluciones y compromisos.`} />
         <a href="#alertas-clima" className={cx("card p-4 flex flex-col justify-between min-w-[150px] sm:col-span-2 xl:col-span-1", abiertas > 0 && "border-brand-orange/50")}>
           <span className="text-[11px] uppercase tracking-wider2 text-brand-slate font-semibold">Para charlar</span>
           <span className="font-display text-4xl leading-none tabular-nums text-brand-ink mt-2">{abiertas}</span>
@@ -464,7 +525,7 @@ export function ClimaDelEquipo({ desde, hasta, refresco }: { desde: string; hast
       </div>
       <div className="grid lg:grid-cols-2 gap-3">
         <Lineas d={d} />
-        <Lideres filas={d.lideres} />
+        <Lideres filas={d.lideres} onVer={() => setVer({ tipo: "lideres", estado: null })} />
       </div>
       <div className="grid lg:grid-cols-2 gap-3 items-start">
         <Mapa lideres={d.lideres} equipos={d.equipos} />
@@ -488,6 +549,7 @@ export function ClimaDelEquipo({ desde, hasta, refresco }: { desde: string; hast
       <p className="text-[11px] text-brand-slate">
         Los asesores se ven siempre agregados por equipo. Cada consulta queda registrada. Los supervisores saben que su termómetro y su cierre los ven sus jefes.
       </p>
+      {ver && <Quienes tipo={ver.tipo} filas={ver.tipo === "lideres" ? d.lideres : d.equipos} estado={ver.estado} onClose={() => setVer(null)} />}
     </section>
   );
 }

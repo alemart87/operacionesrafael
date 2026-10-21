@@ -1437,6 +1437,8 @@ export interface ClimaFila extends ClimaAgregado {
   elegido?: number | null; detectado?: number | null; pulsos?: { h: number; valor: ComoTermino }[]; cierre?: boolean;
   feedbacks?: number; objetivo?: number | null; voces?: number; tonos?: Partial<Record<TonoFeedback, number>>;
   componentes: Record<string, number | null>;
+  /** Por qué está así, en palabras (hasta 3). Del equipo nunca se nombra a un asesor. */
+  motivos: string[];
 }
 export interface AlertaClima {
   id: string; tipo: string; tipo_nombre: string; severidad: number; estado: "abierta" | "tomada" | "derivada" | "descartada" | "cerrada";

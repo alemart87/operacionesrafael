@@ -507,6 +507,125 @@ async def al_dia(db: AsyncSession, *, hoy: date | None = None, momento: datetime
     return fotos
 
 
+# ------------------------------------------------------------------ el porqué, en palabras
+_COMO = {"bien": "bien", "normal": "normal", "dificil": "difícil"}
+
+
+def _cita(t: str, tope: int = 110) -> str:
+    """El texto citado, cortado en una palabra entera."""
+    t = " ".join(t.split())
+    return t if len(t) <= tope else t[:tope].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
+BUENOS = ("animado", "comprometido")
+
+
+def _media_comp(xs: list[ClimaDia], lado: str, clave: str) -> float | None:
+    return _prom([((x.datos or {}).get(lado) or {}).get("componentes", {}).get(clave) for x in xs])
+
+
+def _ordenar(motivos: list[tuple[int, str]], estado_: str) -> list[str]:
+    """(signo, texto): en un estado bueno van primero los motivos positivos; si no, los negativos. Hasta 3."""
+    bueno = estado_ in BUENOS
+    ms = sorted(motivos, key=lambda m: (m[0] < 0) if bueno else (m[0] > 0))
+    return [t for _, t in ms][:3]
+
+
+def motivos_lider(xs: list[ClimaDia], estado_: str) -> list[str]:
+    """Por qué el líder está como está: lo que eligió, lo que escribió y lo que hizo (devoluciones, cierre, compromiso)."""
+    if not xs:
+        return []
+    m: list[tuple[int, str]] = []
+    un_dia = len(xs) == 1
+    elegidos = [p["valor"] for x in xs for p in ((x.datos or {}).get("puntos") or {}).get("pulsos", [])]
+    cierres = [((x.datos or {}).get("puntos") or {}).get("cierre") for x in xs]
+    cierres = [c for c in cierres if c]
+    if elegidos or any(c.get("valor") for c in cierres):
+        partes = []
+        if elegidos:
+            partes.append(f"en el termómetro: {', '.join(_COMO.get(v, v) for v in elegidos[-3:])}")
+        if any(c.get("valor") for c in cierres):
+            partes.append(f"al cerrar: {', '.join(_COMO.get(c['valor'], c['valor']) for c in cierres if c.get('valor'))}")
+        ultimo = (cierres[-1].get("valor") if cierres and cierres[-1].get("valor") else elegidos[-1] if elegidos else "normal")
+        m.append((1 if ultimo == "bien" else -1 if ultimo == "dificil" else 0, "Dijo cómo le iba " + " · ".join(partes)))
+    else:
+        m.append((-1 if not un_dia or xs[0].fecha < sup.hoy() else 0, "No usó el termómetro ni cerró el día: no dijo cómo está"))
+    det = _prom([((x.datos or {}).get("lider") or {}).get("detectado") for x in xs])
+    extracto = next((((x.datos or {}).get("senales") or {}).get("cierre_extracto") for x in reversed(xs)
+                     if ((x.datos or {}).get("senales") or {}).get("cierre_extracto")), None)
+    if det is not None and det <= -25:
+        m.append((-1, "Lo que escribió suena negativo" + (f": «{_cita(extracto)}»" if extracto else "")))
+    elif det is not None and det >= 25:
+        m.append((1, "Lo que escribió suena positivo" + (f": «{_cita(extracto)}»" if extracto else "")))
+    fb = sum((x.datos or {}).get("feedbacks", 0) for x in xs)
+    obj = (xs[-1].datos or {}).get("objetivo") or 8
+    meta = obj * len(xs)
+    if fb >= meta:
+        m.append((1, f"Cumplió el objetivo de devoluciones ({fb} de {meta})"))
+    elif fb < meta * 0.75:
+        m.append((-1, f"Pocas devoluciones: {fb} de {meta}" if un_dia else f"Pocas devoluciones: {fb} en {len(xs)} días (objetivo {obj} por día)"))
+    sin_cierre = sum(1 for x in xs if ((x.datos or {}).get("lider") or {}).get("componentes", {}).get("cierre") == 0)
+    if sin_cierre:
+        m.append((-1, "No cargó el cierre del día" if un_dia else f"No cargó el cierre {sin_cierre} {'vez' if sin_cierre == 1 else 'veces'}"))
+    cumplio = [((x.datos or {}).get("senales") or {}).get("cumplio_anterior") for x in xs]
+    if "no_cumplido" in cumplio:
+        m.append((-1, "No cumplió su compromiso del día anterior"))
+    elif "cumplido" in cumplio:
+        m.append((1, "Cumplió su compromiso del día anterior"))
+    calidad = _media_comp(xs, "lider", "calidad")
+    if calidad is not None and calidad < 55:
+        m.append((-1, "Feedback poco profundo (le falta evidencia o una acción concreta)"))
+    elif calidad is not None and calidad >= 80:
+        m.append((1, "Feedback de buena calidad"))
+    a_tiempo = _media_comp(xs, "lider", "a_tiempo")
+    if a_tiempo is not None and a_tiempo < 60:
+        m.append((-1, "Devoluciones firmadas fuera de plazo"))
+    return _ordenar(m, estado_)
+
+
+def motivos_equipo(xs: list[ClimaDia], estado_: str) -> list[str]:
+    """Por qué el equipo está como está, sin decir qué asesor: lo que dijeron al firmar, el tono que recibieron y sus compromisos."""
+    if not xs:
+        return []
+    m: list[tuple[int, str]] = []
+    voz = [v["pol"] for x in xs for v in ((x.datos or {}).get("puntos") or {}).get("voz", [])]
+    negativos = sum(((x.datos or {}).get("senales") or {}).get("asesores_negativos", 0) for x in xs)
+    riesgos = [r["palabra"] for x in xs for r in ((x.datos or {}).get("senales") or {}).get("riesgos", []) if r.get("fuente") != "lider"]
+    if riesgos:
+        m.append((-1, f"Un asesor habló de «{riesgos[0]}»" + (f" (y {len(riesgos) - 1} señal{'es' if len(riesgos) > 2 else ''} más)" if len(riesgos) > 1 else "")))
+    if negativos:
+        m.append((-1, f"{negativos} {'asesor respondió' if negativos == 1 else 'asesores respondieron'} con desánimo o desacuerdo al firmar"))
+    elif voz and _media(voz) >= 0.3:
+        m.append((1, "Los asesores respondieron con ganas al firmar"))
+    if not voz:
+        m.append((0, "Los asesores no dejaron comentarios"))
+    tonos: Counter = Counter()
+    for x in xs:
+        tonos.update(((x.datos or {}).get("equipo") or {}).get("tonos", {}))
+    total = sum(tonos.values())
+    if total:
+        if tonos["critico"] / total > 0.5:
+            m.append((-1, f"La mayoría del feedback que recibieron fue crítico ({tonos['critico']} de {total})"))
+        elif tonos["reconocimiento"] / total >= 0.5:
+            m.append((1, f"Recibieron reconocimiento en el feedback ({tonos['reconocimiento']} de {total})"))
+        elif tonos["constructivo"] / total >= 0.5:
+            m.append((1, f"Recibieron feedback constructivo ({tonos['constructivo']} de {total})"))
+    dicho = _media_comp(xs, "equipo", "dicho_por_asesor")
+    if dicho is not None and dicho <= 20:
+        m.append((-1, "Los compromisos los escribió el supervisor, no los asesores"))
+    elif dicho is not None and dicho >= 70:
+        m.append((1, "Los asesores dijeron sus propios compromisos"))
+    aceptado = _media_comp(xs, "equipo", "aceptado")
+    if aceptado is not None and aceptado < 100:
+        m.append((-1, "Algún asesor no aceptó los compromisos"))
+    elif aceptado is not None:
+        m.append((1, "Aceptaron y firmaron sus compromisos"))
+    cumplidos = _media_comp(xs, "equipo", "cumplidos")
+    if cumplidos is not None and cumplidos >= 75:
+        m.append((1, "Cumplieron los compromisos en el seguimiento"))
+    elif cumplidos is not None and cumplidos <= 40:
+        m.append((-1, "No cumplieron los compromisos en el seguimiento"))
+    return _ordenar(m, estado_)
+
+
 # ------------------------------------------------------------------ la vista
 def _prom(xs: list[float | None]) -> float | None:
     v = [x for x in xs if x is not None]
@@ -577,6 +696,9 @@ def vista(fotos: dict[tuple[str, date], ClimaDia], *, desde: date, hasta: date, 
                             "objetivo": None, "componentes": {}})
             equipos.append({**fila, **eq, "voces": sum((x.datos or {}).get("equipo", {}).get("voces", 0) for x in xs),
                             "tonos": dict(tonos), "componentes": {}})
+    for lista, fn in ((lideres, motivos_lider), (equipos, motivos_equipo)):
+        for f in lista:
+            f["motivos"] = fn(por_sid.get(f["id"], []), f["estado"])
     orden = lambda f: (f["estado"] == "sin_datos", ESTADOS.index(f["estado"]) if f["estado"] in ESTADOS else 9, f["nombre"].lower())  # noqa: E731
     lideres.sort(key=orden)
     equipos.sort(key=orden)
