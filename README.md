@@ -632,9 +632,10 @@ Arriba del **Control de supervisores**, solo para **superadmin, Gerente, Sub ger
 `televentas_claro.clima_equipo`; el Controller no la tiene). Usa el mismo rango del Control: un día muestra cómo fluctuó
 ese día; varios días, cómo fue cambiando.
 
-- **De un vistazo:** dos tarjetas, **Equipos** y **Líderes**, con el ánimo (−100 a 100), el compromiso (0 a 100), el estado
-  que más se repite y cuántos hay en cada uno (animado, comprometido, neutro, «comprometido pero cansado», desanimado), y
-  las alertas abiertas.
+- **De un vistazo, en palabras:** dos tarjetas, **Equipos** y **Líderes**, con una frase («Los líderes están cansados»),
+  el ánimo y el compromiso en una escala de 5 puntos con su palabra (ánimo: muy bajo, bajo, normal, bien, muy bien;
+  compromiso: muy bajo a muy alto), cuántos hay en cada estado y las alertas abiertas. Los números (−100 a 100 y 0 a 100)
+  quedan para el cálculo: en pantalla no se muestran.
 - **Cómo estuvo el día:** la línea del equipo y la de los líderes hora por hora (8 a 20 h) y, abajo, cada devolución con el
   tono con que la recibió el asesor (reconocimiento, constructivo, crítico). En un rango, una línea por día.
 - **Cómo se sintió cada líder:** su ánimo, lo que eligió (termómetro y cierre) y lo que escribió.
