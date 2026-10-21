@@ -33,6 +33,7 @@ from .logistica import api as logistica_api
 from .logistica.migraciones import MIGRACIONES as logistica_migraciones
 from .auditoria.migraciones import MIGRACIONES as auditoria_migraciones
 from .productividad import api as productividad_api
+from .productividad import pbi_api as productividad_pbi_api
 from .router import router
 from .sph import api as sph_api
 from .supervision import api as supervision_api
@@ -54,7 +55,7 @@ from .ventas_netas import api as ventas_netas_api
 from .ventas_netas.jobs import actualizar_desactualizados as ventas_netas_actualizar
 from .ventas_netas.jobs import queue as ventas_netas_queue
 
-ROUTERS = [router, ventas_netas_api.router, productividad_api.router, sph_api.router, supervision_api.router,
+ROUTERS = [router, ventas_netas_api.router, productividad_api.router, productividad_pbi_api.router, sph_api.router, supervision_api.router,
            supervision_coaching_api.router, supervision_devolucion_api.router, supervision_control_api.router,
            supervision_dia_api.router, supervision_mi_dia_api.router, supervision_clima_api.router, supervision_analisis_api.router,
            supervision_tickets_api.router, supervision_comando_api.router,

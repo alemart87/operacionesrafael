@@ -54,6 +54,12 @@ OPERATIVAS: list[dict] = [
                 "description": "Subir los cortes del reporte de tiempos de la plataforma, ver borradores, publicar (uno por día), reemplazar, recalcular y eliminar.",
             },
             {
+                "key": "productividad_pbi",
+                "name": "Productividad · Cargar PBI",
+                "description": "Cargar el tablero de Power BI del día (el código «Publicar en la web»), guardarlo o publicarlo y eliminarlo. Publicado, lo ven los supervisores en su portal («Tablero») y quienes ven Productividad. Uno por día; se muestra el del día más nuevo.",
+                "solo_perfiles": ["gerente", "sub_gerente", "coordinador"],
+            },
+            {
                 "key": "sph",
                 "name": "SPH · Ver informes",
                 "description": "Ver los informes publicados de SPH estimado (ventas netas por hora conectada) por día, semana, mes o rango: el de la operación y el de cada asesor, con qué tan seguro es el cruce de nombres.",

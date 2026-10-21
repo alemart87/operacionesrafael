@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList, House, Plus, Ticket, Users } from "lucide-react";
+import { ClipboardList, House, Plus, Presentation, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -12,10 +12,11 @@ const ITEMS = [
   { href: `${PORTAL}/equipo`, label: "Equipo", icono: Users },
   { href: `${PORTAL}/coaching/nuevo`, label: "Coaching", icono: Plus, central: true },
   { href: `${PORTAL}/coaching`, label: "Mi mes", icono: ClipboardList, exacto: true },
-  { href: `${PORTAL}/tickets`, label: "Tickets", icono: Ticket },
+  { href: `${PORTAL}/tablero`, label: "Tablero", icono: Presentation },
 ];
 
-/** La barra del pulgar del portal (solo en el celular): Hoy, Equipo, el coaching al centro, Mi mes y Tickets. */
+/** La barra del pulgar del portal (solo en el celular): Hoy, Equipo, el coaching al centro, Mi mes y el Tablero de Power BI
+ * (los Tickets siguen en el menú). */
 export function PortalNav() {
   const ruta = usePathname() ?? "";
   // Dentro de un coaching (y su firma) la acción manda la pantalla: «Mi mes» queda marcado como sección.

@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, FileUp, Upload } from "lucide-react";
+import { BarChart3, FileUp, Presentation, Upload } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
@@ -68,8 +68,11 @@ function Informes() {
               : "Se muestran los días publicados."}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Link href={`${PROD_HREF}/acumulado`} className="btn-secondary"><BarChart3 size={16} /> Semana y mes</Link>
+          {can("televentas_claro.productividad_pbi")
+            ? <Link href={`${PROD_HREF}/pbi?cargar=1`} className="btn-secondary"><Upload size={16} /> Cargar PBI</Link>
+            : <Link href={`${PROD_HREF}/pbi`} className="btn-secondary"><Presentation size={16} /> Tablero PBI</Link>}
           {gestion && <Link href={`${PROD_HREF}/subir`} className="btn-primary"><Upload size={16} /> Subir cortes</Link>}
         </div>
       </div>
