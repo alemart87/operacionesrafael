@@ -107,6 +107,8 @@ function Instrucciones({ nombre, onEmpezar }: { nombre: string; onEmpezar: () =>
       <h1 className="font-display text-3xl uppercase text-brand-ink leading-tight">Antes de empezar, {nombre}</h1>
       <ul className="mt-4 space-y-3 text-[16px] text-brand-graphite leading-snug">
         <li>• Vas a leer <b>87 situaciones</b> de trabajo y de la vida diaria. En cada una, elegí la opción que <b>más se parezca a lo que harías o pensás</b>.</li>
+        <li>• Muchas situaciones hablan de una <b>persona imaginaria nombrada solo con una inicial</b> (por ejemplo «B…»). Ponete en su
+          lugar y elegí lo que <b>vos</b> harías o pensarías.</li>
         <li>• <b>No hay respuestas correctas ni incorrectas.</b> Respondé con sinceridad y sin pensarlo demasiado.</li>
         <li>• Se guarda solo a medida que contestás. Si se corta, abrí el mismo link y seguís donde quedaste.</li>
         <li>• Buscá un lugar tranquilo: lleva unos 20 minutos.</li>
@@ -239,7 +241,12 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
         </div>
       </div>
       <div key={p.n} className="mt-6 animate-fade">
-        <p className="text-[19px] leading-snug text-brand-ink font-medium" id={`q${p.n}`}>{p.texto}</p>
+        {INICIAL.test(p.texto) && (
+          <p className="mb-3 text-[13px] leading-snug text-brand-slate">
+            «{p.texto.match(INICIAL)?.[1]}…» es una persona imaginaria: elegí lo que vos harías o pensarías en su lugar.
+          </p>
+        )}
+        <p className="text-[19px] leading-snug text-brand-ink font-medium" id={`q${p.n}`}><Texto t={p.texto} /></p>
         <div role="radiogroup" aria-labelledby={`q${p.n}`} className="mt-5 space-y-2.5">
           {p.opciones.map((o) => {
             const on = elegida === o.letra;
@@ -259,6 +266,15 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
       )}
     </div>
   );
+}
+
+/** La persona de la situación: una inicial seguida de puntos suspensivos («B...»). */
+const INICIAL = /\b([A-ZÁÉÍÓÚÑ])\.\.\./;
+
+/** El texto de la situación con la inicial de la persona resaltada («B…»), para que se lea como un nombre. */
+function Texto({ t }: { t: string }) {
+  const partes = t.split(/\b([A-ZÁÉÍÓÚÑ])\.\.\./);
+  return <>{partes.map((x, k) => (k % 2 ? <b key={k} className="font-bold">{x}…</b> : x))}</>;
 }
 
 function Gracias({ nombre, onFeedback }: { nombre: string; onFeedback: () => void }) {
