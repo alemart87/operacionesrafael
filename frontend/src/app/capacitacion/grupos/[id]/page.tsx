@@ -10,6 +10,7 @@ import {
   CAP_API, CAP_HREF, ESTADOS, ESTADOS_GRUPO, NIVEL_IPV, diasTexto, fecha, pct,
   type EstadoGrupo, type GrupoDetalle, type Postulante, type ResumenIpv,
 } from "@/components/capacitacion/tipos";
+import { MiniDgv } from "@/components/capacitacion/perfil-ipv";
 import { Barra, Dato, EmbudoVista, EstadoTag, GrupoTag, HojaEnlace, HojaEstado, HojaGrupo, HojaPostulante, TablaDemo } from "@/components/capacitacion/ui";
 import { Boton, Cargando, Chips, Encabezado, Etiqueta, Fallo, Hoja, Seccion, cx, hace, useAviso } from "@/components/portal/ui";
 import { apiFetch } from "@/lib/api";
@@ -140,7 +141,7 @@ function Grupo() {
 
 function IpvChip({ p }: { p: Postulante }) {
   const i = p.ipv;
-  if (i.estado === "terminado" && i.dgv) return <span className="text-[12px] tabular-nums"><b style={{ color: NIVEL_IPV[i.dgv.nivel].color }}>DGV {i.dgv.decatipo}</b> <span className="text-brand-slate">{NIVEL_IPV[i.dgv.nivel].nombre}</span></span>;
+  if (i.estado === "terminado" && i.dgv) return <MiniDgv decatipo={i.dgv.decatipo} nivel={i.dgv.nivel} />;
   if (i.estado === "en_curso") return <span className="text-[12px] text-brand-slate tabular-nums">IPV {i.respondidas}/{i.total}</span>;
   if (i.estado === "pendiente") return <span className="text-[12px] text-brand-slate">IPV con link</span>;
   return <span className="text-[12px] text-brand-mist">Sin IPV</span>;
