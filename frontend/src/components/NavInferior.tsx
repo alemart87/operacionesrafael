@@ -6,7 +6,7 @@
  * del día y el analizador; el resto, sus módulos. «Menú» abre la navegación completa.
  */
 import {
-  BarChart3, ClipboardCheck, Gauge, House, LayoutGrid, Menu, MessageSquareText, Siren, Sparkles, Truck, Users,
+  BarChart3, ChartPie, ClipboardCheck, GraduationCap, Gauge, House, LayoutGrid, Menu, MessageSquareText, Siren, Sparkles, Truck, Users,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -36,8 +36,14 @@ export function itemsDe(user: CurrentUserInfo): Item[] {
     ];
   }
   const tc = OPERATIVA_ROUTES.find((o) => o.slug === TC);
-  return (tc?.submodulos ?? []).filter((s) => ok(s.utilidad)).slice(0, 3)
+  const items: Item[] = (tc?.submodulos ?? []).filter((s) => ok(s.utilidad)).slice(0, 3)
     .map((s) => ({ href: s.href, label: s.label.split(" ")[0], icono: ICONOS[s.utilidad] ?? LayoutGrid }));
+  // Capacitación y Mentoría: sus grupos y las estadísticas (para quien solo ve este módulo, o si queda lugar).
+  if (can(user, "capacitacion.ver") && items.length < 2) {
+    items.push({ href: "/capacitacion", label: "Grupos", icono: GraduationCap, exacto: true },
+      { href: "/capacitacion/estadisticas", label: "Estadísticas", icono: ChartPie });
+  }
+  return items.slice(0, 3);
 }
 
 export function NavInferior({ user, onMenu, menuAbierto }: { user: CurrentUserInfo; onMenu: () => void; menuAbierto: boolean }) {

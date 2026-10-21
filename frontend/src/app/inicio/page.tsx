@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell, useSession } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
+import { CAP_HREF, PERFILES_CAPACITACION, PERM_CAP_VER } from "@/components/capacitacion/tipos";
 import { OperativaInfo, PERM_PORTAL_SUPERVISOR, PORTAL_HREF, operativaRoute } from "@/lib/operativas";
 
 export default function InicioPage() {
@@ -21,19 +22,22 @@ function Hub() {
   const [operativas, setOperativas] = useState<OperativaInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // El supervisor solo entra a su portal: va directo.
-  const alPortal = user.role === "supervisor" && can(PERM_PORTAL_SUPERVISOR);
+  // Capacitador, Mentor y Gerencia de RRHH solo ven Capacitación y Mentoría: también van directo.
+  const destino = user.role === "supervisor" && can(PERM_PORTAL_SUPERVISOR) ? PORTAL_HREF
+    : PERFILES_CAPACITACION.includes(user.role) && can(PERM_CAP_VER) ? CAP_HREF : null;
+  const alPortal = !!destino;
 
   useEffect(() => {
-    if (alPortal) {
-      router.replace(PORTAL_HREF);
+    if (destino) {
+      router.replace(destino);
       return;
     }
     apiFetch<OperativaInfo[]>("/api/v1/operativas")
       .then(setOperativas)
       .catch((e) => setError(e.message));
-  }, [alPortal, router]);
+  }, [destino, router]);
 
-  if (alPortal) return <div className="text-brand-slate">Abriendo tu portal…</div>;
+  if (alPortal) return <div className="text-brand-slate">Abriendo…</div>;
 
   return (
     <>

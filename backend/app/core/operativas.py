@@ -159,6 +159,32 @@ OPERATIVAS: list[dict] = [
             },
         ],
     },
+    {
+        "slug": "capacitacion",
+        "name": "Capacitación y Mentoría",
+        "description": "Grupos de capacitación con el modelo Capacitación ÁGIL (sala a la mañana, mentoría en piso a la tarde): postulantes, estados, test IPV online con corrección automática, ficha del postulante, seguimiento con dictado, efectividad de cada grupo y estadísticas por sexo y edad.",
+        "color": "#662483",
+        "available": True,
+        "utilidades": [
+            {"key": "ver", "name": "Acceso al módulo", "description": "Ver Capacitación y Mentoría en el hub y entrar."},
+            {
+                "key": "capacitar",
+                "name": "Capacitación · Grupos y postulantes",
+                "description": "Crear grupos de capacitación y cambiar su estado (en curso, finalizada, cancelada); cargar postulantes y sus estados de capacitación (en capacitación, abandonó, dado de baja, aprobó la prueba escrita); generar el link del test IPV y cargar las otras pruebas; comentarios de seguimiento con dictado.",
+            },
+            {
+                "key": "mentoria",
+                "name": "Mentoría · Seguimiento en piso",
+                "description": "Ver y acompañar a los postulantes de los grupos donde es mentor: comentarios de seguimiento con dictado y los estados finales (aprobó mentoría y OJT, alta operativa).",
+            },
+            {
+                "key": "total",
+                "name": "Capacitación · Vista completa",
+                "description": "Todos los grupos de todos los capacitadores y mentores, con permiso para actuar en cualquiera, y las estadísticas generales (efectividad, IPV, sexo y edad).",
+                "solo_perfiles": ["gerente", "sub_gerente", "rrhh"],
+            },
+        ],
+    },
 ]
 
 
@@ -188,9 +214,17 @@ PORTAL_PERMISSIONS: set[str] = {
 }
 
 
+# Perfiles de un solo módulo (Capacitador, Mentor, Gerencia de RRHH): únicamente las utilidades de esa operativa, y al
+# crearlos o cambiarles el perfil quedan asignados solo a ella.
+PERFILES_SOLO_MODULO: dict[str, str] = {"capacitador": "capacitacion", "mentor": "capacitacion", "rrhh": "capacitacion"}
+
+
 def asignables(perfil: str | None) -> set[str]:
     """Permisos que se le pueden dar a ese perfil: los sin restricción y los restringidos que lo incluyen.
-    Un perfil de solo portal, únicamente las utilidades del portal."""
+    Un perfil de solo portal, únicamente las utilidades del portal; uno de un solo módulo, solo las de ese módulo."""
+    if perfil in PERFILES_SOLO_MODULO:
+        pre = PERFILES_SOLO_MODULO[perfil] + "."
+        return {p for p in ALL_PERMISSIONS if p.startswith(pre) and (p not in RESTRINGIDAS or perfil in RESTRINGIDAS[p])}
     if perfil in PERFILES_SOLO_PORTAL:
         return {p for p in PORTAL_PERMISSIONS if p not in RESTRINGIDAS or perfil in RESTRINGIDAS[p]}
     return ASSIGNABLE_PERMISSIONS | {p for p, perfiles in RESTRINGIDAS.items() if perfil in perfiles}
@@ -203,6 +237,13 @@ def utilidad_visible(slug_operativa: str, utilidad: dict, role: str) -> bool:
 
 def get_operativa(slug: str) -> dict | None:
     return next((o for o in OPERATIVAS if o["slug"] == slug), None)
+
+
+def operativas_de_perfil(perfil: str | None, slugs: list[str] | None) -> list[str]:
+    """Las operativas de un usuario según su perfil: los de un solo módulo, solo esa; el resto, las elegidas."""
+    if perfil in PERFILES_SOLO_MODULO:
+        return [PERFILES_SOLO_MODULO[perfil]]
+    return filter_operativas(slugs)
 
 
 def filter_operativas(slugs: list[str] | None) -> list[str]:

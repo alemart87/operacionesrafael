@@ -213,11 +213,12 @@ export async function subirAudio(coachingId: string, g: { blob: Blob; mime: stri
 
 const TERMINADO = new Set(["listo", "error", "sin_servicio"]);
 
-export async function esperarTranscripcion(audio: AudioCoaching, cancelado: () => boolean): Promise<AudioCoaching> {
+export async function esperarTranscripcion(audio: AudioCoaching, cancelado: () => boolean,
+  consultar?: (id: string) => Promise<AudioCoaching>): Promise<AudioCoaching> {
   let a = audio;
   for (let i = 0; i < 160 && !TERMINADO.has(a.estado) && !cancelado(); i++) {
     await new Promise((ok) => setTimeout(ok, i < 20 ? 1500 : 3000));
-    try { a = await apiFetch<AudioCoaching>(`${SUP_API}/portal/audios/${a.id}`); } catch (e) { if (!sinRed(e)) throw e; }
+    try { a = consultar ? await consultar(a.id) : await apiFetch<AudioCoaching>(`${SUP_API}/portal/audios/${a.id}`); } catch (e) { if (!sinRed(e)) throw e; }
   }
   return a;
 }
@@ -230,11 +231,13 @@ type Fase =
 /**
  * «Dictar»: un toque graba, otro termina. Avisa con `onSubido` en cuanto el audio está en el servidor (ya se puede
  * guardar: el texto llega solo) y con `onTexto` cuando la transcripción está lista.
+ * Con `subir` y `consultar`, el audio va a otro módulo (p. ej. Capacitación); ahí no hay cola sin señal.
  */
-export function Dictado({ coachingId, hablante, destino, etiqueta = "Dictar", ayuda, autoIniciar, onSubido, onTexto, onGrabando, principal = true }: {
-  coachingId: string; hablante: Hablante; destino: Destino; etiqueta?: string; ayuda?: string; autoIniciar?: boolean;
+export function Dictado({ coachingId = "", hablante = "supervisor", destino = "comentario", etiqueta = "Dictar", ayuda, autoIniciar, onSubido, onTexto, onGrabando,
+  principal = true, subir, consultar }: {
+  coachingId?: string; hablante?: Hablante; destino?: Destino; etiqueta?: string; ayuda?: string; autoIniciar?: boolean;
   onSubido?: (a: AudioCoaching) => void; onTexto?: (texto: string, a: AudioCoaching) => void; onGrabando?: (v: boolean) => void;
-  principal?: boolean;
+  principal?: boolean; subir?: (g: Grabado) => Promise<AudioCoaching>; consultar?: (id: string) => Promise<AudioCoaching>;
 }) {
   const g = useGrabadora();
   const [fase, setFase] = useState<Fase>({ f: "nada" });
@@ -247,9 +250,9 @@ export function Dictado({ coachingId, hablante, destino, etiqueta = "Dictar", ay
     setFase({ f: "subiendo" });
     let audio: AudioCoaching;
     try {
-      audio = await subirAudio(coachingId, grabado, hablante, destino);
+      audio = subir ? await subir(grabado) : await subirAudio(coachingId, grabado, hablante, destino);
     } catch (e) {
-      if (sinRed(e) && coachingId !== CIERRE) {
+      if (sinRed(e) && !subir && coachingId !== CIERRE) {
         const local: AudioLocal = { id: crypto.randomUUID?.() ?? String(Date.now()), coachingId, hablante, destino,
           duracion: grabado.duracion, mime: grabado.mime, blob: grabado.blob, at: Date.now() };
         pendienteLocal.current = local;
@@ -265,7 +268,7 @@ export function Dictado({ coachingId, hablante, destino, etiqueta = "Dictar", ay
     if (!vivo.current) return;
     setFase({ f: "transcribiendo", audio });
     try {
-      const a = await esperarTranscripcion(audio, () => !vivo.current);
+      const a = await esperarTranscripcion(audio, () => !vivo.current, consultar);
       if (!vivo.current) return;
       if (a.estado === "listo" && a.texto) { setFase({ f: "listo", audio: a }); onTexto?.(a.texto, a); }
       else if (a.estado === "sin_servicio") setFase({ f: "sin_texto", audio: a, motivo: "La transcripción automática no está activa: escribilo vos. El audio queda guardado." });
@@ -274,7 +277,7 @@ export function Dictado({ coachingId, hablante, destino, etiqueta = "Dictar", ay
     } catch {
       if (vivo.current) setFase({ f: "sin_texto", audio, motivo: "No pudimos ver si terminó la transcripción: se completa sola." });
     }
-  }, [coachingId, hablante, destino, onSubido, onTexto]);
+  }, [coachingId, hablante, destino, onSubido, onTexto, subir, consultar]);
 
   // Sin señal: cuando vuelve, se sube solo.
   useEffect(() => {

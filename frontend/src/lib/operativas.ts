@@ -262,6 +262,14 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
   },
 ];
 
+OPERATIVA_ROUTES.push({
+  // Capacitación y Mentoría: grupos, postulantes, IPV y estadísticas (la navegación es la de sus propias pantallas).
+  slug: "capacitacion",
+  name: "Capacitación y Mentoría",
+  href: "/capacitacion",
+  submodulos: [],
+});
+
 export function operativaRoute(slug: string): OperativaRoute | undefined {
   return OPERATIVA_ROUTES.find((o) => o.slug === slug);
 }

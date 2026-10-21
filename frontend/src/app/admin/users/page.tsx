@@ -25,6 +25,8 @@ interface PerfilDef {
   slug: string;
   name: string;
   description: string;
+  /** Perfil de un solo módulo (Capacitador, Mentor, Gerencia de RRHH): sus operativas no se eligen. */
+  solo_modulo?: string | null;
 }
 
 interface OperativaDef {
@@ -46,7 +48,29 @@ const ROLE_BADGE: Record<string, string> = {
   analista: "badge-success",
   auditor: "badge-neutral",
   cliente: "badge-neutral",
+  capacitador: "badge-purple",
+  mentor: "badge-purple",
+  rrhh: "badge-purple",
 };
+
+/** Las operativas del usuario, o el aviso de que su perfil es de un solo módulo. */
+function OperativasDe({ perfil, perfiles, operativas, value, onChange }: {
+  perfil: string; perfiles: PerfilDef[]; operativas: OperativaDef[]; value: string[]; onChange: (v: string[]) => void;
+}) {
+  const solo = perfiles.find((p) => p.slug === perfil)?.solo_modulo;
+  if (!solo) return <OperativasPicker operativas={operativas} value={value} onChange={onChange} />;
+  const o = operativas.find((x) => x.slug === solo);
+  return (
+    <div>
+      <label className="label">Operativas asignadas</label>
+      <div className="flex items-center gap-2.5 p-2.5 rounded-md border border-brand-border bg-brand-bg-soft">
+        <span className="w-2.5 h-2.5 rounded-full" style={{ background: o?.color }} aria-hidden />
+        <span className="text-sm font-semibold text-brand-ink">{o?.name ?? solo}</span>
+      </div>
+      <p className="text-[11px] text-brand-mist mt-1.5">Este perfil solo ve este módulo: se le asigna solo.</p>
+    </div>
+  );
+}
 
 /** Selector de operativas asignadas a un usuario. */
 function OperativasPicker({
@@ -263,7 +287,7 @@ export default function AdminUsersPage() {
         <form onSubmit={onCreate} className="card p-6 space-y-4 lg:col-span-2 h-fit">
           <h2 className="font-display text-xl text-brand-ink uppercase">Crear usuario</h2>
           <PerfilPicker perfiles={perfiles} value={form.role} onChange={(role) => setForm({ ...form, role })} />
-          <OperativasPicker operativas={operativas} value={form.operativas} onChange={(ops) => setForm({ ...form, operativas: ops })} />
+          <OperativasDe perfil={form.role} perfiles={perfiles} operativas={operativas} value={form.operativas} onChange={(ops) => setForm({ ...form, operativas: ops })} />
           <div>
             <label className="label">Email</label>
             <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" />
@@ -360,7 +384,7 @@ export default function AdminUsersPage() {
           <div className="space-y-4 text-left">
             <p>{editUser?.email}</p>
             <PerfilPicker perfiles={perfiles} value={editRole} onChange={setEditRole} />
-            <OperativasPicker operativas={operativas} value={editOps} onChange={setEditOps} />
+            <OperativasDe perfil={editRole} perfiles={perfiles} operativas={operativas} value={editOps} onChange={setEditOps} />
           </div>
         }
         confirmLabel="Guardar"

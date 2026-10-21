@@ -19,6 +19,9 @@ PERFILES: list[dict] = [
     {"slug": "analista", "name": "Analista", "description": "Carga datos y prepara reportes."},
     {"slug": "auditor", "name": "Auditor", "description": "Revisa ventas y casos, envía tickets de revisión y sigue el tablero de supervisión."},
     {"slug": "cliente", "name": "Cliente", "description": "Consulta la información publicada."},
+    {"slug": "capacitador", "name": "Capacitador", "description": "Capacitación y Mentoría: crea sus grupos y postulantes, actualiza los estados de capacitación, toma el IPV y hace el seguimiento. Solo ve este módulo."},
+    {"slug": "mentor", "name": "Mentor", "description": "Capacitación y Mentoría: acompaña en piso a los postulantes de sus grupos y carga los estados finales (mentoría y OJT, alta operativa). Solo ve este módulo."},
+    {"slug": "rrhh", "name": "Gerencia de RRHH", "description": "Capacitación y Mentoría con acceso completo: todos los grupos, fichas y estadísticas. Solo ve este módulo."},
 ]
 
 PERFIL_SLUGS: set[str] = {p["slug"] for p in PERFILES}
@@ -27,12 +30,14 @@ PERFIL_PATTERN = "^(" + "|".join(p["slug"] for p in PERFILES) + ")$"
 _TC = "televentas_claro"
 # Todas las utilidades de Televentas CLARO, en el orden del catálogo.
 _TODAS_TC = [u["key"] for o in OPERATIVAS if o["slug"] == _TC for u in o["utilidades"]]
+_CAP = "capacitacion"
+_TODAS_CAP = [f"{_CAP}.{u['key']}" for o in OPERATIVAS if o["slug"] == _CAP for u in o["utilidades"]]
 
 DEFAULT_PERMISSIONS: dict[str, list[str]] = {
     # El gerente arranca con todo lo que su perfil puede tener: nunca las restringidas a otros perfiles (Facturación,
     # Integraciones, el portal del supervisor).
-    "gerente": [f"{_TC}.{u}" for u in _TODAS_TC if f"{_TC}.{u}" in asignables("gerente")],
-    "sub_gerente": [f"{_TC}.{u}" for u in _TODAS_TC],
+    "gerente": [f"{_TC}.{u}" for u in _TODAS_TC if f"{_TC}.{u}" in asignables("gerente")] + _TODAS_CAP,
+    "sub_gerente": [f"{_TC}.{u}" for u in _TODAS_TC] + _TODAS_CAP,
     # El informe diario lo preparan el coordinador y el sub gerente (y el superadmin); el controller no, salvo que se le asigne.
     # El asistente (Voi) arranca con sub gerente, coordinador y auditor; al resto se le puede asignar.
     "controller": [f"{_TC}.{u}" for u in _TODAS_TC if u not in ("facturacion", "informe_diario", "asistente", "integraciones")],
@@ -51,6 +56,10 @@ DEFAULT_PERMISSIONS: dict[str, list[str]] = {
     "auditor": [f"{_TC}.{u}" for u in _TODAS_TC if u not in ("facturacion", "integraciones", "supervision_parametros",
                                                                "portal_supervisor", "operadores") and not u.endswith("_gestion")],
     "cliente": [f"{_TC}.{u}" for u in ("ver",)],
+    # Capacitación y Mentoría (perfiles de un solo módulo, ver core/operativas.PERFILES_SOLO_MODULO).
+    "capacitador": [f"{_CAP}.{u}" for u in ("ver", "capacitar")],
+    "mentor": [f"{_CAP}.{u}" for u in ("ver", "mentoria")],
+    "rrhh": _TODAS_CAP,
 }
 
 

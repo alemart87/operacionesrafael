@@ -9,9 +9,9 @@ El catálogo (nombres, utilidades y permisos) sigue en `core/operativas.py`.
 """
 from __future__ import annotations
 
-from . import televentas_claro
+from . import capacitacion, televentas_claro
 
-_MODULOS = [televentas_claro]
+_MODULOS = [televentas_claro, capacitacion]
 
 ROUTERS = [r for m in _MODULOS for r in m.ROUTERS]
 WORKERS = {nombre: w for m in _MODULOS for nombre, w in m.WORKERS.items()}
