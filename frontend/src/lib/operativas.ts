@@ -132,6 +132,7 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
         nav: [
           { href: "/televentas-claro/productividad", label: "Informes diarios", exact: true },
           { href: "/televentas-claro/productividad/acumulado", label: "Acumulado" },
+          { href: "/televentas-claro/productividad/pbi", label: "Tablero PBI" },
           { href: "/televentas-claro/productividad/subir", label: "Subir cortes", utilidad: "productividad_gestion" },
         ],
       },
@@ -210,6 +211,7 @@ export const OPERATIVA_ROUTES: OperativaRoute[] = [
           { href: "/televentas-claro/portal/coaching/nuevo", label: "Hacer coaching", exact: true },
           { href: "/televentas-claro/portal/coaching", label: "Mi mes" },
           { href: "/televentas-claro/portal/historial", label: "Mi historial" },
+          { href: "/televentas-claro/portal/tablero", label: "Tablero" },
           { href: "/televentas-claro/portal/tickets", label: "Tickets" },
         ],
       },

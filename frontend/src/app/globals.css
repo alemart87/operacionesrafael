@@ -714,3 +714,9 @@ body:has(main .fixed.inset-0) .barra-inferior { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .logo-animado-dot, .logo-animado-marca, .logo-mural-col { animation: none !important; opacity: 1; transform: none; }
 }
+
+/* Tablero de Power BI en pantalla completa: con el celular parado se gira para verlo apaisado. */
+.pbi-girar { position: absolute; inset: 0; }
+@media (orientation: portrait) and (max-width: 767px) {
+  .pbi-girar { inset: auto; top: 50%; left: 50%; width: 100dvh; height: 100dvw; transform: translate(-50%, -50%) rotate(90deg); }
+}

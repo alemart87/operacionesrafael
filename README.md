@@ -291,6 +291,31 @@ totales acumulados desde las 00:00 hasta la hora del export). Código en
 - **Permisos:** `televentas_claro.productividad` (ver publicados y acumulados) y
   `televentas_claro.productividad_gestion` (subir, borradores, publicar, recalcular, eliminar).
 
+### Tablero Power BI (Cargar PBI)
+
+El tablero de Power BI del día, embebido en la app.
+
+- **Quién carga:** superadmin, Gerente, Sub gerente y Coordinador (utilidad restringida `televentas_claro.productividad_pbi`,
+  «Productividad · Cargar PBI»). En **Productividad → Cargar PBI** (o **Tablero PBI**) pegan el código que da Power BI en
+  *Archivo → Insertar informe → Publicar en la web* (el `<iframe …>`, o el link solo), eligen el día (hoy por defecto) y
+  ven la vista previa: **Publicar** o **Guardar sin publicar**. Hay **uno publicado por día**: publicar otro del mismo día
+  reemplaza al anterior (queda en el historial como «Reemplazado»); eliminar el publicado vuelve al anterior de ese día.
+- **Quién ve:** los supervisores en su portal, en **Tablero** (reemplaza a Tickets en la barra del celular; Tickets sigue
+  en el menú), y quienes ven Productividad. Siempre el **publicado del día más nuevo** (si el de hoy todavía no está, lo
+  avisa), con los días anteriores publicados a mano (últimos 14).
+- **Buena vista en el celular:** «Pantalla completa» propia (el iPhone no deja poner un iframe en pantalla completa): con
+  el teléfono parado gira el tablero para verlo apaisado; acostado, ocupa toda la pantalla. También «Abrir en Power BI».
+- **Seguridad:** del código pegado solo se toma el `src`, que tiene que ser `https://app.powerbi.com` o
+  `https://app.fabric.microsoft.com` (`/view?r=…` o `/reportEmbed…`, sin usuario ni puerto); el link se reconstruye y se
+  guarda junto con la proporción — nunca el HTML. Cualquier otra etiqueta o dominio se rechaza. El iframe lo arma la app,
+  con `sandbox` (no puede navegar la pestaña de la app). Cargar, publicar y eliminar quedan en la auditoría.
+  «Publicar en la web» deja el informe visible para quien tenga el link: la pantalla avisa que no se publiquen datos de
+  Facturación ni datos personales.
+
+API (`/televentas-claro/productividad`): `GET /pbi/publicado?fecha` (supervisores, Productividad y publicadores),
+`GET /pbi` (historial de 60 días), `POST /pbi/validar` (vista previa sin guardar), `POST /pbi` (`{codigo, fecha, titulo,
+publicar}`), `POST /pbi/{id}/publicar`, `DELETE /pbi/{id}`.
+
 ## Televentas CLARO · SPH estimado
 
 SPH = **ventas del día** por hora conectada. Cruza dos módulos que ya existen, sin subir

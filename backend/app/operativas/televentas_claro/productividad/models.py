@@ -80,3 +80,22 @@ class ProdParametros(Base):
     data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+
+
+class ProdPbi(Base):
+    """Un tablero de Power BI (el código «Publicar en la web») para un día: lo cargan los publicadores y, publicado, lo ven
+    los supervisores en su portal y quienes ven Productividad. Uno publicado por día; se muestra el del día más nuevo.
+    Del código pegado solo se guarda el link validado (de Power BI o Fabric) y la proporción: el iframe lo arma la app."""
+    __tablename__ = "prod_pbi"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    titulo: Mapped[str] = mapped_column(String(120), nullable=False)
+    url: Mapped[str] = mapped_column(String(2000), nullable=False)
+    ancho: Mapped[float] = mapped_column(Float, nullable=False, default=600.0)
+    alto: Mapped[float] = mapped_column(Float, nullable=False, default=373.5)
+    status: Mapped[str] = mapped_column(String(12), default=ESTADO_BORRADOR, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
