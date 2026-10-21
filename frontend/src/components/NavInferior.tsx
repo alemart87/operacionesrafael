@@ -24,8 +24,19 @@ const ICONOS: Record<string, LucideIcon> = {
   informe_diario: ClipboardCheck, auditoria: Siren,
 };
 
-export function itemsDe(user: CurrentUserInfo): Item[] {
+const CAP = "/capacitacion";
+/** Capacitación y Mentoría: los grupos, el grupo en curso a un toque y las estadísticas. */
+const ITEMS_CAP: Item[] = [
+  { href: CAP, label: "Grupos", icono: GraduationCap, exacto: true },
+  { href: `${CAP}/en-curso`, label: "Mi grupo", icono: Users, central: true },
+  { href: `${CAP}/estadisticas`, label: "Estadísticas", icono: ChartPie },
+];
+/** Perfiles que solo ven Capacitación: sin «Inicio» (los lleva al mismo lugar que «Grupos»). */
+const SOLO_CAP = ["capacitador", "mentor", "rrhh"];
+
+export function itemsDe(user: CurrentUserInfo, ruta = ""): Item[] {
   const ok = (u: string) => can(user, `${TC}.${u}`);
+  if (can(user, "capacitacion.ver") && (SOLO_CAP.includes(user.role) || ruta === CAP || ruta.startsWith(`${CAP}/`))) return ITEMS_CAP;
   if (ok("control_supervisores")) {
     return [
       { href: `${SUP}/control`, label: "Control", icono: Users },
@@ -38,17 +49,12 @@ export function itemsDe(user: CurrentUserInfo): Item[] {
   const tc = OPERATIVA_ROUTES.find((o) => o.slug === TC);
   const items: Item[] = (tc?.submodulos ?? []).filter((s) => ok(s.utilidad)).slice(0, 3)
     .map((s) => ({ href: s.href, label: s.label.split(" ")[0], icono: ICONOS[s.utilidad] ?? LayoutGrid }));
-  // Capacitación y Mentoría: sus grupos y las estadísticas (para quien solo ve este módulo, o si queda lugar).
-  if (can(user, "capacitacion.ver") && items.length < 2) {
-    items.push({ href: "/capacitacion", label: "Grupos", icono: GraduationCap, exacto: true },
-      { href: "/capacitacion/estadisticas", label: "Estadísticas", icono: ChartPie });
-  }
   return items.slice(0, 3);
 }
 
 export function NavInferior({ user, onMenu, menuAbierto }: { user: CurrentUserInfo; onMenu: () => void; menuAbierto: boolean }) {
   const ruta = usePathname() ?? "";
-  const items: Item[] = [{ href: "/inicio", label: "Inicio", icono: House, exacto: true }, ...itemsDe(user)];
+  const items: Item[] = [...(SOLO_CAP.includes(user.role) ? [] : [{ href: "/inicio", label: "Inicio", icono: House, exacto: true }]), ...itemsDe(user, ruta)];
   const activo = (i: Item) => (i.exacto ? ruta === i.href : ruta === i.href || ruta.startsWith(`${i.href}/`));
   return (
     <nav aria-label="Navegación rápida"
@@ -60,7 +66,7 @@ export function NavInferior({ user, onMenu, menuAbierto }: { user: CurrentUserIn
           if (i.central) {
             return (
               <li key={i.href} className="flex-1 flex items-start justify-center">
-                <Link href={i.href} aria-label="Coaching del día"
+                <Link href={i.href} aria-label={i.label === "Hoy" ? "Coaching del día" : i.label}
                   className="-mt-5 w-16 h-16 rounded-full bg-brand-primary text-white shadow-elevated ring-4 ring-white flex flex-col items-center justify-center active:scale-95 transition-transform">
                   <I size={24} strokeWidth={2.5} aria-hidden />
                   <span className="text-[9px] font-bold uppercase tracking-wider2 -mt-0.5">{i.label}</span>

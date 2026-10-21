@@ -1,4 +1,4 @@
-"""Corrección automática del IPV y de las otras pruebas del informe psicolaboral — Capacitación y Mentoría.
+"""Corrección automática del IPV — Capacitación y Mentoría.
 
 **IPV** (87 ítems, `ipv_datos.py`): cada escala suma 1 por cada respuesta que coincide con su clave y el puntaje directo
 se convierte a **decatipo** (1 a 10) con su baremo. Nivel: 1 a 3 inferior, 4 a 7 término medio, 8 a 10 superior.
@@ -11,15 +11,6 @@ se convierte a **decatipo** (1 a 10) con su baremo. Nivel: 1 a 3 inferior, 4 a 7
 - También se corrigen otros errores de la planilla: los ítems 56 y 86 leían la respuesta del ítem anterior (acá cada
   respuesta es la de su ítem) y en «IPV_DIGITAL» varios baremos estaban incompletos (se usan los de «Correccion_IPV»).
 - Señales de calidad de la aplicación: si terminó muy rápido o si casi todas las respuestas son la misma letra.
-
-**Otras pruebas** (el material es en papel: el capacitador carga lo que obtuvo y el sistema lo corrige):
-
-- Dominó (inteligencia): aciertos de 48 → percentil con el baremo de la planilla (edad 18 a 65).
-- Atención concentrada: (aciertos − (omisiones + errores)) ÷ 230 × 100. (La planilla tenía el resultado escrito a mano y la
-  fórmula sumaba los errores en lugar de restarlos.)
-- Atención distribuida: aciertos de 51 × 100 ÷ 51.
-- Bandas de 0 a 100: 90 superior, 75 superior al término medio, 60 término medio, 45 inferior al término medio, menos
-  inferior. (En la planilla los límites eran estrictos y un 100 o un 90 justos quedaban afuera.)
 """
 from __future__ import annotations
 
@@ -68,8 +59,6 @@ ESCALAS: list[dict[str, Any]] = [
 ]
 NOMBRE = {e["clave"]: e["nombre"] for e in ESCALAS}
 NIVELES_IPV = {"inferior": "Inferior", "termino_medio": "Término medio", "superior": "Superior"}
-NIVELES_PRUEBA = {"superior": "Superior", "superior_tm": "Superior al término medio", "termino_medio": "Término medio",
-                  "inferior_tm": "Inferior al término medio", "inferior": "Inferior", "deficiente": "Deficiente"}
 RECEPTIVIDAD = ("comprension", "adaptabilidad", "control", "tolerancia")
 AGRESIVIDAD = ("combatividad", "dominancia", "seguridad", "actividad")
 
@@ -138,62 +127,6 @@ def corregir(respuestas: dict[int, str], *, segundos: float | None = None) -> di
                     f"{NIVELES_IPV[escalas[2]['nivel']].lower()}."),
         "letras": dict(letras), "segundos": round(segundos) if segundos is not None else None,
     }
-
-
-# ------------------------------------------------------------------ otras pruebas (las carga el capacitador)
-def _banda(puntaje: float) -> str:
-    return ("superior" if puntaje >= 90 else "superior_tm" if puntaje >= 75 else "termino_medio" if puntaje >= 60
-            else "inferior_tm" if puntaje >= 45 else "inferior")
-
-
-def percentil_domino(aciertos: int) -> int:
-    a = max(0, min(48, int(aciertos)))
-    if a >= 41:
-        return 95
-    if a == 40:
-        return 90
-    if a >= 36:
-        return 75
-    if a >= 31:
-        return 50
-    if a >= 25:
-        return 25
-    if a >= 20:
-        return 10
-    if a >= 16:
-        return 5
-    return 1
-
-
-def nivel_domino(percentil: int) -> str:
-    return {95: "superior", 90: "superior_tm", 75: "superior_tm", 50: "termino_medio", 25: "inferior_tm", 10: "inferior",
-            5: "inferior"}.get(percentil, "deficiente")
-
-
-def corregir_pruebas(d: dict[str, Any]) -> dict[str, Any]:
-    """Dominó, atención concentrada y atención distribuida (cada una opcional)."""
-    out: dict[str, Any] = {}
-    if d.get("domino_aciertos") is not None:
-        a = int(d["domino_aciertos"])
-        if not 0 <= a <= 48:
-            raise RespuestasInvalidas("Los aciertos del Dominó van de 0 a 48")
-        p = percentil_domino(a)
-        out["domino"] = {"nombre": "Inteligencia (Dominó)", "aciertos": a, "de": 48, "percentil": p, "puntaje": p, "nivel": nivel_domino(p)}
-    if any(d.get(k) is not None for k in ("concentrada_aciertos", "concentrada_omisiones", "concentrada_errores")):
-        a, o, e = (int(d.get(k) or 0) for k in ("concentrada_aciertos", "concentrada_omisiones", "concentrada_errores"))
-        if min(a, o, e) < 0 or a + o > 230 or e > 230:
-            raise RespuestasInvalidas("En atención concentrada: aciertos más omisiones no pueden pasar de 230 (las figuras a "
-                                      "marcar) y los errores tampoco")
-        puntaje = round(max(0.0, min(100.0, (a - (o + e)) / 230 * 100)), 1)
-        out["concentrada"] = {"nombre": "Atención concentrada", "aciertos": a, "omisiones": o, "errores": e, "de": 230,
-                              "puntaje": puntaje, "nivel": _banda(puntaje)}
-    if d.get("distribuida_aciertos") is not None:
-        a = int(d["distribuida_aciertos"])
-        if not 0 <= a <= 51:
-            raise RespuestasInvalidas("Los aciertos de atención distribuida van de 0 a 51")
-        puntaje = round(a * 100 / 51, 1)
-        out["distribuida"] = {"nombre": "Atención distribuida", "aciertos": a, "de": 51, "puntaje": puntaje, "nivel": _banda(puntaje)}
-    return out
 
 
 def cuestionario() -> list[dict[str, Any]]:

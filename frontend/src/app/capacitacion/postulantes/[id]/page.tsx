@@ -1,13 +1,13 @@
 "use client";
 
-import { ArrowLeft, ClipboardList, Flag, Link2, Pencil, ShieldAlert, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, Flag, Link2, Pencil, ShieldAlert, Sparkles, Target } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { CAP_API, CAP_HREF, ESTADOS, fecha, type Ficha } from "@/components/capacitacion/tipos";
 import { BarrasIpv, Dato, EstadoTag, HojaEnlace, HojaEstado, HojaPostulante, ListaComentarios, NuevoComentario } from "@/components/capacitacion/ui";
-import { Boton, Cargando, Encabezado, Etiqueta, Fallo, Hoja, Seccion, hace, useAviso } from "@/components/portal/ui";
+import { Boton, Cargando, Encabezado, Fallo, Seccion, hace, useAviso } from "@/components/portal/ui";
 import { apiFetch } from "@/lib/api";
 
 export default function FichaPage() {
@@ -21,14 +21,14 @@ export default function FichaPage() {
 const SEXO = { F: "Femenino", M: "Masculino", X: "Otro" };
 const EVENTO: Record<string, string> = {
   alta: "Ingresó al grupo", estado: "Cambio de estado", link: "Link del test generado", link_anulado: "Link anulado",
-  ipv_inicio: "Empezó el IPV", ipv_terminado: "Terminó el IPV", pruebas: "Pruebas cargadas", datos: "Datos corregidos",
+  ipv_inicio: "Empezó el IPV", ipv_terminado: "Terminó el IPV", datos: "Datos corregidos",
 };
 
 function FichaPostulante() {
   const { id } = useParams<{ id: string }>();
   const [f, setF] = useState<Ficha | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hoja, setHoja] = useState<null | "estado" | "link" | "datos" | "pruebas">(null);
+  const [hoja, setHoja] = useState<null | "estado" | "link" | "datos">(null);
   const [aviso, avisar] = useAviso();
   const cargar = useCallback(() => {
     apiFetch<Ficha>(`${CAP_API}/postulantes/${id}`).then((x) => { setF(x); setError(null); }).catch((e) => setError(e.message));
@@ -105,21 +105,6 @@ function FichaPostulante() {
         )}
       </Seccion>
 
-      <Seccion titulo="Otras pruebas" sub="Dominó y atención (en papel): cargá los aciertos y el sistema calcula el resultado."
-        accion={f.puede.pruebas && <button type="button" className="btn-ghost text-sm" onClick={() => setHoja("pruebas")}><ClipboardList size={16} aria-hidden /> Cargar</button>} className="mb-8">
-        {f.pruebas ? (
-          <div className="grid sm:grid-cols-3 gap-2.5">
-            {Object.entries(f.pruebas.resultado).map(([k, x]) => (
-              <div key={k} className="card px-4 py-3">
-                <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">{x.nombre}</div>
-                <div className="font-display text-2xl text-brand-ink tabular-nums">{x.percentil !== undefined ? `Percentil ${x.percentil}` : `${x.puntaje}%`}</div>
-                <div className="text-[13px] text-brand-slate">{f.niveles_prueba[x.nivel] ?? x.nivel} · {x.aciertos} de {x.de} aciertos{x.omisiones !== undefined && ` · ${x.omisiones} omisiones · ${x.errores} errores`}</div>
-              </div>
-            ))}
-          </div>
-        ) : <div className="card p-5 text-sm text-brand-slate">Sin cargar.</div>}
-      </Seccion>
-
       <Seccion titulo="Seguimiento" sub={`${f.conteo.total} comentarios: ${f.conteo.feedback} feedback, ${f.conteo.oportunidad} oportunidades y ${f.conteo.postulante} del postulante.`} className="mb-8">
         <div className="space-y-3">
           {f.puede.comentar && <NuevoComentario pid={p.id} onListo={() => { cargar(); avisar("Comentario guardado"); }} />}
@@ -142,44 +127,6 @@ function FichaPostulante() {
       {hoja === "estado" && <HojaEstado p={p} onClose={() => setHoja(null)} onListo={(x) => { setHoja(null); cargar(); avisar(`Ahora: ${ESTADOS[x.estado].nombre}`); }} />}
       {hoja === "link" && <HojaEnlace p={p} onClose={() => setHoja(null)} onCambio={cargar} />}
       {hoja === "datos" && <HojaPostulante grupoId={f.grupo.id} editar={p} onClose={() => setHoja(null)} onListo={() => { setHoja(null); cargar(); avisar("Datos corregidos"); }} />}
-      {hoja === "pruebas" && <HojaPruebas f={f} onClose={() => setHoja(null)} onListo={(x) => { setF(x); setHoja(null); avisar("Pruebas cargadas"); }} />}
     </div>
-  );
-}
-
-const CAMPOS = [
-  { k: "domino_aciertos", label: "Dominó · aciertos", max: 48 },
-  { k: "concentrada_aciertos", label: "Atención concentrada · aciertos", max: 230 },
-  { k: "concentrada_omisiones", label: "Atención concentrada · omisiones", max: 230 },
-  { k: "concentrada_errores", label: "Atención concentrada · errores", max: 230 },
-  { k: "distribuida_aciertos", label: "Atención distribuida · aciertos", max: 51 },
-] as const;
-
-function HojaPruebas({ f, onClose, onListo }: { f: Ficha; onClose: () => void; onListo: (f: Ficha) => void }) {
-  const [v, setV] = useState<Record<string, string>>(() => Object.fromEntries(CAMPOS.map((c) => [c.k, f.pruebas?.datos?.[c.k]?.toString() ?? ""])));
-  const [ocupado, setOcupado] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const guardar = async () => {
-    setOcupado(true); setError(null);
-    const body = Object.fromEntries(CAMPOS.map((c) => [c.k, v[c.k] === "" ? null : Number(v[c.k])]));
-    try { onListo(await apiFetch<Ficha>(`${CAP_API}/postulantes/${f.postulante.id}/pruebas`, { method: "PUT", body: JSON.stringify(body) })); }
-    catch (e: any) { setError(e.message); } finally { setOcupado(false); }
-  };
-  return (
-    <Hoja titulo="Otras pruebas" sobre={`${f.postulante.nombre} ${f.postulante.apellido}`} onClose={onClose} ocupada={ocupado}
-      pie={<Boton onClick={guardar} ocupado={ocupado}>Guardar</Boton>}>
-      <div className="space-y-3">
-        <p className="text-sm text-brand-slate">Dejá vacío lo que no tomaste. Atención concentrada: 230 figuras para marcar; el puntaje es aciertos menos omisiones y errores.</p>
-        {CAMPOS.map((c) => (
-          <div key={c.k} className="flex items-center justify-between gap-3">
-            <label htmlFor={c.k} className="text-sm text-brand-ink">{c.label} <span className="text-brand-mist">(0–{c.max})</span></label>
-            <input id={c.k} className="input w-24 text-right tabular-nums" inputMode="numeric" value={v[c.k]} maxLength={3}
-              onChange={(e) => setV({ ...v, [c.k]: e.target.value.replace(/\D/g, "") })} />
-          </div>
-        ))}
-        {error && <Fallo>{error}</Fallo>}
-        <Etiqueta>Se guarda quién y cuándo las cargó</Etiqueta>
-      </div>
-    </Hoja>
   );
 }

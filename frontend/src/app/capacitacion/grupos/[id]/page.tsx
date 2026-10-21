@@ -41,6 +41,11 @@ function Grupo() {
     apiFetch<GrupoDetalle>(`${CAP_API}/grupos/${id}`).then((x) => { setG(x); setError(null); }).catch((e) => setError(e.message));
   }, [id]);
   useEffect(cargar, [cargar]);
+  // «Mi grupo» del mentor llega con los que están en piso.
+  useEffect(() => {
+    const f = new URLSearchParams(window.location.search).get("f");
+    if (f && f in FILTRO) setFiltro(f as Filtro);
+  }, []);
 
   const lista = useMemo(() => {
     const q = buscar.trim().toLowerCase();
@@ -73,7 +78,21 @@ function Grupo() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-6">
+      {/* En el celular, los números en una sola franja para que la lista quede a mano. */}
+      <div className="md:hidden card mb-4 grid grid-cols-4 divide-x divide-brand-border text-center">
+        {[
+          { v: g.embudo.total, l: "personas" },
+          { v: pct(g.efectividad), l: "efectividad", verde: true },
+          { v: `${g.ipv_detalle.realizados}/${g.ipv_detalle.total}`, l: "IPV" },
+          { v: g.feedback_detalle.total, l: "feedback" },
+        ].map((x) => (
+          <div key={x.l} className="py-2.5 px-1 min-w-0">
+            <div className={cx("font-display text-xl leading-none tabular-nums", x.verde ? "text-emerald-700" : "text-brand-ink")}>{x.v}</div>
+            <div className="text-[10px] uppercase tracking-wider2 text-brand-slate mt-1 truncate">{x.l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden md:grid grid-cols-4 gap-2.5 mb-6">
         <Dato label="Postulantes" valor={g.embudo.total} sub={`${g.embudo.activos} activos · ${g.embudo.en_piso} en piso`} />
         <Dato label="Efectividad" valor={pct(g.efectividad)} sub={`${g.embudo.altas} altas operativas`} tono="verde" />
         <Dato label="Hicieron el IPV" valor={`${g.ipv_detalle.realizados}/${g.ipv_detalle.total}`} sub={`${pct(g.ipv_detalle.porcentaje)}${g.ipv_detalle.en_curso ? ` · ${g.ipv_detalle.en_curso} haciéndolo` : ""}`} />

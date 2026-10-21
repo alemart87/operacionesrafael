@@ -221,7 +221,7 @@ def postulante_fila(p: CapPostulante, d: Datos, g: CapGrupo, roles: set[str]) ->
     return {"id": p.id, "grupo_id": p.grupo_id, "nombre": p.nombre, "apellido": p.apellido, "ci": p.ci, "edad": p.edad,
             "sexo": p.sexo, "estado": p.estado, "estado_nombre": ESTADO_NOMBRE[p.estado], "estado_at": iso(p.estado_at),
             "motivo": p.motivo, "etapa_max": p.etapa_max, "en_piso": p.estado in ("aprobo_escrita", "aprobo_mentoria"),
-            "ipv": ipv_de(d.enlaces.get(p.id)), "pruebas": bool(p.pruebas), "comentarios": conteo(d.comentarios[p.id]),
+            "ipv": ipv_de(d.enlaces.get(p.id)), "comentarios": conteo(d.comentarios[p.id]),
             "puede": destinos(p, roles, g)}
 
 
