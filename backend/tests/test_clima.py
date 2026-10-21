@@ -141,6 +141,11 @@ async def test_clima_del_equipo(monkeypatch):
         assert eq[s1]["animo"] < 0 and eq[s1]["tonos"] == {"critico": 3} and eq[s1]["voces"] == 2
         assert eq[s2]["animo"] > 20 and eq[s2]["tonos"] == {"constructivo": 1}
         assert eq[s2]["componentes"]["dicho_por_asesor"] == 100.0 and eq[s2]["componentes"]["aceptado"] == 100.0
+        # El porqué, en palabras (del equipo nunca se nombra al asesor).
+        assert any(m.startswith("Dijo cómo le iba") and "difícil" in m for m in lid[s1]["motivos"]), lid[s1]["motivos"]
+        assert any("negativo" in m for m in lid[s1]["motivos"]) and len(lid[s1]["motivos"]) <= 3
+        assert any("me quiero ir" in m for m in eq[s1]["motivos"]) and not any("Perez" in m or "Ana" in m for m in eq[s1]["motivos"])
+        assert "Los asesores dijeron sus propios compromisos" in eq[s2]["motivos"]
         assert any(p["tono"] == "critico" for p in d["puntos"]) and d["curva"][-1]["equipo"] is not None
         # Los asesores van siempre agregados: no hay nombres ni textos de asesores en la respuesta.
         assert "Perez" not in str(d) and "Me quiero ir" not in str(d)
