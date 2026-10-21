@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Boton, Etiqueta, Hoja, cx, plural } from "@/components/portal/ui";
 import { apiFetch } from "@/lib/api";
 
-export interface PerfilDef { slug: string; name: string; description: string }
+export interface PerfilDef { slug: string; name: string; description: string; solo_modulo?: string | null }
 export interface OperativaDef { slug: string; name: string; description: string; color: string; available: boolean }
 
 export interface Invitacion {
@@ -66,6 +66,9 @@ function Formulario({ perfiles, operativas, cfg, perfilInicial, onCreada }: {
   const [perfil, setPerfil] = useState(perfilInicial && perfiles.some((p) => p.slug === perfilInicial) ? perfilInicial : "");
   const [ops, setOps] = useState<string[]>(disponibles.map((o) => o.slug));
   const sensible = cfg.perfiles_sensibles.includes(perfil);
+  // Perfil de un solo módulo (Capacitador, Mentor, RRHH): la operativa es fija.
+  const solo = perfiles.find((p) => p.slug === perfil)?.solo_modulo ?? null;
+  const opsLink = solo ? [solo] : ops;
   const [cupo, setCupo] = useState(sensible ? 1 : 10);
   const [nota, setNota] = useState("");
   const [dominio, setDominio] = useState("");
@@ -82,11 +85,11 @@ function Formulario({ perfiles, operativas, cfg, perfilInicial, onCreada }: {
     try {
       onCreada(await apiFetch<Invitacion>(API, {
         method: "POST",
-        body: JSON.stringify({ perfil, operativas: ops, max_usos: cupo, nota: nota.trim() || null, dominio: dominio.trim() || null, origen: window.location.origin }),
+        body: JSON.stringify({ perfil, operativas: opsLink, max_usos: cupo, nota: nota.trim() || null, dominio: dominio.trim() || null, origen: window.location.origin }),
       }));
     } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
   };
-  const listo = !!perfil && ops.length > 0 && cupo >= 1 && cupo <= cfg.max_usos;
+  const listo = !!perfil && opsLink.length > 0 && cupo >= 1 && cupo <= cfg.max_usos;
 
   return (
     <div className="space-y-5">
@@ -115,7 +118,10 @@ function Formulario({ perfiles, operativas, cfg, perfilInicial, onCreada }: {
           <span>Este perfil ve Facturación e Integraciones. Mostrale el QR solo a la persona indicada y dejá el cupo en 1.</span>
         </div>
       )}
-      {disponibles.length > 1 && (
+      {solo && (
+        <p className="text-sm text-brand-slate">Operativa: <b className="text-brand-ink">{operativas.find((o) => o.slug === solo)?.name ?? solo}</b> (este perfil solo ve ese módulo)</p>
+      )}
+      {!solo && disponibles.length > 1 && (
         <fieldset>
           <legend className="label">Operativas</legend>
           <div className="space-y-2">
@@ -131,7 +137,7 @@ function Formulario({ perfiles, operativas, cfg, perfilInicial, onCreada }: {
           </div>
         </fieldset>
       )}
-      {disponibles.length === 1 && (
+      {!solo && disponibles.length === 1 && (
         <p className="text-sm text-brand-slate">Operativa: <b className="text-brand-ink">{disponibles[0].name}</b></p>
       )}
       <div>

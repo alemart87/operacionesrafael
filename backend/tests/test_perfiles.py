@@ -57,7 +57,8 @@ def _set_perms(client, admin, role, perms):
 def test_perfiles_sembrados_con_defaults(client, admin):
     body = client.get("/api/v1/perfiles", headers=admin).json()
     slugs = [p["slug"] for p in body["perfiles"]]
-    assert slugs == ["gerente", "sub_gerente", "controller", "coordinador", "supervisor", "analista", "auditor", "cliente"]
+    assert slugs == ["gerente", "sub_gerente", "controller", "coordinador", "supervisor", "analista", "auditor", "cliente",
+                     "capacitador", "mentor", "rrhh"]
     assert body["operativas"][0]["slug"] == TC
     cliente = next(p for p in body["perfiles"] if p["slug"] == "cliente")
     assert cliente["permissions"] == sorted(DEFAULT_PERMISSIONS["cliente"])
@@ -65,7 +66,7 @@ def test_perfiles_sembrados_con_defaults(client, admin):
 
 def test_superadmin_ve_todo(client, admin):
     me = client.get("/api/v1/auth/me", headers=admin).json()
-    assert me["visible_operativas"] == [TC]
+    assert me["visible_operativas"] == [TC, "capacitacion"]
     assert f"{TC}.ventas_netas" in me["permissions"]
     ops = client.get("/api/v1/operativas", headers=admin).json()
     assert all(u["habilitada"] for u in ops[0]["utilidades"])

@@ -27,6 +27,9 @@ export const ROLE_LABELS: Record<string, string> = {
   analista: "Analista",
   auditor: "Auditor",
   cliente: "Cliente",
+  capacitador: "Capacitador",
+  mentor: "Mentor",
+  rrhh: "Gerencia de RRHH",
 };
 
 /** ¿El usuario tiene el permiso? Superadmin siempre. */

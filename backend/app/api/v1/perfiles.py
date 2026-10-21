@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.operativas import ALL_PERMISSIONS, OPERATIVAS, PERFILES_SOLO_PORTAL, RESTRINGIDAS, asignables, filter_permissions
+from ...core.operativas import ALL_PERMISSIONS, OPERATIVAS, PERFILES_SOLO_MODULO, PERFILES_SOLO_PORTAL, RESTRINGIDAS, asignables, filter_permissions
 from ...core.perfiles import PERFIL_SLUGS, PERFILES
 from ...models.profile import Profile
 from ...models.user import User
@@ -52,7 +52,7 @@ async def list_perfiles(
 @router.get("/catalogo")
 async def catalogo(user: CurrentUser = Depends(require_superadmin)) -> dict:
     """Solo el catálogo: perfiles disponibles y operativas (para el alta de usuarios)."""
-    return {"perfiles": PERFILES, "operativas": OPERATIVAS}
+    return {"perfiles": [{**p, "solo_modulo": PERFILES_SOLO_MODULO.get(p["slug"])} for p in PERFILES], "operativas": OPERATIVAS}
 
 
 @router.put("/{slug}")

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.config import settings
 from ...core.database import get_db
-from ...core.operativas import filter_operativas
+from ...core.operativas import filter_operativas, operativas_de_perfil
 from ...core.security import hash_password
 from ...services import seguridad as seg
 from ...services import sesiones
@@ -60,7 +60,7 @@ async def create_user(
     if existing.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "Email ya registrado")
 
-    operativas = filter_operativas(payload.operativas)
+    operativas = operativas_de_perfil(payload.role, payload.operativas)
     cfg = await seg.config(db)
     try:
         seg.validar_contrasena(cfg, payload.password)
@@ -110,9 +110,13 @@ async def update_user(
     if payload.role is not None and payload.role != target.role:
         target.role = payload.role
         changes["role"] = payload.role
-    if payload.operativas is not None:
-        target.operativas = filter_operativas(payload.operativas)
-        changes["operativas"] = target.operativas
+    # Un perfil de un solo módulo (Capacitador, Mentor, RRHH) queda solo en esa operativa, también al cambiarle el perfil
+    # (por ejemplo, de Supervisor a Mentor).
+    if payload.operativas is not None or "role" in changes:
+        nuevas = operativas_de_perfil(target.role, payload.operativas if payload.operativas is not None else list(target.operativas or []))
+        if nuevas != list(target.operativas or []):
+            target.operativas = nuevas
+            changes["operativas"] = nuevas
 
     await db.commit()
     await db.refresh(target)

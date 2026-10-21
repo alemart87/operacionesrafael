@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core import rate_limit
 from ...core.config import settings
 from ...core.database import get_db
-from ...core.operativas import asignables, filter_operativas, get_operativa
+from ...core.operativas import asignables, get_operativa, operativas_de_perfil
 from ...core.perfiles import PERFIL_PATTERN, PERFIL_SLUGS, PERFILES
 from ...core.security import hash_password
 from ...models.invitacion import Invitacion
@@ -126,7 +126,7 @@ async def crear(payload: InvitacionCrear, request: Request, user: CurrentUser = 
     origen = payload.origen.strip().rstrip("/")
     if not _ORIGEN.match(origen):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "La dirección de la plataforma no es válida")
-    operativas = filter_operativas(payload.operativas)
+    operativas = operativas_de_perfil(payload.perfil, payload.operativas)
     if not operativas:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Elegí al menos una operativa")
     if payload.max_usos > settings.invitacion_max_usos:
@@ -260,7 +260,7 @@ async def registrarse(token: str, payload: Registro, request: Request, db: Async
         raise _rechazo("agotada")
     ahora = _ahora()
     nuevo = User(email=email, hashed_password=hash_password(payload.password), full_name=nombre, role=inv.perfil,
-                 operativas=list(inv.operativas or []), created_by=None if inv.creada_por == "superadmin" else inv.creada_por,
+                 operativas=operativas_de_perfil(inv.perfil, list(inv.operativas or [])), created_by=None if inv.creada_por == "superadmin" else inv.creada_por,
                  must_change_password=False, password_changed_at=ahora, invitacion_id=inv.id)
     db.add(nuevo)
     try:

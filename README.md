@@ -1884,6 +1884,75 @@ Data Retention*); la plataforma guarda su propia copia para la consola.
 4. Misiones programadas con avisos y la consola completa (temas, brechas, versiones).
 5. Evaluaciones, conciliación de costos, migración del agente de Facturación a Voi y retención/borrado automático.
 
+## Capacitación y Mentoría (operativa propia)
+
+Grupos de capacitación con el modelo **Capacitación ÁGIL**: el postulante está a la mañana en sala con el capacitador y a
+la tarde en piso con el mentor. Código en `backend/app/operativas/capacitacion/` y `frontend/src/app/capacitacion/`.
+
+### Perfiles y acceso
+
+| Perfil | Ve | Puede |
+|---|---|---|
+| **Capacitador** (nuevo) | Solo este módulo: los grupos donde es capacitador | Crear grupos y cambiar su estado (en curso, finalizada, cancelada), cargar postulantes, estados de sala (en capacitación, aprobó prueba escrita, abandonó, dado de baja), link del IPV, pruebas en papel, comentarios |
+| **Mentor** (nuevo) | Solo este módulo: los grupos donde es mentor | Estados del piso (aprobó mentoría y OJT, alta operativa; abandono o baja una vez en piso), comentarios |
+| **Gerencia de RRHH** (nuevo) | Solo este módulo, completo | Todo, en todos los grupos, y las estadísticas generales |
+| Gerente, Sub gerente, superadmin | Además de lo suyo, este módulo completo | Todo |
+
+- Los tres perfiles nuevos son **de un solo módulo** (`core/operativas.PERFILES_SOLO_MODULO`): al crearlos, al registrarse
+  con un link de creación rápida o al cambiarles el perfil (por ejemplo, de Supervisor a Mentor) quedan asignados solo a
+  Capacitación y Mentoría, y solo se les pueden dar sus utilidades. Al entrar van directo a `/capacitacion`.
+- Utilidades: `capacitacion.ver`, `capacitacion.capacitar`, `capacitacion.mentoria` y `capacitacion.total` (vista completa,
+  restringida a gerente, sub gerente y RRHH). Una migración de datos se la da al gerente y al sub gerente existentes y les
+  asigna la operativa.
+
+### Postulantes y estados
+
+Nombre, apellido, CI (no se repite en el grupo), edad y sexo. Alta rápida: «Guardar y cargar otro».
+
+`En capacitación → Aprobó prueba escrita → Aprobó mentoría y OJT → Alta operativa`, con **Abandonó** o **Dado de baja**
+(con motivo) en cualquier etapa. Se guarda hasta qué etapa llegó cada uno (embudo) y el historial de cada cambio. Un grupo
+cancelado queda de solo lectura y cierra los links.
+
+- **Efectividad del grupo** = altas operativas ÷ postulantes ingresados. **Duración** = del inicio al cierre (o hasta hoy).
+- **Seguimiento**: comentarios de *feedback* u *oportunidad de mejora*, escritos o **dictados** (mismo servicio de
+  transcripción que el coaching, worker `capacitacion_audios`), con el conteo por postulante y los que no tienen feedback.
+
+### Test IPV por link seguro
+
+- El capacitador genera un **link por postulante** (QR, copiar o WhatsApp). Token de 256 bits: se guarda su SHA-256 y el
+  token cifrado (Fernet) para volver a mostrar el QR; regenerarlo invalida el anterior y conserva lo respondido. Vence a
+  los 21 días; deja de valer si el postulante sale o el grupo se cancela. Los links inválidos se limitan por IP.
+- Página pública `/postulante/<token>` mobile first: una situación por pantalla, se guarda a medida que contesta (y en el
+  teléfono si no hay señal), se retoma con el mismo link. Al enviar las 87 respuestas **se corrige solo**. El postulante
+  no ve resultados; desde el mismo link deja su **feedback escrito o dictado**.
+- Corrección (`ipv.py`, datos en `ipv_datos.py`): clave y baremos tomados de las hojas de `IPV_DIGITAL` y
+  `Correccion_IPV`. Escalas: DGV, receptividad (I comprensión, II adaptabilidad, III control de sí mismo, IV tolerancia
+  a la frustración), agresividad comercial (V combatividad, VI dominancia, VII seguridad, VIII actividad) y IX
+  sociabilidad; puntaje directo → decatipo (1–10) → inferior (1–3), término medio (4–7) o superior (8–10). Corrige
+  errores de la planilla: tolerancia = 8 − coincidencias, los ítems 56 y 86 que leían la celda de al lado, los baremos
+  incompletos del archivo digital y la atención concentrada = (aciertos − (omisiones + errores)) ÷ 230.
+- Señales de calidad en la ficha: completado en menos de 6 minutos o más del 70 % con la misma letra.
+- **Otras pruebas** (en papel, las carga el capacitador): Dominó (0–48 aciertos → percentil), atención concentrada y
+  distribuida (0–51), con su nivel.
+
+### Ficha y estadísticas
+
+- **Ficha del postulante**: datos, estado, IPV con el gráfico de decatipos (tocar una escala explica qué mide),
+  fortalezas y aspectos a trabajar, otras pruebas, seguimiento e historial.
+- **Grupo**: postulantes en tabla (escritorio) o tarjetas (celular) con filtros, embudo, IPV del grupo, por sexo y por
+  edad (18–24, 25–34, 35–44, 45 o más), historial.
+- **Estadísticas** (`/capacitacion/estadisticas`): por período, efectividad, deserción, duración promedio, IPV,
+  feedback por postulante, por sexo y edad y comparativa por grupo.
+
+### API
+
+`/api/v1/capacitacion`: `GET /resumen`, `GET /personas`, `POST /grupos`, `PATCH|GET /grupos/{id}`,
+`POST /grupos/{id}/estado`, `POST /grupos/{id}/postulantes`, `GET|PATCH|DELETE /postulantes/{id}`,
+`POST /postulantes/{id}/estado`, `PUT /postulantes/{id}/pruebas`, `GET|POST|DELETE /postulantes/{id}/enlace`,
+`POST /postulantes/{id}/comentarios`, `POST /postulantes/{id}/audios`, `GET /audios/{id}[/archivo]`.
+Público (sin sesión): `/api/v1/capacitacion/publico/{token}` (`GET`, `GET|PUT /ipv`, `POST /ipv/terminar`,
+`POST /comentarios`, `POST /audios`, `GET /audios/{id}`). Todo cambio queda en la auditoría.
+
 ## Sistema de login y seguridad de acceso
 
 La pantalla de ingreso lleva el **logo de Voicenter en movimiento** (`components/LogoAnimado.tsx`): los 25 puntos del
