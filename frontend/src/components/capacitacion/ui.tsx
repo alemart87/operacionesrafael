@@ -11,8 +11,8 @@ import { Boton, Chips, Etiqueta, Fallo, Hoja, cx, hace, plural } from "@/compone
 import type { AudioCoaching } from "@/components/supervision/tipos";
 import { apiFetch } from "@/lib/api";
 import {
-  CAP_API, ESTADOS, ESTADOS_GRUPO, MOTIVOS_SALIDA, SEXOS, fecha, hoyIso, pct, subirDictado,
-  type Comentario, type Embudo, type Enlace, type EstadoGrupo, type EstadoPostulante, type FilaDemo, type Ficha,
+  CAP_API, ESTADOS, ESTADOS_GRUPO, MOTIVOS_SALIDA, NIVEL_IPV, SEXOS, fecha, hoyIso, pct, subirDictado,
+  type Comentario, type Embudo, type Enlace, type Escala, type EstadoGrupo, type EstadoPostulante, type FilaDemo, type Ficha,
   type Grupo, type Persona, type Postulante, type Sexo,
 } from "./tipos";
 
@@ -94,6 +94,55 @@ export function TablaDemo({ titulo, filas }: { titulo: string; filas: FilaDemo[]
         ))}
         {filas.every((f) => !f.total) && <div className="px-4 py-6 text-sm text-brand-slate text-center">Todavía no hay postulantes.</div>}
       </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ el IPV
+const ZONAS = [
+  { desde: 1, hasta: 3, nivel: "inferior" as const }, { desde: 4, hasta: 7, nivel: "termino_medio" as const },
+  { desde: 8, hasta: 10, nivel: "superior" as const },
+];
+
+/** Decatipo de cada escala sobre la regla 1–10 con las zonas inferior / término medio / superior. */
+export function BarrasIpv({ escalas, descripciones }: { escalas: Escala[]; descripciones?: Record<string, string> }) {
+  const [abierta, setAbierta] = useState<string | null>(null);
+  return (
+    <div className="space-y-1">
+      <div className="flex text-[10px] uppercase tracking-wider2 text-brand-slate font-semibold pl-0 sm:pl-[40%]">
+        {ZONAS.map((z) => <span key={z.nivel} style={{ flex: z.hasta - z.desde + 1 }} className="text-center truncate">{NIVEL_IPV[z.nivel].nombre}</span>)}
+      </div>
+      {escalas.map((x) => {
+        const general = !x.romano;
+        return (
+          <button key={x.clave} type="button" onClick={() => setAbierta(abierta === x.clave ? null : x.clave)}
+            className={cx("w-full text-left rounded-lg px-2 py-2 hover:bg-brand-bg-soft", general && "bg-brand-bg-soft")} aria-expanded={abierta === x.clave}>
+            <div className="sm:flex sm:items-center gap-3">
+              <div className="sm:w-[40%] min-w-0 flex items-baseline justify-between gap-2">
+                <span className={cx("text-[14px] text-brand-ink truncate", general ? "font-bold" : "font-semibold")}>
+                  {x.romano && <span className="text-brand-mist mr-1">{x.romano}</span>}{x.nombre}
+                </span>
+                <span className="sm:hidden text-xs tabular-nums text-brand-slate shrink-0">{x.decatipo} · {NIVEL_IPV[x.nivel].nombre}</span>
+              </div>
+              <div className="flex-1 mt-1 sm:mt-0 flex items-center gap-2">
+                <div className="relative flex-1 h-5 flex gap-[2px]" aria-hidden>
+                  {ZONAS.map((z) => (
+                    <span key={z.nivel} className="h-full rounded-sm" style={{ flex: z.hasta - z.desde + 1, background: `${NIVEL_IPV[z.nivel].color}14` }} />
+                  ))}
+                  <span className="absolute top-1/2 -translate-y-1/2 left-0 h-2 rounded-full" style={{ width: `${(x.decatipo / 10) * 100}%`, background: NIVEL_IPV[x.nivel].color }} />
+                </div>
+                <span className="hidden sm:inline w-28 text-xs tabular-nums text-brand-slate shrink-0"><b className="text-brand-ink text-sm">{x.decatipo}</b> · {NIVEL_IPV[x.nivel].nombre}</span>
+              </div>
+            </div>
+            {abierta === x.clave && (
+              <p className="mt-1.5 text-[13px] text-brand-slate leading-snug">
+                {descripciones?.[x.clave]} <span className="text-brand-mist">Puntaje directo {x.directo} de {x.maximo}.</span>
+              </p>
+            )}
+          </button>
+        );
+      })}
+      <p className="text-[11px] text-brand-mist pt-1">Decatipo de 1 a 10 · tocá una escala para ver qué mide.</p>
     </div>
   );
 }
