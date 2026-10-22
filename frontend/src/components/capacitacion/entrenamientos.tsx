@@ -108,8 +108,8 @@ export function EditorCaso({ eid, caso, catalogo, onClose, onListo }: {
 
         <div><span className="label">Objeciones que va a plantear</span>
           <ListaFrases valor={f.objeciones} onChange={(v) => set("objeciones", v)} max={12} placeholder="Ej.: ¿Y si después me suben el precio?" /></div>
-        <div><span className="label">Información que el asesor tiene que dar bien</span>
-          <p className="text-[12px] text-brand-slate -mt-1 mb-2">La usa solo la IA que evalúa: el cliente no la conoce.</p>
+        <div><span className="label">Respuestas correctas: lo que tiene que dar bien</span>
+          <p className="text-[12px] text-brand-slate -mt-1 mb-2">La IA corrige con esto (y con la información oficial del entrenamiento): revisa cada dato y, si lo da mal o no lo da, se lo marca con el correcto en su devolución. El cliente simulado no la conoce.</p>
           <ListaFrases valor={f.info_correcta} onChange={(v) => set("info_correcta", v)} max={20} placeholder="Ej.: El plan cuesta 99.000 Gs por mes" /></div>
         <div><label className="label" htmlFor="cp">Primer mensaje del cliente (opcional)</label>
           <textarea id="cp" className="input min-h-[60px]" value={f.primer_mensaje ?? ""} maxLength={1000} placeholder="Si lo dejás vacío, la IA lo escribe. Una línea en blanco = dos mensajes seguidos." onChange={(e) => set("primer_mensaje", e.target.value)} /></div>
@@ -175,6 +175,12 @@ export function EvaluacionVista({ ev, criterios }: { ev: EvaluacionCaso; criteri
         {ev.fuertes.length > 0 && <div className="text-[13px]"><b className="text-emerald-800">Bien:</b> {ev.fuertes.join(" · ")}</div>}
         {ev.mejorar.length > 0 && <div className="text-[13px]"><b className="text-brand-primary-dark">Mejorar:</b> {ev.mejorar.join(" · ")}</div>}
       </div>
+      {ev.devolucion && (
+        <div className="rounded-lg border border-brand-border bg-brand-bg-soft px-3 py-2 text-[13px] text-brand-ink">
+          <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">Lo que leyó el postulante</div>
+          {ev.devolucion}
+        </div>
+      )}
     </div>
   );
 }

@@ -1975,7 +1975,9 @@ Chats de práctica en los que el postulante atiende a un **cliente simulado por 
   - Cada envío lleva una **marca de lote**: si se corta la conexión, los mensajes esperan («Sin conexión…»), se
     reintentan solos con la misma marca y el servidor no los duplica. El borrador se guarda en el teléfono y la pantalla
     se acomoda al teclado del celular.
-  - Al terminar un caso pasa directo al siguiente cliente («Atender a Hugo») sin volver a la lista.
+  - Arriba del chat se ve la cola del entrenamiento: «Caso 2 de 5», una barra con los hechos, el actual y los que esperan,
+    y cuántos quedan en espera. Al terminar un caso, el siguiente cliente «está esperando» y se lo atiende con un toque
+    («Atender a Hugo»), sin volver a la lista.
   - El cliente no repite mensajes: si la IA manda dos veces el mismo (por ejemplo, el saludo) o repite algo que ya dijo,
     se saca; si todo era repetido, se le pide una vez más. Lo corto («ok», «dale») sí se puede repetir entre turnos.
   - Se mide el **tiempo** de cada caso. Cada mensaje tiene hasta 1000 caracteres (hasta 6 por lote), una respuesta a
@@ -1987,6 +1989,15 @@ Chats de práctica en los que el postulante atiende a un **cliente simulado por 
   trato y claridad). Al terminar todos los casos: **perfil comercial** = nivel promedio ≥ 8 e **información correcta** en ≥ 90 % de
   los casos (umbrales editables por entrenamiento). Con los dos se **recomienda la incorporación**. La decisión la toman
   esas reglas; la IA escribe el resumen, los puntos fuertes y **qué debe mejorar el asesor**.
+- **Devolución al postulante** (corta, sin puntajes ni la recomendación, que quedan para el equipo): apenas la IA evalúa
+  un caso (unos segundos después de terminarlo), el postulante lee en el mismo chat dos o tres frases con lo más
+  importante para mejorar, si dio bien la información y, si se equivocó o le faltó un dato, cuál es el correcto según lo
+  que cargó el capacitador. La vuelve a ver desde la lista de casos. Al terminar todos, ve «Lo que hiciste bien» y
+  «Para mejorar». El equipo ve en cada conversación lo que leyó el postulante. Endpoint público:
+  `GET /publico/{token}/sesiones/{id}/devolucion`.
+- **Con qué corrige la IA**: con lo que carga el capacitador. La **información oficial del producto** del entrenamiento
+  (vale para todos los casos) y, en cada caso, las **respuestas correctas** («lo que tiene que dar bien»): revisa cada
+  una (correcta, incorrecta, no la dijo o no aplicó) y anota cualquier dato falso aunque no esté en la lista.
 - **Ficha y avance**: el resultado de cada entrenamiento queda en la ficha del postulante (con cada conversación para
   revisar) y en el historial. El **% de avance** cuenta solo los entrenamientos (casos hechos ÷ casos enviados); el IPV
   va aparte. **Mínimo del equipo: 15 entrenamientos terminados por postulante** (`ENTRENAMIENTO_META_POSTULANTE`).

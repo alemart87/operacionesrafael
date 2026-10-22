@@ -173,7 +173,12 @@ export interface MensajeChat { r: "cliente" | "asesor"; t: string; at: string; l
 export interface EvaluacionCaso {
   datos: { dato: string; estado: "correcto" | "incorrecto" | "omitido" | "no_aplica"; detalle: string }[]; errores: string[];
   info_correcta: boolean; info_pct: number; nivel: number; criterios: Record<string, number>; fuertes: string[]; mejorar: string[];
-  resumen: string;
+  resumen: string; devolucion?: string;
+}
+/** La devolución corta de un caso que ve el postulante (sin puntajes ni recomendación). */
+export interface DevolucionCaso {
+  estado: "en_curso" | "evaluando" | "lista" | "sin_devolucion"; info_ok?: boolean; devolucion?: string;
+  corregir?: { dato: string; detalle: string }[];
 }
 export interface Sesion {
   id: string; caso_id: string; titulo: string; cliente: string; estado: string; fin_motivo: string | null; mensajes: MensajeChat[];

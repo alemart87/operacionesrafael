@@ -91,7 +91,7 @@ ESQUEMA_CLIENTE = {
 }
 ESQUEMA_EVAL = {
     "type": "object", "additionalProperties": False,
-    "required": ["datos", "errores", "info_correcta", "nivel_comercial", "criterios", "fuertes", "mejorar", "resumen"],
+    "required": ["datos", "errores", "info_correcta", "nivel_comercial", "criterios", "fuertes", "mejorar", "resumen", "devolucion"],
     "properties": {
         "datos": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["dato", "estado", "detalle"],
@@ -102,7 +102,7 @@ ESQUEMA_EVAL = {
         "nivel_comercial": {"type": "integer"},
         "criterios": {"type": "object", "additionalProperties": False, "required": list(CRITERIOS),
                       "properties": {k: {"type": "integer"} for k in CRITERIOS}},
-        "fuertes": _strs(), "mejorar": _strs(), "resumen": {"type": "string"},
+        "fuertes": _strs(), "mejorar": _strs(), "resumen": {"type": "string"}, "devolucion": {"type": "string"},
     },
 }
 ESQUEMA_FINAL = {
@@ -174,7 +174,8 @@ Qué evaluar:
 1. Información: para cada dato de la lista, decí si el asesor lo dio correcto, incorrecto (contradice la información oficial), omitido (correspondía y no lo dio) o no_aplica (la charla no llegó ahí por decisión del cliente). En «errores» anotá todo dato falso, inventado o promesa sin respaldo que haya dicho, aunque no esté en la lista. «info_correcta» es true solo si no dijo nada falso y dio bien los datos clave que la conversación pedía.
 2. Nivel comercial de 1 a 10 (10 = listo para vender a un cliente real): escucha y empatía, indagación de necesidades, argumentación con beneficios, manejo de objeciones, propuesta de cierre, trato y claridad por chat. Sé exigente y justo: 8 o más solo si lo haría bien con un cliente real. Puntuá además cada criterio de 1 a 10.
 3. «fuertes» y «mejorar»: hasta 3 de cada uno, frases cortas, concretas y accionables, en segunda persona («Preguntá…», «Confirmá…»).
-4. «resumen»: una o dos oraciones.
+4. «resumen»: una o dos oraciones, para el equipo de capacitación.
+5. «devolucion»: el feedback que lee el asesor apenas termina el caso. Dos o tres frases cortas (no más de 350 caracteres), en segunda persona, amables y directas. Primero lo más importante para mejorar; si dio un dato mal o le faltó uno clave, decile cuál es el correcto según la información oficial. Cerrá con algo que hizo bien, si lo hubo. Sin puntajes ni notas.
 Escribí en español de Paraguay con «vos»."""
 
 
@@ -343,13 +344,15 @@ def _normalizar_eval(d: dict[str, Any]) -> dict[str, Any]:
         "fuertes": [str(x)[:200] for x in d.get("fuertes") or []][:3],
         "mejorar": [str(x)[:200] for x in d.get("mejorar") or []][:3],
         "resumen": str(d.get("resumen") or "")[:600],
+        "devolucion": str(d.get("devolucion") or "")[:450],
     }
 
 
 def evaluacion_vacia(motivo: str) -> dict[str, Any]:
     return {"datos": [], "errores": [], "info_correcta": False, "info_pct": 0, "nivel": 1,
             "criterios": {k: 1 for k in CRITERIOS}, "fuertes": [], "mejorar": ["Respondé al cliente: la conversación quedó sin respuestas del asesor."],
-            "resumen": motivo, "modelo": None}
+            "resumen": motivo, "devolucion": "No le respondiste al cliente. En el próximo caso, saludalo y preguntale qué necesita.",
+            "modelo": None}
 
 
 async def evaluar_caso(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, empresa: str, producto: str) -> dict[str, Any]:
@@ -379,6 +382,8 @@ def _evaluar_simulado(caso: dict[str, Any], mensajes: list[dict[str, Any]]) -> d
         "nivel_comercial": nivel, "criterios": {k: nivel for k in CRITERIOS},
         "fuertes": ["Saludaste y te presentaste."] if texto else [], "mejorar": ["Preguntá más por la necesidad del cliente."],
         "resumen": f"{SIMULADO_TEXTO}: nivel {nivel}.",
+        "devolucion": (f"{SIMULADO_TEXTO}. " + ("Diste bien la información. " if datos and all(x["estado"] == "correcto" for x in datos)
+                       else "Te faltó dar algún dato clave del caso. ") + "Seguí preguntando por la necesidad del cliente."),
     })
 
 

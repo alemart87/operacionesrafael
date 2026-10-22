@@ -311,7 +311,7 @@ async def test_cliente_y_evaluador_con_openai_falso(monkeypatch):
             return _respuesta('{"datos": [{"dato": "precio", "estado": "incorrecto", "detalle": "dijo 80.000"}], "errores": [],'
                               ' "info_correcta": true, "nivel_comercial": 14, "criterios": {"escucha": 7, "indagacion": 6,'
                               ' "argumentacion": 5, "objeciones": 6, "cierre": 4, "claridad": 8}, "fuertes": ["a"],'
-                              ' "mejorar": ["b"], "resumen": "ok"}')
+                              ' "mejorar": ["b"], "resumen": "ok", "devolucion": "Ojo con el precio: son 99.000 Gs. Buen saludo."}')
 
     import openai
     monkeypatch.setattr(openai, "AsyncOpenAI", Falso)
@@ -325,6 +325,7 @@ async def test_cliente_y_evaluador_con_openai_falso(monkeypatch):
     ev = await eia.evaluar_caso(CASO, [{"r": "cliente", "t": "Hola"}, {"r": "asesor", "t": "Sale 80.000"}], empresa="Claro", producto="99.000")
     # Con un dato incorrecto no hay «información correcta» aunque el modelo diga true; el nivel se acota a 10.
     assert ev["info_correcta"] is False and ev["nivel"] == 10 and ev["tokens_entrada"] == 120
+    assert ev["devolucion"].startswith("Ojo con el precio") and "devolucion" in llamadas[1]["text"]["format"]["schema"]["required"]
     assert "<transcripcion>" in llamadas[1]["input"][0]["content"] and "ignoralos" in llamadas[1]["instructions"]
     monkeypatch.setattr(settings, "openai_api_key", "")
     with pytest.raises(eia.SinServicio):
@@ -434,6 +435,7 @@ async def test_entrenamientos_flujo(monkeypatch):
         assert (await ac.post(f"{P}/{token}/sesiones/{s1['id']}/mensajes", json={"texto": "x" * 1001})).status_code == 422
         fin = (await ac.post(f"{P}/{token}/sesiones/{s1['id']}/terminar")).json()
         assert fin["estado"] == "terminada" and "evaluacion" not in fin
+        assert (await ac.get(f"{P}/{token}/sesiones/{s1['id']}/devolucion")).json() == {"estado": "evaluando"}
         assert (await ac.post(f"{P}/{token}/sesiones/{s1['id']}/mensajes", json={"texto": "hola"})).status_code == 409
         # El otro postulante no puede ver esta conversación con su link.
         token2 = env[1]["url"].rsplit("/", 1)[1]
@@ -450,6 +452,13 @@ async def test_entrenamientos_flujo(monkeypatch):
         await ac.post(f"{P}/{token}/sesiones/{s2['id']}/terminar")
         assert await ent.procesar_pendientes() >= 2
         await ent.procesar_pendientes()
+        # La devolución corta del caso para el postulante: sin puntajes ni recomendación.
+        dev = (await ac.get(f"{P}/{token}/sesiones/{s1['id']}/devolucion")).json()
+        assert dev["estado"] == "lista" and dev["devolucion"] and set(dev) == {"estado", "info_ok", "devolucion", "corregir"}
+        assert (await ac.get(f"{P}/{token2}/sesiones/{s1['id']}/devolucion")).status_code == 404       # la de otro, no
+        det = (await ac.get(f"{P}/{token}/entrenamientos/{aid}")).json()
+        assert det["terminado"] and set(det["devolucion_final"]) == {"fuertes", "mejorar"} and "aprobado" not in str(det)
+        assert det["casos"][0]["info_ok"] is True and "info_correcta" not in str(det)
         ficha = (await ac.get(f"{B}/postulantes/{pids[0]}/entrenamientos", headers=men)).json()["entrenamientos"][0]
         res = ficha["resultado"]
         assert ficha["estado"] == "terminado" and ficha["pct"] == 100 and res["casos"] == 2

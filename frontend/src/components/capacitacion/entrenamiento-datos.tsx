@@ -39,8 +39,8 @@ export function HojaDatosEntrenamiento({ ent, onClose, onListo }: { ent?: Entren
         <div><label className="label" htmlFor="ei">Instrucciones para el postulante</label>
           <textarea id="ei" className="input min-h-[72px]" value={f.instrucciones} maxLength={2000}
             placeholder="Ej.: Sos asesor de Claro. Atendé a cada cliente, averiguá qué necesita y ofrecé el plan que le sirva." onChange={(e) => setF({ ...f, instrucciones: e.target.value })} /></div>
-        <div><label className="label" htmlFor="ep">Información oficial del producto</label>
-          <p className="text-[12px] text-brand-slate -mt-1 mb-2">Precios, planes, condiciones y promociones vigentes. La usa la IA para revisar que el postulante dé la información correcta (el cliente simulado no la ve).</p>
+        <div><label className="label" htmlFor="ep">Información oficial del producto (la IA corrige con esto)</label>
+          <p className="text-[12px] text-brand-slate -mt-1 mb-2">Precios, planes, condiciones y promociones vigentes. Es la respuesta correcta para todos los casos: la IA revisa que el postulante dé la información así y, si se equivoca, le dice el dato correcto en su devolución. El cliente simulado no la ve.</p>
           <textarea id="ep" className="input min-h-[140px]" value={f.producto} maxLength={20000}
             placeholder={"Ej.:\nPlan Pospago 30 GB: 99.000 Gs por mes, llamadas ilimitadas.\nPortabilidad: conserva su número, demora 48 h hábiles…"} onChange={(e) => setF({ ...f, producto: e.target.value })} /></div>
         <button type="button" className="text-sm font-semibold text-brand-primary" onClick={() => setAvanzado(!avanzado)}>{avanzado ? "Ocultar" : "Ver"} las reglas para aprobar</button>

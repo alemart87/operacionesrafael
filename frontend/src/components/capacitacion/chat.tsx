@@ -43,7 +43,8 @@ function Reloj({ desde, parado }: { desde: string; parado?: boolean }) {
   const [, setT] = useState(0);
   useEffect(() => { if (parado) return; const x = setInterval(() => setT((n) => n + 1), 1000); return () => clearInterval(x); }, [parado]);
   const s = Math.max(0, Math.floor((Date.now() - new Date(desde).getTime()) / 1000));
-  return <span className="tabular-nums">{Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}</span>;
+  const dos = (n: number) => String(n).padStart(2, "0");
+  return <span className="tabular-nums">{s >= 3600 ? `${Math.floor(s / 3600)}:${dos(Math.floor((s % 3600) / 60))}:${dos(s % 60)}` : `${Math.floor(s / 60)}:${dos(s % 60)}`}</span>;
 }
 
 function Tilde({ estado }: { estado?: Estado }) {
@@ -53,10 +54,14 @@ function Tilde({ estado }: { estado?: Estado }) {
   return <CheckCheck size={13} className="text-sky-300" aria-label="visto" />;
 }
 
-export function Chat({ id, cliente, titulo, mensajes: iniciales, iniciado, terminado: terminadoInicial, enviar, onTerminar, onVolver, pie, aviso }: {
+export function Chat({ id, cliente, titulo, pasos, mensajes: iniciales, iniciado, terminado: terminadoInicial, enviar, onTerminar, onVolver, pie, aviso, cierre }: {
   /** La conversación (para guardar el borrador). */
   id: string;
   cliente: string; titulo?: string; mensajes: MensajeChat[]; iniciado: string; terminado: boolean;
+  /** Los casos del entrenamiento (hechos, el actual y los que esperan): se ven arriba, como una cola de clientes. */
+  pasos?: ("hecho" | "actual" | "pendiente")[];
+  /** Lo que aparece en la charla cuando termina (por ejemplo, la devolución). */
+  cierre?: ReactNode;
   /** Manda uno o varios mensajes seguidos con su marca de lote; devuelve lo que contestó el cliente. */
   enviar: (textos: string[], lote: string) => Promise<{ nuevos: string[]; fin: boolean }>;
   onTerminar?: () => Promise<void>; onVolver?: () => void; pie?: (terminado: boolean) => ReactNode; aviso?: ReactNode;
@@ -264,6 +269,21 @@ export function Chat({ id, cliente, titulo, mensajes: iniciales, iniciado, termi
           </button>
         )}
       </header>
+      {pasos && pasos.length > 1 && (() => {
+        const actual = pasos.indexOf("actual") + 1;
+        const esperan = pasos.filter((p) => p === "pendiente").length;
+        return (
+          <div className="bg-white border-b border-brand-border px-4 py-2">
+            <div className="max-w-2xl mx-auto flex items-center gap-3">
+              <span className="text-[12px] font-bold text-brand-ink tabular-nums shrink-0">Caso {actual || pasos.length} de {pasos.length}</span>
+              <span className="flex-1 flex gap-1" aria-hidden>
+                {pasos.map((p, i) => <span key={i} className={cx("h-1.5 flex-1 rounded-full", p === "hecho" ? "bg-emerald-500" : p === "actual" ? "bg-brand-ink" : "bg-brand-border")} />)}
+              </span>
+              <span className="text-[12px] text-brand-slate shrink-0">{esperan ? `${esperan} en espera` : "el último"}</span>
+            </div>
+          </div>
+        );
+      })()}
       {!enLinea && (
         <div role="status" className="bg-amber-50 border-b border-amber-200 text-amber-900 text-[13px] px-4 py-2 flex items-center gap-2">
           <WifiOff size={15} aria-hidden /> Sin conexión. Tus mensajes salen cuando vuelva.
@@ -301,6 +321,7 @@ export function Chat({ id, cliente, titulo, mensajes: iniciales, iniciado, termi
               <span className="inline-block rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-brand-slate shadow-sm">La conversación terminó</span>
             </div>
           )}
+          {terminado && cierre}
           <div ref={abajo} className="h-1" />
         </div>
       </div>
