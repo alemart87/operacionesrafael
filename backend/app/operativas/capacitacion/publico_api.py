@@ -82,7 +82,8 @@ async def ver(token: str, request: Request, db: AsyncSession = Depends(get_db)) 
 
 @router.get("/{token}/ipv")
 async def cuestionario(token: str, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
-    """Las 87 situaciones (sin la clave) y lo que ya respondió, para seguir donde quedó."""
+    """Las 87 situaciones (sin la clave) y lo que ya respondió, para seguir en la primera sin responder (no se vuelve
+    atrás)."""
     e, p, g = await _vigente(db, token, request)
     if e.ipv_estado == "terminado":
         return {**_estado(e, p, g), "preguntas": [], "respuestas": {}}
@@ -93,9 +94,25 @@ class Respuestas(BaseModel):
     respuestas: Dict[str, str] = Field(default_factory=dict, max_length=ipv.TOTAL)
 
 
+def _sumar(e: CapEnlace, nuevas: dict[int, str]) -> dict[int, str]:
+    """Las respuestas nuevas sumadas a las guardadas, con dos reglas: una respuesta guardada no se cambia y las
+    situaciones se contestan en orden, sin saltear (no quedan huecos para volver después). Reenviar la misma respuesta
+    (un reintento sin señal) no es un error."""
+    previas = {int(k): v for k, v in (e.respuestas or {}).items()}
+    if any(n in previas and previas[n] != letra for n, letra in nuevas.items()):
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "respuesta_fija",
+                                                       "message": "Esa respuesta ya quedó guardada y no se puede cambiar."})
+    faltan = [n for n in ipv.OPCIONES if n not in previas]          # en el orden del test
+    nuevos = sorted(n for n in nuevas if n not in previas)
+    if nuevos != faltan[:len(nuevos)]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "fuera_de_orden",
+                                                          "message": "Las situaciones se responden en orden, sin saltear."})
+    return {**previas, **nuevas}
+
+
 @router.put("/{token}/ipv")
 async def guardar(token: str, payload: Respuestas, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
-    """Guarda las respuestas a medida que contesta (se suman a las anteriores; puede cambiar una mientras no termine)."""
+    """Guarda cada respuesta apenas la confirma. Queda fija: no se puede cambiar ni volver atrás."""
     e, p, g = await _vigente(db, token, request, bloquear=True)
     if e.ipv_estado == "terminado":
         raise HTTPException(status.HTTP_409_CONFLICT, "Ya terminaste el test. ¡Gracias!")
@@ -103,7 +120,7 @@ async def guardar(token: str, payload: Respuestas, request: Request, db: AsyncSe
         nuevas = ipv.validar({int(k): v for k, v in payload.respuestas.items()}, completas=False)
     except (ipv.RespuestasInvalidas, ValueError) as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Respuesta inválida") from exc
-    e.respuestas = {**(e.respuestas or {}), **{str(k): v for k, v in nuevas.items()}}
+    e.respuestas = {str(k): v for k, v in _sumar(e, nuevas).items()}
     if e.ipv_estado == "pendiente":
         e.ipv_estado, e.iniciado_at = "en_curso", srv.ahora()
         srv.evento(db, grupo_id=g.id, postulante_id=p.id, tipo="ipv_inicio", por=None)
@@ -120,7 +137,7 @@ async def terminar(token: str, payload: Respuestas, request: Request, db: AsyncS
         return {"terminado": True}
     try:
         extra = ipv.validar({int(k): v for k, v in payload.respuestas.items()}, completas=False)
-        todas = ipv.validar({**{int(k): v for k, v in (e.respuestas or {}).items()}, **extra})
+        todas = ipv.validar(_sumar(e, extra))
     except ipv.RespuestasInvalidas as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except ValueError as exc:

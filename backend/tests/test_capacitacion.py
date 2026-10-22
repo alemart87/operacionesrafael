@@ -190,6 +190,16 @@ async def test_grupo_postulantes_ipv_y_seguimiento(monkeypatch, tmp_path):
         assert (await ac.put(f"{P}/{token}/ipv", json={"respuestas": primeras})).json()["respondidas"] == 40
         assert (await ac.put(f"{P}/{token}/ipv", json={"respuestas": {"14": "C"}})).status_code == 400
         assert len((await ac.get(f"{P}/{token}/ipv")).json()["respuestas"]) == 40
+        # Sin volver atrás: una respuesta guardada no cambia (reenviarla igual, por falta de señal, no es error)
+        # y no se puede saltear situaciones para volver después.
+        otra = next(x for x in ipv.OPCIONES[1] if x != resp["1"])
+        assert (await ac.put(f"{P}/{token}/ipv", json={"respuestas": {"1": resp["1"], "40": resp["40"]}})).json()["respondidas"] == 40
+        r = await ac.put(f"{P}/{token}/ipv", json={"respuestas": {"1": otra}})
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "respuesta_fija"
+        r = await ac.put(f"{P}/{token}/ipv", json={"respuestas": {"45": ipv.OPCIONES[45][0]}})
+        assert r.status_code == 400 and r.json()["detail"]["code"] == "fuera_de_orden"
+        assert (await ac.post(f"{P}/{token}/ipv/terminar", json={"respuestas": {**resp, "1": otra}})).status_code == 409
+        assert (await ac.get(f"{P}/{token}/ipv")).json()["respuestas"]["1"] == resp["1"]       # quedó la original
         assert (await ac.post(f"{P}/{token}/ipv/terminar", json={"respuestas": {}})).status_code == 400   # faltan
         # Regenerar el link: el anterior deja de valer y lo respondido se conserva.
         r = await ac.post(f"{B}/postulantes/{diego}/enlace", headers=cap, json={"origen": ORIGEN})

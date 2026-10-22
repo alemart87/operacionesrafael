@@ -5,13 +5,13 @@
  * que contesta y se puede seguir después con el mismo link; y su feedback, escrito o dictado. No muestra resultados.
  */
 import {
-  ArrowLeft, ArrowRight, Check, ChevronRight, CircleCheck, ClipboardCheck, Clock3, CloudOff, LayoutGrid, ListChecks, LoaderCircle,
+  ArrowLeft, ArrowRight, Check, ChevronRight, CircleCheck, ClipboardCheck, Clock3, CloudOff, ListChecks, LoaderCircle, Lock,
   Eye, MessageSquareHeart, MessagesSquare, Pause, Play, Save, Scale, Send, Timer, TriangleAlert, UserRound,
 } from "lucide-react";
 import { Chat, type PasoChat } from "@/components/capacitacion/chat";
 import { conIntento, type DevolucionCaso, type MensajeChat } from "@/components/capacitacion/tipos";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { subirDictado } from "@/components/capacitacion/tipos";
 import { Dictado } from "@/components/portal/grabadora";
@@ -32,6 +32,7 @@ async function pub<T>(url: string, init?: RequestInit): Promise<T> {
     const d = b?.detail;
     const e = new Error(typeof d === "string" ? d : d?.message ?? "No se pudo conectar. Probá de nuevo.");
     (e as any).status = r.status;
+    (e as any).code = typeof d === "object" ? d?.code : undefined;
     throw e;
   }
   return b as T;
@@ -149,6 +150,7 @@ const PASOS_INSTRUCCIONES: { icono: typeof Clock3; titulo: string; texto: React.
   { icono: ListChecks, titulo: "87 situaciones, una por pantalla", texto: "Elegí la opción que más se parezca a lo que harías o pensás." },
   { icono: UserRound, titulo: "«B…» es una persona imaginaria", texto: "Muchas situaciones nombran a alguien solo con una inicial: ponete en su lugar." },
   { icono: Scale, titulo: "No hay respuestas buenas ni malas", texto: "Respondé con sinceridad y sin pensarlo demasiado." },
+  { icono: Lock, titulo: "Sin volver atrás", texto: "Elegí una opción y tocá «Siguiente»: tu respuesta queda guardada y ya no se puede cambiar. Leé con atención." },
   { icono: Save, titulo: "Se guarda solo", texto: "Podés pausar y seguir después con el mismo link, desde donde quedaste." },
   { icono: Clock3, titulo: "Unos 20 minutos", texto: "Buscá un lugar tranquilo, sin apuro." },
 ];
@@ -177,55 +179,66 @@ function Instrucciones({ nombre, onEmpezar }: { nombre: string; onEmpezar: () =>
 const HITOS: Record<number, string> = { 25: "¡Ya hiciste un cuarto! Seguí así.", 50: "¡Vas por la mitad!", 75: "¡Falta poco! Ya hiciste tres cuartos." };
 const SEG_POR_RESPUESTA = 14;   // estimación inicial; después se usa el ritmo real de la persona
 
+/** El IPV, una situación por pantalla y siempre hacia adelante: elige una opción (puede cambiarla mientras no siga) y al
+ * tocar «Siguiente» la respuesta queda guardada y fija. No hay vuelta atrás ni revisión: el servidor tampoco acepta
+ * cambios ni saltear situaciones. Sin señal, lo confirmado espera en el teléfono y se sube solo. */
 function Test({ base, token, onTerminado, onSalir }: { base: string; token: string; onTerminado: () => void; onSalir: (pausa?: boolean) => void }) {
   const clave = `ipv:${token.slice(0, 16)}`;
   const [preguntas, setPreguntas] = useState<Pregunta[] | null>(null);
-  const [resp, setResp] = useState<Record<string, string>>({});
-  const [i, setI] = useState(0);
-  const [dir, setDir] = useState<"der" | "izq">("der");
+  const [resp, setResp] = useState<Record<string, string>>({});       // confirmadas: ya no cambian
+  const [marcada, setMarcada] = useState<string | null>(null);         // la elegida en esta situación, sin confirmar
   const [error, setError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const [sync, setSync] = useState<"ok" | "guardando" | "sin_red">("ok");
-  const [enviando, setEnviando] = useState(false);
-  const [confirmar, setConfirmar] = useState(false);
-  const [revisar, setRevisar] = useState(false);
-  const [desdeResumen, setDesdeResumen] = useState(false);
+  const [cerrando, setCerrando] = useState<"enviando" | "error" | null>(null);
   const [hito, setHito] = useState<string | null>(null);
-  const [recien, setRecien] = useState<string | null>(null);
   const pendientes = useRef<Record<string, string>>({});
+  const enVuelo = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ritmo = useRef({ desde: Date.now(), n: 0 });
 
-  useEffect(() => {
-    pub<{ preguntas: Pregunta[]; respuestas: Record<string, string>; ipv: { estado: string } }>(`${base}/ipv`).then((x) => {
-      if (x.ipv.estado === "terminado") { onTerminado(); return; }
-      let local: Record<string, string> = {};
-      try { local = JSON.parse(localStorage.getItem(clave) ?? "{}"); } catch { /* sin almacenamiento */ }
-      const todas = { ...local, ...x.respuestas };
-      // Lo que quedó solo en el teléfono (sin señal) se vuelve a mandar.
-      pendientes.current = Object.fromEntries(Object.entries(local).filter(([k]) => !(k in x.respuestas)));
-      setPreguntas(x.preguntas);
-      setResp(todas);
-      const primera = x.preguntas.findIndex((p) => !todas[String(p.n)]);
-      setI(primera === -1 ? x.preguntas.length - 1 : primera);
-      if (primera === -1) setRevisar(true);
-      if (Object.keys(pendientes.current).length) programar(0);
-    }).catch((e) => setError(e.message));
+  // Lo del servidor manda; del teléfono solo se suma lo que todavía no subió (lo confirmado sin señal).
+  const cargar = useCallback(async () => {
+    const x = await pub<{ preguntas: Pregunta[]; respuestas: Record<string, string>; ipv: { estado: string } }>(`${base}/ipv`);
+    if (x.ipv.estado === "terminado") { onTerminado(); return; }
+    let local: Record<string, string> = {};
+    try { local = JSON.parse(localStorage.getItem(clave) ?? "{}"); } catch { /* sin almacenamiento */ }
+    const propias = Object.fromEntries(Object.entries(local).filter(([k]) => !(k in x.respuestas)));
+    pendientes.current = propias;
+    setPreguntas(x.preguntas);
+    setResp({ ...propias, ...x.respuestas });
+    setMarcada(null);
+    if (Object.keys(propias).length) programar(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
+  useEffect(() => { cargar().catch((e) => setError(e.message)); }, [cargar]);
+
+  // Si el servidor no acepta lo del teléfono (otra respuesta ya guardada, o fuera de orden), se sigue desde lo suyo.
+  const resincronizar = async () => {
+    try { localStorage.removeItem(clave); } catch { /* nada */ }
+    pendientes.current = {};
+    await cargar();
+    setAviso("Retomamos desde tus respuestas guardadas.");
+  };
 
   const enviarPendientes = useCallback(async () => {
+    if (enVuelo.current) { programar(400); return; }      // de a un envío, para que lleguen en orden
     const lote = pendientes.current;
     if (!Object.keys(lote).length) return;
     pendientes.current = {};
+    enVuelo.current = true;
     setSync("guardando");
     try {
       await pub(`${base}/ipv`, { method: "PUT", body: JSON.stringify({ respuestas: lote }) });
       setSync(Object.keys(pendientes.current).length ? "guardando" : "ok");
     } catch (e: any) {
-      pendientes.current = { ...lote, ...pendientes.current };
+      if (e?.code === "respuesta_fija" || e?.code === "fuera_de_orden") { await resincronizar(); setSync("ok"); return; }
       if (e?.status === 409) { onTerminado(); return; }
+      pendientes.current = { ...lote, ...pendientes.current };
       setSync("sin_red");
       programar(5000);
+    } finally {
+      enVuelo.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
@@ -245,50 +258,55 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { if (!hito) return; const t = setTimeout(() => setHito(null), 2600); return () => clearTimeout(t); }, [hito]);
+  useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(null), 4000); return () => clearTimeout(t); }, [aviso]);
 
   const total = preguntas?.length ?? 87;
-  const respondidas = useMemo(() => Object.keys(resp).length, [resp]);
+  const respondidas = Object.keys(resp).length;
   const pct = Math.round((respondidas / total) * 100);
   const seg = ritmo.current.n >= 5 ? Math.min(30, Math.max(6, (Date.now() - ritmo.current.desde) / 1000 / ritmo.current.n)) : SEG_POR_RESPUESTA;
   const faltan = Math.max(1, Math.round(((total - respondidas) * seg) / 60));
+  // Siempre la primera sin responder: no se puede ir a otra.
+  const i = preguntas ? preguntas.findIndex((q) => !resp[String(q.n)]) : -1;
 
-  const ir = useCallback((k: number) => { setDir(k >= i ? "der" : "izq"); setI(k); window.scrollTo({ top: 0 }); }, [i]);
-
-  const elegir = (n: number, letra: string) => {
-    if (!preguntas) return;
-    const nueva = !resp[String(n)];
-    const nuevas = { ...resp, [String(n)]: letra };
-    setResp(nuevas);
-    setRecien(`${n}:${letra}`);
-    try { navigator.vibrate?.(8); } catch { /* sin vibración */ }
-    try { localStorage.setItem(clave, JSON.stringify(nuevas)); } catch { /* sin almacenamiento */ }
-    pendientes.current[String(n)] = letra;
-    programar(600);
-    if (nueva) {
-      ritmo.current.n += 1;
-      const antes = Math.floor((respondidas / total) * 4), despues = Math.floor((Object.keys(nuevas).length / total) * 4);
-      if (despues > antes && despues < 4) setHito(HITOS[despues * 25]);
+  const terminar = async (todas: Record<string, string>) => {
+    if (timer.current) clearTimeout(timer.current);
+    pendientes.current = {};
+    setCerrando("enviando"); setError(null);
+    try {
+      await pub(`${base}/ipv/terminar`, { method: "POST", body: JSON.stringify({ respuestas: todas }) });
+      try { localStorage.removeItem(clave); } catch { /* nada */ }
+      onTerminado();
+    } catch (e: any) {
+      if (e?.code === "respuesta_fija" || e?.code === "fuera_de_orden") { setCerrando(null); await resincronizar(); return; }
+      setError(e.message); setCerrando("error");
     }
-    setTimeout(() => {
-      if (desdeResumen) { setDesdeResumen(false); setRevisar(true); return; }
-      const siguiente = preguntas.findIndex((p, k) => k > i && !nuevas[String(p.n)]);
-      const cualquiera = preguntas.findIndex((p) => !nuevas[String(p.n)]);
-      if (siguiente !== -1) ir(siguiente);
-      else if (cualquiera !== -1) ir(cualquiera);
-      else setRevisar(true);
-    }, 260);
   };
 
-  // En la computadora: A/B/C eligen, las flechas mueven.
+  const seguir = () => {
+    if (!preguntas || i < 0 || !marcada) return;
+    const n = String(preguntas[i].n);
+    const nuevas = { ...resp, [n]: marcada };
+    setResp(nuevas);
+    setMarcada(null);
+    try { navigator.vibrate?.(8); } catch { /* sin vibración */ }
+    try { localStorage.setItem(clave, JSON.stringify(nuevas)); } catch { /* sin almacenamiento */ }
+    ritmo.current.n += 1;
+    const antes = Math.floor((respondidas / total) * 4), despues = Math.floor((Object.keys(nuevas).length / total) * 4);
+    if (despues > antes && despues < 4) setHito(HITOS[despues * 25]);
+    window.scrollTo({ top: 0 });
+    if (Object.keys(nuevas).length === total) { terminar(nuevas); return; }
+    pendientes.current[n] = nuevas[n];
+    programar(300);
+  };
+
+  // En la computadora: A/B/C eligen y Enter sigue. No hay tecla para volver.
   useEffect(() => {
-    if (!preguntas || revisar) return;
+    if (!preguntas || i < 0 || cerrando) return;
     const tecla = (ev: KeyboardEvent) => {
       if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-      const p = preguntas[i];
       const letra = ev.key.toUpperCase();
-      if (p.opciones.some((o) => o.letra === letra)) { ev.preventDefault(); elegir(p.n, letra); }
-      else if (ev.key === "ArrowLeft" && i > 0) ir(i - 1);
-      else if ((ev.key === "ArrowRight" || ev.key === "Enter") && resp[String(p.n)] && i < preguntas.length - 1) ir(i + 1);
+      if (preguntas[i].opciones.some((o) => o.letra === letra)) { ev.preventDefault(); setMarcada(letra); }
+      else if (ev.key === "Enter" && marcada) { ev.preventDefault(); seguir(); }
     };
     window.addEventListener("keydown", tecla);
     return () => window.removeEventListener("keydown", tecla);
@@ -300,62 +318,26 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
     onSalir(true);
   };
 
-  const terminar = async () => {
-    setEnviando(true); setError(null);
-    try {
-      await pub(`${base}/ipv/terminar`, { method: "POST", body: JSON.stringify({ respuestas: resp }) });
-      try { localStorage.removeItem(clave); } catch { /* nada */ }
-      pendientes.current = {};
-      onTerminado();
-    } catch (e: any) { setError(e.message); setConfirmar(false); } finally { setEnviando(false); }
-  };
-
   if (error && !preguntas) return <p className="m-auto text-center text-brand-primary-dark font-semibold">{error}</p>;
   if (!preguntas) return <div className="m-auto"><LoaderCircle size={32} className="animate-spin text-brand-slate" aria-label="Cargando" /></div>;
-  const p = preguntas[i];
-  const elegida = resp[String(p.n)];
-  const faltanN = total - respondidas;
 
-  if (revisar) {
+  // Respondió las 87: se envía solo (si se cortó, se reintenta con un toque; no hay nada para revisar ni cambiar).
+  if (i < 0 || cerrando) {
     return (
-      <div className="flex-1 flex flex-col">
-        <div className="text-center">
-          <CircleCheck size={48} className="mx-auto text-emerald-600" aria-hidden />
-          <h1 className="font-display text-[30px] uppercase text-brand-ink mt-2 leading-tight">{faltanN ? `Te faltan ${faltanN}` : `¡Respondiste las ${total}!`}</h1>
-          <p className="text-[15px] text-brand-slate mt-1">
-            {faltanN ? "Tocá las que tienen borde punteado para responderlas." : "Si querés cambiar alguna, tocala. Cuando envíes, ya no se puede modificar."}
-          </p>
-        </div>
-        <div className="mt-5 grid grid-cols-8 sm:grid-cols-10 gap-1.5" aria-label="Tus respuestas">
-          {preguntas.map((q, k) => {
-            const r = resp[String(q.n)];
-            return (
-              <button key={q.n} type="button" onClick={() => { setRevisar(false); setDesdeResumen(true); ir(k); }}
-                aria-label={`Situación ${k + 1}: ${r ? `respondida ${r}` : "sin responder"}`}
-                className={cx("h-10 rounded-lg text-[12px] font-semibold tabular-nums leading-none flex flex-col items-center justify-center",
-                  r ? "bg-brand-ink text-white" : "bg-white border-2 border-dashed border-brand-border text-brand-slate")}>
-                {k + 1}{r && <span className="text-[9px] opacity-70 mt-0.5">{r}</span>}
-              </button>
-            );
-          })}
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-2">
+        {cerrando === "enviando" ? <LoaderCircle size={44} className="animate-spin text-brand-slate" aria-hidden /> : <CircleCheck size={48} className="text-emerald-600" aria-hidden />}
+        <h1 className="font-display text-[30px] uppercase text-brand-ink mt-3 leading-tight">¡Respondiste las {total}!</h1>
+        <p className="text-[15px] text-brand-slate mt-1" aria-live="polite">
+          {cerrando === "enviando" ? "Enviando tu test…" : "Falta enviarlo. Tus respuestas ya quedaron guardadas."}
+        </p>
         {error && <p className="mt-3 text-sm text-brand-primary-dark" role="alert">{error}</p>}
-        <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg space-y-2">
-          {faltanN === 0 && (confirmar ? (
-            <div className="card p-4 space-y-3">
-              <p className="text-[15px] text-brand-ink font-semibold">¿Enviamos el test? Después no se puede cambiar.</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Boton tipo="secundario" onClick={() => setConfirmar(false)} disabled={enviando}>Todavía no</Boton>
-                <Boton icono={Send} onClick={terminar} ocupado={enviando}>Sí, enviar</Boton>
-              </div>
-            </div>
-          ) : <Boton icono={Send} onClick={() => setConfirmar(true)}>Enviar el test</Boton>)}
-          {faltanN > 0 && <Boton onClick={() => { const k = preguntas.findIndex((q) => !resp[String(q.n)]); setRevisar(false); ir(k); }}>Seguir respondiendo</Boton>}
-        </div>
+        {cerrando !== "enviando" && <div className="mt-6 w-full max-w-sm"><Boton icono={Send} onClick={() => terminar(resp)}>Enviar el test</Boton></div>}
       </div>
     );
   }
 
+  const p = preguntas[i];
+  const ultima = respondidas === total - 1;
   return (
     <div className="flex-1 flex flex-col">
       {/* Progreso: siempre a la vista */}
@@ -378,9 +360,10 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
       </div>
 
       {hito && <div role="status" className="mb-3 rounded-xl bg-brand-ink text-white text-[14px] font-semibold px-4 py-2.5 animate-fade">{hito}</div>}
+      {aviso && <div role="status" className="mb-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[14px] px-4 py-2.5 animate-fade">{aviso}</div>}
 
-      <div key={p.n} className={dir === "der" ? "entra-der" : "entra-izq"}>
-        <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Situación {i + 1}</div>
+      <div key={p.n} className="entra-der">
+        <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Situación {i + 1} de {total}</div>
         {INICIAL.test(p.texto) && (
           <p className="mt-1 text-[13px] leading-snug text-brand-slate">
             «{p.texto.match(INICIAL)?.[1]}…» es una persona imaginaria: elegí lo que vos harías o pensarías en su lugar.
@@ -389,12 +372,11 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
         <p className="mt-3 text-[20px] leading-snug text-brand-ink font-medium" id={`q${p.n}`}><Texto t={p.texto} /></p>
         <div role="radiogroup" aria-labelledby={`q${p.n}`} className="mt-5 space-y-2.5">
           {p.opciones.map((o) => {
-            const on = elegida === o.letra;
+            const on = marcada === o.letra;
             return (
-              <button key={o.letra} type="button" role="radio" aria-checked={on} onClick={() => elegir(p.n, o.letra)}
+              <button key={o.letra} type="button" role="radio" aria-checked={on} onClick={() => setMarcada(o.letra)}
                 className={cx("w-full min-h-[64px] text-left rounded-2xl border-2 px-4 py-3.5 flex items-start gap-3 transition-colors",
-                  on ? "border-brand-ink bg-brand-ink text-white shadow-soft" : "border-brand-border bg-white text-brand-ink hover:border-brand-ink active:bg-brand-bg-soft",
-                  on && recien === `${p.n}:${o.letra}` && "opcion-elegida")}>
+                  on ? "border-brand-ink bg-brand-ink text-white shadow-soft opcion-elegida" : "border-brand-border bg-white text-brand-ink hover:border-brand-ink active:bg-brand-bg-soft")}>
                 <span className={cx("w-8 h-8 rounded-full text-sm font-bold flex items-center justify-center shrink-0", on ? "bg-white text-brand-ink" : "bg-brand-bg text-brand-slate")}>
                   {on ? <Check size={16} strokeWidth={3} aria-hidden /> : o.letra}
                 </span>
@@ -405,21 +387,14 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
         </div>
       </div>
 
-      {/* Navegación a mano del pulgar */}
+      {/* Un solo botón, siempre hacia adelante */}
       <div className="mt-auto pt-6 sticky bottom-0 pb-[calc(8px+env(safe-area-inset-bottom))] bg-brand-bg">
-        <div className="grid grid-cols-[auto_1fr] gap-2">
-          <button type="button" onClick={() => (i > 0 ? ir(i - 1) : onSalir())} aria-label={i > 0 ? "Situación anterior" : "Salir"}
-            className="btn min-h-[52px] px-4 bg-white border border-brand-border text-brand-ink"><ArrowLeft size={20} aria-hidden /></button>
-          {desdeResumen ? (
-            <Boton tipo="secundario" onClick={() => { setDesdeResumen(false); setRevisar(true); }} className="!min-h-[52px]"><LayoutGrid size={18} aria-hidden /> Volver al resumen</Boton>
-          ) : elegida && i < total - 1 ? (
-            <Boton tipo="secundario" onClick={() => ir(i + 1)} className="!min-h-[52px]">Siguiente <ArrowRight size={18} aria-hidden /></Boton>
-          ) : respondidas === total ? (
-            <Boton onClick={() => setRevisar(true)} className="!min-h-[52px]">Revisar y enviar</Boton>
-          ) : (
-            <p className="self-center text-center text-[13px] text-brand-slate">Tocá una opción para seguir</p>
-          )}
-        </div>
+        <p className="text-center text-[12px] text-brand-slate mb-2 inline-flex w-full items-center justify-center gap-1.5">
+          <Lock size={12} aria-hidden /> Al seguir, tu respuesta queda guardada y no se puede cambiar.
+        </p>
+        <Boton icono={ultima ? Send : undefined} onClick={seguir} disabled={!marcada} className="!min-h-[52px]">
+          {!marcada ? "Elegí una opción" : ultima ? "Enviar el test" : <>Siguiente <ArrowRight size={18} aria-hidden /></>}
+        </Boton>
       </div>
     </div>
   );

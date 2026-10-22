@@ -181,7 +181,7 @@ PREGUNTAS: list[tuple[int, str, dict[str, str]]] = [
      {'A': 'Uno que ya conoce y que le gusta de modo especial.', 'B': 'La especialidad de la casa.', 'C': 'Un plato exótico que usted desconoce en absoluto.'}),
     (86, 'Después de un naufragio, C... llega solo a una isla desierta. El clima es muy agradable y la vegetación le permitirá encontrar el alimento necesario. ¿Qué es, a su modo de ver, lo que probablemente le planteará menos problemas?',
      {'A': 'El carácter nuevo e insólito de la situación.', 'B': 'La soledad.', 'C': 'La falta de algunos atractivos de la vida anterior.'}),
-    (87, 'J... dirige una importante fábrica de automóviles. Puede escoger entre varias políticas comerciales. ¿Cuál elegirá?',
+    (87, 'J... dirige una importante empresa de automóviles. Puede escoger entre varias políticas comerciales. ¿Cuál elegirá?',
      {'A': 'Orientar sus esfuerzos para sacar de vez en cuando modelos especiales.', 'B': 'Buscar los efectos de moda y atender a una clientela particular.', 'C': 'Ofrecer de manera regular modelos clásicos.'}),
 ]
 

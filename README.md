@@ -1925,8 +1925,17 @@ cancelado queda de solo lectura y cierra los links.
   token cifrado (Fernet) para volver a mostrar el QR; regenerarlo invalida el anterior y conserva lo respondido. Vence a
   los 21 días; deja de valer si el postulante sale o el grupo se cancela. Los links inválidos se limitan por IP.
 - Página pública `/postulante/<token>` mobile first: una situación por pantalla, se guarda a medida que contesta (y en el
-  teléfono si no hay señal), se retoma con el mismo link. Al enviar las 87 respuestas **se corrige solo**. El postulante
-  no ve resultados; desde el mismo link deja su **feedback escrito o dictado**.
+  teléfono si no hay señal), se retoma con el mismo link. Al responder la 87 **se envía y se corrige solo**. El
+  postulante no ve resultados; desde el mismo link deja su **feedback escrito o dictado**.
+- **Sin volver atrás ni corregir**: elige una opción (puede cambiarla mientras no siga) y al tocar *Siguiente* (o Enter)
+  la respuesta queda guardada y fija. No hay botón ni tecla para volver, ni pantalla de revisión; al retomar sigue en la
+  primera sin responder. Lo garantiza el servidor (`_sumar` en `publico_api.py`): una respuesta guardada no se cambia
+  (409 `respuesta_fija`; reenviar la misma, por un reintento sin señal, no es error) y las situaciones se responden en
+  orden, sin saltear (400 `fuera_de_orden`). Si lo del teléfono no coincide con lo guardado, manda lo del servidor.
+- Textos revisados contra `IPV_DIGITAL` (hoja *PREGUNTAS*): los 87 ítems con las mismas opciones (dos opciones en el 14 y
+  el 78) y el mismo sentido. Se corrigieron errores de tipeo de la planilla (por ejemplo «vecino» por «velero» en el 68,
+  «comportamiento» por «compartimiento» en el 82, «sociedad» por «soledad» en el 86, la pregunta incompleta del 40) y
+  se usa vocabulario local (ómnibus, heladera, auto). La clave usa solo letras que existen en cada ítem.
 - Corrección (`ipv.py`, datos en `ipv_datos.py`): clave y baremos tomados de las hojas de `IPV_DIGITAL` y
   `Correccion_IPV`. Escalas: DGV, receptividad (I comprensión, II adaptabilidad, III control de sí mismo, IV tolerancia
   a la frustración), agresividad comercial (V combatividad, VI dominancia, VII seguridad, VIII actividad) y IX
