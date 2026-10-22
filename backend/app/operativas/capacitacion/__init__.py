@@ -17,5 +17,6 @@ from . import api, audios, en_vivo, entrenamientos, entrenamientos_publico, fich
 from .migraciones import MIGRACIONES
 
 ROUTERS = [api.router, publico_api.router, entrenamientos.router, entrenamientos_publico.router, en_vivo.router, ficha_pdf.router]
-WORKERS = {"capacitacion_audios": audios.worker, "capacitacion_entrenamientos": entrenamientos.worker}
+WORKERS = {"capacitacion_audios": audios.worker, "capacitacion_entrenamientos": entrenamientos.worker,
+           "capacitacion_ipv": publico_api.worker}
 MIGRACIONES_DATOS = list(MIGRACIONES)

@@ -89,6 +89,10 @@ class CapEnlace(Base):
     resultado: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     iniciado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     terminado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Tiempo límite (IPV_MINUTOS desde que empieza): si vence sin terminar, se borra todo y se guarda el informe para el
+    # postulante (cuándo empezó, cuándo venció y cuántas había respondido) hasta que vuelva a empezar.
+    ipv_reinicios: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ipv_vencido: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     ultimo_acceso_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     dispositivo: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

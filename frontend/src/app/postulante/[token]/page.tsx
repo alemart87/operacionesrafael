@@ -21,9 +21,17 @@ import type { AudioCoaching } from "@/components/supervision/tipos";
 const API = "/api/v1/capacitacion/publico";
 
 interface EntLink { id: string; nombre: string; intento?: number; estado: string; casos: number; hechos: number; pct: number }
-interface Estado { nombre: string; grupo: string; ipv: { estado: string; respondidas: number; total: number }; comentarios?: number; entrenamientos?: EntLink[] }
+/** El informe de un test que venció sin terminar (se reinició completo). */
+interface Vencido { iniciado_at: string | null; vencio_at: string; respondidas: number; total: number; minutos: number }
+interface IpvEstado {
+  estado: string; respondidas: number; total: number; minutos?: number;
+  /** Hasta cuándo puede responder (lo pone el servidor) y la hora del servidor, para corregir el reloj del teléfono. */
+  limite_at?: string | null; ahora?: string; vencido?: Vencido | null;
+}
+interface Estado { nombre: string; grupo: string; ipv: IpvEstado; comentarios?: number; entrenamientos?: EntLink[] }
 interface Pregunta { n: number; texto: string; opciones: { letra: string; texto: string }[] }
-type Vista = "inicio" | "instrucciones" | "test" | "enviar" | "gracias" | "feedback" | { t: "entrenamiento"; id: string };
+type Vista = "inicio" | "instrucciones" | "test" | "enviar" | "gracias" | "feedback" | "vencido" | { t: "entrenamiento"; id: string };
+const horaPY = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", timeZone: "America/Asuncion" }) : "—");
 
 async function pub<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
@@ -51,6 +59,11 @@ export default function PostulantePage() {
     pub<Estado>(base).then((x) => { setInfo(x); setFallo(null); }).catch((e) => setFallo(e.message));
   }, [base]);
   useEffect(cargar, [cargar]);
+  // «Empezar el test»: el servidor pone en marcha el reloj y recién ahí se muestra la primera situación.
+  const empezar = async () => {
+    try { setInfo({ ...info!, ipv: (await pub<Estado>(`${base}/ipv/iniciar`, { method: "POST" })).ipv }); setVista("test"); }
+    catch (e: any) { setFallo(e.message); }
+  };
 
   return (
     <div className="min-h-[100dvh] bg-brand-bg flex flex-col">
@@ -67,12 +80,15 @@ export default function PostulantePage() {
         )}
         {aviso && vista === "inicio" && <div role="status" className="mb-4 rounded-xl bg-brand-ink text-white text-[14px] font-semibold px-4 py-3 animate-fade">{aviso}</div>}
         {!info && !fallo && <div className="m-auto"><LoaderCircle size={32} className="animate-spin text-brand-slate" aria-label="Cargando" /></div>}
-        {info && vista === "inicio" && <Inicio info={info} onTest={() => setVista(info.ipv.respondidas ? "test" : "instrucciones")} onFeedback={() => setVista("feedback")}
+        {info && vista === "inicio" && <Inicio info={info} onTest={() => setVista(info.ipv.vencido ? "vencido" : info.ipv.estado === "en_curso" ? "test" : "instrucciones")} onFeedback={() => setVista("feedback")}
           onEntrenamiento={(id) => setVista({ t: "entrenamiento", id })} />}
         {info && typeof vista === "object" && <EntrenamientoLink base={base} id={vista.id} onVolver={() => { setVista("inicio"); cargar(); }} />}
-        {info && vista === "instrucciones" && <Instrucciones nombre={info.nombre} onEmpezar={() => setVista("test")} />}
+        {info && vista === "instrucciones" && <Instrucciones nombre={info.nombre} minutos={info.ipv.minutos ?? 45} onEmpezar={empezar} />}
+        {info && vista === "vencido" && info.ipv.vencido && <TestVencido v={info.ipv.vencido} nombre={info.nombre} onEmpezar={() => setVista("instrucciones")} onVolver={() => setVista("inicio")} />}
         {info && (vista === "test" || vista === "enviar") && (
-          <Test base={base} token={token} onTerminado={() => { setVista("gracias"); cargar(); }} onSalir={(pausa) => { setVista("inicio"); cargar(); if (pausa) setAviso("Quedó guardado. Seguís cuando quieras con este mismo link."); }} />
+          <Test base={base} token={token} onTerminado={() => { setVista("gracias"); cargar(); }}
+            onVencido={() => { pub<Estado>(base).then((x) => { setInfo(x); setVista(x.ipv.vencido ? "vencido" : "inicio"); }).catch((e) => setFallo(e.message)); }}
+            onSalir={(pausa) => { setVista("inicio"); cargar(); if (pausa) setAviso("Quedó guardado. Ojo: el reloj del test sigue corriendo; volvé antes de que se termine el tiempo."); }} />
         )}
         {info && vista === "gracias" && <Gracias nombre={info.nombre} onFeedback={() => setVista("feedback")} />}
         {info && vista === "feedback" && <Feedback base={base} onVolver={() => { setVista("inicio"); cargar(); }} />}
@@ -99,13 +115,16 @@ function Inicio({ info, onTest, onFeedback, onEntrenamiento }: { info: Estado; o
           </span>
           <span className="min-w-0 flex-1">
             <span className="block font-semibold text-[17px] text-brand-ink">Test de perfil comercial</span>
-            <span className="block text-sm text-brand-slate">
-              {hecho ? "¡Listo! Ya lo terminaste." : info.ipv.respondidas ? `Seguí donde quedaste · ${pct}% hecho` : `${info.ipv.total} situaciones · unos 20 minutos`}
+            <span className={cx("block text-sm", info.ipv.vencido && !hecho ? "text-brand-primary-dark font-semibold" : "text-brand-slate")}>
+              {hecho ? "¡Listo! Ya lo terminaste."
+                : info.ipv.vencido ? "Se terminó el tiempo: tenés que volver a empezar"
+                : info.ipv.estado === "en_curso" ? `Seguí donde quedaste · ${pct}% hecho · termina a las ${horaPY(info.ipv.limite_at)}`
+                : `${info.ipv.total} situaciones · ${info.ipv.minutos ?? 45} minutos para hacerlo`}
             </span>
           </span>
           {!hecho && <ChevronRight size={20} className="text-brand-mist shrink-0" aria-hidden />}
         </span>
-        {!hecho && info.ipv.respondidas > 0 && (
+        {!hecho && !info.ipv.vencido && info.ipv.respondidas > 0 && (
           <span className="mt-3 block h-2 rounded-full bg-brand-bg overflow-hidden" aria-hidden>
             <span className="block h-full rounded-full bg-brand-primary" style={{ width: `${pct}%` }} />
           </span>
@@ -151,17 +170,21 @@ const PASOS_INSTRUCCIONES: { icono: typeof Clock3; titulo: string; texto: React.
   { icono: UserRound, titulo: "«B…» es una persona imaginaria", texto: "Muchas situaciones nombran a alguien solo con una inicial: ponete en su lugar." },
   { icono: Scale, titulo: "No hay respuestas buenas ni malas", texto: "Respondé con sinceridad y sin pensarlo demasiado." },
   { icono: Lock, titulo: "Sin volver atrás", texto: "Elegí una opción y tocá «Siguiente»: tu respuesta queda guardada y ya no se puede cambiar. Leé con atención." },
-  { icono: Save, titulo: "Se guarda solo", texto: "Podés pausar y seguir después con el mismo link, desde donde quedaste." },
-  { icono: Clock3, titulo: "Unos 20 minutos", texto: "Buscá un lugar tranquilo, sin apuro." },
+  { icono: Save, titulo: "Se guarda solo", texto: "Podés pausar y seguir con el mismo link desde donde quedaste, mientras no se termine el tiempo." },
 ];
 
-function Instrucciones({ nombre, onEmpezar }: { nombre: string; onEmpezar: () => void }) {
+function Instrucciones({ nombre, minutos, onEmpezar }: { nombre: string; minutos: number; onEmpezar: () => void }) {
+  const [empezando, setEmpezando] = useState(false);
+  const pasos = [
+    { icono: Timer, titulo: `Tenés ${minutos} minutos`, texto: <>El tiempo empieza al tocar «Empezar el test» y <b className="text-brand-ink">no se detiene si pausás</b>. Si no terminás a tiempo, el test se reinicia completo y tenés que empezar de nuevo. Buscá un lugar tranquilo.</> },
+    ...PASOS_INSTRUCCIONES,
+  ];
   return (
     <div className="flex-1 flex flex-col">
       <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">Test de perfil comercial</div>
       <h1 className="font-display text-[32px] uppercase text-brand-ink leading-tight">Antes de empezar, {nombre}</h1>
       <ul className="mt-5 space-y-4">
-        {PASOS_INSTRUCCIONES.map(({ icono: I, titulo, texto }) => (
+        {pasos.map(({ icono: I, titulo, texto }) => (
           <li key={titulo} className="flex gap-3">
             <span className="w-10 h-10 rounded-xl bg-white border border-brand-border text-brand-ink flex items-center justify-center shrink-0"><I size={20} aria-hidden /></span>
             <span className="min-w-0">
@@ -171,18 +194,25 @@ function Instrucciones({ nombre, onEmpezar }: { nombre: string; onEmpezar: () =>
           </li>
         ))}
       </ul>
-      <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg"><Boton onClick={onEmpezar}>Empezar el test</Boton></div>
+      <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg">
+        <Boton icono={Play} ocupado={empezando} onClick={async () => { setEmpezando(true); try { await onEmpezar(); } finally { setEmpezando(false); } }}>
+          Empezar el test · {minutos} min
+        </Boton>
+      </div>
     </div>
   );
 }
 
 const HITOS: Record<number, string> = { 25: "¡Ya hiciste un cuarto! Seguí así.", 50: "¡Vas por la mitad!", 75: "¡Falta poco! Ya hiciste tres cuartos." };
-const SEG_POR_RESPUESTA = 14;   // estimación inicial; después se usa el ritmo real de la persona
 
 /** El IPV, una situación por pantalla y siempre hacia adelante: elige una opción (puede cambiarla mientras no siga) y al
  * tocar «Siguiente» la respuesta queda guardada y fija. No hay vuelta atrás ni revisión: el servidor tampoco acepta
  * cambios ni saltear situaciones. Sin señal, lo confirmado espera en el teléfono y se sube solo. */
-function Test({ base, token, onTerminado, onSalir }: { base: string; token: string; onTerminado: () => void; onSalir: (pausa?: boolean) => void }) {
+function Test({ base, token, onTerminado, onSalir, onVencido }: {
+  base: string; token: string; onTerminado: () => void; onSalir: (pausa?: boolean) => void;
+  /** Se terminó el tiempo sin terminar el test (el servidor lo reinicia y muestra el informe). */
+  onVencido: () => void;
+}) {
   const clave = `ipv:${token.slice(0, 16)}`;
   const [preguntas, setPreguntas] = useState<Pregunta[] | null>(null);
   const [resp, setResp] = useState<Record<string, string>>({});       // confirmadas: ya no cambian
@@ -195,12 +225,23 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
   const pendientes = useRef<Record<string, string>>({});
   const enVuelo = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ritmo = useRef({ desde: Date.now(), n: 0 });
+  // El reloj del test: el límite lo pone el servidor; se corrige la diferencia con la hora del teléfono.
+  const [limite, setLimite] = useState<number | null>(null);
+  const [ahora, setAhora] = useState(() => Date.now());
+  const [sinTiempo, setSinTiempo] = useState(false);
+  const avisos = useRef(new Set<number>());
 
   // Lo del servidor manda; del teléfono solo se suma lo que todavía no subió (lo confirmado sin señal).
   const cargar = useCallback(async () => {
-    const x = await pub<{ preguntas: Pregunta[]; respuestas: Record<string, string>; ipv: { estado: string } }>(`${base}/ipv`);
+    let x = await pub<{ preguntas: Pregunta[]; respuestas: Record<string, string>; ipv: IpvEstado }>(`${base}/ipv`);
     if (x.ipv.estado === "terminado") { onTerminado(); return; }
+    if (x.ipv.vencido) { onVencido(); return; }
+    if (x.ipv.estado === "pendiente") {
+      // Llegó sin empezar (por ejemplo, con una pantalla vieja): empieza a correr el tiempo ahora.
+      await pub(`${base}/ipv/iniciar`, { method: "POST" });
+      x = await pub(`${base}/ipv`);
+    }
+    if (x.ipv.limite_at && x.ipv.ahora) setLimite(Date.parse(x.ipv.limite_at) - (Date.parse(x.ipv.ahora) - Date.now()));
     let local: Record<string, string> = {};
     try { local = JSON.parse(localStorage.getItem(clave) ?? "{}"); } catch { /* sin almacenamiento */ }
     const propias = Object.fromEntries(Object.entries(local).filter(([k]) => !(k in x.respuestas)));
@@ -232,6 +273,7 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
       await pub(`${base}/ipv`, { method: "PUT", body: JSON.stringify({ respuestas: lote }) });
       setSync(Object.keys(pendientes.current).length ? "guardando" : "ok");
     } catch (e: any) {
+      if (e?.code === "ipv_vencido") { onVencido(); return; }
       if (e?.code === "respuesta_fija" || e?.code === "fuera_de_orden") { await resincronizar(); setSync("ok"); return; }
       if (e?.status === 409) { onTerminado(); return; }
       pendientes.current = { ...lote, ...pendientes.current };
@@ -260,11 +302,26 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
   useEffect(() => { if (!hito) return; const t = setTimeout(() => setHito(null), 2600); return () => clearTimeout(t); }, [hito]);
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(null), 4000); return () => clearTimeout(t); }, [aviso]);
 
+  // Cada segundo: el reloj, los avisos de 10 y 5 minutos y, a los 0, el informe (el servidor reinicia el test).
+  useEffect(() => { const t = setInterval(() => setAhora(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const quedan = limite === null ? null : Math.max(0, Math.floor((limite - ahora) / 1000));
+  useEffect(() => {
+    if (quedan === null || cerrando) return;
+    for (const min of [10, 5]) {
+      if (quedan <= min * 60 && quedan > 0 && !avisos.current.has(min)) { avisos.current.add(min); setHito(`Quedan ${min} minutos para terminar el test.`); }
+    }
+    if (quedan === 0 && !sinTiempo) {
+      setSinTiempo(true);
+      if (timer.current) clearTimeout(timer.current);
+      setTimeout(onVencido, 2500);       // un margen para que el servidor ya lo dé por vencido
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quedan]);
+  const reloj = quedan === null ? "--:--" : `${Math.floor(quedan / 60)}:${String(quedan % 60).padStart(2, "0")}`;
+
   const total = preguntas?.length ?? 87;
   const respondidas = Object.keys(resp).length;
   const pct = Math.round((respondidas / total) * 100);
-  const seg = ritmo.current.n >= 5 ? Math.min(30, Math.max(6, (Date.now() - ritmo.current.desde) / 1000 / ritmo.current.n)) : SEG_POR_RESPUESTA;
-  const faltan = Math.max(1, Math.round(((total - respondidas) * seg) / 60));
   // Siempre la primera sin responder: no se puede ir a otra.
   const i = preguntas ? preguntas.findIndex((q) => !resp[String(q.n)]) : -1;
 
@@ -277,6 +334,7 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
       try { localStorage.removeItem(clave); } catch { /* nada */ }
       onTerminado();
     } catch (e: any) {
+      if (e?.code === "ipv_vencido") { onVencido(); return; }
       if (e?.code === "respuesta_fija" || e?.code === "fuera_de_orden") { setCerrando(null); await resincronizar(); return; }
       setError(e.message); setCerrando("error");
     }
@@ -290,7 +348,6 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
     setMarcada(null);
     try { navigator.vibrate?.(8); } catch { /* sin vibración */ }
     try { localStorage.setItem(clave, JSON.stringify(nuevas)); } catch { /* sin almacenamiento */ }
-    ritmo.current.n += 1;
     const antes = Math.floor((respondidas / total) * 4), despues = Math.floor((Object.keys(nuevas).length / total) * 4);
     if (despues > antes && despues < 4) setHito(HITOS[despues * 25]);
     window.scrollTo({ top: 0 });
@@ -321,6 +378,16 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
   if (error && !preguntas) return <p className="m-auto text-center text-brand-primary-dark font-semibold">{error}</p>;
   if (!preguntas) return <div className="m-auto"><LoaderCircle size={32} className="animate-spin text-brand-slate" aria-label="Cargando" /></div>;
 
+  if (sinTiempo && cerrando !== "enviando") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-2" role="alert">
+        <Timer size={48} className="text-brand-primary" aria-hidden />
+        <h1 className="font-display text-[30px] uppercase text-brand-ink mt-3 leading-tight">Se terminó el tiempo</h1>
+        <p className="text-[15px] text-brand-slate mt-1 inline-flex items-center gap-2"><LoaderCircle size={16} className="animate-spin" aria-hidden /> Preparando tu informe…</p>
+      </div>
+    );
+  }
+
   // Respondió las 87: se envía solo (si se cortó, se reintenta con un toque; no hay nada para revisar ni cambiar).
   if (i < 0 || cerrando) {
     return (
@@ -345,8 +412,13 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-baseline gap-2">
             <span className="font-display text-2xl text-brand-ink tabular-nums leading-none">{pct}%</span>
-            <span className="text-[13px] text-brand-slate tabular-nums">{respondidas} de {total} · faltan ~{faltan} min</span>
+            <span className="text-[13px] text-brand-slate tabular-nums">{respondidas} de {total}</span>
           </div>
+          <span role="timer" aria-label={`Tiempo que queda: ${reloj}`} title="Tiempo que queda para terminar el test (no se detiene al pausar)"
+            className={cx("ml-auto inline-flex items-center gap-1 rounded-full px-2.5 min-h-[32px] text-[14px] font-bold tabular-nums",
+              quedan !== null && quedan <= 300 ? "bg-red-50 text-red-700 border border-red-200" : quedan !== null && quedan <= 600 ? "bg-amber-50 text-amber-800 border border-amber-200" : "bg-white text-brand-ink border border-brand-border")}>
+            <Timer size={14} aria-hidden /> {reloj}
+          </span>
           <button type="button" onClick={pausar} className="inline-flex items-center gap-1.5 min-h-[40px] px-3 rounded-full border border-brand-border bg-white text-[13px] font-semibold text-brand-ink">
             <Pause size={14} aria-hidden /> Pausar
           </button>
@@ -395,6 +467,36 @@ function Test({ base, token, onTerminado, onSalir }: { base: string; token: stri
         <Boton icono={ultima ? Send : undefined} onClick={seguir} disabled={!marcada} className="!min-h-[52px]">
           {!marcada ? "Elegí una opción" : ultima ? "Enviar el test" : <>Siguiente <ArrowRight size={18} aria-hidden /></>}
         </Boton>
+      </div>
+    </div>
+  );
+}
+
+/** El informe para el postulante cuando se le terminó el tiempo: qué pasó y que tiene que volver a empezar. */
+function TestVencido({ v, nombre, onEmpezar, onVolver }: { v: Vencido; nombre: string; onEmpezar: () => void; onVolver: () => void }) {
+  return (
+    <div className="flex-1 flex flex-col">
+      <div className="text-center pt-2">
+        <span className="mx-auto w-14 h-14 rounded-2xl bg-brand-primary-light text-brand-primary flex items-center justify-center"><Timer size={30} aria-hidden /></span>
+        <div className="mt-3 text-[11px] uppercase tracking-wider2 text-brand-slate">Test de perfil comercial</div>
+        <h1 className="font-display text-[30px] uppercase text-brand-ink leading-tight">Se terminó el tiempo</h1>
+      </div>
+      <div className="card mt-5 divide-y divide-brand-border" aria-label="Informe">
+        {[["Empezaste", horaPY(v.iniciado_at)], ["Se terminó el tiempo", horaPY(v.vencio_at)], ["Tiempo disponible", `${v.minutos} minutos`],
+          ["Respondiste", `${v.respondidas} de ${v.total} situaciones`]].map(([k, x]) => (
+          <div key={k} className="px-4 py-3 flex items-center justify-between gap-3 text-[15px]">
+            <span className="text-brand-slate">{k}</span><span className="font-semibold text-brand-ink tabular-nums text-right">{x}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-xl border border-brand-primary/30 bg-brand-primary-light/60 px-4 py-3 text-[14px] text-brand-ink leading-snug">
+        {nombre}, por seguridad el test tiene que hacerse completo en {v.minutos} minutos. Como no lo terminaste a tiempo,
+        <b> se reinició y tus respuestas se borraron</b>. Tenés que <b>volver a empezar desde la situación 1</b>; vas a tener
+        otros {v.minutos} minutos. Antes de empezar, buscá un lugar tranquilo y tiempo suficiente.
+      </div>
+      <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg space-y-2">
+        <Boton icono={Play} onClick={onEmpezar}>Volver a empezar el test</Boton>
+        <Boton tipo="fantasma" onClick={onVolver}>Ahora no</Boton>
       </div>
     </div>
   );

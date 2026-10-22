@@ -39,7 +39,8 @@ SEXO = {"F": "Femenino", "M": "Masculino", "X": "Otro"}
 ESTADO_ENT = {"pendiente": "Sin empezar", "en_curso": "En curso", "evaluando": "Evaluando", "terminado": "Terminado"}
 TIPO_COMENTARIO = {"feedback": "Feedback", "oportunidad": "Oportunidad de mejora", "postulante": "Su feedback"}
 EVENTO = {"alta": "Ingresó al grupo", "estado": "Cambio de estado", "link": "Link del test generado", "link_anulado": "Link anulado",
-          "ipv_inicio": "Empezó el IPV", "ipv_terminado": "Terminó el IPV", "datos": "Datos corregidos",
+          "ipv_inicio": "Empezó el IPV", "ipv_terminado": "Terminó el IPV", "ipv_vencido": "IPV reiniciado: se terminó el tiempo",
+          "datos": "Datos corregidos",
           "entrenamiento_enviado": "Entrenamiento enviado", "entrenamiento_reiniciado": "Entrenamiento reiniciado"}
 MAX_HISTORIAL = 60
 
