@@ -8,7 +8,7 @@ import {
   ArrowLeft, ArrowRight, Check, ChevronRight, CircleCheck, ClipboardCheck, Clock3, CloudOff, LayoutGrid, ListChecks, LoaderCircle,
   Eye, MessageSquareHeart, MessagesSquare, Pause, Play, Save, Scale, Send, Timer, TriangleAlert, UserRound,
 } from "lucide-react";
-import { Chat } from "@/components/capacitacion/chat";
+import { Chat, type PasoChat } from "@/components/capacitacion/chat";
 import { conIntento, type DevolucionCaso, type MensajeChat } from "@/components/capacitacion/tipos";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -57,7 +57,7 @@ export default function PostulantePage() {
         <Brand logoHeight={32} compactOnPhone />
         {info && <span className="text-[11px] uppercase tracking-wider2 text-brand-slate truncate max-w-[50%]">{info.grupo}</span>}
       </header>
-      <main className="flex-1 w-full max-w-lg mx-auto px-4 pt-4 pb-2 flex flex-col">
+      <main className={cx("flex-1 w-full mx-auto px-4 pt-4 pb-2 flex flex-col", typeof vista === "object" ? "max-w-lg lg:max-w-5xl lg:pt-8" : "max-w-lg")}>
         {fallo && (
           <div className="m-auto text-center space-y-3 py-16">
             <TriangleAlert size={40} className="mx-auto text-brand-primary" aria-hidden />
@@ -595,12 +595,14 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
     const despues = quedan[0];
     const marcar = () => setListos((x) => new Set(x).add(chat.caso_id));
     // La cola de clientes de este entrenamiento: los hechos, el que está atendiendo y los que esperan.
-    const pasos = d.casos.map((c) => (c.id === chat.caso_id ? "actual" : c.estado === "hecho" || listos.has(c.id) ? "hecho" : "pendiente") as "actual" | "hecho" | "pendiente");
+    const pasos: PasoChat[] = d.casos.map((c) => ({
+      cliente: c.cliente, estado: c.id === chat.caso_id ? "actual" : c.estado === "hecho" || listos.has(c.id) ? "hecho" : "pendiente" }));
     return (
-      <Chat key={chat.id} id={chat.id} cliente={chat.cliente} pasos={pasos}
+      <Chat key={chat.id} id={chat.id} cliente={chat.cliente} pasos={pasos} entrenamiento={d.nombre}
         mensajes={chat.mensajes} iniciado={chat.iniciado_at} terminado={chat.estado !== "en_curso"}
         enviar={enviar} onTerminar={terminar} onVolver={() => { setChat(null); cargar(); }}
-        aviso={<p className="text-center text-[12px] text-brand-slate pb-2">Sos asesor de {d.empresa}. Atendé a {chat.cliente.split(" ")[0]} como lo harías con un cliente real.</p>}
+        aviso={<p className="mx-auto mb-3 max-w-md rounded-lg bg-[#FFF8E1] px-3 py-2 text-center text-[12px] leading-snug text-[#6B5200] shadow-sm">
+          Sos asesor de {d.empresa}. Atendé a {chat.cliente.split(" ")[0]} como lo harías con un cliente real.</p>}
         cierre={<Devolucion base={base} sid={chat.id} />}
         pie={() => (
           <div className="space-y-2">
@@ -617,8 +619,10 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
     );
   }
 
+  // En la computadora, en dos columnas: lo que tiene que saber y, al costado, sus clientes con el botón para empezar.
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-x-12 lg:items-start">
+      <div className="flex flex-col">
       <button type="button" onClick={onVolver} className="self-start inline-flex items-center gap-1 text-sm text-brand-slate mb-3"><ArrowLeft size={16} aria-hidden /> Volver</button>
       <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">Entrenamiento</div>
       <h1 className="font-display text-[30px] uppercase text-brand-ink leading-tight">{d.nombre}</h1>
@@ -653,7 +657,7 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
         <ul className="mt-5 space-y-3">
           {[
             { icono: MessagesSquare, t: `Vas a atender ${d.total} cliente${d.total === 1 ? "" : "s"} por chat`, x: d.instrucciones || `Sos asesor de ${d.empresa}: averiguá qué necesita cada uno y ayudalo.` },
-            { icono: UserRound, t: "Son clientes simulados, pero tratalos como reales", x: "Cada uno tiene su forma de ser: algunos están apurados, otros desconfían. A veces mandan dos mensajes seguidos." },
+            { icono: UserRound, t: "Son clientes simulados, pero tratalos como reales", x: "Cada uno tiene su forma de ser: algunos están apurados, otros desconfían. Como en WhatsApp, a veces mandan dos o tres mensajes seguidos." },
             { icono: Send, t: "Escribí como en WhatsApp", x: "Podés mandar varios mensajes seguidos: el cliente contesta cuando hacés una pausa." },
             { icono: Timer, t: "Al terminar cada caso, tu devolución", x: "Se mide el tiempo. Cuando el cliente se despide (o tocás «Terminar»), te decimos en pocas palabras qué mejorar y qué dato corregir." },
             { icono: Eye, t: "Tu equipo te acompaña en vivo", x: "Tu capacitador o mentor puede ver las conversaciones mientras las hacés, para ayudarte a mejorar." },
@@ -665,7 +669,10 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
           ))}
         </ul>
       )}
-      <ol className="mt-5 space-y-2">
+      </div>
+      <div className="flex flex-col lg:sticky lg:top-6 lg:mt-9">
+      <div className="hidden lg:block text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Tus clientes</div>
+      <ol className="mt-5 lg:mt-2 space-y-2">
         {d.casos.map((c) => (
           <li key={c.id} className={cx("card px-4 py-3", c.id === siguiente?.id && "border-brand-ink")}>
             <div className="flex items-center gap-3">
@@ -699,12 +706,13 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
       {!d.disponible && <p className="mt-3 text-sm text-brand-primary-dark">Los entrenamientos no están disponibles en este momento. Probá más tarde.</p>}
       {error && <p className="mt-3 text-sm text-brand-primary-dark" role="alert">{error}</p>}
       {siguiente && !d.terminado && d.disponible && (
-        <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg">
+        <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg lg:static lg:mt-4 lg:pt-0">
           <Boton icono={Play} onClick={() => abrir(siguiente)} ocupado={abriendo === siguiente.id}>
             {siguiente.estado === "en_curso" ? `Seguir con ${siguiente.cliente.split(" ")[0]}` : d.hechos === 0 ? "Empezar con el primer cliente" : `Atender a ${siguiente.cliente.split(" ")[0]}`}
           </Boton>
         </div>
       )}
+      </div>
     </div>
   );
 }

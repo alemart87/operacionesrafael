@@ -228,12 +228,17 @@ async def entrenamientos_de(db: AsyncSession, pids: list[str]) -> dict[str, list
         casos[eid].add(cid)
     hechos: dict[str, set[str]] = defaultdict(set)
     en_curso: set[str] = set()
-    q = select(CapSesion.asignacion_id, CapSesion.caso_id, CapSesion.estado).where(CapSesion.asignacion_id.in_([a.id for a in asig]))
-    for aid, cid, est in (await db.execute(q)).all():
+    # Cada conversación evaluada (nivel 1–10 y si la información fue correcta), leído del JSON sin traer la evaluación entera.
+    evaluadas: dict[str, list[tuple[float, bool]]] = defaultdict(list)
+    q = select(CapSesion.asignacion_id, CapSesion.caso_id, CapSesion.estado, CapSesion.evaluacion["nivel"].as_float(),
+               CapSesion.evaluacion["info_correcta"].as_boolean()).where(CapSesion.asignacion_id.in_([a.id for a in asig]))
+    for aid, cid, est, nivel, info in (await db.execute(q)).all():
         if est in HECHOS:
             hechos[aid].add(cid)
         else:
             en_curso.add(aid)
+        if nivel is not None:
+            evaluadas[aid].append((float(nivel), bool(info)))
     for a in asig:
         e = ents.get(a.entrenamiento_id)
         if e is None:
@@ -248,8 +253,32 @@ async def entrenamientos_de(db: AsyncSession, pids: list[str]) -> dict[str, list
             "pct": 100 if a.estado == "terminado" else (round(n / total * 100) if total else 0),
             "en_chat": a.id in en_curso, "aprobado": r.get("aprobado"), "nivel": r.get("nivel_promedio"),
             "info_pct": r.get("info_pct"), "asignado_at": iso(a.asignado_at), "terminado_at": iso(a.terminado_at),
+            # Sus conversaciones ya evaluadas, aunque el entrenamiento no haya terminado.
+            "evaluados": len(ev := evaluadas[a.id]),
+            "nivel_casos": round(mean(x for x, _ in ev), 2) if ev else None,
+            "info_casos": round(sum(1 for _, ok in ev if ok) / len(ev) * 100, 1) if ev else None,
         })
     return out
+
+
+# El nivel comercial (1–10) en tres tramos: 8 o más es «listo para un cliente real» (el criterio del evaluador).
+TRAMOS_NIVEL = ((8, "alto", "Listo para vender"), (5, "medio", "En desarrollo"), (0, "bajo", "Bajo"))
+
+
+def tramo_nivel(nivel: float) -> tuple[str, str]:
+    return next((clave, nombre) for minimo, clave, nombre in TRAMOS_NIVEL if nivel >= minimo)
+
+
+def resultado_medio(ents: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """La media de todas sus conversaciones evaluadas (de todos sus entrenamientos e intentos, aunque sea una sola):
+    nivel comercial y % con la información correcta. Cada conversación pesa lo mismo."""
+    n = sum(x.get("evaluados", 0) for x in ents)
+    if not n:
+        return None
+    nivel = round(sum(x["nivel_casos"] * x["evaluados"] for x in ents if x.get("evaluados")) / n, 1)
+    info = round(sum(x["info_casos"] * x["evaluados"] for x in ents if x.get("evaluados")) / n)
+    clave, nombre = tramo_nivel(nivel)
+    return {"casos": n, "nivel": nivel, "info_pct": info, "tramo": clave, "tramo_nombre": nombre}
 
 
 def avance(p: CapPostulante, d: Datos) -> dict[str, Any]:
@@ -261,7 +290,7 @@ def avance(p: CapPostulante, d: Datos) -> dict[str, Any]:
     terminados = sum(1 for x in ents if x["estado"] == "terminado")
     return {"pct": round(hechos / casos * 100) if casos else None, "casos": casos, "hechos": hechos,
             "entrenamientos": len(ents), "terminados": terminados,
-            "aprobados": sum(1 for x in ents if x["aprobado"] is True),
+            "aprobados": sum(1 for x in ents if x["aprobado"] is True), "resultado": resultado_medio(ents),
             # La guía del equipo: al menos N entrenamientos por postulante (puede hacer más).
             "meta": settings.entrenamiento_meta_postulante, "meta_cumplida": terminados >= settings.entrenamiento_meta_postulante}
 
@@ -391,6 +420,7 @@ def grupo_dict(g: CapGrupo, ps: list[CapPostulante], d: Datos, user: CurrentUser
         "mentores": [{"id": m, "nombre": quien.get(m, "—")} for m in (g.mentores or [])],
         "embudo": e, "efectividad": e["efectividad"], "ipv": {k: r[k] for k in ("realizados", "total", "porcentaje")},
         "feedback": feedback_total(ps, d)["total"], "avance": avance_grupo(ps, d),
+        "resultado": resultado_medio([x for p in ps if p.estado not in SALIDAS for x in d.entrenamientos.get(p.id, [])]),
         "meta": {"entrenamientos": settings.entrenamiento_meta_postulante,
                  "cumplen": sum(1 for p in ps if p.estado not in SALIDAS and avance(p, d)["meta_cumplida"]),
                  "activos": sum(1 for p in ps if p.estado not in SALIDAS)},

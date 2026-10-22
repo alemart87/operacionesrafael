@@ -7,12 +7,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Pestanas } from "@/components/capacitacion/pestanas";
 import {
-  CAP_API, CAP_HREF, ESTADOS, ESTADOS_GRUPO, NIVEL_IPV, diasTexto, fecha, pct,
+  CAP_API, CAP_HREF, COLOR_TRAMO, ESTADOS, ESTADOS_GRUPO, NIVEL_IPV, decimal, diasTexto, fecha, pct,
   type EntrenamientoFila, type EstadoGrupo, type GrupoDetalle, type Postulante, type ResumenIpv,
 } from "@/components/capacitacion/tipos";
 import { Barra, Dato, EmbudoVista, EstadoTag, GrupoTag, HojaEnlace, HojaEstado, HojaGrupo, HojaPostulante, TablaDemo } from "@/components/capacitacion/ui";
 import { Boton, Cargando, Chips, Encabezado, Etiqueta, Fallo, Hoja, Seccion, cx, hace, useAviso } from "@/components/portal/ui";
-import { HojaEnviar, HojaEnviarA, MetaEntrenamientos } from "@/components/capacitacion/entrenamientos";
+import { HojaEnviar, HojaEnviarA, MediaEntrenamientos, MetaEntrenamientos } from "@/components/capacitacion/entrenamientos";
 import { apiFetch } from "@/lib/api";
 
 export default function GrupoPage() {
@@ -102,10 +102,12 @@ function Grupo() {
           </div>
         ))}
       </div>
-      <div className="hidden md:grid grid-cols-5 gap-2.5 mb-6">
+      <div className="hidden md:grid md:grid-cols-3 xl:grid-cols-6 gap-2.5 mb-6">
         <Dato label="Postulantes" valor={g.embudo.total} sub={`${g.embudo.activos} activos · ${g.embudo.en_piso} en piso`} />
         <Dato label="Efectividad" valor={pct(g.efectividad)} sub={`${g.embudo.altas} altas operativas`} tono="verde" />
         <Dato label="Entrenamientos" valor={g.avance === null ? "—" : `${g.avance}%`} sub={`avance · ${g.meta.cumplen} de ${g.meta.activos} llegaron al mínimo de ${g.meta.entrenamientos}`} />
+        <Dato label="Nivel comercial" valor={g.resultado ? <span style={{ color: COLOR_TRAMO[g.resultado.tramo] }}>{decimal(g.resultado.nivel)}</span> : "—"}
+          sub={g.resultado ? `media de ${g.resultado.casos} casos · info ${g.resultado.info_pct}%` : "Sin casos evaluados"} />
         <Dato label="Hicieron el IPV" valor={`${g.ipv_detalle.realizados}/${g.ipv_detalle.total}`} sub={`${pct(g.ipv_detalle.porcentaje)}${g.ipv_detalle.en_curso ? ` · ${g.ipv_detalle.en_curso} haciéndolo` : ""}`} />
         <Dato label="Feedback" valor={g.feedback_detalle.total} sub={g.feedback_detalle.sin_feedback ? `${g.feedback_detalle.sin_feedback} sin feedback del equipo` : "Todos con feedback"} tono={g.feedback_detalle.sin_feedback ? "rojo" : undefined} />
       </div>
@@ -210,6 +212,7 @@ function TarjetaPostulante({ p, link, onEstado, onLink }: { p: Postulante; link:
             {p.avance.pct !== null && p.avance.pct < 100 && <span className="text-[12px] text-brand-slate tabular-nums">avance {p.avance.pct}%</span>}
             {p.avance.aprobados > 0 && <span className="text-[12px] text-emerald-700 font-semibold">{p.avance.aprobados} recomendado{p.avance.aprobados > 1 ? "s" : ""}</span>}
           </div>
+          {p.avance.resultado && <div className="mt-1"><MediaEntrenamientos r={p.avance.resultado} linea /></div>}
         </div>
         <ChevronRight size={18} className="text-brand-mist mt-1 shrink-0" aria-hidden />
       </Link>
@@ -234,7 +237,9 @@ function TablaPostulantes({ lista, link, onEstado, onLink }: { lista: Postulante
           <tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
             <th className="px-4 py-2.5 font-semibold">Postulante</th><th className="px-3 py-2.5 font-semibold">CI</th>
             <th className="px-3 py-2.5 font-semibold">Edad · sexo</th><th className="px-3 py-2.5 font-semibold">Estado</th>
-            <th className="px-3 py-2.5 font-semibold">Entrenamientos</th><th className="px-3 py-2.5 font-semibold">IPV</th>
+            <th className="px-3 py-2.5 font-semibold">Entrenamientos</th>
+            <th className="px-3 py-2.5 font-semibold" title="Media de todas sus conversaciones evaluadas: nivel comercial de 1 a 10 e información correcta">Resultado medio</th>
+            <th className="px-3 py-2.5 font-semibold">IPV</th>
             <th className="px-3 py-2.5 font-semibold text-right">Feedback</th>
             <th className="px-4 py-2.5 font-semibold text-right">Acciones</th>
           </tr>
@@ -248,6 +253,7 @@ function TablaPostulantes({ lista, link, onEstado, onLink }: { lista: Postulante
               <td className="px-3 py-2.5"><EstadoTag estado={p.estado} />{p.motivo && <div className="text-xs text-brand-slate mt-0.5 max-w-[220px] truncate" title={p.motivo}>{p.motivo}</div>}</td>
               <td className="px-3 py-2.5"><MetaEntrenamientos hechos={p.avance.terminados} meta={p.avance.meta} compacta />
                 {p.avance.pct !== null && <div className="text-[11px] text-brand-slate tabular-nums">avance {p.avance.pct}%{p.avance.aprobados > 0 && ` · ${p.avance.aprobados} recomendado${p.avance.aprobados > 1 ? "s" : ""}`}</div>}</td>
+              <td className="px-3 py-2.5"><MediaEntrenamientos r={p.avance.resultado} /></td>
               <td className="px-3 py-2.5"><IpvChip p={p} /></td>
               <td className="px-3 py-2.5 text-right tabular-nums">{p.comentarios.feedback + p.comentarios.oportunidad}
                 {p.comentarios.postulante > 0 && <span className="text-xs text-brand-slate"> · {p.comentarios.postulante} suyo{p.comentarios.postulante > 1 ? "s" : ""}</span>}</td>

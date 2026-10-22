@@ -349,6 +349,48 @@ async def test_cliente_y_evaluador_con_openai_falso(monkeypatch):
         await eia.responder({**CASO, "entrenamiento": {}}, [], empresa="Claro", canal="chat")
 
 
+def test_ritmo_de_whatsapp():
+    """Cuántos mensajes manda el cliente por turno y cómo se separa uno largo, sin cortar oraciones ni montos."""
+    habla = lambda n, *r: {"actitud": {"habla": n, "rasgos": list(r)}}  # noqa: E731
+    hubo = [{"r": "cliente", "t": "Hola"}]
+    assert eia.ritmo(habla(3), hubo, azar=0.1) == 1 and eia.ritmo(habla(3), hubo, azar=0.6) == 2 and eia.ritmo(habla(3), hubo, azar=0.95) == 3
+    assert eia.ritmo(habla(2, "cortante"), hubo, azar=0.99) == 2            # el cortante nunca manda tres
+    assert eia.ritmo(habla(5, "hablador"), hubo, azar=0.3) == 2 and eia.ritmo(habla(3), [], azar=0.5) == 2   # al empezar, saluda y cuenta
+    largo = "Ah, ok. ¿Y eso cuánto sale por mes? Porque con Tigo pago 80.000 Gs. por mes."
+    assert eia.partir([largo], 3) == ["Ah, ok.", "¿Y eso cuánto sale por mes?", "Porque con Tigo pago 80.000 Gs. por mes."]
+    assert eia.partir([largo], 2) == ["Ah, ok.", "¿Y eso cuánto sale por mes? Porque con Tigo pago 80.000 Gs. por mes."]
+    assert eia.partir(["Hablé con el Sr. Pérez. Me dijo que sí."], 2) == ["Hablé con el Sr. Pérez.", "Me dijo que sí."]
+    assert eia.partir(["El plan de 99.000 está bien"], 3) == ["El plan de 99.000 está bien"]   # una sola oración: no se corta
+    assert eia.partir(["Hola", "¿Qué tal?"], 1) == ["Hola", "¿Qué tal?"]
+
+
+@pytest.mark.asyncio
+async def test_el_cliente_manda_varios_mensajes(monkeypatch):
+    """Cuando le toca mandar varios, se le pide al modelo; si igual manda uno largo, se separa en burbujas."""
+    llamadas = []
+
+    class Falso:
+        def __init__(self, **kw):
+            self.responses = self
+
+        async def create(self, **kw):
+            llamadas.append(kw)
+            return _respuesta('{"mensajes": ["Mmm, no sé. ¿Y si después me suben el precio? Ya me pasó con Tigo."], "fin": false, "motivo": "sigue"}')
+
+    import openai
+    monkeypatch.setattr(openai, "AsyncOpenAI", Falso)
+    monkeypatch.setattr(settings, "openai_api_key", "sk-falsa-solo-test")
+    monkeypatch.setattr(settings, "entrenamiento_simulador", False)
+    monkeypatch.setattr(eia, "_azar", lambda: 0.99)
+    hist = [{"r": "cliente", "t": "Hola"}, {"r": "asesor", "t": "Hola Rosa, el plan sale 99.000 Gs."}]
+    r = await eia.responder({**CASO, "entrenamiento": {}}, hist, empresa="Claro", canal="whatsapp")
+    assert r["mensajes"] == ["Mmm, no sé.", "¿Y si después me suben el precio?", "Ya me pasó con Tigo."]
+    assert "3 mensajes seguidos" in llamadas[0]["instructions"]
+    monkeypatch.setattr(eia, "_azar", lambda: 0.0)
+    r = await eia.responder({**CASO, "entrenamiento": {}}, hist, empresa="Claro", canal="whatsapp")
+    assert len(r["mensajes"]) == 1 and "un solo mensaje" in llamadas[1]["instructions"]
+
+
 @pytest.mark.asyncio
 async def test_el_cliente_no_repite_su_saludo(monkeypatch):
     """El modelo a veces manda el mismo saludo dos veces (o repite el del principio): se saca; si todo era repetido,
@@ -490,12 +532,20 @@ async def test_entrenamientos_flujo(monkeypatch):
         lia = next(p for p in grupo["postulantes"] if p["id"] == pids[0])
         assert lia["avance"]["terminados"] == 1 and lia["avance"]["meta"] == 15 and lia["avance"]["meta_cumplida"] is False
         assert grupo["meta"]["entrenamientos"] == 15 and grupo["meta"]["cumplen"] == 0
+        # La media de sus conversaciones evaluadas (aunque sea un solo entrenamiento), en la tabla del grupo.
+        media = lia["avance"]["resultado"]
+        assert media["casos"] == 2 and media["info_pct"] == 50 and media["nivel"] == res["nivel_promedio"]
+        assert media["tramo"] in ("alto", "medio", "bajo") and media["tramo_nombre"]
+        assert grupo["resultado"]["casos"] == 2
+        assert next(p for p in grupo["postulantes"] if p["id"] == pids[1])["avance"]["resultado"] is None
         hist = (await ac.get(f"{B}/postulantes/{pids[0]}", headers=cap)).json()["historial"]
         assert any(h["tipo"] == "entrenamiento" and h["a"] == "no_aprobado" and h["detalle"] == "Portabilidad" for h in hist)
         assert any(h["tipo"] == "entrenamiento_enviado" and h["detalle"] == "Portabilidad" for h in hist)
         texto = " ".join(pg.extract_text() for pg in PdfReader(io.BytesIO(
             (await ac.get(f"{B}/postulantes/{pids[0]}/pdf", headers=men)).content)).pages)
         assert "Portabilidad" in texto and "No recomendado" in texto and "Para mejorar" in texto
+        assert media["tramo_nombre"].upper() in texto and "Media de 2 conversaciones evaluadas" in texto
+        assert (await ac.get(f"{B}/postulantes/{pids[0]}/entrenamientos", headers=men)).json()["resultado"] == media
 
         # Reiniciar y quitar.
         assert (await ac.delete(f"{B}/asignaciones/{aid}", headers=cap)).status_code == 409

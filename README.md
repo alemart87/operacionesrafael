@@ -1951,7 +1951,8 @@ cancelado queda de solo lectura y cierra los links.
   las estadísticas quedan en el menú. En el grupo, arriba, dos botones grandes: **Postulante** (alta) y
   **Entrenamiento** (enviarlo a todo el grupo o a algunos), y el acceso a su tablero *En vivo*.
 - **Grupo**: postulantes en tabla (escritorio) o tarjetas (celular) con filtros, embudo, IPV del grupo, por sexo y por
-  edad (18–24, 25–34, 35–44, 45 o más), historial.
+  edad (18–24, 25–34, 35–44, 45 o más), historial. La columna **Resultado medio** muestra cómo viene cada uno en los
+  entrenamientos aunque haya hecho uno solo (ver *Ficha y avance*), y arriba está el **nivel comercial** medio del grupo.
 - **Estadísticas** (`/capacitacion/estadisticas`): por período, efectividad, deserción, duración promedio, IPV,
   feedback por postulante, por sexo y edad y comparativa por grupo.
 
@@ -1983,14 +1984,22 @@ Chats de práctica en los que el postulante atiende a un **cliente simulado por 
 - **Conversar** (pensado para que sea fluido en el celular, como WhatsApp):
   - El postulante puede mandar **varios mensajes seguidos**: quedan en cola (reloj) y salen juntos cuando hace una pausa
     (o deja de escribir); el cliente contesta a todos. Mientras el cliente escribe, se puede seguir escribiendo.
-  - El cliente «lee» (✓✓), muestra «escribiendo…» mientras la IA piensa y manda de 1 a 3 mensajes con pausas naturales;
+  - El cliente «lee» (✓✓), muestra «escribiendo…» mientras la IA piensa y manda sus mensajes con pausas naturales;
     la demora de la IA se descuenta del tipeo para que no sume espera. Mantiene su actitud y puede cortar la charla.
+  - **Ritmo de WhatsApp**: en cada turno el servidor sortea si el cliente manda 1, 2 o 3 mensajes seguidos según
+    *cuánto escribe* (de monosílabos a muchísimo) y su forma de ser (el hablador manda más; el cortante, menos; al
+    empezar, lo común es saludar y contar qué quiere) y se lo pide a la IA. Si igual manda uno largo, se separa en
+    burbujas por oraciones, sin cortar ninguna ni montos como «99.000 Gs.».
   - Cada envío lleva una **marca de lote**: si se corta la conexión, los mensajes esperan («Sin conexión…»), se
     reintentan solos con la misma marca y el servidor no los duplica. El borrador se guarda en el teléfono y la pantalla
     se acomoda al teclado del celular.
   - Arriba del chat se ve la cola del entrenamiento: «Caso 2 de 5», una barra con los hechos, el actual y los que esperan,
-    y cuántos quedan en espera. Al terminar un caso, el siguiente cliente «está esperando» y se lo atiende con un toque
+    y el tiempo del caso. Al terminar un caso, el siguiente cliente «está esperando» y se lo atiende con un toque
     («Atender a Hugo»), sin volver a la lista.
+  - **En la computadora** el chat se ve como la consola de un asesor: la conversación al centro (más ancha, con el
+    cursor ya en la caja; Enter envía y Shift + Enter hace una nueva línea) y, al costado, el entrenamiento, el reloj del
+    caso, la cola de clientes con sus nombres (atendido, en atención, en espera), cómo escribir y *Terminar*. El detalle
+    del entrenamiento va en dos columnas: lo que tiene que saber y, al costado, sus clientes con el botón para empezar.
   - El cliente no repite mensajes: si la IA manda dos veces el mismo (por ejemplo, el saludo) o repite algo que ya dijo,
     se saca; si todo era repetido, se le pide una vez más. Lo corto («ok», «dale») sí se puede repetir entre turnos.
   - Se mide el **tiempo** de cada caso. Cada mensaje tiene hasta 1000 caracteres (hasta 6 por lote), una respuesta a
@@ -2016,6 +2025,12 @@ Chats de práctica en los que el postulante atiende a un **cliente simulado por 
   va aparte. **Mínimo del equipo: 15 entrenamientos terminados por postulante** (`ENTRENAMIENTO_META_POSTULANTE`).
   **No es un tope**: pueden hacer más (y repetirlos); al llegar, la barra queda llena y el número sigue sumando.
   Se ve en el grupo, la ficha, al enviar y en *En vivo*.
+- **Resultado medio** (`resultado_medio` en `servicio.py`): la media de **todas sus conversaciones evaluadas**, de todos
+  sus entrenamientos e intentos, aunque sea una sola y aunque el entrenamiento no haya terminado: nivel comercial de
+  1 a 10 en tres tramos (8 o más **Listo para vender**, de 5 a 7,9 **En desarrollo**, menos de 5 **Bajo**, con los
+  colores del IPV) y el % con la información correcta. Se ve en la tabla y las tarjetas del grupo, como título en la
+  ficha («6,5 · En desarrollo») y en el PDF. El nivel y la información se leen del JSON de cada evaluación con SQL (sin
+  traer la evaluación entera), igual en SQLite y PostgreSQL.
 - **Modelo**: GPT Luna (`gpt-6-luna`) por la API de Responses de OpenAI, con la misma `OPENAI_API_KEY` de la
   transcripción. Salida con JSON Schema estricto, `store=false`, esfuerzo de razonamiento bajo para el chat y medio para
   evaluar; si una respuesta llega con un mensaje de más o sin JSON válido, se toma el primero válido y se reintenta una

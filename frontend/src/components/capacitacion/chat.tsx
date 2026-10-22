@@ -9,8 +9,10 @@
  *   del tipeo para que no sume espera.
  * - Si se corta la conexión, los mensajes esperan y se reintentan con la misma marca de lote (el servidor no duplica).
  * - El borrador se guarda en el teléfono y la pantalla se acomoda al teclado del celular.
+ * - En la computadora se ve como una consola: la conversación al centro y, al costado, el entrenamiento, el tiempo del
+ *   caso, la cola de clientes y cómo escribir.
  */
-import { ArrowLeft, Check, CheckCheck, Clock3, Flag, LoaderCircle, RotateCcw, SendHorizontal, TriangleAlert, WifiOff } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, Clock3, Flag, Keyboard, LoaderCircle, MessagesSquare, RotateCcw, SendHorizontal, TriangleAlert, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cx } from "@/components/portal/ui";
@@ -31,6 +33,20 @@ interface Burbuja extends MensajeChat { k: string; estado?: Estado }
 const nuevoId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const hora = (iso: string) => new Date(iso).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", timeZone: "America/Asuncion" });
 const reintentable = (e: any) => e?.status === undefined || [502, 503, 504].includes(e.status);
+/** «Hoy» o la fecha, como el separador de un chat. */
+const dia = (iso: string) => {
+  const zona = { timeZone: "America/Asuncion" } as const;
+  const f = (d: Date) => d.toLocaleDateString("es-PY", { ...zona, day: "2-digit", month: "2-digit", year: "numeric" });
+  return f(new Date(iso)) === f(new Date()) ? "Hoy" : f(new Date(iso));
+};
+/** Un color sobrio y fijo por cliente para su avatar. */
+const COLORES = ["#334155", "#2A78D6", "#0E7490", "#7C3AED", "#B45309", "#BE185D", "#15803D"];
+const colorDe = (nombre: string) => COLORES[[...nombre].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % COLORES.length];
+/** El fondo de la conversación: gris claro con una trama de puntos muy suave. */
+const FONDO = { backgroundColor: "#EEF1F5", backgroundImage: "radial-gradient(rgba(15,17,22,0.055) 1px, transparent 1px)", backgroundSize: "16px 16px" };
+
+/** Un caso del entrenamiento en la cola de clientes. */
+export interface PasoChat { estado: "hecho" | "actual" | "pendiente"; cliente?: string }
 
 function guardado(clave: string): string {
   try { return window.localStorage.getItem(clave) ?? ""; } catch { return ""; }
@@ -54,12 +70,15 @@ function Tilde({ estado }: { estado?: Estado }) {
   return <CheckCheck size={13} className="text-sky-300" aria-label="visto" />;
 }
 
-export function Chat({ id, cliente, titulo, pasos, mensajes: iniciales, iniciado, terminado: terminadoInicial, enviar, onTerminar, onVolver, pie, aviso, cierre }: {
+export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: iniciales, iniciado, terminado: terminadoInicial, enviar, onTerminar, onVolver, pie, aviso, cierre }: {
   /** La conversación (para guardar el borrador). */
   id: string;
   cliente: string; titulo?: string; mensajes: MensajeChat[]; iniciado: string; terminado: boolean;
-  /** Los casos del entrenamiento (hechos, el actual y los que esperan): se ven arriba, como una cola de clientes. */
-  pasos?: ("hecho" | "actual" | "pendiente")[];
+  /** El nombre del entrenamiento (en la computadora se ve en el panel del costado). */
+  entrenamiento?: string;
+  /** Los casos del entrenamiento (hechos, el actual y los que esperan): arriba en el celular y al costado en la
+   * computadora, como una cola de clientes. */
+  pasos?: PasoChat[];
   /** Lo que aparece en la charla cuando termina (por ejemplo, la devolución). */
   cierre?: ReactNode;
   /** Manda uno o varios mensajes seguidos con su marca de lote; devuelve lo que contestó el cliente. */
@@ -225,6 +244,9 @@ export function Chat({ id, cliente, titulo, pasos, mensajes: iniciales, iniciado
   };
   const inicial = cliente.trim().charAt(0).toUpperCase();
   const pendientes = msgs.some((x) => x.estado === "cola" || x.estado === "enviando");
+  const actual = pasos ? pasos.findIndex((p) => p.estado === "actual") + 1 : 0;
+  const esperan = pasos?.filter((p) => p.estado === "pendiente").length ?? 0;
+  const color = colorDe(cliente);
 
   // Pantalla completa sobre todo y del alto visible (con el teclado del celular abierto, el chat se acomoda arriba).
   const [montado, setMontado] = useState(false);
@@ -240,130 +262,205 @@ export function Chat({ id, cliente, titulo, pasos, mensajes: iniciales, iniciado
     return () => { document.body.style.overflow = prev; v?.removeEventListener("resize", f); v?.removeEventListener("scroll", f); };
   }, []);
   useEffect(() => { abajo.current?.scrollIntoView({ block: "end" }); }, [vista?.h]);
+  // En la computadora, el cursor ya queda en la caja para escribir.
+  useEffect(() => { if (montado && !terminadoRef.current && window.matchMedia("(pointer: fine)").matches) caja.current?.focus(); }, [montado]);
   if (!montado) return null;
 
+  const botonTerminar = (clase: string) => onTerminar && !terminado && (
+    <button type="button" onClick={() => setConfirmar(true)} disabled={cerrando || confirmar} className={clase}>
+      <Flag size={14} aria-hidden /> Terminar
+    </button>
+  );
+
   return createPortal(
-    <div className="fixed inset-x-0 top-0 h-[100dvh] z-[70] flex flex-col bg-[#EEF0F3]" role="dialog" aria-modal="true" aria-label={`Chat con ${cliente}`}
+    <div className="fixed inset-x-0 top-0 h-[100dvh] z-[70] flex bg-[#DCE0E6] lg:p-6" role="dialog" aria-modal="true" aria-label={`Chat con ${cliente}`}
       style={vista ? { height: vista.h, transform: `translateY(${vista.top}px)` } : undefined}>
-      <header className="bg-white border-b border-brand-border px-3 py-2.5 flex items-center gap-3 pt-[calc(10px+env(safe-area-inset-top))]">
-        {onVolver && (
-          <button type="button" onClick={onVolver} aria-label="Volver" className="w-10 h-10 -ml-1 rounded-full flex items-center justify-center text-brand-slate hover:bg-brand-bg shrink-0">
-            <ArrowLeft size={22} aria-hidden />
-          </button>
-        )}
-        <span className="relative w-10 h-10 rounded-full bg-brand-ink text-white font-bold flex items-center justify-center shrink-0" aria-hidden>
-          {inicial}
-          {!terminado && <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-[15px] text-brand-ink truncate">{cliente}</div>
-          <div className="text-[12px] text-brand-slate truncate" aria-live="polite">
-            {terminado ? "Conversación terminada" : escribiendo ? <span className="text-emerald-700 font-semibold">escribiendo…</span> : titulo ?? "en línea"}
+      <div className="flex-1 min-h-0 w-full flex bg-white lg:max-w-[1240px] lg:mx-auto lg:rounded-2xl lg:overflow-hidden lg:border lg:border-black/5 lg:shadow-[0_28px_70px_-28px_rgba(15,17,22,0.5)]">
+        {/* En la computadora: el entrenamiento, el tiempo y la cola de clientes, al costado (como la consola de un asesor). */}
+        <aside className="hidden lg:flex w-[300px] xl:w-[320px] shrink-0 flex-col border-r border-brand-border bg-white">
+          <div className="px-5 pt-5 pb-4 border-b border-brand-border">
+            {onVolver && (
+              <button type="button" onClick={onVolver} className="inline-flex items-center gap-1.5 text-[13px] text-brand-slate hover:text-brand-ink mb-3">
+                <ArrowLeft size={16} aria-hidden /> Volver
+              </button>
+            )}
+            <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">{entrenamiento ? "Entrenamiento" : "Conversación de práctica"}</div>
+            <div className="font-display text-[22px] uppercase leading-tight text-brand-ink break-words">{entrenamiento ?? titulo ?? cliente}</div>
           </div>
-        </div>
-        <span className="text-[13px] text-brand-slate shrink-0" title="Tiempo del caso"><Reloj desde={iniciado} parado={terminado} /></span>
-        {onTerminar && !terminado && (
-          <button type="button" onClick={() => setConfirmar(true)} disabled={cerrando}
-            className="min-h-[36px] px-3 rounded-full border border-brand-border text-[13px] font-semibold text-brand-ink inline-flex items-center gap-1 shrink-0">
-            <Flag size={14} aria-hidden /> Terminar
-          </button>
-        )}
-      </header>
-      {pasos && pasos.length > 1 && (() => {
-        const actual = pasos.indexOf("actual") + 1;
-        const esperan = pasos.filter((p) => p === "pendiente").length;
-        return (
-          <div className="bg-white border-b border-brand-border px-4 py-2">
-            <div className="max-w-2xl mx-auto flex items-center gap-3">
-              <span className="text-[12px] font-bold text-brand-ink tabular-nums shrink-0">Caso {actual || pasos.length} de {pasos.length}</span>
-              <span className="flex-1 flex gap-1" aria-hidden>
-                {pasos.map((p, i) => <span key={i} className={cx("h-1.5 flex-1 rounded-full", p === "hecho" ? "bg-emerald-500" : p === "actual" ? "bg-brand-ink" : "bg-brand-border")} />)}
-              </span>
-              <span className="text-[12px] text-brand-slate shrink-0">{esperan ? `${esperan} en espera` : "el último"}</span>
-            </div>
-          </div>
-        );
-      })()}
-      {!enLinea && (
-        <div role="status" className="bg-amber-50 border-b border-amber-200 text-amber-900 text-[13px] px-4 py-2 flex items-center gap-2">
-          <WifiOff size={15} aria-hidden /> Sin conexión. Tus mensajes salen cuando vuelva.
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-4">
-        <div className="max-w-2xl mx-auto space-y-1.5">
-          {aviso}
-          {msgs.map((m, i) => {
-            const propio = m.r === "asesor";
-            const pegado = i > 0 && msgs[i - 1].r === m.r;
-            return (
-              <div key={m.k} className={cx("flex", propio ? "justify-end" : "justify-start", !pegado && i > 0 && "pt-2")}>
-                <div className={cx("max-w-[82%] pl-3.5 pr-2.5 pt-2 pb-1 text-[15px] leading-snug shadow-sm animate-fade",
-                  propio ? "bg-brand-ink text-white rounded-2xl rounded-br-md" : "bg-white text-brand-ink rounded-2xl rounded-bl-md",
-                  m.estado === "error" && "ring-2 ring-red-400")}>
-                  <span className="whitespace-pre-wrap break-words">{m.t}</span>
-                  <span className={cx("float-right ml-2 mt-1.5 inline-flex items-center gap-0.5 text-[10px] leading-none select-none", propio ? "text-white/60" : "text-brand-mist")}>
-                    {hora(m.at)}{propio && <Tilde estado={m.estado} />}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-          {escribiendo && (
-            <div className="flex justify-start pt-2" aria-label={`${cliente} está escribiendo`}>
-              <div className="bg-white rounded-2xl rounded-bl-md px-4 py-3 shadow-sm flex gap-1">
-                {[0, 1, 2].map((i) => <span key={i} className="w-2 h-2 rounded-full bg-brand-mist grabando-punto" style={{ animationDelay: `${i * 0.18}s` }} />)}
-              </div>
-            </div>
-          )}
-          {terminado && (
-            <div className="pt-4 text-center">
-              <span className="inline-block rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-brand-slate shadow-sm">La conversación terminó</span>
-            </div>
-          )}
-          {terminado && cierre}
-          <div ref={abajo} className="h-1" />
-        </div>
-      </div>
-
-      <div className="bg-white border-t border-brand-border px-3 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom))]">
-        <div className="max-w-2xl mx-auto">
-          {error && (
-            <div role="alert" className="mb-2 text-[13px] text-brand-primary-dark flex items-center gap-2">
-              <TriangleAlert size={15} className="shrink-0" aria-hidden /><span className="flex-1">{error}</span>
-              {fallido && (
-                <button type="button" onClick={reintentar} className="min-h-[36px] px-3 rounded-full bg-brand-ink text-white text-[13px] font-semibold inline-flex items-center gap-1 shrink-0">
-                  <RotateCcw size={14} aria-hidden /> Reintentar
-                </button>
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+            <div className="rounded-xl bg-brand-bg px-4 py-3">
+              <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">Tiempo del caso</div>
+              <div className="font-display text-[40px] leading-none text-brand-ink mt-1"><Reloj desde={iniciado} parado={terminado} /></div>
+              {pasos && pasos.length > 1 && (
+                <div className="text-[12px] text-brand-slate mt-1.5">Caso {actual || pasos.length} de {pasos.length} · {esperan ? `${esperan} en espera` : "el último"}</div>
               )}
             </div>
+            {pasos && pasos.length > 1 && (
+              <div>
+                <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate mb-1.5">Tus clientes</div>
+                <ol className="space-y-0.5">
+                  {pasos.map((p, i) => (
+                    <li key={i} className={cx("flex items-center gap-3 rounded-lg px-2.5 py-2", p.estado === "actual" && "bg-brand-bg")} aria-current={p.estado === "actual" ? "step" : undefined}>
+                      <span className={cx("w-7 h-7 rounded-full text-[12px] font-bold flex items-center justify-center shrink-0",
+                        p.estado === "hecho" ? "bg-emerald-50 text-emerald-700" : p.estado === "actual" ? "bg-brand-ink text-white" : "bg-white border border-brand-border text-brand-slate")}>
+                        {p.estado === "hecho" ? <Check size={14} aria-hidden /> : i + 1}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[14px] font-semibold text-brand-ink truncate">{p.cliente ?? `Cliente ${i + 1}`}</span>
+                        <span className={cx("block text-[11px]", p.estado === "actual" && !terminado ? "text-emerald-700 font-semibold" : "text-brand-slate")}>
+                          {p.estado === "hecho" ? "Atendido" : p.estado === "actual" ? (terminado ? "Terminado" : "En atención") : "En espera"}
+                        </span>
+                      </span>
+                      {p.estado === "actual" && !terminado && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden />}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+            <div>
+              <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate mb-2">Cómo escribir</div>
+              <ul className="space-y-2.5 text-[13px] text-brand-slate leading-snug">
+                <li className="flex gap-2.5"><Keyboard size={16} className="mt-0.5 shrink-0 text-brand-ink" aria-hidden />
+                  <span><b className="text-brand-ink font-semibold">Enter</b> envía; <b className="text-brand-ink font-semibold">Shift + Enter</b>, nueva línea.</span></li>
+                <li className="flex gap-2.5"><MessagesSquare size={16} className="mt-0.5 shrink-0 text-brand-ink" aria-hidden />
+                  <span>Podés mandar varios mensajes seguidos: el cliente contesta cuando hacés una pausa.</span></li>
+                <li className="flex gap-2.5"><CheckCheck size={16} className="mt-0.5 shrink-0 text-sky-500" aria-hidden />
+                  <span>Dos tildes azules: el cliente ya lo leyó.</span></li>
+              </ul>
+            </div>
+          </div>
+          {onTerminar && !terminado && (
+            <div className="px-5 py-4 border-t border-brand-border">
+              {botonTerminar("btn w-full min-h-[44px] bg-white border border-brand-border text-[14px] font-semibold text-brand-ink hover:border-brand-ink gap-1.5")}
+            </div>
           )}
-          {confirmar ? (
-            <div className="space-y-2">
-              <p className="text-[14px] font-semibold text-brand-ink">¿Terminás esta conversación? Después no se puede seguir.</p>
-              {pendientes && <p className="text-[13px] text-brand-slate">Hay mensajes que todavía no llegaron al cliente.</p>}
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => setConfirmar(false)} className="btn min-h-[48px] bg-white border border-brand-border text-brand-ink">Seguir</button>
-                <button type="button" onClick={terminar} disabled={cerrando} className="btn min-h-[48px] bg-brand-ink text-white">
-                  {cerrando ? <LoaderCircle size={18} className="animate-spin" aria-hidden /> : "Sí, terminar"}
-                </button>
+        </aside>
+
+        <section className="flex-1 min-w-0 flex flex-col">
+          <header className="bg-white border-b border-brand-border px-3 lg:px-5 py-2.5 flex items-center gap-3 pt-[calc(10px+env(safe-area-inset-top))] lg:pt-2.5">
+            {onVolver && (
+              <button type="button" onClick={onVolver} aria-label="Volver" className="lg:hidden w-10 h-10 -ml-1 rounded-full flex items-center justify-center text-brand-slate hover:bg-brand-bg shrink-0">
+                <ArrowLeft size={22} aria-hidden />
+              </button>
+            )}
+            <span className="relative w-10 h-10 rounded-full text-white font-bold flex items-center justify-center shrink-0" style={{ background: color }} aria-hidden>
+              {inicial}
+              {!terminado && <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-[15px] text-brand-ink truncate">{cliente}</div>
+              <div className="text-[12px] text-brand-slate truncate" aria-live="polite">
+                {terminado ? "Conversación terminada" : escribiendo ? <span className="text-emerald-700 font-semibold">escribiendo…</span> : <span className="lg:hidden">{titulo ?? "en línea"}</span>}
+                {!terminado && !escribiendo && <span className="hidden lg:inline">en línea</span>}
               </div>
             </div>
-          ) : terminado ? (
-            pie?.(true) ?? null
-          ) : (
-            <div className="flex items-end gap-2">
-              <textarea ref={caja} value={texto} onChange={(e) => cambiar(e.target.value)} onKeyDown={tecla} rows={1}
-                placeholder="Escribí tu respuesta…" aria-label="Tu mensaje" enterKeyHint="send" autoComplete="off" autoCorrect="on" spellCheck
-                className="flex-1 resize-none rounded-2xl border border-brand-border bg-brand-bg-soft px-4 py-3 text-[16px] leading-snug max-h-36 focus:outline-none focus:border-brand-ink"
-                style={{ height: "auto" }} onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${Math.min(144, t.scrollHeight)}px`; }} />
-              <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={mandar} disabled={!texto.trim()} aria-label="Enviar"
-                className="w-12 h-12 rounded-full bg-brand-primary text-white flex items-center justify-center shrink-0 disabled:opacity-40 active:scale-95 transition">
-                <SendHorizontal size={20} aria-hidden />
-              </button>
+            {!(pasos && pasos.length > 1) && <span className="lg:hidden text-[13px] text-brand-slate shrink-0" title="Tiempo del caso"><Reloj desde={iniciado} parado={terminado} /></span>}
+            {botonTerminar("lg:hidden min-h-[36px] px-3 rounded-full border border-brand-border text-[13px] font-semibold text-brand-ink inline-flex items-center gap-1 shrink-0")}
+          </header>
+          {pasos && pasos.length > 1 && (
+            <div className="lg:hidden bg-white border-b border-brand-border px-4 py-2">
+              <div className="max-w-2xl mx-auto flex items-center gap-3">
+                <span className="text-[12px] font-bold text-brand-ink tabular-nums shrink-0">Caso {actual || pasos.length} de {pasos.length}</span>
+                <span className="flex-1 flex gap-1" aria-hidden>
+                  {pasos.map((p, i) => <span key={i} className={cx("h-1.5 flex-1 rounded-full", p.estado === "hecho" ? "bg-emerald-500" : p.estado === "actual" ? "bg-brand-ink" : "bg-brand-border")} />)}
+                </span>
+                <span className="text-[12px] text-brand-slate shrink-0 inline-flex items-center gap-1" title={`Tiempo del caso${esperan ? ` · ${esperan} en espera` : ""}`}>
+                  <Clock3 size={13} aria-hidden /><Reloj desde={iniciado} parado={terminado} /></span>
+              </div>
             </div>
           )}
-        </div>
+          {!enLinea && (
+            <div role="status" className="bg-amber-50 border-b border-amber-200 text-amber-900 text-[13px] px-4 py-2 flex items-center gap-2">
+              <WifiOff size={15} aria-hidden /> Sin conexión. Tus mensajes salen cuando vuelva.
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto overscroll-contain px-3 lg:px-8 py-4" style={FONDO}>
+            <div className="max-w-2xl lg:max-w-3xl mx-auto">
+              <div className="flex justify-center mb-3">
+                <span className="rounded-md bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-brand-slate shadow-sm">{dia(iniciado)}</span>
+              </div>
+              {aviso}
+              {msgs.map((m, i) => {
+                const propio = m.r === "asesor";
+                const primero = i === 0 || msgs[i - 1].r !== m.r;
+                return (
+                  <div key={m.k} className={cx("flex", propio ? "justify-end" : "justify-start", primero ? (i > 0 ? "pt-3" : "") : "pt-0.5")}>
+                    <div className={cx("max-w-[82%] lg:max-w-[68%] pl-3.5 pr-2.5 pt-2 pb-1 text-[15px] leading-snug rounded-2xl shadow-[0_1px_1.5px_rgba(15,17,22,0.12)] animate-fade",
+                      propio ? "bg-brand-ink text-white" : "bg-white text-brand-ink",
+                      primero && (propio ? "rounded-tr-[4px]" : "rounded-tl-[4px]"),
+                      m.estado === "error" && "ring-2 ring-red-400")}>
+                      <span className="whitespace-pre-wrap break-words">{m.t}</span>
+                      <span className={cx("float-right ml-2 mt-1.5 inline-flex items-center gap-0.5 text-[10px] leading-none select-none", propio ? "text-white/60" : "text-brand-mist")}>
+                        {hora(m.at)}{propio && <Tilde estado={m.estado} />}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              {escribiendo && (
+                <div className={cx("flex justify-start", msgs[msgs.length - 1]?.r === "cliente" ? "pt-0.5" : "pt-3")} aria-label={`${cliente} está escribiendo`}>
+                  <div className="bg-white rounded-2xl rounded-tl-[4px] px-4 py-3 shadow-[0_1px_1.5px_rgba(15,17,22,0.12)] flex gap-1">
+                    {[0, 1, 2].map((i) => <span key={i} className="w-2 h-2 rounded-full bg-brand-mist grabando-punto" style={{ animationDelay: `${i * 0.18}s` }} />)}
+                  </div>
+                </div>
+              )}
+              {terminado && (
+                <div className="pt-4 text-center">
+                  <span className="inline-block rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-brand-slate shadow-sm">La conversación terminó</span>
+                </div>
+              )}
+              {terminado && cierre}
+              <div ref={abajo} className="h-1" />
+            </div>
+          </div>
+
+          <div className="bg-white border-t border-brand-border px-3 lg:px-8 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom))] lg:pb-3">
+            <div className="max-w-2xl lg:max-w-3xl mx-auto">
+              {error && (
+                <div role="alert" className="mb-2 text-[13px] text-brand-primary-dark flex items-center gap-2">
+                  <TriangleAlert size={15} className="shrink-0" aria-hidden /><span className="flex-1">{error}</span>
+                  {fallido && (
+                    <button type="button" onClick={reintentar} className="min-h-[36px] px-3 rounded-full bg-brand-ink text-white text-[13px] font-semibold inline-flex items-center gap-1 shrink-0">
+                      <RotateCcw size={14} aria-hidden /> Reintentar
+                    </button>
+                  )}
+                </div>
+              )}
+              {confirmar ? (
+                <div className="space-y-2">
+                  <p className="text-[14px] font-semibold text-brand-ink">¿Terminás esta conversación? Después no se puede seguir.</p>
+                  {pendientes && <p className="text-[13px] text-brand-slate">Hay mensajes que todavía no llegaron al cliente.</p>}
+                  <div className="grid grid-cols-2 gap-2 lg:max-w-md">
+                    <button type="button" onClick={() => setConfirmar(false)} className="btn min-h-[48px] bg-white border border-brand-border text-brand-ink">Seguir</button>
+                    <button type="button" onClick={terminar} disabled={cerrando} className="btn min-h-[48px] bg-brand-ink text-white">
+                      {cerrando ? <LoaderCircle size={18} className="animate-spin" aria-hidden /> : "Sí, terminar"}
+                    </button>
+                  </div>
+                </div>
+              ) : terminado ? (
+                pie?.(true) ?? null
+              ) : (
+                <>
+                  <div className="flex items-end gap-2">
+                    <textarea ref={caja} value={texto} onChange={(e) => cambiar(e.target.value)} onKeyDown={tecla} rows={1}
+                      placeholder="Escribí tu respuesta…" aria-label="Tu mensaje" enterKeyHint="send" autoComplete="off" autoCorrect="on" spellCheck
+                      className="flex-1 resize-none rounded-2xl border border-brand-border bg-brand-bg-soft px-4 py-3 text-[16px] leading-snug max-h-36 focus:outline-none focus:border-brand-ink focus:bg-white"
+                      style={{ height: "auto" }} onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${Math.min(144, t.scrollHeight)}px`; }} />
+                    <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={mandar} disabled={!texto.trim()} aria-label="Enviar"
+                      className="w-12 h-12 rounded-full bg-brand-primary text-white flex items-center justify-center shrink-0 disabled:opacity-40 active:scale-95 transition">
+                      <SendHorizontal size={20} aria-hidden />
+                    </button>
+                  </div>
+                  <div className="hidden lg:flex items-center justify-between mt-1.5 px-1 text-[11px] text-brand-mist">
+                    <span>Enter para enviar · Shift + Enter, nueva línea</span>
+                    {texto.length > MAX_TEXTO - 200 && <span className="tabular-nums">{texto.length}/{MAX_TEXTO}</span>}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
     </div>,
     document.body,

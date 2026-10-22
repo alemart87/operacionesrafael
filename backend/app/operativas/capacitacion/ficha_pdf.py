@@ -34,6 +34,7 @@ router = APIRouter(prefix="/capacitacion", tags=["capacitación y mentoría"])
 # Los mismos colores que la ficha en pantalla.
 COLOR_NIVEL = {"superior": colors.HexColor("#15803D"), "termino_medio": colors.HexColor("#2A78D6"),
                "inferior": colors.HexColor("#E6332A")}
+COLOR_TRAMO = {"alto": COLOR_NIVEL["superior"], "medio": COLOR_NIVEL["termino_medio"], "bajo": COLOR_NIVEL["inferior"]}
 SEXO = {"F": "Femenino", "M": "Masculino", "X": "Otro"}
 ESTADO_ENT = {"pendiente": "Sin empezar", "en_curso": "En curso", "evaluando": "Evaluando", "terminado": "Terminado"}
 TIPO_COMENTARIO = {"feedback": "Feedback", "oportunidad": "Oportunidad de mejora", "postulante": "Su feedback"}
@@ -124,6 +125,10 @@ def _ipv(f: dict[str, Any], ancho: float) -> list[Any]:
     return partes
 
 
+def _n(n: int, palabra: str) -> str:
+    return f"{n} {palabra}{'' if n == 1 else 's'}"
+
+
 def _nombre_ent(x: dict[str, Any]) -> str:
     return x["nombre"] + (f" · intento {x['intento']}" if (x.get("intento") or 1) > 1 else "")
 
@@ -131,9 +136,19 @@ def _nombre_ent(x: dict[str, Any]) -> str:
 def _entrenamientos(p: dict[str, Any], ents: list[dict[str, Any]], ancho: float) -> list[Any]:
     av = p.get("avance") or {}
     pct = f"{av['pct']}%" if av.get("pct") is not None else "—"
-    partes: list[Any] = [Paragraph(
-        f'<font name="{_F["semi"]}">{av.get("terminados", 0)} terminados</font> (el mínimo del equipo es {av.get("meta", "—")}) · '
-        f'{av.get("aprobados", 0)} recomendados · avance de casos {pct}', _e("av", textColor=GRAFITO))]
+    partes: list[Any] = []
+    if m := av.get("resultado"):
+        # Cómo viene: la media de todas sus conversaciones evaluadas, como título (igual que el DGV).
+        color = "#" + COLOR_TRAMO.get(m["tramo"], TINTA).hexval()[2:]
+        nivel = f"{m['nivel']:.1f}".replace(".", ",").replace(",0", "")
+        partes += [Paragraph(f'<font color="{color}">{nivel}</font><font color="#9CA3AF"> · </font>{_limpio(m["tramo_nombre"]).upper()}',
+                             _e("med", fontName=_F["titulo"], fontSize=20, leading=23, textColor=TINTA)),
+                   Paragraph(f"Media de {m['casos']} {'conversación evaluada' if m['casos'] == 1 else 'conversaciones evaluadas'} · "
+                             f"nivel comercial de 1 a 10 · información correcta en el {m['info_pct']}%", _e("meds", fontSize=7.8, textColor=PIZARRA)),
+                   Spacer(1, 2.5 * mm)]
+    partes += [Paragraph(
+        f'<font name="{_F["semi"]}">{_n(av.get("terminados", 0), "terminado")}</font> (el mínimo del equipo es {av.get("meta", "—")}) · '
+        f'{_n(av.get("aprobados", 0), "recomendado")} · avance de casos {pct}', _e("av", textColor=GRAFITO))]
     if not ents:
         return partes + [Spacer(1, 2 * mm), Paragraph("Todavía no tiene entrenamientos enviados.", _e("ent0", textColor=PIZARRA))]
     filas = [[_cab("Entrenamiento"), _cab("Estado"), _cab("Casos", derecha=True), _cab("Nivel", derecha=True),
