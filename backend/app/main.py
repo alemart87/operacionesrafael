@@ -94,6 +94,8 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE cap_asignaciones ADD COLUMN IF NOT EXISTS intento INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE cap_asignaciones DROP CONSTRAINT IF EXISTS uq_cap_asignacion",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_cap_asignacion_intento ON cap_asignaciones (entrenamiento_id, postulante_id, intento)",
+    # v1.5.1 · el historial de Capacitación admite los tipos largos (entrenamiento_enviado, entrenamiento_reiniciado)
+    "ALTER TABLE cap_eventos ALTER COLUMN tipo TYPE VARCHAR(40)",
 ]
 
 

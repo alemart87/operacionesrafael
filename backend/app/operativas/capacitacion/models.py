@@ -142,7 +142,7 @@ class CapEvento(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     grupo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     postulante_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
-    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    tipo: Mapped[str] = mapped_column(String(40), nullable=False)    # p. ej. entrenamiento_reiniciado (más de 20)
     de: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     a: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)

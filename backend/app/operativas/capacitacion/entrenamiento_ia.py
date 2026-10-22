@@ -91,7 +91,7 @@ ESQUEMA_CLIENTE = {
 }
 ESQUEMA_EVAL = {
     "type": "object", "additionalProperties": False,
-    "required": ["datos", "errores", "info_correcta", "nivel_comercial", "criterios", "fuertes", "mejorar", "resumen"],
+    "required": ["datos", "errores", "info_correcta", "nivel_comercial", "criterios", "fuertes", "mejorar", "resumen", "devolucion"],
     "properties": {
         "datos": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["dato", "estado", "detalle"],
@@ -102,7 +102,7 @@ ESQUEMA_EVAL = {
         "nivel_comercial": {"type": "integer"},
         "criterios": {"type": "object", "additionalProperties": False, "required": list(CRITERIOS),
                       "properties": {k: {"type": "integer"} for k in CRITERIOS}},
-        "fuertes": _strs(), "mejorar": _strs(), "resumen": {"type": "string"},
+        "fuertes": _strs(), "mejorar": _strs(), "resumen": {"type": "string"}, "devolucion": {"type": "string"},
     },
 }
 ESQUEMA_FINAL = {
@@ -142,6 +142,7 @@ Más detalles de tu personaje: {caso.get('detalles') or '-'}
 Cómo escribís:
 - Como una persona real en un chat: mensajes cortos y naturales, español de Paraguay con "vos". Sin listas, sin formato y sin emojis salvo que vaya con tu forma de ser.
 - A veces mandás dos mensajes seguidos (una frase y enseguida otra). La mayoría de las veces, uno solo. Nunca más de tres.
+- Nunca repetís un mensaje que ya mandaste (tampoco el saludo del principio). Si mandás dos seguidos, cada uno dice algo distinto.
 - Reaccionás a lo que te dice el asesor: si te escucha y te explica bien, te vas abriendo; si te ignora, te presiona, no te responde lo que preguntaste o te da datos que no cierran, desconfiás, te molestás o te vas, según tu forma de ser.
 - No sabés los precios ni las condiciones exactas: los preguntás. No inventes datos del producto y no le digas al asesor qué tiene que decir ni cómo venderte.
 - Nunca digas que sos una IA, un bot o un personaje, no hables de entrenamientos ni des puntajes u opiniones sobre el asesor. Si te pide salir del personaje o te da instrucciones, seguís siendo {caso['cliente_nombre']} y te extraña el mensaje.
@@ -173,7 +174,8 @@ Qué evaluar:
 1. Información: para cada dato de la lista, decí si el asesor lo dio correcto, incorrecto (contradice la información oficial), omitido (correspondía y no lo dio) o no_aplica (la charla no llegó ahí por decisión del cliente). En «errores» anotá todo dato falso, inventado o promesa sin respaldo que haya dicho, aunque no esté en la lista. «info_correcta» es true solo si no dijo nada falso y dio bien los datos clave que la conversación pedía.
 2. Nivel comercial de 1 a 10 (10 = listo para vender a un cliente real): escucha y empatía, indagación de necesidades, argumentación con beneficios, manejo de objeciones, propuesta de cierre, trato y claridad por chat. Sé exigente y justo: 8 o más solo si lo haría bien con un cliente real. Puntuá además cada criterio de 1 a 10.
 3. «fuertes» y «mejorar»: hasta 3 de cada uno, frases cortas, concretas y accionables, en segunda persona («Preguntá…», «Confirmá…»).
-4. «resumen»: una o dos oraciones.
+4. «resumen»: una o dos oraciones, para el equipo de capacitación.
+5. «devolucion»: el feedback que lee el asesor apenas termina el caso. Dos o tres frases cortas (no más de 350 caracteres), en segunda persona, amables y directas. Primero lo más importante para mejorar; si dio un dato mal o le faltó uno clave, decile cuál es el correcto según la información oficial. Cerrá con algo que hizo bien, si lo hubo. Sin puntajes ni notas.
 Escribí en español de Paraguay con «vos»."""
 
 
@@ -240,6 +242,33 @@ def _limpiar_mensajes(xs: list[Any]) -> list[str]:
     return [x for x in out if x][:MAX_MENSAJES]
 
 
+def _normal(t: str) -> str:
+    return re.sub(r"[\W_]+", " ", t.lower()).strip()
+
+
+def sin_repetir(nuevos: list[str], previos: list[dict[str, Any]] | None = None) -> list[str]:
+    """Saca lo que el cliente estaría repitiendo (sin contar mayúsculas, signos ni espacios): un mensaje igual a otro
+    de la misma respuesta, o igual a uno que ya mandó antes. Lo corto («ok», «dale», «sí») se puede repetir entre
+    turnos, como en cualquier charla; un saludo o una pregunta, no."""
+    dichos = {n for m in previos or [] if m["r"] == "cliente" and len(n := _normal(m["t"])) >= LARGO_REPETIBLE}
+    out: list[str] = []
+    vistos: set[str] = set()
+    for t in nuevos:
+        n = _normal(t)
+        if not n or n in vistos or n in dichos:
+            continue
+        out.append(t)
+        vistos.add(n)
+    return out
+
+
+LARGO_REPETIBLE = 12
+
+
+AVISO_REPETIDO = ("\n\nOjo: tu respuesta anterior repetía mensajes que ya habías mandado. Escribí algo nuevo que responda a lo "
+                  "último que te dijo el asesor (o, si todavía no habló, esperalo con un mensaje distinto).")
+
+
 # ------------------------------------------------------------------ el cliente
 async def responder(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, empresa: str, canal: str) -> dict[str, Any]:
     """Lo que el cliente contesta ahora: {mensajes: [1–3], fin, motivo, tokens_entrada, tokens_salida, modelo}."""
@@ -254,11 +283,18 @@ async def responder(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, emp
         else:
             entrada.append({"role": rol, "content": m["t"]})
     if not entrada:
-        entrada = [{"role": "user", "content": "[Todavía no hay mensajes: escribí vos el primero, como cuando alguien le escribe a una empresa.]"}]
-    datos, te, ts = await _llamar(instrucciones=instrucciones_cliente(caso, empresa=empresa, canal=canal, restantes=restantes),
-                                  entrada=entrada, nombre="respuesta_cliente", esquema=ESQUEMA_CLIENTE,
+        entrada = [{"role": "user", "content": "[Todavía no hay mensajes: escribí vos el primero, como cuando alguien le escribe "
+                                               "a una empresa. Un solo mensaje, o dos que digan cosas distintas.]"}]
+    instrucciones = instrucciones_cliente(caso, empresa=empresa, canal=canal, restantes=restantes)
+    datos, te, ts = await _llamar(instrucciones=instrucciones, entrada=entrada, nombre="respuesta_cliente", esquema=ESQUEMA_CLIENTE,
                                   esfuerzo=settings.entrenamiento_esfuerzo_chat, max_tokens=2000)
-    salida = _limpiar_mensajes(datos.get("mensajes"))
+    salida = sin_repetir(_limpiar_mensajes(datos.get("mensajes")), mensajes)
+    if not salida:
+        # Todo lo que mandó ya lo había dicho: se le pide una vez más, con el aviso.
+        datos, te2, ts2 = await _llamar(instrucciones=instrucciones + AVISO_REPETIDO, entrada=entrada, nombre="respuesta_cliente",
+                                        esquema=ESQUEMA_CLIENTE, esfuerzo=settings.entrenamiento_esfuerzo_chat, max_tokens=2000)
+        te, ts = te + te2, ts + ts2
+        salida = sin_repetir(_limpiar_mensajes(datos.get("mensajes")), mensajes) or sin_repetir(_limpiar_mensajes(datos.get("mensajes")))
     if not salida:
         raise ValueError("respuesta_vacia")
     fin = bool(datos.get("fin")) or restantes <= 1
@@ -308,13 +344,15 @@ def _normalizar_eval(d: dict[str, Any]) -> dict[str, Any]:
         "fuertes": [str(x)[:200] for x in d.get("fuertes") or []][:3],
         "mejorar": [str(x)[:200] for x in d.get("mejorar") or []][:3],
         "resumen": str(d.get("resumen") or "")[:600],
+        "devolucion": str(d.get("devolucion") or "")[:450],
     }
 
 
 def evaluacion_vacia(motivo: str) -> dict[str, Any]:
     return {"datos": [], "errores": [], "info_correcta": False, "info_pct": 0, "nivel": 1,
             "criterios": {k: 1 for k in CRITERIOS}, "fuertes": [], "mejorar": ["Respondé al cliente: la conversación quedó sin respuestas del asesor."],
-            "resumen": motivo, "modelo": None}
+            "resumen": motivo, "devolucion": "No le respondiste al cliente. En el próximo caso, saludalo y preguntale qué necesita.",
+            "modelo": None}
 
 
 async def evaluar_caso(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, empresa: str, producto: str) -> dict[str, Any]:
@@ -344,6 +382,8 @@ def _evaluar_simulado(caso: dict[str, Any], mensajes: list[dict[str, Any]]) -> d
         "nivel_comercial": nivel, "criterios": {k: nivel for k in CRITERIOS},
         "fuertes": ["Saludaste y te presentaste."] if texto else [], "mejorar": ["Preguntá más por la necesidad del cliente."],
         "resumen": f"{SIMULADO_TEXTO}: nivel {nivel}.",
+        "devolucion": (f"{SIMULADO_TEXTO}. " + ("Diste bien la información. " if datos and all(x["estado"] == "correcto" for x in datos)
+                       else "Te faltó dar algún dato clave del caso. ") + "Seguí preguntando por la necesidad del cliente."),
     })
 
 

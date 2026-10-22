@@ -9,7 +9,7 @@ import {
   Eye, MessageSquareHeart, MessagesSquare, Pause, Play, Save, Scale, Send, Timer, TriangleAlert, UserRound,
 } from "lucide-react";
 import { Chat } from "@/components/capacitacion/chat";
-import { conIntento, type MensajeChat } from "@/components/capacitacion/tipos";
+import { conIntento, type DevolucionCaso, type MensajeChat } from "@/components/capacitacion/tipos";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
@@ -492,10 +492,69 @@ function Feedback({ base, onVolver }: { base: string; onVolver: () => void }) {
 }
 
 // ------------------------------------------------------------------ entrenamientos (chat con clientes)
-interface CasoLink { id: string; orden: number; titulo: string; cliente: string; estado: "pendiente" | "en_curso" | "hecho"; segundos: number | null; sesion_id: string | null }
+interface CasoLink {
+  id: string; orden: number; titulo: string; cliente: string; estado: "pendiente" | "en_curso" | "hecho"; segundos: number | null;
+  sesion_id: string | null; info_ok: boolean | null;
+}
 interface EntDetalle {
   id: string; nombre: string; intento?: number; instrucciones: string | null; empresa: string; canal: string; casos: CasoLink[]; hechos: number; total: number;
-  pct: number; terminado: boolean; disponible: boolean;
+  pct: number; terminado: boolean; disponible: boolean; devolucion_final: { fuertes: string[]; mejorar: string[] } | null;
+}
+
+/** La devolución corta de un caso: aparece apenas la IA lo evalúa (unos segundos después de terminar). */
+function Devolucion({ base, sid, compacta }: { base: string; sid: string; compacta?: boolean }) {
+  const [d, setD] = useState<DevolucionCaso | null>(null);
+  const [agotado, setAgotado] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let vivo = true;
+    let n = 0;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const cargar = async () => {
+      try {
+        const x = await pub<DevolucionCaso>(`${base}/sesiones/${sid}/devolucion`);
+        if (!vivo) return;
+        setD(x);
+        if (x.estado !== "evaluando" && x.estado !== "en_curso") return;
+      } catch { /* sin señal: se vuelve a probar */ }
+      if (!vivo) return;
+      if (++n >= 45) { setAgotado(true); return; }
+      t = setTimeout(cargar, 2500);
+    };
+    cargar();
+    return () => { vivo = false; clearTimeout(t); };
+  }, [base, sid]);
+  useEffect(() => { if (d?.estado === "lista" && !compacta) ref.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [d?.estado, compacta]);
+  const lista = d?.estado === "lista";
+  if (!lista) {
+    return (
+      <div className={cx("rounded-2xl bg-white px-4 py-3 text-[14px] text-brand-slate flex items-center gap-2 shadow-sm", !compacta && "mt-3")}>
+        {agotado || d?.estado === "sin_devolucion"
+          ? "Tu equipo de capacitación va a revisar este caso con vos."
+          : <><LoaderCircle size={16} className="animate-spin shrink-0" aria-hidden /> Preparando tu devolución…</>}
+      </div>
+    );
+  }
+  return (
+    <div ref={ref} className={cx("rounded-2xl bg-white px-4 py-3 shadow-sm space-y-2 animate-fade", !compacta && "mt-3")} aria-live="polite">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-[11px] uppercase tracking-wider2 font-bold text-brand-slate">Tu devolución</span>
+        <span className={cx("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12px] font-semibold",
+          d.info_ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900")}>
+          {d.info_ok ? <><CircleCheck size={13} aria-hidden /> Información correcta</> : <><TriangleAlert size={13} aria-hidden /> Revisá la información</>}
+        </span>
+      </div>
+      {d.devolucion && <p className="text-[15px] text-brand-ink leading-snug">{d.devolucion}</p>}
+      {(d.corregir ?? []).length > 0 && (
+        <ul className="space-y-1 text-[13px] text-brand-graphite">
+          {d.corregir!.map((x, i) => (
+            <li key={i} className="flex gap-1.5"><span className="text-amber-700 shrink-0" aria-hidden>•</span>
+              <span><b className="font-semibold">{x.dato}</b>{x.detalle && <span className="text-brand-slate"> — {x.detalle}</span>}</span></li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 interface SesionLink { id: string; caso_id: string; titulo: string; cliente: string; estado: string; mensajes: MensajeChat[]; iniciado_at: string }
 
@@ -506,10 +565,18 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
   const [abriendo, setAbriendo] = useState<string | null>(null);
   // Los casos que terminó en esta visita (la lista del servidor se actualiza al volver).
   const [listos, setListos] = useState<Set<string>>(new Set());
+  const [verDev, setVerDev] = useState<string | null>(null);
   const cargar = useCallback(() => {
     pub<EntDetalle>(`${base}/entrenamientos/${id}`).then((x) => { setD(x); setError(null); }).catch((e) => setError(e.message));
   }, [base, id]);
   useEffect(cargar, [cargar]);
+  // Terminó todos los casos y la devolución final todavía se está preparando: se vuelve a consultar sola.
+  const esperas = useRef(0);
+  useEffect(() => {
+    if (!d?.terminado || d.devolucion_final || chat || esperas.current >= 60) return;
+    const t = setTimeout(() => { esperas.current += 1; cargar(); }, 4000);
+    return () => clearTimeout(t);
+  }, [d, chat, cargar]);
   const abrir = async (c: CasoLink) => {
     setAbriendo(c.id); setError(null);
     try { setChat(await pub<SesionLink>(`${base}/entrenamientos/${id}/casos/${c.id}`, { method: "POST" })); }
@@ -527,19 +594,24 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
     const quedan = d.casos.filter((c) => c.estado !== "hecho" && !listos.has(c.id) && c.id !== chat.caso_id);
     const despues = quedan[0];
     const marcar = () => setListos((x) => new Set(x).add(chat.caso_id));
-    const orden = d.casos.find((c) => c.id === chat.caso_id)?.orden;
+    // La cola de clientes de este entrenamiento: los hechos, el que está atendiendo y los que esperan.
+    const pasos = d.casos.map((c) => (c.id === chat.caso_id ? "actual" : c.estado === "hecho" || listos.has(c.id) ? "hecho" : "pendiente") as "actual" | "hecho" | "pendiente");
     return (
-      <Chat key={chat.id} id={chat.id} cliente={chat.cliente} titulo={orden ? `Cliente ${orden} de ${d.total}` : chat.titulo}
+      <Chat key={chat.id} id={chat.id} cliente={chat.cliente} pasos={pasos}
         mensajes={chat.mensajes} iniciado={chat.iniciado_at} terminado={chat.estado !== "en_curso"}
         enviar={enviar} onTerminar={terminar} onVolver={() => { setChat(null); cargar(); }}
         aviso={<p className="text-center text-[12px] text-brand-slate pb-2">Sos asesor de {d.empresa}. Atendé a {chat.cliente.split(" ")[0]} como lo harías con un cliente real.</p>}
+        cierre={<Devolucion base={base} sid={chat.id} />}
         pie={() => (
           <div className="space-y-2">
-            <p className="text-center text-[14px] text-brand-ink font-semibold">
-              ¡Caso terminado! {quedan.length ? `Te ${quedan.length === 1 ? "queda 1 cliente" : `quedan ${quedan.length} clientes`}.` : "Era el último."}
-            </p>
+            {despues ? (
+              <p className="text-center text-[14px] text-brand-ink font-semibold inline-flex w-full items-center justify-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden />
+                {despues.cliente.split(" ")[0]} está esperando{quedan.length > 1 ? ` · ${quedan.length} en espera` : ""}
+              </p>
+            ) : <p className="text-center text-[14px] text-brand-ink font-semibold">¡Era el último cliente!</p>}
             {despues ? <Boton icono={Play} ocupado={abriendo === despues.id} onClick={() => { marcar(); abrir(despues); }}>Atender a {despues.cliente.split(" ")[0]}</Boton>
-              : <Boton onClick={() => { marcar(); setChat(null); cargar(); }}>Ver el entrenamiento</Boton>}
+              : <Boton onClick={() => { marcar(); setChat(null); cargar(); }}>Ver mi devolución final</Boton>}
           </div>
         )} />
     );
@@ -553,13 +625,29 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
       {(d.intento ?? 1) > 1 && <div className="text-[13px] text-brand-slate">{d.intento}.º intento: lo hacés de nuevo para mejorar.</div>}
       <div className="mt-3 flex items-center gap-3">
         <div className="flex-1 h-2 rounded-full bg-white border border-brand-border overflow-hidden" aria-hidden><div className="h-full rounded-full bg-brand-ink" style={{ width: `${d.pct}%` }} /></div>
-        <span className="text-[13px] text-brand-slate tabular-nums">{d.hechos} de {d.total}</span>
+        <span className="text-[13px] text-brand-slate tabular-nums">{d.hechos} de {d.total} casos hechos</span>
       </div>
       {d.terminado ? (
-        <div className="mt-5 card p-5 text-center">
-          <CircleCheck size={44} className="mx-auto text-emerald-600" aria-hidden />
-          <p className="mt-2 text-[17px] font-semibold text-brand-ink">¡Terminaste este entrenamiento!</p>
-          <p className="text-[14px] text-brand-slate">Tu equipo de capacitación va a ver los resultados y te va a dar la devolución.</p>
+        <div className="mt-5 card p-5">
+          <div className="text-center">
+            <CircleCheck size={44} className="mx-auto text-emerald-600" aria-hidden />
+            <p className="mt-2 text-[17px] font-semibold text-brand-ink">¡Terminaste este entrenamiento!</p>
+          </div>
+          {d.devolucion_final ? (
+            <div className="mt-4 space-y-3">
+              {d.devolucion_final.fuertes.length > 0 && (
+                <div><div className="text-[11px] uppercase tracking-wider2 font-bold text-emerald-800">Lo que hiciste bien</div>
+                  <ul className="mt-1 space-y-1 text-[15px] text-brand-ink">{d.devolucion_final.fuertes.map((x) => <li key={x} className="flex gap-2"><Check size={16} className="text-emerald-600 mt-0.5 shrink-0" aria-hidden />{x}</li>)}</ul></div>
+              )}
+              {d.devolucion_final.mejorar.length > 0 && (
+                <div><div className="text-[11px] uppercase tracking-wider2 font-bold text-amber-800">Para mejorar</div>
+                  <ul className="mt-1 space-y-1 text-[15px] text-brand-ink">{d.devolucion_final.mejorar.map((x) => <li key={x} className="flex gap-2"><ArrowRight size={16} className="text-amber-700 mt-0.5 shrink-0" aria-hidden />{x}</li>)}</ul></div>
+              )}
+              <p className="text-[13px] text-brand-slate">Tu equipo de capacitación ve tus conversaciones y lo va a repasar con vos.</p>
+            </div>
+          ) : (
+            <p className="mt-3 text-[14px] text-brand-slate flex items-center justify-center gap-2"><LoaderCircle size={16} className="animate-spin" aria-hidden /> Preparando tu devolución final…</p>
+          )}
         </div>
       ) : d.hechos === 0 && (
         <ul className="mt-5 space-y-3">
@@ -567,7 +655,7 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
             { icono: MessagesSquare, t: `Vas a atender ${d.total} cliente${d.total === 1 ? "" : "s"} por chat`, x: d.instrucciones || `Sos asesor de ${d.empresa}: averiguá qué necesita cada uno y ayudalo.` },
             { icono: UserRound, t: "Son clientes simulados, pero tratalos como reales", x: "Cada uno tiene su forma de ser: algunos están apurados, otros desconfían. A veces mandan dos mensajes seguidos." },
             { icono: Send, t: "Escribí como en WhatsApp", x: "Podés mandar varios mensajes seguidos: el cliente contesta cuando hacés una pausa." },
-            { icono: Timer, t: "Se mide el tiempo de cada caso", x: "Cuando el cliente se despide o terminaste, tocá «Terminar»." },
+            { icono: Timer, t: "Al terminar cada caso, tu devolución", x: "Se mide el tiempo. Cuando el cliente se despide (o tocás «Terminar»), te decimos en pocas palabras qué mejorar y qué dato corregir." },
             { icono: Eye, t: "Tu equipo te acompaña en vivo", x: "Tu capacitador o mentor puede ver las conversaciones mientras las hacés, para ayudarte a mejorar." },
           ].map(({ icono: I, t, x }) => (
             <li key={t} className="flex gap-3">
@@ -579,20 +667,32 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
       )}
       <ol className="mt-5 space-y-2">
         {d.casos.map((c) => (
-          <li key={c.id} className={cx("card px-4 py-3 flex items-center gap-3", c.id === siguiente?.id && "border-brand-ink")}>
-            <span className={cx("w-8 h-8 rounded-full text-sm font-bold flex items-center justify-center shrink-0", c.estado === "hecho" ? "bg-emerald-50 text-emerald-700" : "bg-brand-bg text-brand-ink")}>
-              {c.estado === "hecho" ? <Check size={16} aria-hidden /> : c.orden}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[15px] font-semibold text-brand-ink">{c.cliente}</span>
-              <span className="block text-[12px] text-brand-slate">{c.estado === "hecho" ? `Hecho${c.segundos ? ` · ${Math.max(1, Math.round(c.segundos / 60))} min` : ""}` : c.estado === "en_curso" ? "Empezado" : `Cliente ${c.orden}`}</span>
-            </span>
-            {c.estado !== "hecho" && !d.terminado && (
-              <button type="button" onClick={() => abrir(c)} disabled={!!abriendo || !d.disponible}
-                className={cx("btn min-h-[44px] px-4 text-sm", c.id === siguiente?.id ? "bg-brand-primary text-white" : "bg-white border border-brand-border text-brand-ink")}>
-                {abriendo === c.id ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : c.estado === "en_curso" ? "Seguir" : "Empezar"}
-              </button>
-            )}
+          <li key={c.id} className={cx("card px-4 py-3", c.id === siguiente?.id && "border-brand-ink")}>
+            <div className="flex items-center gap-3">
+              <span className={cx("w-8 h-8 rounded-full text-sm font-bold flex items-center justify-center shrink-0", c.estado === "hecho" ? "bg-emerald-50 text-emerald-700" : "bg-brand-bg text-brand-ink")}>
+                {c.estado === "hecho" ? <Check size={16} aria-hidden /> : c.orden}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-semibold text-brand-ink">{c.cliente}</span>
+                <span className="block text-[12px] text-brand-slate">
+                  {c.estado === "hecho" ? <>Hecho{c.segundos ? ` · ${c.segundos >= 5400 ? `${Math.round(c.segundos / 3600)} h` : `${Math.max(1, Math.round(c.segundos / 60))} min`}` : ""}
+                    {c.info_ok === true && <span className="text-emerald-700"> · información correcta</span>}
+                    {c.info_ok === false && <span className="text-amber-800"> · revisá la información</span>}</>
+                    : c.estado === "en_curso" ? "Empezado" : `Caso ${c.orden} de ${d.total} · en espera`}
+                </span>
+              </span>
+              {c.estado === "hecho" && c.sesion_id && (
+                <button type="button" onClick={() => setVerDev(verDev === c.id ? null : c.id)} aria-expanded={verDev === c.id}
+                  className="btn min-h-[40px] px-3 text-sm bg-white border border-brand-border text-brand-ink">{verDev === c.id ? "Ocultar" : "Devolución"}</button>
+              )}
+              {c.estado !== "hecho" && !d.terminado && (
+                <button type="button" onClick={() => abrir(c)} disabled={!!abriendo || !d.disponible}
+                  className={cx("btn min-h-[44px] px-4 text-sm", c.id === siguiente?.id ? "bg-brand-primary text-white" : "bg-white border border-brand-border text-brand-ink")}>
+                  {abriendo === c.id ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : c.estado === "en_curso" ? "Seguir" : "Empezar"}
+                </button>
+              )}
+            </div>
+            {verDev === c.id && c.sesion_id && <div className="mt-2 -mx-1"><Devolucion base={base} sid={c.sesion_id} compacta /></div>}
           </li>
         ))}
       </ol>

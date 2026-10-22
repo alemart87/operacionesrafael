@@ -1,4 +1,5 @@
 """Creación rápida de usuarios: link con QR que vence a los 30 minutos, registro con el perfil elegido y entrada directa."""
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -122,6 +123,7 @@ def test_politica_de_contrasena(client):
     assert r.status_code == 422
 
 
+@pytest.mark.skipif(not os.environ["DATABASE_URL"].startswith("sqlite"), reason="atrasa el vencimiento editando el archivo SQLite")
 def test_revocado_y_vencido(client):
     h = _auth(client)
     inv = _crear(client, h).json()

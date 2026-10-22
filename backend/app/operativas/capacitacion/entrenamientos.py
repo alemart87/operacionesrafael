@@ -156,7 +156,8 @@ async def abrir(db: AsyncSession, *, e: CapEntrenamiento, c: CapCaso, asignacion
     s = CapSesion(asignacion_id=asignacion.id if asignacion else None, caso_id=c.id, postulante_id=postulante_id,
                   prueba_por=prueba_por, estado="en_curso", caso=snapshot(c, e), mensajes=[], iniciado_at=srv.ahora())
     if c.primer_mensaje and c.primer_mensaje.strip():
-        s.mensajes = [_msg("cliente", t.strip()) for t in c.primer_mensaje.split("\n\n") if t.strip()][:ia.MAX_MENSAJES]
+        partes = ia.sin_repetir([t.strip() for t in c.primer_mensaje.split("\n\n") if t.strip()])
+        s.mensajes = [_msg("cliente", t) for t in partes][:ia.MAX_MENSAJES]
     else:
         try:
             r = await ia.responder(s.caso, [], empresa=e.empresa, canal=e.canal)

@@ -6,7 +6,11 @@ _DB = Path(__file__).resolve().parent.parent / "test_smoke.db"
 if _DB.exists():
     _DB.unlink()
 
-os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_DB.as_posix()}"
+# Por defecto, SQLite. Con TEST_DATABASE_URL (p. ej. postgresql+asyncpg://…) corren contra PostgreSQL, como en Render:
+# PostgreSQL controla cosas que SQLite deja pasar (el largo de los VARCHAR, por ejemplo).
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or f"sqlite+aiosqlite:///{_DB.as_posix()}"
+if os.environ.get("TEST_DATABASE_URL"):
+    os.environ["DB_NULLPOOL"] = "1"
 os.environ["SUPERADMIN_EMAIL"] = "admin@voicenter.com.py"
 os.environ["SUPERADMIN_PASSWORD"] = "Test1234!"
 os.environ["SUPERADMIN_PASSWORD_HASH"] = ""

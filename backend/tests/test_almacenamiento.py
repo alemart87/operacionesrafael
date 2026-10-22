@@ -90,7 +90,7 @@ async def test_diagnostico_solo_superadmin_y_marca_lo_que_no_tiene_respaldo():
                                      contenido_gz=gzip.compress(_liquidacion())))
             await db.commit()
         d = (await ac.get("/api/v1/sistema/almacenamiento", headers=admin)).json()
-    assert d["base"]["motor"] == "sqlite" and d["base"]["persistente"] is True  # en desarrollo, SQLite vale
+    assert d["base"]["motor"] == engine.dialect.name and d["base"]["persistente"] is True  # en desarrollo, SQLite vale
     assert d["archivos"]["ruta"] == str(settings.upload_path.resolve()) and "espacio" in d["archivos"]
     m = {x["modulo"]: x for x in d["modulos"]}
     assert m["Ventas Netas"]["sin_respaldo"] >= 1 and m["Ventas Netas"]["en_base"] >= 1
