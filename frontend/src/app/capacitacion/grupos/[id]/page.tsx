@@ -163,7 +163,7 @@ function Grupo() {
       {hoja?.t === "editar" && <HojaGrupo grupo={g} gestion={g.roles.includes("gestion")} onClose={() => setHoja(null)} onListo={() => { setHoja(null); cargar(); avisar("Grupo actualizado"); }} />}
       {hoja?.t === "estado_grupo" && <HojaEstadoGrupo g={g} onClose={() => setHoja(null)} onListo={(x) => { setG(x); setHoja(null); avisar(`El grupo quedó ${ESTADOS_GRUPO[x.estado].nombre.toLowerCase()}`); }} />}
       {hoja?.t === "estado" && <HojaEstado p={hoja.p} onClose={() => setHoja(null)} onListo={(p) => { setHoja(null); cargar(); avisar(`${p.nombre}: ${ESTADOS[p.estado].nombre}`); }} />}
-      {hoja?.t === "link" && <HojaEnlace p={hoja.p} onClose={() => setHoja(null)} onCambio={cargar} />}
+      {hoja?.t === "link" && <HojaEnlace p={hoja.p} gestiona={capacitador} onClose={() => setHoja(null)} onCambio={cargar} />}
       {hoja?.t === "enviar" && (
         <Hoja titulo="Enviar" sobre={`${hoja.p.nombre} ${hoja.p.apellido}`} onClose={() => setHoja(null)}>
           <div className="space-y-2.5">
@@ -173,14 +173,12 @@ function Grupo() {
                 <span className="block text-[13px] text-brand-slate">Lleva {hoja.p.avance.terminados} hechos (mínimo {hoja.p.avance.meta}, puede hacer más)</span></span>
               <ChevronRight size={18} className="text-brand-mist" aria-hidden />
             </button>
-            {capacitador && (
-              <button type="button" onClick={() => setHoja({ t: "link", p: hoja.p })} className="w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[72px] hover:border-brand-ink">
-                <span className="w-11 h-11 rounded-xl bg-brand-primary text-white flex items-center justify-center shrink-0"><Link2 size={22} aria-hidden /></span>
-                <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">El link del test IPV</span>
-                  <span className="block text-[13px] text-brand-slate">QR, copiar o WhatsApp</span></span>
-                <ChevronRight size={18} className="text-brand-mist" aria-hidden />
-              </button>
-            )}
+            <button type="button" onClick={() => setHoja({ t: "link", p: hoja.p })} className="w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[72px] hover:border-brand-ink">
+              <span className="w-11 h-11 rounded-xl bg-brand-primary text-white flex items-center justify-center shrink-0"><Link2 size={22} aria-hidden /></span>
+              <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">Su link</span>
+                <span className="block text-[13px] text-brand-slate">El mismo para el test IPV y los entrenamientos: QR, copiar o WhatsApp</span></span>
+              <ChevronRight size={18} className="text-brand-mist" aria-hidden />
+            </button>
           </div>
         </Hoja>
       )}

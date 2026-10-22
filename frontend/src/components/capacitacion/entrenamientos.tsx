@@ -13,7 +13,7 @@ import {
   CAP_API, conIntento, duracion, type Caso, type Catalogo, type EntPostulante, type EntrenamientoFila, type EvaluacionCaso, type GrupoDetalle,
   type EntResumen, type Resumen, type ResultadoEnt, type Sesion,
 } from "./tipos";
-import { abrirWhatsapp } from "./ui";
+import { CompartirLink, abrirWhatsapp } from "./ui";
 
 // ------------------------------------------------------------------ editor de casos
 const VACIO: Omit<Caso, "id" | "orden"> = {
@@ -339,26 +339,43 @@ export function HojaEnviar({ eid, nombre, meta, borrador, grupoInicial, onClose,
     const t = (hecho ?? []).filter((x) => x.url).map((x) => `${x.nombre} ${x.apellido}: ${x.url}`).join("\n");
     try { await navigator.clipboard.writeText(t); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch { /* sin portapapeles */ }
   };
+  const [copiadoUno, setCopiadoUno] = useState<string | null>(null);
+  const copiarUno = async (x: Enviado) => {
+    try { await navigator.clipboard.writeText(x.url!); setCopiadoUno(x.postulante_id); setTimeout(() => setCopiadoUno(null), 2000); } catch { /* el link se puede seleccionar */ }
+  };
 
   if (hecho) {
+    const conLink = hecho.filter((x) => x.url).length;
     return (
-      <Hoja titulo="¡Enviado!" sobre={nombre} onClose={onClose} pie={<Boton onClick={onClose}>Listo</Boton>}>
-        <p className="text-sm text-brand-slate mb-3">Ya lo ven en su link. Mandáselo por WhatsApp a cada uno (se abre con el mensaje listo):</p>
+      <Hoja titulo="¡Enviado!" sobre={nombre} onClose={onClose}
+        pie={<>{conLink > 1 && <Boton tipo="secundario" icono={Copy} onClick={copiarTodos}>{copiado ? "¡Copiados!" : "Copiar todos los links"}</Boton>}<Boton onClick={onClose}>Listo</Boton></>}>
+        <p className="text-sm text-brand-slate mb-3">
+          Ya aparece en el link de cada uno (el mismo del test). Mandáselo: por WhatsApp se abre con el mensaje listo, o copiá el link.
+        </p>
         <ul className="card divide-y divide-brand-border overflow-hidden">
           {hecho.map((x) => (
-            <li key={x.postulante_id} className="px-3 py-2.5 flex items-center gap-3">
-              <span className="flex-1 min-w-0 text-[15px] text-brand-ink">{x.nombre} {x.apellido}
-                {x.omitido && <span className="block text-[12px] text-brand-slate">No se envió: {x.omitido}</span>}
-                {x.ya_enviado && <span className="block text-[12px] text-brand-slate">Ya lo tenía sin terminar: le reenviás el link</span>}
-                {!x.ya_enviado && (x.intento ?? 1) > 1 && <span className="block text-[12px] text-brand-slate">Lo repite ({x.intento}.º intento)</span>}</span>
+            <li key={x.postulante_id} className="px-3 py-3 space-y-2">
+              <div className="flex items-center gap-3">
+                <span className="flex-1 min-w-0 text-[15px] font-semibold text-brand-ink">{x.nombre} {x.apellido}
+                  {x.omitido && <span className="block text-[12px] font-normal text-brand-slate">No se envió: {x.omitido}</span>}
+                  {x.ya_enviado && <span className="block text-[12px] font-normal text-brand-slate">Ya lo tenía sin terminar: le reenviás el link</span>}
+                  {!x.ya_enviado && (x.intento ?? 1) > 1 && <span className="block text-[12px] font-normal text-brand-slate">Lo repite ({x.intento}.º intento)</span>}</span>
+                {x.url && (
+                  <button type="button" onClick={() => abrirWhatsapp(mensaje(x))}
+                    className="btn min-h-[44px] px-3 bg-emerald-600 text-white text-sm shrink-0"><MessageCircle size={16} aria-hidden /> WhatsApp</button>
+                )}
+              </div>
               {x.url && (
-                <button type="button" onClick={() => abrirWhatsapp(mensaje(x))}
-                  className="btn min-h-[44px] px-3 bg-emerald-600 text-white text-sm"><MessageCircle size={16} aria-hidden /> WhatsApp</button>
+                <div className="flex items-center gap-2 rounded-lg bg-brand-bg-soft border border-brand-border pl-3 pr-1 py-1">
+                  <span className="flex-1 min-w-0 font-mono text-[12px] text-brand-ink truncate select-all" title={x.url}>{x.url}</span>
+                  <button type="button" onClick={() => copiarUno(x)} className="btn min-h-[36px] px-2.5 text-[13px] bg-white border border-brand-border text-brand-ink shrink-0">
+                    {copiadoUno === x.postulante_id ? <><Check size={14} aria-hidden /> Copiado</> : <><Copy size={14} aria-hidden /> Copiar</>}
+                  </button>
+                </div>
               )}
             </li>
           ))}
         </ul>
-        <button type="button" onClick={copiarTodos} className="mt-3 btn-ghost text-sm"><Copy size={15} aria-hidden /> {copiado ? "¡Copiados!" : "Copiar todos los links"}</button>
       </Hoja>
     );
   }
@@ -435,7 +452,7 @@ export function HojaEnviarA({ pid, nombre, onClose, onListo }: { pid: string; no
   const [lista, setLista] = useState<(EntrenamientoFila & { ya: ReturnType<typeof conEste> })[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
-  const [hecho, setHecho] = useState<{ ent: string; url: string | null } | null>(null);
+  const [hecho, setHecho] = useState<{ ent: string; url: string | null; qr?: string | null } | null>(null);
   useEffect(() => {
     Promise.all([apiFetch<{ entrenamientos: EntrenamientoFila[] }>(`${CAP_API}/entrenamientos`),
       apiFetch<{ entrenamientos: EntPostulante[] }>(`${CAP_API}/postulantes/${pid}/entrenamientos`)])
@@ -449,14 +466,20 @@ export function HojaEnviarA({ pid, nombre, onClose, onListo }: { pid: string; no
     setOcupado(e.id); setError(null);
     try {
       const r = await enviarA(e.id, [pid]);
-      setHecho({ ent: conIntento(e.nombre, r.enviados[0]?.intento), url: r.enviados[0]?.url ?? null }); onListo?.();
+      const url = r.enviados[0]?.url ?? null;
+      // El QR, para que lo escanee en la sala (si no se puede leer, alcanza con el link).
+      const qr = url ? await apiFetch<{ qr_svg: string | null }>(`${CAP_API}/postulantes/${pid}/enlace`).then((x) => x.qr_svg).catch(() => null) : null;
+      setHecho({ ent: conIntento(e.nombre, r.enviados[0]?.intento), url, qr }); onListo?.();
     } catch (x: any) { setError(x.message); } finally { setOcupado(null); }
   };
   if (hecho) {
     return (
       <Hoja titulo="¡Enviado!" sobre={nombre} onClose={onClose} pie={<Boton tipo="secundario" onClick={onClose}>Listo</Boton>}>
-        <p className="text-[15px] text-brand-ink">«{hecho.ent}» ya aparece en el link de {nombre.split(" ")[0]}.</p>
-        {hecho.url && <div className="mt-4"><Boton icono={MessageCircle} onClick={() => abrirWhatsapp(`Hola ${nombre.split(" ")[0]}, tenés un entrenamiento nuevo de Voicenter: «${hecho.ent}». Entrá con tu link (es personal): ${hecho.url}`)}>Avisarle por WhatsApp</Boton></div>}
+        <p className="text-[15px] text-brand-ink mb-1">«{hecho.ent}» ya aparece en el link de {nombre.split(" ")[0]}.</p>
+        <p className="text-[13px] text-brand-slate mb-4">Es su link personal, el mismo del test: mandáselo o que escanee el QR.</p>
+        {hecho.url ? <CompartirLink url={hecho.url} qr={hecho.qr}
+          mensaje={`Hola ${nombre.split(" ")[0]}, tenés un entrenamiento nuevo de Voicenter: «${hecho.ent}». Entrá con tu link (es personal):`} />
+          : <p className="text-sm text-brand-slate">No tiene un link vigente.</p>}
       </Hoja>
     );
   }

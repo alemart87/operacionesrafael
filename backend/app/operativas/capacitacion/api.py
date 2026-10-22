@@ -408,7 +408,8 @@ async def ficha(pid: str, user: CurrentUser = Depends(require_ver), db: AsyncSes
                   "capacitador": quien.get(g.capacitador_id, "—"), "dia": srv.duracion_dias(g)},
         "roles": sorted(roles), "rol": srv.rol_principal(roles),
         "puede": {"datos": bool({"capacitador", "gestion"} & roles), "link": bool({"capacitador", "gestion"} & roles) and g.estado != "cancelada",
-                  "comentar": g.estado != "cancelada"},
+                  # Ver y compartir el link (el mentor manda entrenamientos por ahí); generar o anular es «link».
+                  "ver_link": g.estado != "cancelada", "comentar": g.estado != "cancelada"},
         "ipv": {**srv.ipv_de(e), "resultado": resultado, "iniciado_at": srv.iso(e.iniciado_at) if e else None,
                 "vence_at": srv.iso(e.vence_at) if e else None, "dispositivo": e.dispositivo if e else None},
         "escalas": ipv.ESCALAS, "niveles_ipv": ipv.NIVELES_IPV,
@@ -468,8 +469,10 @@ async def generar_enlace(pid: str, payload: EnlacePedido, request: Request, user
 
 @router.get("/postulantes/{pid}/enlace")
 async def ver_enlace(pid: str, user: CurrentUser = Depends(require_ver), db: AsyncSession = Depends(get_db)) -> dict:
+    """El link vigente con su QR. Lo ve también el mentor (manda entrenamientos por ese link); generar uno nuevo o
+    anularlo es del capacitador o la gestión."""
     p, g, roles = await _postulante(db, pid, user)
-    _exigir(roles, "capacitador", "gestion")
+    _exigir(roles, "capacitador", "mentor", "gestion")
     e = (await db.execute(select(CapEnlace).where(CapEnlace.postulante_id == p.id))).scalar_one_or_none()
     if e is None:
         return {"activo": False, "url": None, "qr_svg": None, "ipv_estado": None}

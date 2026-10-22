@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArrowDown, ArrowLeft, ArrowUp, MessageSquare, Pencil, Play, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
+import { Archive, ArrowDown, ArrowLeft, ArrowUp, Link2, MessageSquare, Pencil, Play, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -8,7 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { HojaDatosEntrenamiento } from "@/components/capacitacion/entrenamiento-datos";
 import { EditorCaso, HojaEnviar, ProbarCaso, ResultadoVista } from "@/components/capacitacion/entrenamientos";
 import { CAP_API, CAP_HREF, ESTADO_ENT, type Asignacion, type Caso, type Catalogo, type Entrenamiento } from "@/components/capacitacion/tipos";
-import { Barra } from "@/components/capacitacion/ui";
+import { Barra, HojaEnlace } from "@/components/capacitacion/ui";
 import { Boton, Cargando, Encabezado, Etiqueta, Fallo, Hoja, Seccion, Segmentos, useAviso } from "@/components/portal/ui";
 import { apiFetch } from "@/lib/api";
 
@@ -29,7 +29,7 @@ function Detalle() {
   const [cat, setCat] = useState<Catalogo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [vista, setVista] = useState<Vista>("casos");
-  const [hoja, setHoja] = useState<null | { t: "caso"; c?: Caso } | { t: "probar"; c: Caso } | { t: "datos" } | { t: "enviar" } | { t: "resultado"; a: Asignacion }>(null);
+  const [hoja, setHoja] = useState<null | { t: "caso"; c?: Caso } | { t: "probar"; c: Caso } | { t: "datos" } | { t: "enviar" } | { t: "resultado"; a: Asignacion } | { t: "link"; p: Asignacion["postulante"] }>(null);
   const [aviso, avisar] = useAviso();
   const cargar = useCallback(() => {
     apiFetch<Entrenamiento>(`${CAP_API}/entrenamientos/${id}`).then((x) => { setE(x); setError(null); }).catch((x) => setError(x.message));
@@ -155,6 +155,8 @@ function Detalle() {
                       <Link href={`${CAP_HREF}/postulantes/${a.postulante.id}`} className="font-semibold text-[15px] text-brand-ink hover:text-brand-primary">{a.postulante.apellido}, {a.postulante.nombre}</Link>
                       <div className="text-[12px] text-brand-slate">{a.grupo.nombre}{a.intento > 1 && ` · ${a.intento}.º intento`} · {a.hechos} de {a.casos} casos{a.en_chat && " · chateando ahora"}</div>
                     </div>
+                    <button type="button" onClick={() => setHoja({ t: "link", p: a.postulante })} aria-label={`Link de ${a.postulante.nombre}`}
+                      className="btn min-h-[40px] px-2.5 text-[13px] bg-white border border-brand-border text-brand-ink shrink-0"><Link2 size={15} aria-hidden /> Link</button>
                     {a.estado === "terminado" && a.resultado ? (
                       <button type="button" onClick={() => setHoja({ t: "resultado", a })}>
                         <Etiqueta tono={a.resultado.aprobado ? "verde" : "rojo"}>{a.resultado.aprobado ? "Recomendado" : "No recomendado"}</Etiqueta>
@@ -173,6 +175,7 @@ function Detalle() {
       {hoja?.t === "caso" && <EditorCaso eid={e.id} caso={hoja.c} catalogo={cat} onClose={() => setHoja(null)} onListo={() => { setHoja(null); cargar(); avisar("Caso guardado"); }} />}
       {hoja?.t === "probar" && <ProbarCaso caso={hoja.c} criterios={cat.criterios} onClose={() => setHoja(null)} />}
       {hoja?.t === "datos" && <HojaDatosEntrenamiento ent={e} onClose={() => setHoja(null)} onListo={() => { setHoja(null); cargar(); avisar("Guardado"); }} />}
+      {hoja?.t === "link" && <HojaEnlace p={hoja.p} gestiona={false} onClose={() => setHoja(null)} />}
       {hoja?.t === "enviar" && <HojaEnviar eid={e.id} nombre={e.nombre} meta={cat.meta} borrador={e.estado === "borrador"} onClose={() => { setHoja(null); cargar(); }} />}
       {hoja?.t === "resultado" && hoja.a.resultado && (
         <Hoja titulo={`${hoja.a.postulante.nombre} ${hoja.a.postulante.apellido}`} sobre={e.nombre} onClose={() => setHoja(null)}
