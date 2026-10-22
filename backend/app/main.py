@@ -90,6 +90,10 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE sup_alertas_comando ADD COLUMN IF NOT EXISTS util BOOLEAN",
     "ALTER TABLE sup_alertas_comando ADD COLUMN IF NOT EXISTS util_por VARCHAR(36)",
     "ALTER TABLE sup_alertas_comando ADD COLUMN IF NOT EXISTS util_at TIMESTAMP WITH TIME ZONE",
+    # v1.5 · entrenamientos con IA: un postulante puede repetir un entrenamiento (cada vez es un intento nuevo)
+    "ALTER TABLE cap_asignaciones ADD COLUMN IF NOT EXISTS intento INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE cap_asignaciones DROP CONSTRAINT IF EXISTS uq_cap_asignacion",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_cap_asignacion_intento ON cap_asignaciones (entrenamiento_id, postulante_id, intento)",
 ]
 
 

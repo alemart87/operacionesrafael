@@ -46,7 +46,7 @@ async def ver(token: str, aid: str, request: Request, db: AsyncSession = Depends
     hechos = sum(1 for x in lista if x["estado"] == "hecho")
     _toque(e_link, request)
     await db.commit()
-    return {"id": a.id, "nombre": e.nombre, "instrucciones": e.instrucciones, "empresa": e.empresa, "canal": e.canal,
+    return {"id": a.id, "nombre": e.nombre, "intento": a.intento or 1, "instrucciones": e.instrucciones, "empresa": e.empresa, "canal": e.canal,
             "casos": lista, "hechos": hechos, "total": len(lista), "pct": round(hechos / len(lista) * 100) if lista else 0,
             "terminado": a.estado in ("evaluando", "terminado"), "disponible": ent.ia.servicio_disponible()}
 
@@ -87,14 +87,14 @@ async def ver_sesion(token: str, sid: str, request: Request, db: AsyncSession = 
 
 @router.post("/{token}/sesiones/{sid}/mensajes")
 async def mensaje(token: str, sid: str, payload: ent.Mensaje, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
-    """El postulante escribe; el cliente contesta (1 a 3 mensajes) o cierra la conversación."""
+    """El postulante escribe (uno o varios mensajes seguidos); el cliente contesta (1 a 3 mensajes) o cierra la charla."""
     e_link, p, g = await _vigente(db, token, request)
     s = await _sesion(db, sid, p.id)
     if await ent.respuestas_hoy(db, p.id) >= settings.entrenamiento_respuestas_dia:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Llegaste al máximo de mensajes de hoy. Seguí mañana.")
     async with ent.candado(s.id):
         await db.refresh(s)
-        r = await ent.turno(db, s, payload.texto)
+        r = await ent.turno(db, s, payload.lista(), payload.lote)
         if r["fin"]:
             await _al_cerrar(db, s)
         _toque(e_link, request)

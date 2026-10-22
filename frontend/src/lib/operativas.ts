@@ -269,6 +269,7 @@ OPERATIVA_ROUTES.push({
   href: "/capacitacion",
   submodulos: [
     { utilidad: "ver", label: "Entrenamientos", href: "/capacitacion/entrenamientos", nav: [{ href: "/capacitacion/entrenamientos", label: "Entrenamientos" }] },
+    { utilidad: "ver", label: "En vivo", href: "/capacitacion/vivo", nav: [{ href: "/capacitacion/vivo", label: "En vivo" }] },
     { utilidad: "ver", label: "Estadísticas", href: "/capacitacion/estadisticas", nav: [{ href: "/capacitacion/estadisticas", label: "Estadísticas" }] },
   ],
 });

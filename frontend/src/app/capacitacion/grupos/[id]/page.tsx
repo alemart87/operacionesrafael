@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Bot, ChevronRight, Flag, Link2, Pencil, Search, Send, UserPlus } from "lucide-react";
+import { ArrowLeft, Bot, ChevronRight, Flag, Link2, Pencil, Radio, Search, Send, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -80,8 +80,9 @@ function Grupo() {
             className={cx("!min-h-[52px] !px-3 !text-[15px] md:!w-auto", !g.puede.postulantes && "col-span-2")}>Entrenamiento</Boton>
         </div>
       )}
-      {(g.puede.estados.length > 0 || g.puede.editar) && (
+      {(g.puede.estados.length > 0 || g.puede.editar || g.estado === "en_curso") && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 mb-5">
+          {g.estado === "en_curso" && <Link href={`${CAP_HREF}/vivo?grupo=${g.id}`} className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-semibold text-brand-slate hover:text-brand-ink"><Radio size={15} aria-hidden /> En vivo</Link>}
           {g.puede.estados.length > 0 && <button type="button" onClick={() => setHoja({ t: "estado_grupo" })} className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-semibold text-brand-slate hover:text-brand-ink"><Flag size={15} aria-hidden /> Estado del grupo</button>}
           {g.puede.editar && <button type="button" onClick={() => setHoja({ t: "editar" })} className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-semibold text-brand-slate hover:text-brand-ink"><Pencil size={15} aria-hidden /> Editar grupo</button>}
         </div>
@@ -104,7 +105,7 @@ function Grupo() {
       <div className="hidden md:grid grid-cols-5 gap-2.5 mb-6">
         <Dato label="Postulantes" valor={g.embudo.total} sub={`${g.embudo.activos} activos · ${g.embudo.en_piso} en piso`} />
         <Dato label="Efectividad" valor={pct(g.efectividad)} sub={`${g.embudo.altas} altas operativas`} tono="verde" />
-        <Dato label="Entrenamientos" valor={g.avance === null ? "—" : `${g.avance}%`} sub={`avance · ${g.meta.cumplen} de ${g.meta.activos} con ${g.meta.entrenamientos} o más`} />
+        <Dato label="Entrenamientos" valor={g.avance === null ? "—" : `${g.avance}%`} sub={`avance · ${g.meta.cumplen} de ${g.meta.activos} llegaron al mínimo de ${g.meta.entrenamientos}`} />
         <Dato label="Hicieron el IPV" valor={`${g.ipv_detalle.realizados}/${g.ipv_detalle.total}`} sub={`${pct(g.ipv_detalle.porcentaje)}${g.ipv_detalle.en_curso ? ` · ${g.ipv_detalle.en_curso} haciéndolo` : ""}`} />
         <Dato label="Feedback" valor={g.feedback_detalle.total} sub={g.feedback_detalle.sin_feedback ? `${g.feedback_detalle.sin_feedback} sin feedback del equipo` : "Todos con feedback"} tono={g.feedback_detalle.sin_feedback ? "rojo" : undefined} />
       </div>
@@ -169,7 +170,7 @@ function Grupo() {
             <button type="button" onClick={() => setHoja({ t: "entrenamiento", p: hoja.p })} className="w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[72px] hover:border-brand-ink">
               <span className="w-11 h-11 rounded-xl bg-brand-ink text-white flex items-center justify-center shrink-0"><Bot size={22} aria-hidden /></span>
               <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">Un entrenamiento</span>
-                <span className="block text-[13px] text-brand-slate">Lleva {hoja.p.avance.terminados} de {hoja.p.avance.meta} hechos</span></span>
+                <span className="block text-[13px] text-brand-slate">Lleva {hoja.p.avance.terminados} hechos (mínimo {hoja.p.avance.meta}, puede hacer más)</span></span>
               <ChevronRight size={18} className="text-brand-mist" aria-hidden />
             </button>
             {capacitador && (

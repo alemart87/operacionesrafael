@@ -76,11 +76,11 @@ export interface Postulante {
 }
 /** Un entrenamiento enviado a un postulante, con su avance. */
 export interface EntResumen {
-  id: string; entrenamiento_id: string; nombre: string; estado: "pendiente" | "en_curso" | "evaluando" | "terminado"; casos: number;
+  id: string; entrenamiento_id: string; nombre: string; intento: number; estado: "pendiente" | "en_curso" | "evaluando" | "terminado"; casos: number;
   hechos: number; pct: number; archivado: boolean; en_chat: boolean; aprobado: boolean | null; nivel: number | null;
   info_pct: number | null; asignado_at: string; terminado_at: string | null;
 }
-/** Avance de los entrenamientos (el IPV es independiente) y la guía de entrenamientos por postulante. */
+/** Avance de los entrenamientos (el IPV es independiente) y el mínimo de entrenamientos por postulante (no es un tope). */
 export interface Avance {
   pct: number | null; casos: number; hechos: number; entrenamientos: number; terminados: number; aprobados: number;
   meta: number; meta_cumplida: boolean;
@@ -169,7 +169,7 @@ export interface Entrenamiento {
   umbral_nivel: number; estado: "borrador" | "activo" | "archivado"; creado_por: string; casos: Caso[]; puede_editar: boolean;
   asignaciones: Asignacion[];
 }
-export interface MensajeChat { r: "cliente" | "asesor"; t: string; at: string }
+export interface MensajeChat { r: "cliente" | "asesor"; t: string; at: string; lote?: string }
 export interface EvaluacionCaso {
   datos: { dato: string; estado: "correcto" | "incorrecto" | "omitido" | "no_aplica"; detalle: string }[]; errores: string[];
   info_correcta: boolean; info_pct: number; nivel: number; criterios: Record<string, number>; fuertes: string[]; mejorar: string[];
@@ -179,12 +179,43 @@ export interface Sesion {
   id: string; caso_id: string; titulo: string; cliente: string; estado: string; fin_motivo: string | null; mensajes: MensajeChat[];
   iniciado_at: string; terminado_at: string | null; turnos: number; max_turnos: number;
   evaluacion?: EvaluacionCaso | null; segundos?: number | null; error?: string | null; prueba?: boolean;
+  entrenamiento?: string | null; objetivo?: string | null; situacion?: string | null; info_correcta?: string[];
 }
 export interface EntPostulante extends EntResumen {
   resultado: ResultadoEnt | null;
   casos_detalle: { caso_id: string; orden: number; titulo: string; cliente: string;
     sesion: { id: string; estado: string; segundos: number | null; turnos: number; info_correcta: boolean | null; nivel: number | null;
       resumen: string | null; error: string | null } | null }[];
+}
+
+/** «Portabilidad» o «Portabilidad · 2.º intento». */
+export const conIntento = (nombre: string, intento?: number) => (intento && intento > 1 ? `${nombre} · ${intento}.º intento` : nombre);
+
+// ------------------------------------------------------------------ en vivo (tablero de los entrenamientos)
+export type EstadoVivo = "responde_asesor" | "responde_cliente" | "en_pausa";
+export interface SesionVivo {
+  id: string; postulante: { id: string; nombre: string; apellido: string }; grupo: { id: string; nombre: string };
+  entrenamiento: string | null; intento: number; caso: string | null; cliente: string | null; estado: EstadoVivo; desde: string | null;
+  iniciado_at: string; mensajes: number; turnos: number; max_turnos: number | null; ultimo: { r: "cliente" | "asesor"; t: string } | null;
+  resp_media: number | null; progreso: { hechos: number; casos: number };
+}
+export interface PostulanteVivo {
+  id: string; nombre: string; apellido: string; grupo: { id: string; nombre: string }; estado: EstadoPostulante;
+  vivo: "en_chat" | "en_pausa" | "activo_hoy" | "sin_actividad"; ultima: string | null; casos_hoy: number; nivel_hoy: number | null;
+  info_hoy: { ok: number; de: number }; terminados: number; pendientes: number;
+}
+export interface RecienteVivo {
+  id: string; postulante: { id: string; nombre: string; apellido: string }; grupo: { id: string; nombre: string };
+  entrenamiento: string | null; intento: number; caso: string | null; cliente: string | null; estado: string; segundos: number | null;
+  fin_motivo: string | null; terminado_at: string; nivel: number | null; info_correcta: boolean | null;
+}
+export interface EnVivo {
+  ahora: string; grupos: { id: string; nombre: string }[];
+  kpis: { en_chat: number; esperando: number; en_pausa: number; postulantes_hoy: number; postulantes: number; casos_hoy: number;
+    entrenamientos_hoy: number; recomendados_hoy: number; nivel_hoy: number | null; info_hoy: number | null; evaluadas_hoy: number;
+    tiempo_caso: number | null; resp_media: number | null };
+  sesiones: SesionVivo[]; postulantes: PostulanteVivo[]; recientes: RecienteVivo[];
+  umbrales: { amarillo: number; rojo: number; pausa_min: number }; minimo: number;
 }
 
 export const duracion = (s: number | null | undefined) =>

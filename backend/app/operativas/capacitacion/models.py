@@ -198,9 +198,10 @@ class CapCaso(Base):
 
 
 class CapAsignacion(Base):
-    """Un entrenamiento enviado a un postulante: lo hace desde su link. `resultado` es la evaluación final."""
+    """Un entrenamiento enviado a un postulante: lo hace desde su link. `resultado` es la evaluación final. Si lo repite,
+    cada vez es un intento nuevo (el anterior queda con su resultado)."""
     __tablename__ = "cap_asignaciones"
-    __table_args__ = (UniqueConstraint("entrenamiento_id", "postulante_id", name="uq_cap_asignacion"),)
+    __table_args__ = (UniqueConstraint("entrenamiento_id", "postulante_id", "intento", name="uq_cap_asignacion_intento"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     entrenamiento_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -213,6 +214,7 @@ class CapAsignacion(Base):
     iniciado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     terminado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     intentos_eval: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    intento: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class CapSesion(Base):

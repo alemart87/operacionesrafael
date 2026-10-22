@@ -4,14 +4,14 @@
  * Entrenamientos con IA para el equipo: editor de casos (el cliente y su actitud al detalle), probar un caso, enviar a
  * postulantes (con su link para WhatsApp), la evaluación de cada conversación y el resultado final.
  */
-import { Check, CircleCheck, CircleX, Copy, MessageCircle, Plus, Send, Target, X } from "lucide-react";
+import { Check, CircleCheck, CircleX, Copy, MessageCircle, Plus, RotateCcw, Send, Target, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Boton, Casilla, Chips, Etiqueta, Fallo, Hoja, cx } from "@/components/portal/ui";
 import { apiFetch } from "@/lib/api";
 import { Chat } from "./chat";
 import {
-  CAP_API, duracion, type Caso, type Catalogo, type EntPostulante, type EntrenamientoFila, type EvaluacionCaso, type GrupoDetalle,
-  type Resumen, type ResultadoEnt, type Sesion,
+  CAP_API, conIntento, duracion, type Caso, type Catalogo, type EntPostulante, type EntrenamientoFila, type EvaluacionCaso, type GrupoDetalle,
+  type EntResumen, type Resumen, type ResultadoEnt, type Sesion,
 } from "./tipos";
 import { abrirWhatsapp } from "./ui";
 
@@ -252,10 +252,8 @@ export function ProbarCaso({ caso, criterios, onClose }: { caso: Caso; criterios
   const [ev, setEv] = useState<Sesion | null>(null);
   const [evaluando, setEvaluando] = useState(false);
   useEffect(() => { apiFetch<Sesion>(`${CAP_API}/casos/${caso.id}/probar`, { method: "POST" }).then(setS).catch((e) => setError(e.message)); }, [caso.id]);
-  const enviar = useCallback(async (texto: string) => {
-    const r = await apiFetch<{ nuevos: string[]; fin: boolean }>(`${CAP_API}/sesiones/${s!.id}/mensajes`, { method: "POST", body: JSON.stringify({ texto }) });
-    return r;
-  }, [s]);
+  const enviar = useCallback((textos: string[], lote: string) =>
+    apiFetch<{ nuevos: string[]; fin: boolean }>(`${CAP_API}/sesiones/${s!.id}/mensajes`, { method: "POST", body: JSON.stringify({ textos, lote }) }), [s]);
   const evaluar = async () => {
     setEvaluando(true);
     try { setEv(await apiFetch<Sesion>(`${CAP_API}/sesiones/${s!.id}/terminar`, { method: "POST" })); }
@@ -272,7 +270,7 @@ export function ProbarCaso({ caso, criterios, onClose }: { caso: Caso; criterios
     );
   }
   return (
-    <Chat cliente={s.cliente} titulo={`Prueba · ${caso.titulo}`} mensajes={s.mensajes} iniciado={s.iniciado_at} terminado={s.estado !== "en_curso"}
+    <Chat id={s.id} cliente={s.cliente} titulo={`Prueba · ${caso.titulo}`} mensajes={s.mensajes} iniciado={s.iniciado_at} terminado={s.estado !== "en_curso"}
       enviar={enviar} onVolver={onClose} onTerminar={evaluar}
       aviso={<p className="text-center text-[12px] text-brand-slate pb-2">Prueba: vos hacés de asesor. No queda en ninguna ficha.</p>}
       pie={() => <Boton onClick={evaluar} ocupado={evaluando}>Ver cómo me evaluaría</Boton>} />
@@ -280,7 +278,21 @@ export function ProbarCaso({ caso, criterios, onClose }: { caso: Caso; criterios
 }
 
 // ------------------------------------------------------------------ enviar a postulantes
-interface Enviado { postulante_id: string; nombre: string; apellido: string; url: string | null; omitido?: string; ya_enviado?: boolean }
+interface Enviado { postulante_id: string; nombre: string; apellido: string; url: string | null; omitido?: string; ya_enviado?: boolean; intento?: number }
+
+/** Cómo está un postulante con un entrenamiento: sin enviar, lo tiene sin terminar o lo terminó (se puede repetir). */
+function conEste(ents: EntResumen[], eid: string): { tiene: boolean; terminado: boolean; intento: number } {
+  const mios = ents.filter((e) => e.entrenamiento_id === eid);
+  if (!mios.length) return { tiene: false, terminado: false, intento: 0 };
+  const ult = mios.reduce((a, b) => ((b.intento ?? 1) > (a.intento ?? 1) ? b : a));
+  return { tiene: true, terminado: ult.estado === "terminado", intento: ult.intento ?? 1 };
+}
+
+async function enviarA(eid: string, pids: string[]) {
+  // `repetir`: a quien ya lo terminó se le manda de nuevo como otro intento (no hay tope de entrenamientos).
+  return apiFetch<{ enviados: Enviado[] }>(`${CAP_API}/entrenamientos/${eid}/enviar`,
+    { method: "POST", body: JSON.stringify({ postulante_ids: pids, origen: window.location.origin, repetir: true }) });
+}
 
 export function HojaEnviar({ eid, nombre, meta, grupoInicial, onClose, onListo }: {
   eid: string; nombre: string; meta: number; grupoInicial?: string; onClose: () => void; onListo?: () => void;
@@ -312,8 +324,7 @@ export function HojaEnviar({ eid, nombre, meta, grupoInicial, onClose, onListo }
   const enviar = async () => {
     setOcupado(true); setError(null);
     try {
-      const r = await apiFetch<{ enviados: Enviado[] }>(`${CAP_API}/entrenamientos/${eid}/enviar`,
-        { method: "POST", body: JSON.stringify({ postulante_ids: sel, origen: window.location.origin }) });
+      const r = await enviarA(eid, sel);
       setHecho(r.enviados); onListo?.();
     } catch (e: any) { setError(e.message); } finally { setOcupado(false); }
   };
@@ -332,7 +343,8 @@ export function HojaEnviar({ eid, nombre, meta, grupoInicial, onClose, onListo }
             <li key={x.postulante_id} className="px-3 py-2.5 flex items-center gap-3">
               <span className="flex-1 min-w-0 text-[15px] text-brand-ink">{x.nombre} {x.apellido}
                 {x.omitido && <span className="block text-[12px] text-brand-slate">No se envió: {x.omitido}</span>}
-                {x.ya_enviado && <span className="block text-[12px] text-brand-slate">Ya lo tenía</span>}</span>
+                {x.ya_enviado && <span className="block text-[12px] text-brand-slate">Ya lo tenía sin terminar: le reenviás el link</span>}
+                {!x.ya_enviado && (x.intento ?? 1) > 1 && <span className="block text-[12px] text-brand-slate">Lo repite ({x.intento}.º intento)</span>}</span>
               {x.url && (
                 <button type="button" onClick={() => abrirWhatsapp(mensaje(x))}
                   className="btn min-h-[44px] px-3 bg-emerald-600 text-white text-sm"><MessageCircle size={16} aria-hidden /> WhatsApp</button>
@@ -365,10 +377,11 @@ export function HojaEnviar({ eid, nombre, meta, grupoInicial, onClose, onListo }
             </div>
             <div className="space-y-2">
               {activos.map((p) => {
-                const ya = p.entrenamientos.some((e) => e.entrenamiento_id === eid);
+                const ya = conEste(p.entrenamientos, eid);
                 return (
                   <Casilla key={p.id} checked={sel.includes(p.id)} onChange={(v) => setSel(v ? [...sel, p.id] : sel.filter((x) => x !== p.id))}
-                    sub={<>{p.avance.terminados} de {meta} entrenamientos hechos{ya && " · ya lo tiene"}</>}>
+                    sub={<>{p.avance.terminados} hechos (mínimo {meta})
+                      {ya.terminado ? ` · lo terminó: si lo elegís, lo repite (${ya.intento + 1}.º intento)` : ya.tiene ? " · ya lo tiene, sin terminar" : ""}</>}>
                     {p.apellido}, {p.nombre}
                   </Casilla>
                 );
@@ -383,13 +396,17 @@ export function HojaEnviar({ eid, nombre, meta, grupoInicial, onClose, onListo }
   );
 }
 
-/** «6 de 15»: la guía de entrenamientos por postulante. */
+/** Entrenamientos terminados frente al mínimo por postulante. No es un tope: al llegar, la barra queda llena y el número sigue sumando. */
 export function MetaEntrenamientos({ hechos, meta, compacta }: { hechos: number; meta: number; compacta?: boolean }) {
+  const llego = hechos >= meta;
   const pct = Math.min(100, Math.round((hechos / Math.max(1, meta)) * 100));
   return (
-    <span className={cx("inline-flex items-center gap-1.5", compacta ? "text-[12px]" : "text-[13px]")} title={`Guía: al menos ${meta} entrenamientos por postulante`}>
-      <span className="w-14 h-1.5 rounded-full bg-brand-bg overflow-hidden" aria-hidden><span className="block h-full rounded-full" style={{ width: `${pct}%`, background: hechos >= meta ? "#15803D" : "#0F1116" }} /></span>
-      <span className={cx("tabular-nums", hechos >= meta ? "text-emerald-700 font-semibold" : "text-brand-slate")}>{hechos}/{meta} entren.</span>
+    <span className={cx("inline-flex items-center gap-1.5", compacta ? "text-[12px]" : "text-[13px]")}
+      title={`Mínimo: ${meta} entrenamientos por postulante. Pueden hacer más.`}>
+      <span className="w-14 h-1.5 rounded-full bg-brand-bg overflow-hidden" aria-hidden><span className="block h-full rounded-full" style={{ width: `${pct}%`, background: llego ? "#15803D" : "#0F1116" }} /></span>
+      <span className={cx("tabular-nums inline-flex items-center gap-0.5", llego ? "text-emerald-700 font-semibold" : "text-brand-slate")}>
+        {llego ? <>{hechos} entren. <Check size={13} aria-label="llegó al mínimo" /></> : <>{hechos} de {meta} entren.</>}
+      </span>
     </span>
   );
 }
@@ -398,7 +415,7 @@ export function MetaEntrenamientos({ hechos, meta, compacta }: { hechos: number;
 // ------------------------------------------------------------------ en la ficha del postulante
 /** Enviarle un entrenamiento a un postulante (desde su ficha o desde el grupo). */
 export function HojaEnviarA({ pid, nombre, onClose, onListo }: { pid: string; nombre: string; onClose: () => void; onListo?: () => void }) {
-  const [lista, setLista] = useState<(EntrenamientoFila & { ya?: boolean })[] | null>(null);
+  const [lista, setLista] = useState<(EntrenamientoFila & { ya: ReturnType<typeof conEste> })[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [hecho, setHecho] = useState<{ ent: string; url: string | null } | null>(null);
@@ -406,16 +423,14 @@ export function HojaEnviarA({ pid, nombre, onClose, onListo }: { pid: string; no
     Promise.all([apiFetch<{ entrenamientos: EntrenamientoFila[] }>(`${CAP_API}/entrenamientos`),
       apiFetch<{ entrenamientos: EntPostulante[] }>(`${CAP_API}/postulantes/${pid}/entrenamientos`)])
       .then(([a, b]) => {
-        const tiene = new Set(b.entrenamientos.map((x) => x.entrenamiento_id));
-        setLista(a.entrenamientos.filter((e) => e.estado !== "archivado" && e.casos > 0).map((e) => ({ ...e, ya: tiene.has(e.id) })));
+        setLista(a.entrenamientos.filter((e) => e.estado !== "archivado" && e.casos > 0).map((e) => ({ ...e, ya: conEste(b.entrenamientos, e.id) })));
       }).catch((e) => setError(e.message));
   }, [pid]);
   const enviar = async (e: EntrenamientoFila) => {
     setOcupado(e.id); setError(null);
     try {
-      const r = await apiFetch<{ enviados: Enviado[] }>(`${CAP_API}/entrenamientos/${e.id}/enviar`,
-        { method: "POST", body: JSON.stringify({ postulante_ids: [pid], origen: window.location.origin }) });
-      setHecho({ ent: e.nombre, url: r.enviados[0]?.url ?? null }); onListo?.();
+      const r = await enviarA(e.id, [pid]);
+      setHecho({ ent: conIntento(e.nombre, r.enviados[0]?.intento), url: r.enviados[0]?.url ?? null }); onListo?.();
     } catch (x: any) { setError(x.message); } finally { setOcupado(null); }
   };
   if (hecho) {
@@ -433,16 +448,22 @@ export function HojaEnviarA({ pid, nombre, onClose, onListo }: { pid: string; no
       {lista && lista.length === 0 && <p className="text-sm text-brand-slate">No hay entrenamientos listos. Crealos en <b>Entrenamientos</b>.</p>}
       {lista && lista.length > 0 && (
         <ul className="space-y-2">
-          {lista.map((e) => (
-            <li key={e.id}>
-              <button type="button" disabled={!!ocupado || e.ya} onClick={() => enviar(e)}
-                className={cx("w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[60px]", e.ya ? "opacity-60" : "hover:border-brand-ink active:bg-brand-bg-soft")}>
-                <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">{e.nombre}</span>
-                  <span className="block text-[12px] text-brand-slate">{e.casos} casos{e.ya ? " · ya lo tiene" : ""}</span></span>
-                {ocupado === e.id ? <span className="text-[12px] text-brand-slate">Enviando…</span> : !e.ya && <Send size={18} className="text-brand-primary" aria-hidden />}
-              </button>
-            </li>
-          ))}
+          {lista.map((e) => {
+            const bloqueado = e.ya.tiene && !e.ya.terminado;
+            return (
+              <li key={e.id}>
+                <button type="button" disabled={!!ocupado || bloqueado} onClick={() => enviar(e)}
+                  className={cx("w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[60px]", bloqueado ? "opacity-60" : "hover:border-brand-ink active:bg-brand-bg-soft")}>
+                  <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">{e.nombre}</span>
+                    <span className="block text-[12px] text-brand-slate">{e.casos} casos
+                      {e.ya.terminado ? ` · lo terminó: tocá para repetirlo (${e.ya.intento + 1}.º intento)` : bloqueado ? " · ya lo tiene, sin terminar" : ""}</span></span>
+                  {ocupado === e.id ? <span className="text-[12px] text-brand-slate">Enviando…</span>
+                    : e.ya.terminado ? <RotateCcw size={18} className="text-brand-primary" aria-hidden />
+                    : !bloqueado && <Send size={18} className="text-brand-primary" aria-hidden />}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </Hoja>
@@ -473,12 +494,30 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
     return () => clearTimeout(t);
   }, [lista, cargar]);
   const terminados = lista?.filter((x) => x.estado === "terminado").length ?? 0;
+  const pendientes = (lista?.length ?? 0) - terminados;
+  const [repitiendo, setRepitiendo] = useState<string | null>(null);
+  const repetir = async (x: EntPostulante) => {
+    setRepitiendo(x.id); setError(null);
+    try { await enviarA(x.entrenamiento_id, [pid]); cargar(); } catch (e: any) { setError(e.message); } finally { setRepitiendo(null); }
+  };
+  // El último intento de cada entrenamiento (solo ese se puede repetir).
+  const ultimo = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const x of lista ?? []) { const y = (lista ?? []).find((z) => z.id === m.get(x.entrenamiento_id)); if (!y || (x.intento ?? 1) > (y.intento ?? 1)) m.set(x.entrenamiento_id, x.id); }
+    return new Set(m.values());
+  }, [lista]);
   return (
     <div className="space-y-3">
       <div className="card px-4 py-3 flex items-center gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Guía del equipo</div>
-          <div className="text-[15px] text-brand-ink"><b>{terminados}</b> de <b>{meta}</b> entrenamientos hechos{lista && lista.length > terminados ? ` · ${lista.length - terminados} pendientes` : ""}</div>
+          <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Mínimo del equipo</div>
+          <div className="text-[15px] text-brand-ink">
+            {terminados >= meta
+              ? <><b>{terminados}</b> entrenamientos hechos · superó el mínimo de {meta} <Check size={15} className="inline text-emerald-700" aria-hidden /></>
+              : <><b>{terminados}</b> de <b>{meta}</b> entrenamientos hechos</>}
+            {pendientes > 0 ? ` · ${pendientes} pendiente${pendientes === 1 ? "" : "s"}` : ""}
+          </div>
+          <div className="text-[12px] text-brand-slate">{meta} es el mínimo: puede hacer más y repetir los que ya terminó.</div>
           <div className="mt-2 h-2 rounded-full bg-brand-bg overflow-hidden" role="progressbar" aria-label="Entrenamientos hechos"
             aria-valuenow={terminados} aria-valuemin={0} aria-valuemax={meta}>
             <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, Math.round((terminados / Math.max(1, meta)) * 100))}%`, background: terminados >= meta ? "#15803D" : "#0F1116" }} />
@@ -493,7 +532,7 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
           <div key={x.id} className="card overflow-hidden">
             <button type="button" onClick={() => setAbierto(abiertoX ? null : x.id)} className="w-full text-left px-4 py-3" aria-expanded={abiertoX}>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold text-[15px] text-brand-ink flex-1 min-w-0">{x.nombre}</span>
+                <span className="font-semibold text-[15px] text-brand-ink flex-1 min-w-0">{conIntento(x.nombre, x.intento)}</span>
                 {x.resultado ? <Etiqueta tono={x.resultado.aprobado ? "verde" : "rojo"}>{x.resultado.aprobado ? "Recomendado" : "No recomendado"}</Etiqueta>
                   : <Etiqueta tono={ESTADO_ASIG[x.estado]?.tono ?? "gris"}>{ESTADO_ASIG[x.estado]?.label ?? x.estado}</Etiqueta>}
               </div>
@@ -506,6 +545,11 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
             {abiertoX && (
               <div className="border-t border-brand-border px-4 py-3 space-y-3">
                 {x.resultado && <ResultadoVista r={x.resultado} />}
+                {puedeEnviar && x.estado === "terminado" && ultimo.has(x.id) && !x.archivado && (
+                  <Boton tipo="secundario" icono={RotateCcw} ocupado={repitiendo === x.id} onClick={() => repetir(x)} className="sm:!w-auto !min-h-[48px]">
+                    Repetir este entrenamiento
+                  </Boton>
+                )}
                 <ul className="divide-y divide-brand-border">
                   {x.casos_detalle.map((c) => (
                     <li key={c.caso_id} className="py-2.5 flex items-center gap-3">

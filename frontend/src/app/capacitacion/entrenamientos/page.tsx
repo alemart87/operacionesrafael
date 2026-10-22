@@ -38,7 +38,7 @@ function Biblioteca() {
     <div className="max-w-screen-xl mx-auto">
       <Encabezado sobre="Capacitación y Mentoría" titulo="Entrenamientos"
         accion={d && <div className="w-full sm:w-auto"><Boton icono={Plus} onClick={() => setNuevo(true)} className="sm:w-auto">Nuevo entrenamiento</Boton></div>}>
-        Chats de práctica con clientes simulados por IA. Guía: <b className="text-brand-ink">al menos {d?.meta ?? 15} entrenamientos por postulante</b>.
+        Chats de práctica con clientes simulados por IA. Mínimo: <b className="text-brand-ink">{d?.meta ?? 15} entrenamientos por postulante</b>, sin tope (pueden hacer más y repetirlos).
       </Encabezado>
       <Pestanas />
       {error && <Fallo onReintentar={cargar}>{error}</Fallo>}

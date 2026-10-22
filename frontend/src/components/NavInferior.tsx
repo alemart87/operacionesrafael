@@ -6,7 +6,7 @@
  * del día y el analizador; el resto, sus módulos. «Menú» abre la navegación completa.
  */
 import {
-  BarChart3, Bot, ChartPie, ClipboardCheck, GraduationCap, Gauge, House, LayoutGrid, Menu, MessageSquareText, Siren, Sparkles, Truck, Users,
+  BarChart3, Bot, ClipboardCheck, GraduationCap, Gauge, House, LayoutGrid, Menu, MessageSquareText, Radio, Siren, Sparkles, Truck, Users,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,19 +25,20 @@ const ICONOS: Record<string, LucideIcon> = {
 };
 
 const CAP = "/capacitacion";
-/** Capacitación y Mentoría: los grupos, el grupo en curso a un toque y las estadísticas. */
+/** Capacitación y Mentoría: los grupos, el grupo en curso a un toque, los entrenamientos y el tablero en vivo
+ * (las estadísticas quedan en el menú). */
 const ITEMS_CAP: Item[] = [
   { href: CAP, label: "Grupos", icono: GraduationCap, exacto: true },
   { href: `${CAP}/en-curso`, label: "Mi grupo", icono: Users, central: true },
   { href: `${CAP}/entrenamientos`, label: "Entrenar", icono: Bot },
-  { href: `${CAP}/estadisticas`, label: "Estadísticas", corto: "Métricas", icono: ChartPie },
+  { href: `${CAP}/vivo`, label: "En vivo", icono: Radio },
 ];
 /** Perfiles que solo ven Capacitación: sin «Inicio» (los lleva al mismo lugar que «Grupos»). */
 const SOLO_CAP = ["capacitador", "mentor", "rrhh"];
 
 export function itemsDe(user: CurrentUserInfo, ruta = ""): Item[] {
   const ok = (u: string) => can(user, `${TC}.${u}`);
-  // Quien solo ve Capacitación tiene las cuatro; los jefes, dentro del módulo, sin Estadísticas (está en el menú) para dejar «Inicio».
+  // Quien solo ve Capacitación tiene las cuatro; los jefes, dentro del módulo, sin «En vivo» (está en el menú) para dejar «Inicio».
   if (can(user, "capacitacion.ver") && SOLO_CAP.includes(user.role)) return ITEMS_CAP;
   if (can(user, "capacitacion.ver") && (ruta === CAP || ruta.startsWith(`${CAP}/`))) return ITEMS_CAP.slice(0, 3);
   if (ok("control_supervisores")) {

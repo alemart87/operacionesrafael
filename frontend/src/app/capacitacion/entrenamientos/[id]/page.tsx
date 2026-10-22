@@ -134,7 +134,7 @@ function Detalle() {
                   <div className="flex items-center gap-3">
                     <div className="min-w-0 flex-1">
                       <Link href={`${CAP_HREF}/postulantes/${a.postulante.id}`} className="font-semibold text-[15px] text-brand-ink hover:text-brand-primary">{a.postulante.apellido}, {a.postulante.nombre}</Link>
-                      <div className="text-[12px] text-brand-slate">{a.grupo.nombre} · {a.hechos} de {a.casos} casos{a.en_chat && " · chateando ahora"}</div>
+                      <div className="text-[12px] text-brand-slate">{a.grupo.nombre}{a.intento > 1 && ` · ${a.intento}.º intento`} · {a.hechos} de {a.casos} casos{a.en_chat && " · chateando ahora"}</div>
                     </div>
                     {a.estado === "terminado" && a.resultado ? (
                       <button type="button" onClick={() => setHoja({ t: "resultado", a })}>

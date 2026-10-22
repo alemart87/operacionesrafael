@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 MAX_MENSAJES = 3
 
+
+def turnos(mensajes: list[dict[str, Any]]) -> int:
+    """Cuántas veces habló el asesor: varios mensajes seguidos (antes de que conteste el cliente) son un solo turno."""
+    return sum(1 for i, m in enumerate(mensajes) if m["r"] == "asesor" and (i == 0 or mensajes[i - 1]["r"] != "asesor"))
+
 # Rasgos del cliente: clave → cómo se lo describe al modelo.
 RASGOS: dict[str, str] = {
     "amable": "amable y educado",
@@ -238,8 +243,7 @@ def _limpiar_mensajes(xs: list[Any]) -> list[str]:
 # ------------------------------------------------------------------ el cliente
 async def responder(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, empresa: str, canal: str) -> dict[str, Any]:
     """Lo que el cliente contesta ahora: {mensajes: [1–3], fin, motivo, tokens_entrada, tokens_salida, modelo}."""
-    turnos = sum(1 for m in mensajes if m["r"] == "asesor")
-    restantes = max(1, int(caso.get("max_turnos") or 14) - turnos)
+    restantes = max(1, int(caso.get("max_turnos") or 14) - turnos(mensajes))
     if simulador():
         return await _responder_simulado(caso, mensajes, restantes)
     entrada: list[dict[str, str]] = []
@@ -266,10 +270,15 @@ async def responder(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, emp
 async def _responder_simulado(caso: dict[str, Any], mensajes: list[dict[str, Any]], restantes: int) -> dict[str, Any]:
     if settings.entrenamiento_simulador_demora:
         await asyncio.sleep(settings.entrenamiento_simulador_demora)
-    turno = sum(1 for m in mensajes if m["r"] == "asesor")
+    turno = turnos(mensajes)
     nombre = caso["cliente_nombre"].split()[0]
     objeciones = caso.get("objeciones") or ["No sé, lo tengo que pensar."]
-    ultimo = next((m["t"].lower() for m in reversed(mensajes) if m["r"] == "asesor"), "")
+    ultimos: list[str] = []
+    for m in reversed(mensajes):
+        if m["r"] != "asesor":
+            break
+        ultimos.append(m["t"].lower())
+    ultimo = " ".join(ultimos)
     if turno == 0:
         salida = [caso.get("primer_mensaje") or f"Hola, buenas. Soy {nombre}.", caso.get("objetivo") or "Quería consultar algo."]
     elif restantes <= 1 or any(x in ultimo for x in ("chau", "hasta luego", "gracias por tu tiempo")):

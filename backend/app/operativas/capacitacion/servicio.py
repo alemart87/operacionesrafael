@@ -56,6 +56,11 @@ def hoy() -> date:
     return datetime.now(ZONA).date()
 
 
+def inicio_del_dia() -> datetime:
+    """Las 00:00 de hoy en Asunción, en UTC (para filtrar lo de hoy en la base)."""
+    return datetime.now(ZONA).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
 def iso(d: datetime | date | None) -> str | None:
     if d is None:
         return None
@@ -237,7 +242,8 @@ async def entrenamientos_de(db: AsyncSession, pids: list[str]) -> dict[str, list
         n = total if a.estado == "terminado" else len(hechos[a.id] & casos[e.id])
         r = a.resultado or {}
         out[a.postulante_id].append({
-            "id": a.id, "entrenamiento_id": e.id, "nombre": e.nombre, "estado": a.estado, "casos": total, "hechos": n,
+            "id": a.id, "entrenamiento_id": e.id, "nombre": e.nombre, "intento": a.intento or 1, "estado": a.estado,
+            "casos": total, "hechos": n,
             "archivado": e.estado == "archivado",
             "pct": 100 if a.estado == "terminado" else (round(n / total * 100) if total else 0),
             "en_chat": a.id in en_curso, "aprobado": r.get("aprobado"), "nivel": r.get("nivel_promedio"),
@@ -247,7 +253,8 @@ async def entrenamientos_de(db: AsyncSession, pids: list[str]) -> dict[str, list
 
 
 def avance(p: CapPostulante, d: Datos) -> dict[str, Any]:
-    """El % de avance de sus entrenamientos (casos hechos sobre casos enviados). El IPV es independiente: no cuenta acá."""
+    """El % de avance de sus entrenamientos (casos hechos sobre casos enviados). El IPV es independiente: no cuenta acá.
+    `meta` es el mínimo que se espera por postulante, no un tope: cada entrenamiento terminado suma, también si lo repite."""
     ents = d.entrenamientos.get(p.id, [])
     casos = sum(x["casos"] for x in ents)
     hechos = sum(min(x["hechos"], x["casos"]) for x in ents)
@@ -255,7 +262,7 @@ def avance(p: CapPostulante, d: Datos) -> dict[str, Any]:
     return {"pct": round(hechos / casos * 100) if casos else None, "casos": casos, "hechos": hechos,
             "entrenamientos": len(ents), "terminados": terminados,
             "aprobados": sum(1 for x in ents if x["aprobado"] is True),
-            # La guía del equipo: al menos N entrenamientos por postulante.
+            # La guía del equipo: al menos N entrenamientos por postulante (puede hacer más).
             "meta": settings.entrenamiento_meta_postulante, "meta_cumplida": terminados >= settings.entrenamiento_meta_postulante}
 
 

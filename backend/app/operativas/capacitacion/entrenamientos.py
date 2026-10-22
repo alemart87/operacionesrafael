@@ -5,8 +5,10 @@ Reglas:
 - Los crean y usan el capacitador, el mentor y la gestión; los edita quien los creó o la gestión. Se envían solo a
   postulantes activos de grupos donde el usuario tiene un papel.
 - Cada conversación guarda el caso tal como era al empezar (si después se edita, la evaluación no cambia de reglas).
-- El postulante escribe y el cliente contesta de 1 a 3 mensajes; no puede escribir dos veces seguidas sin respuesta
-  (una conversación a la vez por sesión). Tope de respuestas por día y de largo de cada mensaje.
+- El postulante puede mandar varios mensajes seguidos (llegan juntos, como un lote, después de una pausa natural) y el
+  cliente contesta a todos de 1 a 3 mensajes. Una respuesta a la vez por conversación; cada lote tiene una marca para
+  que un reenvío (si se cortó la conexión con la respuesta en camino) no duplique nada. Tope de respuestas por día y de
+  largo de cada mensaje.
 - La evaluación corre en segundo plano (worker `capacitacion_entrenamientos`) y mira solo las conversaciones (el IPV es
   independiente): por caso, si la información fue correcta y el nivel comercial de 1 a 10; al terminar todos los casos,
   la evaluación final con dos criterios: perfil comercial (nivel promedio de `umbral_nivel` o más) e información correcta
@@ -18,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from statistics import mean
 from typing import Any, List, Literal, Optional
 
@@ -41,6 +43,7 @@ router = APIRouter(prefix="/capacitacion", tags=["capacitación · entrenamiento
 
 MAX_CASOS = 30
 MAX_TEXTO = 1000
+MAX_LOTE = 6          # mensajes seguidos del postulante en una sola vuelta
 MAX_INTENTOS = 3
 LOTE = 4
 _despertar = asyncio.Event()
@@ -108,12 +111,16 @@ def sesion_publica(s: CapSesion) -> dict[str, Any]:
     return {"id": s.id, "caso_id": s.caso_id, "titulo": c.get("titulo"), "cliente": c.get("cliente_nombre"),
             "estado": "terminada" if s.estado in srv.HECHOS else s.estado, "fin_motivo": s.fin_motivo,
             "mensajes": s.mensajes or [], "iniciado_at": srv.iso(s.iniciado_at), "terminado_at": srv.iso(s.terminado_at),
-            "turnos": sum(1 for m in s.mensajes or [] if m["r"] == "asesor"), "max_turnos": c.get("max_turnos")}
+            "turnos": ia.turnos(s.mensajes or []), "max_turnos": c.get("max_turnos")}
 
 
 def sesion_staff(s: CapSesion) -> dict[str, Any]:
+    c = s.caso or {}
     return {**sesion_publica(s), "estado": s.estado, "evaluacion": s.evaluacion, "segundos": s.segundos,
-            "costo_usd": s.costo_usd, "error": s.error, "prueba": s.prueba_por is not None}
+            "costo_usd": s.costo_usd, "error": s.error, "prueba": s.prueba_por is not None,
+            # Para quien mira la conversación (en vivo o después): qué tenía que lograr y qué datos tenía que dar bien.
+            "entrenamiento": (c.get("entrenamiento") or {}).get("nombre"), "objetivo": c.get("objetivo"),
+            "situacion": c.get("situacion"), "info_correcta": c.get("info_correcta") or []}
 
 
 def entrenamiento_dict(e: CapEntrenamiento, casos: list[CapCaso], user: CurrentUser, quien: dict[str, str]) -> dict[str, Any]:
@@ -162,25 +169,43 @@ async def abrir(db: AsyncSession, *, e: CapEntrenamiento, c: CapCaso, asignacion
     return s
 
 
-async def turno(db: AsyncSession, s: CapSesion, texto: str) -> dict[str, Any]:
-    """El asesor escribe y el cliente contesta. Si la IA falla, no se guarda nada (el texto queda para reintentar)."""
+def _ya_respondido(s: CapSesion, lote: str) -> Optional[dict[str, Any]]:
+    """Si ese lote ya se guardó (la respuesta se perdió en el camino), lo que el cliente contestó entonces."""
+    ms = list(s.mensajes or [])
+    idx = [i for i, m in enumerate(ms) if m.get("lote") == lote]
+    if not idx:
+        return None
+    nuevos = []
+    for m in ms[idx[-1] + 1:]:
+        if m["r"] != "cliente":
+            break
+        nuevos.append(m["t"])
+    fin = s.estado != "en_curso" and idx[-1] + 1 + len(nuevos) == len(ms)
+    return {"nuevos": nuevos, "fin": fin, "motivo": s.fin_motivo if fin else None, "repetido": True}
+
+
+async def turno(db: AsyncSession, s: CapSesion, textos: list[str], lote: Optional[str] = None) -> dict[str, Any]:
+    """El asesor escribe uno o varios mensajes seguidos y el cliente contesta a todos. Si la IA falla, no se guarda nada
+    (los mensajes quedan para reintentar con el mismo lote)."""
+    if lote and (previo := _ya_respondido(s, lote)) is not None:
+        return previo
     if s.estado != "en_curso":
         raise HTTPException(status.HTTP_409_CONFLICT, "Esta conversación ya terminó")
-    texto = (texto or "").strip()
-    if not texto:
+    textos = [t.strip() for t in textos if t and t.strip()]
+    if not textos:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Escribí un mensaje")
-    if len(texto) > MAX_TEXTO:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"El mensaje puede tener hasta {MAX_TEXTO} caracteres")
+    if len(textos) > MAX_LOTE or any(len(t) > MAX_TEXTO for t in textos):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Cada mensaje puede tener hasta {MAX_TEXTO} caracteres")
     previos = list(s.mensajes or [])
     if previos and previos[-1]["r"] == "asesor":
         raise HTTPException(status.HTTP_409_CONFLICT, "Esperá la respuesta del cliente")
-    nuevo = _msg("asesor", texto)
+    nuevos = [{**_msg("asesor", t), **({"lote": lote} if lote else {})} for t in textos]
     c = s.caso
     try:
-        r = await ia.responder(c, previos + [nuevo], empresa=c["entrenamiento"]["empresa"], canal=c["entrenamiento"]["canal"])
+        r = await ia.responder(c, previos + nuevos, empresa=c["entrenamiento"]["empresa"], canal=c["entrenamiento"]["canal"])
     except Exception as exc:  # noqa: BLE001
         raise _error_ia(exc) from exc
-    s.mensajes = previos + [nuevo] + [_msg("cliente", t) for t in r["mensajes"]]
+    s.mensajes = previos + nuevos + [_msg("cliente", t) for t in r["mensajes"]]
     _sumar_consumo(s, r)
     if r["fin"]:
         cerrar(s, r["motivo"])
@@ -203,9 +228,10 @@ async def evaluar_sesion(s: CapSesion) -> None:
 
 
 async def respuestas_hoy(db: AsyncSession, pid: str) -> int:
-    desde = srv.ahora().astimezone(srv.ZONA).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    """Cuántas veces contestó hoy el cliente simulado a este postulante (el tope de costo por día)."""
+    desde = srv.inicio_del_dia()
     filas = (await db.execute(select(CapSesion.mensajes).where(CapSesion.postulante_id == pid, CapSesion.iniciado_at >= desde))).scalars().all()
-    return sum(1 for ms in filas for m in ms or [] if m["r"] == "asesor")
+    return sum(ia.turnos(ms or []) for ms in filas)
 
 
 async def actualizar_asignacion(db: AsyncSession, a: CapAsignacion) -> None:
@@ -383,14 +409,18 @@ async def listar(user: CurrentUser = Depends(require_ver), db: AsyncSession = De
     ents = (await db.execute(select(CapEntrenamiento).order_by(CapEntrenamiento.estado, CapEntrenamiento.created_at.desc()))).scalars().all()
     casos: dict[str, int] = dict((await db.execute(select(CapCaso.entrenamiento_id, func.count()).group_by(CapCaso.entrenamiento_id))).all())
     visibles = {g.id for g in await srv.grupos_visibles(db, user)}
-    stats: dict[str, dict[str, int]] = {}
+    # Por entrenamiento, cuántos postulantes lo recibieron, lo terminaron y salieron recomendados (con cualquier intento).
+    personas: dict[str, dict[str, set[str]]] = {}
     for a in (await db.execute(select(CapAsignacion))).scalars().all():
         if a.grupo_id not in visibles:
             continue
-        x = stats.setdefault(a.entrenamiento_id, {"enviados": 0, "terminados": 0, "aprobados": 0})
-        x["enviados"] += 1
-        x["terminados"] += a.estado == "terminado"
-        x["aprobados"] += bool((a.resultado or {}).get("aprobado"))
+        x = personas.setdefault(a.entrenamiento_id, {"enviados": set(), "terminados": set(), "aprobados": set()})
+        x["enviados"].add(a.postulante_id)
+        if a.estado == "terminado":
+            x["terminados"].add(a.postulante_id)
+        if (a.resultado or {}).get("aprobado"):
+            x["aprobados"].add(a.postulante_id)
+    stats = {eid: {k: len(v) for k, v in x.items()} for eid, x in personas.items()}
     quien = await srv.nombres(db, [e.created_by for e in ents])
     return {"entrenamientos": [{"id": e.id, "nombre": e.nombre, "estado": e.estado, "empresa": e.empresa, "casos": casos.get(e.id, 0),
                                 "creado_por": quien.get(e.created_by, "—"), "updated_at": srv.iso(e.updated_at or e.created_at),
@@ -432,7 +462,7 @@ async def detalle(eid: str, user: CurrentUser = Depends(require_ver), db: AsyncS
         if p and x:
             filas.append({**x, "postulante": {"id": p.id, "nombre": p.nombre, "apellido": p.apellido, "estado": p.estado},
                           "grupo": {"id": a.grupo_id, "nombre": visibles[a.grupo_id].nombre}, "resultado": a.resultado})
-    filas.sort(key=lambda f: (f["grupo"]["nombre"], f["postulante"]["apellido"]))
+    filas.sort(key=lambda f: (f["grupo"]["nombre"], f["postulante"]["apellido"], f["postulante"]["id"], f["intento"]))
     return {**entrenamiento_dict(e, casos, user, quien), "asignaciones": filas}
 
 
@@ -533,6 +563,13 @@ async def ordenar(eid: str, payload: Orden, user: CurrentUser = Depends(require_
 class Envio(BaseModel):
     postulante_ids: List[str] = Field(min_length=1, max_length=200)
     origen: str = Field(..., max_length=200)
+    # A quien ya lo terminó se lo manda de nuevo como otro intento (el anterior queda con su resultado).
+    repetir: bool = False
+
+
+async def ultimo_intento(db: AsyncSession, eid: str, pid: str) -> Optional[CapAsignacion]:
+    return (await db.execute(select(CapAsignacion).where(CapAsignacion.entrenamiento_id == eid, CapAsignacion.postulante_id == pid)
+                             .order_by(CapAsignacion.intento.desc()))).scalars().first()
 
 
 async def asegurar_link(db: AsyncSession, p: CapPostulante, origen: str, user_id: str) -> tuple[str, bool]:
@@ -570,15 +607,16 @@ async def enviar(eid: str, payload: Envio, request: Request, user: CurrentUser =
         if g.estado == "cancelada" or p.estado in srv.SALIDAS:
             salida.append({"postulante_id": p.id, "nombre": p.nombre, "apellido": p.apellido, "url": None, "omitido": "no está activo"})
             continue
-        ya = (await db.execute(select(CapAsignacion).where(CapAsignacion.entrenamiento_id == e.id,
-                                                           CapAsignacion.postulante_id == p.id))).scalar_one_or_none()
-        if ya is None:
+        ult = await ultimo_intento(db, e.id, p.id)
+        intento = 1 if ult is None else (ult.intento or 1) + 1 if payload.repetir and ult.estado == "terminado" else None
+        if intento:
             db.add(CapAsignacion(entrenamiento_id=e.id, postulante_id=p.id, grupo_id=g.id, estado="pendiente",
-                                 asignado_por=user.id, asignado_at=srv.ahora()))
-            srv.evento(db, grupo_id=g.id, postulante_id=p.id, tipo="entrenamiento_enviado", por=user.id, entrenamiento=e.nombre)
+                                 asignado_por=user.id, asignado_at=srv.ahora(), intento=intento))
+            srv.evento(db, grupo_id=g.id, postulante_id=p.id, tipo="entrenamiento_enviado", por=user.id,
+                       entrenamiento=e.nombre if intento == 1 else f"{e.nombre} (intento {intento})")
         url, nuevo = await asegurar_link(db, p, origen, user.id)
         salida.append({"postulante_id": p.id, "nombre": p.nombre, "apellido": p.apellido, "url": url, "nuevo_link": nuevo,
-                       "ya_enviado": ya is not None})
+                       "ya_enviado": intento is None, "intento": intento or (ult.intento or 1 if ult else 1)})
     if e.estado == "borrador":
         e.estado = "activo"
     await db.commit()
@@ -644,7 +682,7 @@ async def de_postulante(pid: str, user: CurrentUser = Depends(require_ver), db: 
         por_caso = {s.caso_id: s for s in sesiones}
         salida.append({**x, "resultado": a.resultado, "casos_detalle": [
             {"caso_id": c.id, "orden": i + 1, "titulo": c.titulo, "cliente": c.cliente_nombre,
-             "sesion": ({"id": s.id, "estado": s.estado, "segundos": s.segundos, "turnos": sum(1 for m in s.mensajes or [] if m["r"] == "asesor"),
+             "sesion": ({"id": s.id, "estado": s.estado, "segundos": s.segundos, "turnos": ia.turnos(s.mensajes or []),
                          "info_correcta": (s.evaluacion or {}).get("info_correcta"), "nivel": (s.evaluacion or {}).get("nivel"),
                          "resumen": (s.evaluacion or {}).get("resumen"), "error": s.error}
                         if (s := por_caso.get(c.id)) else None)}
@@ -684,7 +722,13 @@ async def probar(cid: str, user: CurrentUser = Depends(require_ver), db: AsyncSe
 
 
 class Mensaje(BaseModel):
-    texto: str = Field(min_length=1, max_length=MAX_TEXTO)
+    """Uno o varios mensajes seguidos del asesor. `lote` es una marca del navegador para no duplicar un reenvío."""
+    texto: Optional[str] = Field(None, max_length=MAX_TEXTO)
+    textos: Optional[List[str]] = Field(None, min_length=1, max_length=MAX_LOTE)
+    lote: Optional[str] = Field(None, min_length=8, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+
+    def lista(self) -> list[str]:
+        return list(self.textos) if self.textos else [self.texto or ""]
 
 
 @router.post("/sesiones/{sid}/mensajes")
@@ -694,7 +738,7 @@ async def probar_mensaje(sid: str, payload: Mensaje, user: CurrentUser = Depends
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo en una prueba")
     async with candado(s.id):
         await db.refresh(s)
-        r = await turno(db, s, payload.texto)
+        r = await turno(db, s, payload.lista(), payload.lote)
         await db.commit()
     return {**r, "sesion": sesion_staff(s)}
 
