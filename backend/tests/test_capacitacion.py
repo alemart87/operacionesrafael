@@ -422,6 +422,14 @@ async def test_entrenamientos_flujo(monkeypatch):
         conv = (await ac.get(f"{B}/sesiones/{ficha['casos_detalle'][0]['sesion']['id']}", headers=cap)).json()
         assert conv["evaluacion"]["info_correcta"] is True and any(m["r"] == "asesor" for m in conv["mensajes"])
         assert (await ac.get(f"{B}/sesiones/{conv['id']}", headers=men2)).status_code == 404
+        # La guía del equipo (15 entrenamientos por postulante) y el historial de la ficha.
+        grupo = (await ac.get(f"{B}/grupos/{g['id']}", headers=cap)).json()
+        lia = next(p for p in grupo["postulantes"] if p["id"] == pids[0])
+        assert lia["avance"]["terminados"] == 1 and lia["avance"]["meta"] == 15 and lia["avance"]["meta_cumplida"] is False
+        assert grupo["meta"]["entrenamientos"] == 15 and grupo["meta"]["cumplen"] == 0
+        hist = (await ac.get(f"{B}/postulantes/{pids[0]}", headers=cap)).json()["historial"]
+        assert any(h["tipo"] == "entrenamiento" and h["a"] == "no_aprobado" and h["detalle"] == "Portabilidad" for h in hist)
+        assert any(h["tipo"] == "entrenamiento_enviado" and h["detalle"] == "Portabilidad" for h in hist)
 
         # Reiniciar y quitar.
         assert (await ac.delete(f"{B}/asignaciones/{aid}", headers=cap)).status_code == 409

@@ -6,8 +6,10 @@
  */
 import {
   ArrowLeft, ArrowRight, Check, ChevronRight, CircleCheck, ClipboardCheck, Clock3, CloudOff, LayoutGrid, ListChecks, LoaderCircle,
-  MessageSquareHeart, Pause, Save, Scale, Send, TriangleAlert, UserRound,
+  MessageSquareHeart, MessagesSquare, Pause, Play, Save, Scale, Send, Timer, TriangleAlert, UserRound,
 } from "lucide-react";
+import { Chat } from "@/components/capacitacion/chat";
+import type { MensajeChat } from "@/components/capacitacion/tipos";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
@@ -18,9 +20,10 @@ import type { AudioCoaching } from "@/components/supervision/tipos";
 
 const API = "/api/v1/capacitacion/publico";
 
-interface Estado { nombre: string; grupo: string; ipv: { estado: string; respondidas: number; total: number }; comentarios?: number }
+interface EntLink { id: string; nombre: string; estado: string; casos: number; hechos: number; pct: number }
+interface Estado { nombre: string; grupo: string; ipv: { estado: string; respondidas: number; total: number }; comentarios?: number; entrenamientos?: EntLink[] }
 interface Pregunta { n: number; texto: string; opciones: { letra: string; texto: string }[] }
-type Vista = "inicio" | "instrucciones" | "test" | "enviar" | "gracias" | "feedback";
+type Vista = "inicio" | "instrucciones" | "test" | "enviar" | "gracias" | "feedback" | { t: "entrenamiento"; id: string };
 
 async function pub<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
@@ -63,7 +66,9 @@ export default function PostulantePage() {
         )}
         {aviso && vista === "inicio" && <div role="status" className="mb-4 rounded-xl bg-brand-ink text-white text-[14px] font-semibold px-4 py-3 animate-fade">{aviso}</div>}
         {!info && !fallo && <div className="m-auto"><LoaderCircle size={32} className="animate-spin text-brand-slate" aria-label="Cargando" /></div>}
-        {info && vista === "inicio" && <Inicio info={info} onTest={() => setVista(info.ipv.respondidas ? "test" : "instrucciones")} onFeedback={() => setVista("feedback")} />}
+        {info && vista === "inicio" && <Inicio info={info} onTest={() => setVista(info.ipv.respondidas ? "test" : "instrucciones")} onFeedback={() => setVista("feedback")}
+          onEntrenamiento={(id) => setVista({ t: "entrenamiento", id })} />}
+        {info && typeof vista === "object" && <EntrenamientoLink base={base} id={vista.id} onVolver={() => { setVista("inicio"); cargar(); }} />}
         {info && vista === "instrucciones" && <Instrucciones nombre={info.nombre} onEmpezar={() => setVista("test")} />}
         {info && (vista === "test" || vista === "enviar") && (
           <Test base={base} token={token} onTerminado={() => { setVista("gracias"); cargar(); }} onSalir={(pausa) => { setVista("inicio"); cargar(); if (pausa) setAviso("Quedó guardado. Seguís cuando quieras con este mismo link."); }} />
@@ -75,7 +80,7 @@ export default function PostulantePage() {
   );
 }
 
-function Inicio({ info, onTest, onFeedback }: { info: Estado; onTest: () => void; onFeedback: () => void }) {
+function Inicio({ info, onTest, onFeedback, onEntrenamiento }: { info: Estado; onTest: () => void; onFeedback: () => void; onEntrenamiento: (id: string) => void }) {
   const hecho = info.ipv.estado === "terminado";
   const pct = Math.round((info.ipv.respondidas / info.ipv.total) * 100);
   return (
@@ -105,6 +110,29 @@ function Inicio({ info, onTest, onFeedback }: { info: Estado; onTest: () => void
           </span>
         )}
       </button>
+      {(info.entrenamientos ?? []).length > 0 && (
+        <div className="space-y-2.5">
+          <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate pt-1">Tus entrenamientos</div>
+          {(info.entrenamientos ?? []).map((x) => {
+            const listo = x.estado === "terminado" || x.estado === "evaluando";
+            return (
+              <button key={x.id} type="button" onClick={() => onEntrenamiento(x.id)} className="w-full text-left card p-4 active:scale-[0.99] hover:shadow-elevated">
+                <span className="flex items-center gap-3">
+                  <span className={cx("w-11 h-11 rounded-xl flex items-center justify-center shrink-0", listo ? "bg-emerald-50 text-emerald-700" : "bg-brand-ink text-white")}>
+                    {listo ? <CircleCheck size={22} aria-hidden /> : <MessagesSquare size={22} aria-hidden />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold text-[16px] text-brand-ink">{x.nombre}</span>
+                    <span className="block text-[13px] text-brand-slate">{listo ? "¡Listo! Ya lo hiciste." : x.hechos ? `Seguí · ${x.hechos} de ${x.casos} clientes` : `${x.casos} cliente${x.casos === 1 ? "" : "s"} para atender por chat`}</span>
+                  </span>
+                  <ChevronRight size={20} className="text-brand-mist shrink-0" aria-hidden />
+                </span>
+                {!listo && x.hechos > 0 && <span className="mt-3 block h-2 rounded-full bg-brand-bg overflow-hidden" aria-hidden><span className="block h-full rounded-full bg-brand-ink" style={{ width: `${x.pct}%` }} /></span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <button type="button" onClick={onFeedback} className="w-full text-left card p-5 flex items-center gap-4 min-h-[96px] active:scale-[0.99] hover:shadow-elevated">
         <span className="w-12 h-12 rounded-xl bg-brand-ink text-white flex items-center justify-center shrink-0"><MessageSquareHeart size={26} aria-hidden /></span>
         <span className="min-w-0 flex-1">
@@ -459,6 +487,118 @@ function Feedback({ base, onVolver }: { base: string; onVolver: () => void }) {
         {error && <p className="text-sm text-brand-primary-dark" role="alert">{error}</p>}
       </div>
       <div className="mt-auto pt-6"><Boton icono={Send} onClick={enviar} ocupado={ocupado} disabled={!texto.trim() && !audio}>Enviar</Boton></div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ entrenamientos (chat con clientes)
+interface CasoLink { id: string; orden: number; titulo: string; cliente: string; estado: "pendiente" | "en_curso" | "hecho"; segundos: number | null; sesion_id: string | null }
+interface EntDetalle {
+  id: string; nombre: string; instrucciones: string | null; empresa: string; canal: string; casos: CasoLink[]; hechos: number; total: number;
+  pct: number; terminado: boolean; disponible: boolean;
+}
+interface SesionLink { id: string; caso_id: string; titulo: string; cliente: string; estado: string; mensajes: MensajeChat[]; iniciado_at: string }
+
+function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; onVolver: () => void }) {
+  const [d, setD] = useState<EntDetalle | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [chat, setChat] = useState<SesionLink | null>(null);
+  const [abriendo, setAbriendo] = useState<string | null>(null);
+  // Los casos que terminó en esta visita (la lista del servidor se actualiza al volver).
+  const [listos, setListos] = useState<Set<string>>(new Set());
+  const cargar = useCallback(() => {
+    pub<EntDetalle>(`${base}/entrenamientos/${id}`).then((x) => { setD(x); setError(null); }).catch((e) => setError(e.message));
+  }, [base, id]);
+  useEffect(cargar, [cargar]);
+  const abrir = async (c: CasoLink) => {
+    setAbriendo(c.id); setError(null);
+    try { setChat(await pub<SesionLink>(`${base}/entrenamientos/${id}/casos/${c.id}`, { method: "POST" })); }
+    catch (e: any) { setError(e.message); } finally { setAbriendo(null); }
+  };
+  const enviar = useCallback(async (texto: string) => {
+    const r = await pub<{ nuevos: string[]; fin: boolean }>(`${base}/sesiones/${chat!.id}/mensajes`, { method: "POST", body: JSON.stringify({ texto }) });
+    return r;
+  }, [base, chat]);
+  const terminar = useCallback(async () => { await pub(`${base}/sesiones/${chat!.id}/terminar`, { method: "POST" }); }, [base, chat]);
+
+  if (error && !d) return <p className="m-auto text-center text-brand-primary-dark font-semibold">{error}</p>;
+  if (!d) return <div className="m-auto"><LoaderCircle size={32} className="animate-spin text-brand-slate" aria-label="Cargando" /></div>;
+  const siguiente = d.casos.find((c) => c.estado !== "hecho");
+
+  if (chat) {
+    const despues = d.casos.find((c) => c.estado !== "hecho" && !listos.has(c.id) && c.id !== chat.caso_id);
+    const marcar = () => setListos((x) => new Set(x).add(chat.caso_id));
+    return (
+      <Chat cliente={chat.cliente} titulo={chat.titulo} mensajes={chat.mensajes} iniciado={chat.iniciado_at} terminado={chat.estado !== "en_curso"}
+        enviar={enviar} onTerminar={terminar} onVolver={() => { setChat(null); cargar(); }}
+        aviso={<p className="text-center text-[12px] text-brand-slate pb-2">Sos asesor de {d.empresa}. Atendé a {chat.cliente.split(" ")[0]} como lo harías con un cliente real.</p>}
+        pie={() => (
+          <div className="space-y-2">
+            <p className="text-center text-[14px] text-brand-ink font-semibold">¡Caso terminado! Tu equipo va a ver cómo te fue.</p>
+            {despues ? <Boton icono={Play} onClick={() => { marcar(); setChat(null); abrir(despues); }}>Siguiente cliente</Boton>
+              : <Boton onClick={() => { marcar(); setChat(null); cargar(); }}>Ver el entrenamiento</Boton>}
+          </div>
+        )} />
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col">
+      <button type="button" onClick={onVolver} className="self-start inline-flex items-center gap-1 text-sm text-brand-slate mb-3"><ArrowLeft size={16} aria-hidden /> Volver</button>
+      <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">Entrenamiento</div>
+      <h1 className="font-display text-[30px] uppercase text-brand-ink leading-tight">{d.nombre}</h1>
+      <div className="mt-3 flex items-center gap-3">
+        <div className="flex-1 h-2 rounded-full bg-white border border-brand-border overflow-hidden" aria-hidden><div className="h-full rounded-full bg-brand-ink" style={{ width: `${d.pct}%` }} /></div>
+        <span className="text-[13px] text-brand-slate tabular-nums">{d.hechos} de {d.total}</span>
+      </div>
+      {d.terminado ? (
+        <div className="mt-5 card p-5 text-center">
+          <CircleCheck size={44} className="mx-auto text-emerald-600" aria-hidden />
+          <p className="mt-2 text-[17px] font-semibold text-brand-ink">¡Terminaste este entrenamiento!</p>
+          <p className="text-[14px] text-brand-slate">Tu equipo de capacitación va a ver los resultados y te va a dar la devolución.</p>
+        </div>
+      ) : d.hechos === 0 && (
+        <ul className="mt-5 space-y-3">
+          {[
+            { icono: MessagesSquare, t: `Vas a atender ${d.total} cliente${d.total === 1 ? "" : "s"} por chat`, x: d.instrucciones || `Sos asesor de ${d.empresa}: averiguá qué necesita cada uno y ayudalo.` },
+            { icono: UserRound, t: "Son clientes simulados, pero tratalos como reales", x: "Cada uno tiene su forma de ser: algunos están apurados, otros desconfían. A veces mandan dos mensajes seguidos." },
+            { icono: Timer, t: "Se mide el tiempo de cada caso", x: "Cuando el cliente se despide o terminaste, tocá «Terminar»." },
+          ].map(({ icono: I, t, x }) => (
+            <li key={t} className="flex gap-3">
+              <span className="w-10 h-10 rounded-xl bg-white border border-brand-border text-brand-ink flex items-center justify-center shrink-0"><I size={20} aria-hidden /></span>
+              <span className="min-w-0"><span className="block text-[15px] font-semibold text-brand-ink leading-snug">{t}</span><span className="block text-[14px] text-brand-slate leading-snug">{x}</span></span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ol className="mt-5 space-y-2">
+        {d.casos.map((c) => (
+          <li key={c.id} className={cx("card px-4 py-3 flex items-center gap-3", c.id === siguiente?.id && "border-brand-ink")}>
+            <span className={cx("w-8 h-8 rounded-full text-sm font-bold flex items-center justify-center shrink-0", c.estado === "hecho" ? "bg-emerald-50 text-emerald-700" : "bg-brand-bg text-brand-ink")}>
+              {c.estado === "hecho" ? <Check size={16} aria-hidden /> : c.orden}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] font-semibold text-brand-ink">{c.cliente}</span>
+              <span className="block text-[12px] text-brand-slate">{c.estado === "hecho" ? `Hecho${c.segundos ? ` · ${Math.max(1, Math.round(c.segundos / 60))} min` : ""}` : c.estado === "en_curso" ? "Empezado" : `Cliente ${c.orden}`}</span>
+            </span>
+            {c.estado !== "hecho" && !d.terminado && (
+              <button type="button" onClick={() => abrir(c)} disabled={!!abriendo || !d.disponible}
+                className={cx("btn min-h-[44px] px-4 text-sm", c.id === siguiente?.id ? "bg-brand-primary text-white" : "bg-white border border-brand-border text-brand-ink")}>
+                {abriendo === c.id ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : c.estado === "en_curso" ? "Seguir" : "Empezar"}
+              </button>
+            )}
+          </li>
+        ))}
+      </ol>
+      {!d.disponible && <p className="mt-3 text-sm text-brand-primary-dark">Los entrenamientos no están disponibles en este momento. Probá más tarde.</p>}
+      {error && <p className="mt-3 text-sm text-brand-primary-dark" role="alert">{error}</p>}
+      {siguiente && !d.terminado && d.disponible && (
+        <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg">
+          <Boton icono={Play} onClick={() => abrir(siguiente)} ocupado={abriendo === siguiente.id}>
+            {siguiente.estado === "en_curso" ? `Seguir con ${siguiente.cliente.split(" ")[0]}` : d.hechos === 0 ? "Empezar con el primer cliente" : `Atender a ${siguiente.cliente.split(" ")[0]}`}
+          </Boton>
+        </div>
+      )}
     </div>
   );
 }

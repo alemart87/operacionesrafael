@@ -1938,11 +1938,51 @@ cancelado queda de solo lectura y cierra los links.
 - **Ficha del postulante**: datos, estado, IPV con el gráfico de decatipos (tocar una escala explica qué mide),
   fortalezas y aspectos a trabajar, seguimiento e historial.
 - **En el celular**, Capacitador y Mentor tienen abajo *Grupos*, *Mi grupo* (abre directo el grupo en curso; al mentor,
-  con los que están en piso) y *Estadísticas*.
+  con los que están en piso), *Entrenar* (los entrenamientos con IA) y *Métricas* (estadísticas). En el grupo, arriba,
+  dos botones grandes: **Postulante** (alta) y **Entrenamiento** (enviarlo a todo el grupo o a algunos).
 - **Grupo**: postulantes en tabla (escritorio) o tarjetas (celular) con filtros, embudo, IPV del grupo, por sexo y por
   edad (18–24, 25–34, 35–44, 45 o más), historial.
 - **Estadísticas** (`/capacitacion/estadisticas`): por período, efectividad, deserción, duración promedio, IPV,
   feedback por postulante, por sexo y edad y comparativa por grupo.
+
+### Entrenamientos con IA
+
+Chats de práctica en los que el postulante atiende a un **cliente simulado por IA**. Código en
+`backend/app/operativas/capacitacion/entrenamientos*.py` y `entrenamiento_ia.py`; pantallas en
+`/capacitacion/entrenamientos`.
+
+- **Armar**: el mentor o el capacitador (y la gestión) crea un entrenamiento con su **información oficial** (planes,
+  precios, condiciones: es lo que la IA usa para verificar lo que dice el postulante), la empresa y el canal (chat,
+  WhatsApp o llamada). Le carga **casos**: cada caso es un cliente distinto (nombre, edad, situación, qué quiere, primer
+  mensaje, objeciones, datos que el postulante tiene que dar bien) con su **actitud al detalle** (paciencia,
+  trato, desconfianza, interés en comprar, cuánto escribe y manejo de la tecnología de 1 a 5, más rasgos como apurado,
+  comparador, enojado o indeciso). Sugerido: de 3 a 5 casos; puede tener 10 o 20. Cada caso se **prueba** antes de enviarlo
+  (el chat y «cómo te evaluaría la IA»). Lo edita quien lo creó o la gestión; uno ya enviado se archiva en vez de borrarse.
+- **Enviar**: a un grupo entero, a algunos postulantes o a uno desde su ficha. El postulante lo hace desde **el mismo
+  link del IPV** (si venció, se genera uno nuevo y se puede mandar por WhatsApp o copiar todos los links). Solo
+  postulantes activos de grupos donde quien envía tiene un papel.
+- **Conversar**: chat tipo mensajería, humanizado: el cliente «escribe», contesta de 1 a 3 mensajes seguidos con pausas
+  naturales, mantiene su actitud y puede cortar la conversación. Se mide el **tiempo** de cada caso. El postulante no
+  puede escribir dos veces sin respuesta (409), cada mensaje tiene hasta 1000 caracteres y hay un tope de respuestas por
+  día (429). Cada conversación guarda el caso tal como era al empezar.
+- **Evaluar** (worker `capacitacion_entrenamientos`, solo con las conversaciones; **el IPV es independiente**): por caso,
+  cada dato correcto, incorrecto u omitido, los errores, si la **información fue correcta** (un dato incorrecto la hace
+  incorrecta) y el **nivel comercial de 1 a 10** con criterios (escucha, indagación, argumentación, objeciones, cierre,
+  trato y claridad). Al terminar todos los casos: **perfil comercial** = nivel promedio ≥ 8 e **información correcta** en ≥ 90 % de
+  los casos (umbrales editables por entrenamiento). Con los dos se **recomienda la incorporación**. La decisión la toman
+  esas reglas; la IA escribe el resumen, los puntos fuertes y **qué debe mejorar el asesor**.
+- **Ficha y avance**: el resultado de cada entrenamiento queda en la ficha del postulante (con cada conversación para
+  revisar) y en el historial. El **% de avance** cuenta solo los entrenamientos (casos hechos ÷ casos enviados); el IPV
+  va aparte. **Guía del equipo: al menos 15 entrenamientos terminados por postulante** (`ENTRENAMIENTO_META_POSTULANTE`),
+  visible en el grupo, la ficha y al enviar.
+- **Modelo**: GPT Luna (`gpt-6-luna`) por la API de Responses de OpenAI, con la misma `OPENAI_API_KEY` de la
+  transcripción. Salida con JSON Schema estricto, `store=false`, esfuerzo de razonamiento bajo para el chat y medio para
+  evaluar; si una respuesta llega con un mensaje de más o sin JSON válido, se toma el primero válido y se reintenta una
+  vez. Sin la clave se pueden armar entrenamientos, pero los postulantes no pueden chatear (se avisa en pantalla).
+- **Seguridad**: lo que escribe el postulante va solo como mensaje de usuario; la transcripción que evalúa la IA va
+  delimitada y con la instrucción de ignorar órdenes dentro de ella; el cliente simulado nunca ve la información oficial
+  ni los criterios. Los links son los del IPV (token de 256 bits, SHA-256, vencimiento) y un postulante no puede ver
+  conversaciones de otro. Cada conversación registra tokens y costo estimado.
 
 ### API
 
@@ -1950,8 +1990,14 @@ cancelado queda de solo lectura y cierra los links.
 `POST /grupos/{id}/estado`, `POST /grupos/{id}/postulantes`, `GET|PATCH|DELETE /postulantes/{id}`,
 `POST /postulantes/{id}/estado`, `GET|POST|DELETE /postulantes/{id}/enlace`,
 `POST /postulantes/{id}/comentarios`, `POST /postulantes/{id}/audios`, `GET /audios/{id}[/archivo]`.
+Entrenamientos: `GET|POST /entrenamientos`, `GET|PATCH|DELETE /entrenamientos/{id}`, `POST /entrenamientos/{id}/casos`,
+`PATCH|DELETE /casos/{id}`, `POST /entrenamientos/{id}/orden`, `POST /entrenamientos/{id}/enviar`,
+`DELETE /asignaciones/{id}`, `POST /asignaciones/{id}/reiniciar`, `GET /postulantes/{id}/entrenamientos`,
+`GET /sesiones/{id}`, `POST /casos/{id}/probar`, `POST /sesiones/{id}/mensajes`, `POST /sesiones/{id}/terminar`.
 Público (sin sesión): `/api/v1/capacitacion/publico/{token}` (`GET`, `GET|PUT /ipv`, `POST /ipv/terminar`,
-`POST /comentarios`, `POST /audios`, `GET /audios/{id}`). Todo cambio queda en la auditoría.
+`POST /comentarios`, `POST /audios`, `GET /audios/{id}`, `GET /entrenamientos/{id}`,
+`POST /entrenamientos/{id}/casos/{caso}`, `GET /sesiones/{id}`, `POST /sesiones/{id}/mensajes`,
+`POST /sesiones/{id}/terminar`). Todo cambio queda en la auditoría.
 
 ## Sistema de login y seguridad de acceso
 
@@ -2106,6 +2152,12 @@ Opcionales:
 | `TRANSCRIPCION_MINUTOS_DIA` | Tope de minutos transcriptos por supervisor y por día (por defecto 90) |
 | `TRANSCRIPCION_RETENCION_DIAS` | Días que se guarda el archivo de audio (por defecto 365; después queda el texto) |
 | `TRANSCRIPCION_SIMULADOR` | Solo desarrollo: transcripción simulada, sin llamar a OpenAI (se ignora en producción) |
+| `ENTRENAMIENTO_MODELO` | Modelo de los entrenamientos con IA (por defecto `gpt-6-luna`, GPT Luna; usa `OPENAI_API_KEY`) |
+| `ENTRENAMIENTO_ESFUERZO_CHAT` / `ENTRENAMIENTO_ESFUERZO_EVAL` | Razonamiento del cliente simulado (`low`) y del evaluador (`medium`) |
+| `ENTRENAMIENTO_RESPUESTAS_DIA` | Tope de respuestas del cliente simulado por postulante y por día (por defecto 300) |
+| `ENTRENAMIENTO_META_POSTULANTE` | Guía del equipo: entrenamientos por postulante (por defecto 15) |
+| `ENTRENAMIENTO_PRECIO_ENTRADA_MTOK` / `ENTRENAMIENTO_PRECIO_SALIDA_MTOK` | US$ por millón de tokens para el costo estimado (confirmar en la consola de OpenAI) |
+| `ENTRENAMIENTO_SIMULADOR` | Solo desarrollo: cliente y evaluador simulados, sin llamar a OpenAI (se ignora en producción) |
 | `ANTHROPIC_API_KEY` | Voi, el agente de la plataforma (Claude Managed Agents), y los informes del Analizador de coaching. Sin ella Voi se ve pero avisa que no está conectado |
 | `ANTHROPIC_WEBHOOK_SIGNING_KEY` | Secreto `whsec_…` del webhook de Anthropic para Voi |
 | `ASISTENTE_MODELO` | Modelo de Voi (por defecto `claude-sonnet-5-5`) |

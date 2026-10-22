@@ -397,6 +397,7 @@ async def listar(user: CurrentUser = Depends(require_ver), db: AsyncSession = De
                                 "puede_editar": puede_editar(user, e), **stats.get(e.id, {"enviados": 0, "terminados": 0, "aprobados": 0})}
                                for e in ents],
             "ia": {"disponible": ia.servicio_disponible(), "modelo": ia.settings.entrenamiento_modelo, "simulador": ia.simulador()},
+            "meta": ia.settings.entrenamiento_meta_postulante,
             "rasgos": ia.RASGOS, "niveles": {k: {"nombre": n, "escala": esc} for k, (n, esc) in ia.NIVELES.items()},
             "criterios": ia.CRITERIOS}
 

@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     entrenamiento_esfuerzo_chat: str = "low"           # none | low | medium | high
     entrenamiento_esfuerzo_eval: str = "medium"
     entrenamiento_respuestas_dia: int = 300            # respuestas del cliente por postulante y por día: tope de costo
+    entrenamiento_meta_postulante: int = 15            # guía para el equipo: entrenamientos por postulante
     # Precio (US$ por 1M tokens) para el costo estimado de cada conversación; confirmalo en la consola de OpenAI.
     entrenamiento_precio_entrada_mtok: float = 0.10
     entrenamiento_precio_salida_mtok: float = 0.50

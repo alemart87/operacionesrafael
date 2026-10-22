@@ -7,6 +7,7 @@ import { CAP_HREF } from "./tipos";
 
 const PESTANAS = [
   { href: CAP_HREF, label: "Grupos", activa: (r: string) => r === CAP_HREF || r.startsWith(`${CAP_HREF}/grupos`) || r.startsWith(`${CAP_HREF}/postulantes`) },
+  { href: `${CAP_HREF}/entrenamientos`, label: "Entrenamientos", activa: (r: string) => r.startsWith(`${CAP_HREF}/entrenamientos`) },
   { href: `${CAP_HREF}/estadisticas`, label: "Estadísticas", activa: (r: string) => r.startsWith(`${CAP_HREF}/estadisticas`) },
 ];
 

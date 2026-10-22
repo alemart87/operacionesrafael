@@ -40,6 +40,8 @@ router = APIRouter(prefix="/capacitacion", tags=["capacitación y mentoría"])
 require_ver = require_perm(srv.PERM_VER)
 
 DIAS_LINK = 21
+# Tipos del historial de funciones que se sacaron (pruebas en papel): quedan en la base y en la auditoría, pero no se muestran.
+EVENTOS_RETIRADOS = {"pruebas"}
 _ORIGEN = re.compile(r"^https?://[A-Za-z0-9.-]+(:\d{1,5})?$")
 _CI = re.compile(r"^[0-9A-Za-z.\-]{3,20}$")
 
@@ -413,7 +415,8 @@ async def ficha(pid: str, user: CurrentUser = Depends(require_ver), db: AsyncSes
         "comentarios": [_comentario_dict(c, quien, audios) for c in comentarios],
         "conteo": srv.conteo(d.comentarios[p.id]),
         "historial": [{"tipo": x.tipo, "de": x.de, "a": x.a, "at": srv.iso(x.at), "por": quien.get(x.por or "", None),
-                       "motivo": (x.datos or {}).get("motivo")} for x in eventos],
+                       "motivo": (x.datos or {}).get("motivo"), "detalle": (x.datos or {}).get("entrenamiento")}
+                      for x in eventos if x.tipo not in EVENTOS_RETIRADOS],
     }
 
 

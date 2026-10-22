@@ -267,7 +267,10 @@ OPERATIVA_ROUTES.push({
   slug: "capacitacion",
   name: "Capacitación y Mentoría",
   href: "/capacitacion",
-  submodulos: [],
+  submodulos: [
+    { utilidad: "ver", label: "Entrenamientos", href: "/capacitacion/entrenamientos", nav: [{ href: "/capacitacion/entrenamientos", label: "Entrenamientos" }] },
+    { utilidad: "ver", label: "Estadísticas", href: "/capacitacion/estadisticas", nav: [{ href: "/capacitacion/estadisticas", label: "Estadísticas" }] },
+  ],
 });
 
 export function operativaRoute(slug: string): OperativaRoute | undefined {

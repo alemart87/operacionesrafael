@@ -63,6 +63,7 @@ export interface Grupo {
   capacitador: Persona; mentores: Persona[]; embudo: Embudo; efectividad: number | null;
   ipv: { realizados: number; total: number; porcentaje: number | null }; feedback: number; roles: string[];
   puede: { estados: EstadoGrupo[]; editar: boolean; postulantes: boolean };
+  avance: number | null; meta: { entrenamientos: number; cumplen: number; activos: number };
 }
 export interface IpvFila {
   estado: "sin_link" | "pendiente" | "en_curso" | "terminado"; respondidas: number; total: number;
@@ -71,9 +72,20 @@ export interface IpvFila {
 export interface Postulante {
   id: string; grupo_id: string; nombre: string; apellido: string; ci: string; edad: number; sexo: Sexo; estado: EstadoPostulante;
   estado_nombre: string; estado_at: string | null; motivo: string | null; etapa_max: number; en_piso: boolean; ipv: IpvFila;
-  comentarios: Feedback; puede: EstadoPostulante[];
+  comentarios: Feedback; puede: EstadoPostulante[]; entrenamientos: EntResumen[]; avance: Avance;
 }
-export interface Evento { tipo: string; de: string | null; a: string | null; at: string; por: string | null; motivo?: string | null }
+/** Un entrenamiento enviado a un postulante, con su avance. */
+export interface EntResumen {
+  id: string; entrenamiento_id: string; nombre: string; estado: "pendiente" | "en_curso" | "evaluando" | "terminado"; casos: number;
+  hechos: number; pct: number; archivado: boolean; en_chat: boolean; aprobado: boolean | null; nivel: number | null;
+  info_pct: number | null; asignado_at: string; terminado_at: string | null;
+}
+/** Avance de los entrenamientos (el IPV es independiente) y la guía de entrenamientos por postulante. */
+export interface Avance {
+  pct: number | null; casos: number; hechos: number; entrenamientos: number; terminados: number; aprobados: number;
+  meta: number; meta_cumplida: boolean;
+}
+export interface Evento { tipo: string; de: string | null; a: string | null; at: string; por: string | null; motivo?: string | null; detalle?: string | null }
 export interface GrupoDetalle extends Grupo {
   postulantes: Postulante[]; ipv_detalle: ResumenIpv; feedback_detalle: Feedback; estadisticas: Estadisticas; historial: Evento[];
 }
@@ -125,3 +137,64 @@ export async function subirDictado(url: string, g: Grabado, publico = false): Pr
   if (!r.ok) throw new Error(typeof b?.detail === "string" ? b.detail : b?.detail?.message ?? "No se pudo subir el audio");
   return b as AudioCoaching;
 }
+
+// ------------------------------------------------------------------ entrenamientos con IA
+export type Canal = "chat" | "whatsapp" | "llamada";
+export interface Actitud {
+  rasgos: string[]; paciencia: number; cordialidad: number; desconfianza: number; interes: number; habla: number; tecnologia: number;
+}
+export interface Caso {
+  id: string; orden: number; titulo: string; cliente_nombre: string; cliente_edad: number | null; situacion: string; objetivo: string;
+  actitud: Actitud; objeciones: string[]; info_correcta: string[]; primer_mensaje: string | null; detalles: string | null; max_turnos: number;
+}
+export interface EntrenamientoFila {
+  id: string; nombre: string; estado: "borrador" | "activo" | "archivado"; empresa: string; casos: number; creado_por: string;
+  updated_at: string; puede_editar: boolean; enviados: number; terminados: number; aprobados: number;
+}
+export interface Catalogo {
+  ia: { disponible: boolean; modelo: string; simulador: boolean }; meta: number;
+  rasgos: Record<string, string>; niveles: Record<string, { nombre: string; escala: string[] }>; criterios: Record<string, string>;
+}
+export interface ResultadoEnt {
+  casos: number; info_ok: number; info_pct: number; nivel_promedio: number; perfil_comercial: boolean; informacion_correcta: boolean;
+  aprobado: boolean; recomendacion: "incorporar" | "no_incorporar"; umbral_info: number; umbral_nivel: number; resumen: string;
+  fuertes: string[]; mejorar: string[]; segundos: number; costo_usd: number; evaluado_at: string;
+}
+export interface Asignacion extends EntResumen {
+  postulante: { id: string; nombre: string; apellido: string; estado: EstadoPostulante }; grupo: { id: string; nombre: string };
+  resultado: ResultadoEnt | null;
+}
+export interface Entrenamiento {
+  id: string; nombre: string; instrucciones: string | null; producto: string; empresa: string; canal: Canal; umbral_info: number;
+  umbral_nivel: number; estado: "borrador" | "activo" | "archivado"; creado_por: string; casos: Caso[]; puede_editar: boolean;
+  asignaciones: Asignacion[];
+}
+export interface MensajeChat { r: "cliente" | "asesor"; t: string; at: string }
+export interface EvaluacionCaso {
+  datos: { dato: string; estado: "correcto" | "incorrecto" | "omitido" | "no_aplica"; detalle: string }[]; errores: string[];
+  info_correcta: boolean; info_pct: number; nivel: number; criterios: Record<string, number>; fuertes: string[]; mejorar: string[];
+  resumen: string;
+}
+export interface Sesion {
+  id: string; caso_id: string; titulo: string; cliente: string; estado: string; fin_motivo: string | null; mensajes: MensajeChat[];
+  iniciado_at: string; terminado_at: string | null; turnos: number; max_turnos: number;
+  evaluacion?: EvaluacionCaso | null; segundos?: number | null; error?: string | null; prueba?: boolean;
+}
+export interface EntPostulante extends EntResumen {
+  resultado: ResultadoEnt | null;
+  casos_detalle: { caso_id: string; orden: number; titulo: string; cliente: string;
+    sesion: { id: string; estado: string; segundos: number | null; turnos: number; info_correcta: boolean | null; nivel: number | null;
+      resumen: string | null; error: string | null } | null }[];
+}
+
+export const duracion = (s: number | null | undefined) =>
+  s === null || s === undefined ? "—" : s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ""}`;
+
+export const ESTADO_ENT: Record<"activo" | "borrador" | "archivado", { nombre: string; tono: "verde" | "gris" | "naranja" }> = {
+  activo: { nombre: "Activo", tono: "verde" }, borrador: { nombre: "Borrador", tono: "naranja" }, archivado: { nombre: "Archivado", tono: "gris" },
+};
+/** Los criterios del nivel comercial (los mismos que usa el evaluador). */
+export const CRITERIOS: Record<string, string> = {
+  escucha: "Escucha y empatía", indagacion: "Indagación", argumentacion: "Argumentación", objeciones: "Manejo de objeciones",
+  cierre: "Cierre", claridad: "Trato y claridad",
+};

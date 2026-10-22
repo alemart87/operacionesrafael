@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.deps import CurrentUser, effective_permissions
+from ...core.config import settings
 from ...models.profile import Profile
 from ...models.user import User
 from . import ipv
@@ -250,9 +251,12 @@ def avance(p: CapPostulante, d: Datos) -> dict[str, Any]:
     ents = d.entrenamientos.get(p.id, [])
     casos = sum(x["casos"] for x in ents)
     hechos = sum(min(x["hechos"], x["casos"]) for x in ents)
+    terminados = sum(1 for x in ents if x["estado"] == "terminado")
     return {"pct": round(hechos / casos * 100) if casos else None, "casos": casos, "hechos": hechos,
-            "entrenamientos": len(ents), "terminados": sum(1 for x in ents if x["estado"] == "terminado"),
-            "aprobados": sum(1 for x in ents if x["aprobado"] is True)}
+            "entrenamientos": len(ents), "terminados": terminados,
+            "aprobados": sum(1 for x in ents if x["aprobado"] is True),
+            # La guía del equipo: al menos N entrenamientos por postulante.
+            "meta": settings.entrenamiento_meta_postulante, "meta_cumplida": terminados >= settings.entrenamiento_meta_postulante}
 
 
 def avance_grupo(ps: list[CapPostulante], d: Datos) -> Optional[int]:
@@ -380,6 +384,9 @@ def grupo_dict(g: CapGrupo, ps: list[CapPostulante], d: Datos, user: CurrentUser
         "mentores": [{"id": m, "nombre": quien.get(m, "—")} for m in (g.mentores or [])],
         "embudo": e, "efectividad": e["efectividad"], "ipv": {k: r[k] for k in ("realizados", "total", "porcentaje")},
         "feedback": feedback_total(ps, d)["total"], "avance": avance_grupo(ps, d),
+        "meta": {"entrenamientos": settings.entrenamiento_meta_postulante,
+                 "cumplen": sum(1 for p in ps if p.estado not in SALIDAS and avance(p, d)["meta_cumplida"]),
+                 "activos": sum(1 for p in ps if p.estado not in SALIDAS)},
         "roles": sorted(roles), "puede": {"estados": destinos_grupo(g, roles), "editar": bool({"capacitador", "gestion"} & roles),
                                           "postulantes": g.estado == "en_curso" and bool({"capacitador", "gestion"} & roles)},
     }
