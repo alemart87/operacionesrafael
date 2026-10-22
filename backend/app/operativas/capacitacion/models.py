@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, Float, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...core.database import Base
@@ -148,3 +148,94 @@ class CapEvento(Base):
     por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+
+# ================================================================== entrenamientos con IA
+ESTADOS_ENTRENAMIENTO = ("borrador", "activo", "archivado")
+
+
+class CapEntrenamiento(Base):
+    """Un entrenamiento: varios casos (clientes simulados por la IA) que el postulante atiende por chat desde su link.
+    `producto` es la información oficial que el asesor tiene que dar bien (la usa solo el evaluador). Se aprueba con
+    información correcta en al menos `umbral_info` % de los casos y nivel comercial promedio de `umbral_nivel` o más."""
+    __tablename__ = "cap_entrenamientos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    nombre: Mapped[str] = mapped_column(String(120), nullable=False)
+    instrucciones: Mapped[Optional[str]] = mapped_column(Text, nullable=True)            # lo que lee el postulante
+    producto: Mapped[str] = mapped_column(Text, nullable=False, default="")               # información oficial
+    empresa: Mapped[str] = mapped_column(String(80), nullable=False, default="Claro")      # a quién representa el asesor
+    canal: Mapped[str] = mapped_column(String(20), nullable=False, default="chat")         # chat | whatsapp | llamada
+    umbral_info: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
+    umbral_nivel: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    estado: Mapped[str] = mapped_column(String(12), nullable=False, default="borrador", index=True)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CapCaso(Base):
+    """Un caso del entrenamiento: quién es el cliente, qué le pasa, qué quiere, cómo se comporta (actitud al detalle),
+    qué objeciones plantea y qué información tiene que darle bien el asesor."""
+    __tablename__ = "cap_casos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    entrenamiento_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    titulo: Mapped[str] = mapped_column(String(120), nullable=False)
+    cliente_nombre: Mapped[str] = mapped_column(String(60), nullable=False)
+    cliente_edad: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    situacion: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    objetivo: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    actitud: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)      # rasgos y niveles 1–5
+    objeciones: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    info_correcta: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    primer_mensaje: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    detalles: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    max_turnos: Mapped[int] = mapped_column(Integer, nullable=False, default=14)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CapAsignacion(Base):
+    """Un entrenamiento enviado a un postulante: lo hace desde su link. `resultado` es la evaluación final."""
+    __tablename__ = "cap_asignaciones"
+    __table_args__ = (UniqueConstraint("entrenamiento_id", "postulante_id", name="uq_cap_asignacion"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    entrenamiento_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    postulante_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    grupo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    estado: Mapped[str] = mapped_column(String(12), nullable=False, default="pendiente")   # pendiente | en_curso | evaluando | terminado
+    resultado: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    asignado_por: Mapped[str] = mapped_column(String(36), nullable=False)
+    asignado_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    iniciado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    terminado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    intentos_eval: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class CapSesion(Base):
+    """Una conversación de un caso: la del postulante (con asignación) o una prueba del mentor (`prueba_por`). Guarda el
+    caso tal como era al empezar (`caso`), los mensajes, el tiempo, la evaluación de la IA y el consumo."""
+    __tablename__ = "cap_sesiones"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    asignacion_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    caso_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    postulante_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    prueba_por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    estado: Mapped[str] = mapped_column(String(12), nullable=False, default="en_curso", index=True)  # en_curso | evaluando | terminada | error
+    caso: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    mensajes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    fin_motivo: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)            # cliente | asesor | turnos
+    evaluacion: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    iniciado_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    terminado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    segundos: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tokens_entrada: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_salida: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    costo_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    modelo: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    intentos_eval: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)

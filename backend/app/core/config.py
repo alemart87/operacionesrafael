@@ -93,6 +93,20 @@ class Settings(BaseSettings):
     transcripcion_simulador: bool = False
     transcripcion_simulador_demora: float = 0.0
 
+    # --- Entrenamientos con IA de Capacitación (OpenAI Responses API, con la misma OPENAI_API_KEY). ---
+    # GPT Luna: el modelo rápido y económico de OpenAI; el cliente simulado responde con poco razonamiento (rápido) y el
+    # evaluador con más.
+    entrenamiento_modelo: str = "gpt-6-luna"
+    entrenamiento_esfuerzo_chat: str = "low"           # none | low | medium | high
+    entrenamiento_esfuerzo_eval: str = "medium"
+    entrenamiento_respuestas_dia: int = 300            # respuestas del cliente por postulante y por día: tope de costo
+    # Precio (US$ por 1M tokens) para el costo estimado de cada conversación; confirmalo en la consola de OpenAI.
+    entrenamiento_precio_entrada_mtok: float = 0.10
+    entrenamiento_precio_salida_mtok: float = 0.50
+    # Solo pruebas y demostración: un cliente y un evaluador simulados, sin llamar a OpenAI (nunca en producción).
+    entrenamiento_simulador: bool = False
+    entrenamiento_simulador_demora: float = 0.0
+
     # --- Voi, el agente de la plataforma (Claude Managed Agents). Sin API key se ve, pero avisa. ---
     anthropic_api_key: str = ""
     # Secreto `whsec_…` del webhook registrado en la consola de Anthropic (Manage → Webhooks).

@@ -720,3 +720,14 @@ body:has(main .fixed.inset-0) .barra-inferior { display: none; }
 @media (orientation: portrait) and (max-width: 767px) {
   .pbi-girar { inset: auto; top: 50%; left: 50%; width: 100dvh; height: 100dvw; transform: translate(-50%, -50%) rotate(90deg); }
 }
+
+/* Test del postulante: cada situación entra deslizándose (hacia adelante o hacia atrás). */
+@keyframes vc-entra-der { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes vc-entra-izq { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+.entra-der { animation: vc-entra-der 0.22s var(--mov-entrada) both; }
+.entra-izq { animation: vc-entra-izq 0.22s var(--mov-entrada) both; }
+@keyframes vc-elegida { 0% { transform: scale(1); } 40% { transform: scale(0.98); } 100% { transform: scale(1); } }
+.opcion-elegida { animation: vc-elegida 0.18s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .entra-der, .entra-izq, .opcion-elegida { animation: none; }
+}
