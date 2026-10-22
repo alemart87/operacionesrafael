@@ -10,8 +10,8 @@ import { Boton, Casilla, Chips, Etiqueta, Fallo, Hoja, cx } from "@/components/p
 import { apiFetch } from "@/lib/api";
 import { Chat } from "./chat";
 import {
-  CAP_API, conIntento, duracion, type Caso, type Catalogo, type EntPostulante, type EntrenamientoFila, type EvaluacionCaso, type GrupoDetalle,
-  type EntResumen, type Resumen, type ResultadoEnt, type Sesion,
+  CAP_API, COLOR_TRAMO, conIntento, decimal, duracion, type Caso, type Catalogo, type EntPostulante, type EntrenamientoFila, type EvaluacionCaso,
+  type GrupoDetalle, type EntResumen, type Resumen, type ResultadoEnt, type ResultadoMedio, type Sesion,
 } from "./tipos";
 import { CompartirLink, abrirWhatsapp } from "./ui";
 
@@ -429,13 +429,25 @@ export function MetaEntrenamientos({ hechos, meta, compacta }: { hechos: number;
     <span className={cx("inline-flex items-center gap-1.5", compacta ? "text-[12px]" : "text-[13px]")}
       title={`Mínimo: ${meta} entrenamientos por postulante. Pueden hacer más.`}>
       <span className="w-14 h-1.5 rounded-full bg-brand-bg overflow-hidden" aria-hidden><span className="block h-full rounded-full" style={{ width: `${pct}%`, background: llego ? "#15803D" : "#0F1116" }} /></span>
-      <span className={cx("tabular-nums inline-flex items-center gap-0.5", llego ? "text-emerald-700 font-semibold" : "text-brand-slate")}>
+      <span className={cx("tabular-nums inline-flex items-center gap-0.5 whitespace-nowrap", llego ? "text-emerald-700 font-semibold" : "text-brand-slate")}>
         {llego ? <>{hechos} entren. <Check size={13} aria-label="llegó al mínimo" /></> : <>{hechos} de {meta} entren.</>}
       </span>
     </span>
   );
 }
 
+
+/** La media de todas sus conversaciones evaluadas: «6,5 En desarrollo», con la información correcta y cuántos casos.
+ * `linea`: todo en una línea (tarjetas del celular). */
+export function MediaEntrenamientos({ r, linea }: { r: ResultadoMedio | null | undefined; linea?: boolean }) {
+  if (!r) return <span className="text-[12px] text-brand-mist" title="Todavía no tiene conversaciones evaluadas">—</span>;
+  const titulo = `Media de ${r.casos} ${r.casos === 1 ? "conversación evaluada" : "conversaciones evaluadas"}: nivel comercial ${decimal(r.nivel)} de 10 e información correcta en el ${r.info_pct}%`;
+  const nivel = <span className="text-[12px] tabular-nums whitespace-nowrap"><b className="text-[13px]" style={{ color: COLOR_TRAMO[r.tramo] }}>{decimal(r.nivel)}</b> <span className="text-brand-ink">{r.tramo_nombre}</span></span>;
+  const detalle = <span className="text-[11px] text-brand-slate tabular-nums whitespace-nowrap">info {r.info_pct}% · {r.casos} caso{r.casos === 1 ? "" : "s"}</span>;
+  return linea
+    ? <span className="inline-flex items-baseline gap-1.5" title={titulo}><span className="text-[11px] uppercase tracking-wider2 text-brand-slate">Media</span>{nivel}{detalle}</span>
+    : <span className="inline-flex flex-col leading-tight gap-0.5" title={titulo}>{nivel}{detalle}</span>;
+}
 
 /** Un entrenamiento en borrador se puede enviar: al enviarlo se activa (y lo ven los postulantes). */
 export function AvisoBorrador() {
@@ -523,12 +535,14 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
   pid: string; nombre: string; meta: number; puedeEnviar: boolean; criterios?: Record<string, string>;
 }) {
   const [lista, setLista] = useState<EntPostulante[] | null>(null);
+  const [media, setMedia] = useState<ResultadoMedio | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [abierto, setAbierto] = useState<string | null>(null);
   const [ver, setVer] = useState<string | null>(null);
   const [enviar, setEnviar] = useState(false);
   const cargar = useCallback(() => {
-    apiFetch<{ entrenamientos: EntPostulante[] }>(`${CAP_API}/postulantes/${pid}/entrenamientos`).then((r) => setLista(r.entrenamientos)).catch((e) => setError(e.message));
+    apiFetch<{ entrenamientos: EntPostulante[]; resultado: ResultadoMedio | null }>(`${CAP_API}/postulantes/${pid}/entrenamientos`)
+      .then((r) => { setLista(r.entrenamientos); setMedia(r.resultado); }).catch((e) => setError(e.message));
   }, [pid]);
   useEffect(cargar, [cargar]);
   // Mientras haya algo evaluándose, se refresca solo.
@@ -553,6 +567,17 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
   return (
     <div className="space-y-3">
       <div className="card px-4 py-3 flex items-center gap-3 flex-wrap">
+        {media && (
+          // Cómo viene: la media de todas sus conversaciones evaluadas, como título (igual que el DGV del IPV).
+          <div className="w-full flex items-baseline gap-x-3 gap-y-1 flex-wrap border-b border-brand-border pb-3">
+            <span className="font-display text-[34px] leading-none tabular-nums" style={{ color: COLOR_TRAMO[media.tramo] }}>{decimal(media.nivel)}</span>
+            <span className="font-display text-[22px] leading-none uppercase text-brand-ink">{media.tramo_nombre}</span>
+            <span className="text-[12px] text-brand-slate w-full">
+              Media de {media.casos} {media.casos === 1 ? "conversación evaluada" : "conversaciones evaluadas"} · nivel comercial de 1 a 10 ·
+              información correcta en el <b className="text-brand-ink">{media.info_pct}%</b>
+            </span>
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Mínimo del equipo</div>
           <div className="text-[15px] text-brand-ink">

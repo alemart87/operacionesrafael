@@ -688,7 +688,7 @@ async def de_postulante(pid: str, user: CurrentUser = Depends(require_ver), db: 
                          "resumen": (s.evaluacion or {}).get("resumen"), "error": s.error}
                         if (s := por_caso.get(c.id)) else None)}
             for i, c in enumerate(casos)]})
-    return {"entrenamientos": salida}
+    return {"entrenamientos": salida, "resultado": srv.resultado_medio(progreso)}
 
 
 async def _sesion_staff(db: AsyncSession, sid: str, user: CurrentUser) -> CapSesion:

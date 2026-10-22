@@ -2,8 +2,10 @@
 
 - Modelo: `ENTRENAMIENTO_MODELO` (GPT Luna, `gpt-6-luna`) por la Responses API de OpenAI con la `OPENAI_API_KEY` del
   servidor (el navegador nunca la ve). Salida estructurada (JSON Schema estricto): el cliente devuelve de 1 a 3 mensajes
-  (a veces manda dos seguidos, como una persona) y si la conversación terminó; el evaluador, la verificación de cada
-  dato, el nivel comercial de 1 a 10 y qué mejorar.
+  y si la conversación terminó; el evaluador, la verificación de cada dato, el nivel comercial de 1 a 10 y qué mejorar.
+- Ritmo de WhatsApp: en cada turno el servidor sortea cuántos mensajes manda el cliente (1, 2 o 3) según cuánto escribe
+  y su forma de ser, y se lo pide al modelo (solo, casi siempre manda uno). Si igual manda uno largo, se separa por
+  oraciones en burbujas, sin cortar ninguna.
 - La respuesta se lee de cada bloque de texto y se toma el primero que es un JSON válido: hay reportes de que el modelo a
   veces agrega un bloque de más con salida estructurada. Si ninguno sirve, se reintenta una vez.
 - Seguridad: lo que escribe el postulante va como mensaje del usuario, nunca en las instrucciones; el evaluador recibe la
@@ -16,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 from typing import Any, Optional
 
@@ -125,7 +128,66 @@ def describir_cliente(caso: dict[str, Any]) -> str:
     return " ".join(partes) or "Sos una persona común, ni muy amable ni difícil."
 
 
-def instrucciones_cliente(caso: dict[str, Any], *, empresa: str, canal: str, restantes: int) -> str:
+# ------------------------------------------------------------------ ritmo: cuántos mensajes manda por turno
+# Probabilidad de mandar 1, 2 o 3 mensajes según «cuánto escribe» (1 = monosílabos … 5 = muchísimo).
+PROB_MENSAJES: dict[int, tuple[float, float, float]] = {
+    1: (0.75, 0.25, 0.0), 2: (0.55, 0.37, 0.08), 3: (0.4, 0.42, 0.18), 4: (0.28, 0.45, 0.27), 5: (0.18, 0.45, 0.37),
+}
+RITMO = {
+    1: "Esta vez mandá un solo mensaje.",
+    2: "Esta vez mandá 2 mensajes seguidos y cortos, como en WhatsApp: por ejemplo, una reacción a lo que te dijo y "
+       "después tu comentario o tu pregunta.",
+    3: "Esta vez mandá 3 mensajes seguidos y cortos, como en WhatsApp: por ejemplo, una reacción, un comentario y una "
+       "pregunta.",
+}
+_azar = random.random
+
+
+def ritmo(caso: dict[str, Any], mensajes: list[dict[str, Any]], azar: float | None = None) -> int:
+    """Cuántos mensajes manda el cliente en esta respuesta. El que escribe mucho o es hablador manda más seguidos; el
+    cortante, menos. Al empezar, lo común es saludar y contar qué quiere (dos mensajes)."""
+    a = caso.get("actitud") or {}
+    habla = a["habla"] if isinstance(a.get("habla"), int) and 1 <= a["habla"] <= 5 else 3
+    rasgos = set(a.get("rasgos") or [])
+    habla = max(1, min(5, habla + ("hablador" in rasgos) - ("cortante" in rasgos)))
+    p1, p2, _ = PROB_MENSAJES[habla]
+    if not any(m["r"] == "cliente" for m in mensajes):
+        p1, p2 = (0.5, 0.5) if habla == 1 else (0.25, 0.6)
+    x = _azar() if azar is None else azar
+    return 1 if x < p1 else 2 if x < p1 + p2 else 3
+
+
+# Fin de oración: después de «?», «!» o «…»; después de un punto, solo si sigue mayúscula (así no corta «99.000»).
+_ORACION = re.compile(r"(?<=[!?…])\s+|(?<=\.)\s+(?=[¿¡\"«(]?[A-ZÁÉÍÓÚÑÜ])|\n+")
+_ABREVIATURA = re.compile(r"\b(?:Sr|Sra|Srta|Dr|Dra|Lic|Ing|Prof|Av|Nro|Ud|Uds|Gs|etc)\.$", re.IGNORECASE)
+
+
+def _oraciones(t: str) -> list[str]:
+    partes: list[str] = []
+    for x in (y.strip() for y in _ORACION.split(t)):
+        if not x:
+            continue
+        if partes and _ABREVIATURA.search(partes[-1]):     # «Sr. Pérez»: no es fin de oración
+            partes[-1] = f"{partes[-1]} {x}"
+        else:
+            partes.append(x)
+    return partes
+
+
+def partir(xs: list[str], cuantos: int) -> list[str]:
+    """Si el cliente mandó menos mensajes de los que tocaban, separa el más largo en dos: la primera oración y el
+    resto (como «Ah, ok.» y después la pregunta). Nunca corta una oración por la mitad."""
+    out = list(xs)
+    while len(out) < min(cuantos, MAX_MENSAJES):
+        candidatos = [(len(t), i, p) for i, t in enumerate(out) if len(p := _oraciones(t)) >= 2]
+        if not candidatos:
+            break
+        _, i, partes = max(candidatos)
+        out[i:i + 1] = [partes[0], " ".join(partes[1:])]
+    return out
+
+
+def instrucciones_cliente(caso: dict[str, Any], *, empresa: str, canal: str, restantes: int, cuantos: int = 1) -> str:
     edad = f", de {caso['cliente_edad']} años" if caso.get("cliente_edad") else ""
     objeciones = "\n".join(f"- {o}" for o in caso.get("objeciones") or []) or "- (ninguna en especial)"
     cierre = ("Este es tu último mensaje: cerrá la conversación de forma natural (decidí y despedite) y marcá fin."
@@ -141,7 +203,7 @@ Más detalles de tu personaje: {caso.get('detalles') or '-'}
 
 Cómo escribís:
 - Como una persona real en un chat: mensajes cortos y naturales, español de Paraguay con "vos". Sin listas, sin formato y sin emojis salvo que vaya con tu forma de ser.
-- A veces mandás dos mensajes seguidos (una frase y enseguida otra). La mayoría de las veces, uno solo. Nunca más de tres.
+- Escribís como en WhatsApp: a veces un solo mensaje y a veces dos o tres seguidos y cortos (una reacción y enseguida el comentario o la pregunta). Nunca más de tres.
 - Nunca repetís un mensaje que ya mandaste (tampoco el saludo del principio). Si mandás dos seguidos, cada uno dice algo distinto.
 - Reaccionás a lo que te dice el asesor: si te escucha y te explica bien, te vas abriendo; si te ignora, te presiona, no te responde lo que preguntaste o te da datos que no cierran, desconfiás, te molestás o te vas, según tu forma de ser.
 - No sabés los precios ni las condiciones exactas: los preguntás. No inventes datos del producto y no le digas al asesor qué tiene que decir ni cómo venderte.
@@ -149,6 +211,8 @@ Cómo escribís:
 - El cierre de la venta lo tiene que proponer el asesor, no vos.
 
 Cuándo termina: cuando aceptás, cuando decidís no seguir o te vas, o cuando la charla llega a su fin natural. Ahí te despedís, ponés fin = true y el motivo (acepta, no_acepta, se_va o resuelto). Si sigue, fin = false y motivo = sigue. {cierre}
+
+{RITMO.get(cuantos, RITMO[1])} Si la conversación termina, con uno o dos alcanza.
 
 Respondé solo con el JSON pedido: los mensajes que mandás ahora y si la conversación terminó."""
 
@@ -285,7 +349,8 @@ async def responder(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, emp
     if not entrada:
         entrada = [{"role": "user", "content": "[Todavía no hay mensajes: escribí vos el primero, como cuando alguien le escribe "
                                                "a una empresa. Un solo mensaje, o dos que digan cosas distintas.]"}]
-    instrucciones = instrucciones_cliente(caso, empresa=empresa, canal=canal, restantes=restantes)
+    cuantos = ritmo(caso, mensajes)
+    instrucciones = instrucciones_cliente(caso, empresa=empresa, canal=canal, restantes=restantes, cuantos=cuantos)
     datos, te, ts = await _llamar(instrucciones=instrucciones, entrada=entrada, nombre="respuesta_cliente", esquema=ESQUEMA_CLIENTE,
                                   esfuerzo=settings.entrenamiento_esfuerzo_chat, max_tokens=2000)
     salida = sin_repetir(_limpiar_mensajes(datos.get("mensajes")), mensajes)
@@ -297,6 +362,7 @@ async def responder(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, emp
         salida = sin_repetir(_limpiar_mensajes(datos.get("mensajes")), mensajes) or sin_repetir(_limpiar_mensajes(datos.get("mensajes")))
     if not salida:
         raise ValueError("respuesta_vacia")
+    salida = partir(salida, cuantos)
     fin = bool(datos.get("fin")) or restantes <= 1
     motivo = datos.get("motivo") if datos.get("motivo") in MOTIVOS_FIN else "sigue"
     return {"mensajes": salida, "fin": fin, "motivo": (motivo if motivo != "sigue" else "turnos") if fin else "sigue",
@@ -320,10 +386,13 @@ async def _responder_simulado(caso: dict[str, Any], mensajes: list[dict[str, Any
     elif restantes <= 1 or any(x in ultimo for x in ("chau", "hasta luego", "gracias por tu tiempo")):
         return {"mensajes": ["Bueno, dale. Gracias.", "Chau."], "fin": True, "motivo": "resuelto",
                 "tokens_entrada": 0, "tokens_salida": 0, "modelo": "simulador"}
-    elif turno % 2:
-        salida = [objeciones[(turno // 2) % len(objeciones)]]
     else:
-        salida = ["Ah, ok.", "¿Y eso cuánto me sale por mes?"]
+        # El mismo ritmo que el cliente real (1 a 3 mensajes), sorteado de forma fija por turno para que se pueda probar.
+        contenido = objeciones[(turno // 2) % len(objeciones)] if turno % 2 else "¿Y eso cuánto me sale por mes?"
+        cuantos = ritmo(caso, mensajes, azar=(turno * 0.37) % 1)
+        salida = [contenido] if cuantos == 1 else [("Ah, ok.", "Mmm, entiendo.", "Ajá.")[turno % 3], contenido]
+        if cuantos == 3:
+            salida.append("Contame bien, porfa.")
     return {"mensajes": salida, "fin": False, "motivo": "sigue", "tokens_entrada": 0, "tokens_salida": 0, "modelo": "simulador"}
 
 

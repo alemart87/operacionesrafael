@@ -64,6 +64,8 @@ export interface Grupo {
   ipv: { realizados: number; total: number; porcentaje: number | null }; feedback: number; roles: string[];
   puede: { estados: EstadoGrupo[]; editar: boolean; postulantes: boolean };
   avance: number | null; meta: { entrenamientos: number; cumplen: number; activos: number };
+  /** La media de las conversaciones evaluadas de los postulantes activos. */
+  resultado?: ResultadoMedio | null;
 }
 export interface IpvFila {
   estado: "sin_link" | "pendiente" | "en_curso" | "terminado"; respondidas: number; total: number;
@@ -79,12 +81,22 @@ export interface EntResumen {
   id: string; entrenamiento_id: string; nombre: string; intento: number; estado: "pendiente" | "en_curso" | "evaluando" | "terminado"; casos: number;
   hechos: number; pct: number; archivado: boolean; en_chat: boolean; aprobado: boolean | null; nivel: number | null;
   info_pct: number | null; asignado_at: string; terminado_at: string | null;
+  /** Sus conversaciones ya evaluadas (aunque el entrenamiento no haya terminado). */
+  evaluados?: number; nivel_casos?: number | null; info_casos?: number | null;
 }
 /** Avance de los entrenamientos (el IPV es independiente) y el mínimo de entrenamientos por postulante (no es un tope). */
 export interface Avance {
   pct: number | null; casos: number; hechos: number; entrenamientos: number; terminados: number; aprobados: number;
   meta: number; meta_cumplida: boolean;
+  /** La media de todas sus conversaciones evaluadas (aunque sea una); null si todavía no tiene ninguna. */
+  resultado: ResultadoMedio | null;
 }
+/** Nivel comercial medio (1–10, en tres tramos) y % de conversaciones con la información correcta. */
+export interface ResultadoMedio { casos: number; nivel: number; info_pct: number; tramo: "alto" | "medio" | "bajo"; tramo_nombre: string }
+/** Los mismos colores que los niveles del IPV: alto verde, medio azul, bajo rojo. */
+export const COLOR_TRAMO: Record<ResultadoMedio["tramo"], string> = { alto: "#15803D", medio: "#2A78D6", bajo: "#E6332A" };
+/** 6,5 (coma decimal). */
+export const decimal = (n: number) => n.toLocaleString("es-PY", { maximumFractionDigits: 1 });
 export interface Evento { tipo: string; de: string | null; a: string | null; at: string; por: string | null; motivo?: string | null; detalle?: string | null }
 export interface GrupoDetalle extends Grupo {
   postulantes: Postulante[]; ipv_detalle: ResumenIpv; feedback_detalle: Feedback; estadisticas: Estadisticas; historial: Evento[];
