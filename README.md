@@ -1919,7 +1919,9 @@ cancelado queda de solo lectura y cierra los links.
 
 ### Test IPV por link seguro
 
-- El capacitador genera un **link por postulante** (QR, copiar o WhatsApp). Token de 256 bits: se guarda su SHA-256 y el
+- El capacitador genera un **link por postulante** (QR, copiar o WhatsApp). **Es el mismo link para el test y los
+  entrenamientos.** El mentor también lo ve y lo comparte (botón *Su link* en la ficha y en el grupo), pero generar uno
+  nuevo o anularlo es del capacitador o la gestión. Token de 256 bits: se guarda su SHA-256 y el
   token cifrado (Fernet) para volver a mostrar el QR; regenerarlo invalida el anterior y conserva lo respondido. Vence a
   los 21 días; deja de valer si el postulante sale o el grupo se cancela. Los links inválidos se limitan por IP.
 - Página pública `/postulante/<token>` mobile first: una situación por pantalla, se guarda a medida que contesta (y en el
@@ -1935,8 +1937,15 @@ cancelado queda de solo lectura y cierra los links.
 
 ### Ficha y estadísticas
 
-- **Ficha del postulante**: datos, estado, IPV con el gráfico de decatipos (tocar una escala explica qué mide),
-  fortalezas y aspectos a trabajar, seguimiento e historial.
+- **Ficha del postulante**: datos, estado, IPV con el resultado como título (**«DGV 4 · Término medio»**: el decatipo
+  de la disposición general para la venta y su nivel, con el color del nivel) y el gráfico de decatipos (tocar una
+  escala explica qué mide), fortalezas y aspectos a trabajar, seguimiento e historial.
+- **Ficha en PDF** (botón *PDF* de la ficha, `GET /postulantes/{id}/pdf`, `ficha_pdf.py`): A4 con la marca, para
+  imprimir o compartir. Datos del postulante, el IPV con el mismo título y las escalas en barras, los entrenamientos
+  (estado, casos, nivel, información correcta, recomendación, resumen, puntos fuertes y para mejorar), el seguimiento
+  (los dictados van transcriptos, sin el audio) y el historial. Sale con los mismos permisos que la ficha (quien no ve
+  el grupo recibe 404), con `Cache-Control: no-store`, una nota de confidencialidad con quién lo generó y queda en la
+  auditoría (`capacitacion_ficha_pdf`). No incluye costos de la IA.
 - **En el celular**, Capacitador y Mentor tienen abajo *Grupos*, *Mi grupo* (abre directo el grupo en curso; al mentor,
   con los que están en piso), *Entrenar* (los entrenamientos con IA) y *En vivo* (el tablero de las conversaciones);
   las estadísticas quedan en el menú. En el grupo, arriba, dos botones grandes: **Postulante** (alta) y
@@ -1962,8 +1971,12 @@ Chats de práctica en los que el postulante atiende a un **cliente simulado por 
 - **Enviar**: a un grupo entero, a algunos postulantes o a uno desde su ficha. Un **borrador** se marca como tal en todas
   las listas de envío y el botón dice «Activar y enviar»: al enviarlo se activa (también se puede activar antes, desde
   su detalle, después de probar los casos). El postulante lo hace desde **el mismo
-  link del IPV** (si venció, se genera uno nuevo y se puede mandar por WhatsApp o copiar todos los links). Solo
-  postulantes activos de grupos donde quien envía tiene un papel.
+  link del IPV** (si no tiene o venció, se genera uno nuevo). Solo postulantes activos de grupos donde quien envía
+  tiene un papel.
+- **Compartir el link**: al enviar, la confirmación muestra **el link de cada postulante a la vista** con *Copiar*,
+  *WhatsApp* (con el mensaje listo) y, si es uno solo, el **QR** para escanearlo en la sala y *Compartir…* del teléfono;
+  enviando a varios, también *Copiar todos los links*. Después se vuelve a encontrar con el botón *Link* de cada fila en
+  *Enviados* del entrenamiento, o con *Su link* en la ficha o en el grupo.
 - **Repetir**: un entrenamiento terminado se puede volver a mandar (botón *Repetir este entrenamiento* en la ficha, o
   eligiéndolo al enviar): es un **intento nuevo** (`cap_asignaciones.intento`) y el anterior queda con su resultado.
   Cada intento terminado suma para el mínimo.
@@ -2035,7 +2048,8 @@ para un televisor.
 
 `/api/v1/capacitacion`: `GET /resumen`, `GET /personas`, `POST /grupos`, `PATCH|GET /grupos/{id}`,
 `POST /grupos/{id}/estado`, `POST /grupos/{id}/postulantes`, `GET|PATCH|DELETE /postulantes/{id}`,
-`POST /postulantes/{id}/estado`, `GET|POST|DELETE /postulantes/{id}/enlace`,
+`POST /postulantes/{id}/estado`, `GET|POST|DELETE /postulantes/{id}/enlace` (`GET` también el mentor),
+`GET /postulantes/{id}/pdf`,
 `POST /postulantes/{id}/comentarios`, `POST /postulantes/{id}/audios`, `GET /audios/{id}[/archivo]`.
 Entrenamientos: `GET|POST /entrenamientos`, `GET|PATCH|DELETE /entrenamientos/{id}`, `POST /entrenamientos/{id}/casos`,
 `PATCH|DELETE /casos/{id}`, `POST /entrenamientos/{id}/orden`, `POST /entrenamientos/{id}/enviar`,

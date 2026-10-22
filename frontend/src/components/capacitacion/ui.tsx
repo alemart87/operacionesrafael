@@ -4,7 +4,7 @@
  * Piezas de Capacitación y Mentoría: estados, embudo, estadísticas por sexo y edad, el gráfico del IPV y las hojas
  * (grupo, postulante, estado, link del test) y el seguimiento con dictado. Pensadas primero para el celular.
  */
-import { Copy, Link2, MessageCircle, Mic, RefreshCcw, Send, Share2, ShieldOff, UserPlus } from "lucide-react";
+import { Check, Copy, Link2, MessageCircle, Mic, RefreshCcw, Send, Share2, ShieldOff, UserPlus } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Dictado } from "@/components/portal/grabadora";
 import { Boton, Chips, Etiqueta, Fallo, Hoja, cx, hace, plural } from "@/components/portal/ui";
@@ -305,12 +305,40 @@ export function abrirWhatsapp(mensaje: string) {
   window.location.href = `whatsapp://send?text=${t}`;
 }
 
-/** El link seguro del test IPV del postulante: QR para escanear en la sala, copiar o mandar por WhatsApp. */
-export function HojaEnlace({ p, onClose, onCambio }: { p: Pick<Postulante, "id" | "nombre" | "apellido">; onClose: () => void; onCambio?: () => void }) {
+/**
+ * El link del postulante a la vista para mandárselo: el texto (se puede seleccionar), copiar, WhatsApp, compartir y el
+ * QR si lo hay. No es un enlace que se abra desde acá: es personal y quien lo abre entra como el postulante.
+ */
+export function CompartirLink({ url, mensaje, qr }: { url: string; mensaje: string; qr?: string | null }) {
+  const [copiado, setCopiado] = useState(false);
+  const [puedeCompartir, setPuedeCompartir] = useState(false);
+  useEffect(() => setPuedeCompartir(typeof navigator !== "undefined" && "share" in navigator), []);
+  const copiar = async () => {
+    try { await navigator.clipboard.writeText(url); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch { /* sin portapapeles: el texto se puede seleccionar */ }
+  };
+  const compartir = async () => { try { await navigator.share({ title: "Capacitación Voicenter", text: mensaje, url }); } catch { /* cancelado */ } };
+  return (
+    <div className="space-y-3">
+      {qr && <div className="mx-auto w-52 h-52 bg-white p-2 rounded-lg border border-brand-border [&_svg]:w-full [&_svg]:h-full" dangerouslySetInnerHTML={{ __html: qr }} aria-label="Código QR del link" />}
+      <div className="rounded-lg border border-brand-border bg-brand-bg-soft px-3 py-2">
+        <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">Su link personal</div>
+        <p className="font-mono text-[13px] text-brand-ink break-all select-all">{url}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Boton tipo="secundario" icono={copiado ? Check : Copy} onClick={copiar} className="!px-3" aria-label="Copiar link">{copiado ? "¡Copiado!" : "Copiar"}</Boton>
+        <Boton tipo="secundario" icono={MessageCircle} onClick={() => abrirWhatsapp(`${mensaje} ${url}`)} className="!px-3">WhatsApp</Boton>
+      </div>
+      {puedeCompartir && <Boton tipo="fantasma" icono={Share2} onClick={compartir}>Compartir…</Boton>}
+    </div>
+  );
+}
+
+/** El link seguro del postulante (el mismo para el test IPV y los entrenamientos): QR para la sala, copiar o WhatsApp.
+ * `gestiona`: puede generar uno nuevo o anularlo (capacitador o gestión); el mentor solo lo ve y lo comparte. */
+export function HojaEnlace({ p, onClose, onCambio, gestiona = true }: { p: Pick<Postulante, "id" | "nombre" | "apellido">; onClose: () => void; onCambio?: () => void; gestiona?: boolean }) {
   const [e, setE] = useState<Enlace | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copiado, setCopiado] = useState(false);
   useEffect(() => { apiFetch<Enlace>(`${CAP_API}/postulantes/${p.id}/enlace`).then(setE).catch((x) => setError(x.message)); }, [p.id]);
   const generar = async () => {
     setOcupado(true); setError(null);
@@ -322,35 +350,31 @@ export function HojaEnlace({ p, onClose, onCambio }: { p: Pick<Postulante, "id" 
     try { setE(await apiFetch<Enlace>(`${CAP_API}/postulantes/${p.id}/enlace`, { method: "DELETE" })); onCambio?.(); }
     catch (x: any) { setError(x.message); } finally { setOcupado(false); }
   };
-  const texto = `Hola ${p.nombre}, este es tu link para el test de Voicenter (es personal, no lo compartas):`;
-  const copiar = async () => { if (!e?.url) return; try { await navigator.clipboard.writeText(e.url); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch { /* sin portapapeles */ } };
-  const compartir = async () => { if (e?.url && navigator.share) { try { await navigator.share({ title: "Test Voicenter", text: texto, url: e.url }); } catch { /* cancelado */ } } };
+  const texto = `Hola ${p.nombre}, este es tu link de capacitación de Voicenter: ahí hacés el test y tus entrenamientos (es personal, no lo compartas):`;
   return (
-    <Hoja titulo="Link del test IPV" sobre={`${p.nombre} ${p.apellido}`} onClose={onClose} ocupada={ocupado}>
+    <Hoja titulo="Link del postulante" sobre={`${p.nombre} ${p.apellido}`} onClose={onClose} ocupada={ocupado}>
       <div className="space-y-4">
         {!e && !error && <div className="h-40 rounded-lg bg-brand-bg animate-pulse" />}
-        {e?.ipv_estado === "terminado" && <p className="text-sm rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2">Ya terminó el test. El link sigue sirviendo para que deje su feedback.</p>}
+        {e?.ipv_estado === "terminado" && <p className="text-sm rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2">Ya terminó el test. Con el mismo link hace sus entrenamientos y deja su feedback.</p>}
         {e && e.url && (
           <>
-            <div className="mx-auto w-56 h-56 bg-white p-2 rounded-lg border border-brand-border [&_svg]:w-full [&_svg]:h-full" dangerouslySetInnerHTML={{ __html: e.qr_svg ?? "" }} aria-label="Código QR del link" />
-            <p className="text-center text-xs text-brand-slate">Que lo escanee con la cámara del celular. Vale hasta el {fecha(e.vence_at)}.
-              {e.ipv_estado === "en_curso" && <> Lleva {e.respondidas} de {e.total} respondidas.</>}</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Boton tipo="secundario" icono={Copy} onClick={copiar}>{copiado ? "¡Copiado!" : "Copiar"}</Boton>
-              <Boton tipo="secundario" icono={MessageCircle} onClick={() => abrirWhatsapp(`${texto} ${e.url}`)}>WhatsApp</Boton>
-            </div>
-            {typeof navigator !== "undefined" && "share" in navigator && <Boton tipo="fantasma" icono={Share2} onClick={compartir}>Compartir…</Boton>}
-            <div className="flex gap-2 pt-1">
-              <Boton tipo="fantasma" icono={RefreshCcw} onClick={generar} ocupado={ocupado} className="!min-h-[44px] text-sm">Nuevo link</Boton>
-              <Boton tipo="fantasma" icono={ShieldOff} onClick={anular} className="!min-h-[44px] text-sm">Anular</Boton>
-            </div>
+            <p className="text-[13px] text-brand-slate">Es el mismo link para el test IPV y los entrenamientos. Que lo escanee con la cámara del celular o mandáselo. Vale hasta el {fecha(e.vence_at)}.
+              {e.ipv_estado === "en_curso" && <> Lleva {e.respondidas} de {e.total} respondidas del test.</>}</p>
+            <CompartirLink url={e.url} mensaje={texto} qr={e.qr_svg} />
+            {gestiona && (
+              <div className="flex gap-2 pt-1">
+                <Boton tipo="fantasma" icono={RefreshCcw} onClick={generar} ocupado={ocupado} className="!min-h-[44px] text-sm">Nuevo link</Boton>
+                <Boton tipo="fantasma" icono={ShieldOff} onClick={anular} className="!min-h-[44px] text-sm">Anular</Boton>
+              </div>
+            )}
           </>
         )}
         {e && !e.url && (
           <div className="space-y-3 text-center">
             <p className="text-sm text-brand-slate">{e.ipv_estado ? "El link está anulado o venció. Generá uno nuevo: lo que ya respondió se conserva." :
-              "Generá su link personal: con él hace el test en su celular (no es obligatorio, pero ayuda mucho) y deja su feedback."}</p>
-            <Boton icono={Link2} onClick={generar} ocupado={ocupado}>Generar link</Boton>
+              "Generá su link personal: con él hace el test en su celular, sus entrenamientos y deja su feedback."}
+              {!gestiona && " Lo genera el capacitador, o se genera solo al enviarle un entrenamiento."}</p>
+            {gestiona && <Boton icono={Link2} onClick={generar} ocupado={ocupado}>Generar link</Boton>}
           </div>
         )}
         {error && <Fallo>{error}</Fallo>}

@@ -1,15 +1,15 @@
 "use client";
 
-import { ArrowLeft, Flag, Link2, Pencil, ShieldAlert, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, FileDown, Flag, Link2, Pencil, ShieldAlert, Sparkles, Target } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { CAP_API, CAP_HREF, CRITERIOS, ESTADOS, fecha, type Evento, type Ficha } from "@/components/capacitacion/tipos";
+import { CAP_API, CAP_HREF, CRITERIOS, ESTADOS, NIVEL_IPV, fecha, type Evento, type Ficha } from "@/components/capacitacion/tipos";
 import { EntrenamientosFicha } from "@/components/capacitacion/entrenamientos";
 import { BarrasIpv, Dato, EstadoTag, HojaEnlace, HojaEstado, HojaPostulante, ListaComentarios, NuevoComentario } from "@/components/capacitacion/ui";
 import { Boton, Cargando, Encabezado, Fallo, Seccion, hace, useAviso } from "@/components/portal/ui";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, downloadFile } from "@/lib/api";
 
 export default function FichaPage() {
   return (
@@ -39,6 +39,7 @@ function FichaPostulante() {
   const [error, setError] = useState<string | null>(null);
   const [hoja, setHoja] = useState<null | "estado" | "link" | "datos">(null);
   const [aviso, avisar] = useAviso();
+  const [bajando, setBajando] = useState(false);
   const cargar = useCallback(() => {
     apiFetch<Ficha>(`${CAP_API}/postulantes/${id}`).then((x) => { setF(x); setError(null); }).catch((e) => setError(e.message));
   }, [id]);
@@ -55,6 +56,13 @@ function FichaPostulante() {
   const p = f.postulante;
   const r = f.ipv.resultado;
   const desc = Object.fromEntries(f.escalas.map((e) => [e.clave, e.descripcion]));
+  // La ficha para imprimir o compartir: la arma el servidor con los mismos datos y permisos que esta pantalla.
+  const pdf = async () => {
+    setBajando(true);
+    try { await downloadFile(`${CAP_API}/postulantes/${p.id}/pdf`, `Ficha_${p.nombre}_${p.apellido}.pdf`); avisar("Ficha descargada en PDF"); }
+    catch (e: any) { avisar(e.message); }
+    finally { setBajando(false); }
+  };
 
   return (
     <div className="max-w-screen-lg mx-auto">
@@ -71,8 +79,9 @@ function FichaPostulante() {
         </div>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           {p.puede.length > 0 && <Boton icono={Flag} onClick={() => setHoja("estado")} className="sm:w-auto flex-1">Cambiar estado</Boton>}
-          {f.puede.link && p.estado !== "abandono" && p.estado !== "baja" && <Boton tipo="secundario" icono={Link2} onClick={() => setHoja("link")} className="sm:w-auto flex-1">Link IPV</Boton>}
+          {(f.puede.link || f.puede.ver_link) && p.estado !== "abandono" && p.estado !== "baja" && <Boton tipo="secundario" icono={Link2} onClick={() => setHoja("link")} className="sm:w-auto flex-1">Su link</Boton>}
           {f.puede.datos && <Boton tipo="fantasma" icono={Pencil} onClick={() => setHoja("datos")} className="sm:w-auto !min-h-[56px]" aria-label="Corregir datos">Datos</Boton>}
+          <Boton tipo="fantasma" icono={FileDown} onClick={pdf} ocupado={bajando} className="sm:w-auto !min-h-[56px]" aria-label="Descargar la ficha en PDF">PDF</Boton>
         </div>
       </div>
 
@@ -90,6 +99,18 @@ function FichaPostulante() {
       <Seccion titulo="Test IPV" sub="Independiente de los entrenamientos · Inventario de Personalidad para Vendedores, se corrige solo al terminar." className="mb-8">
         {r ? (
           <div className="card p-4 space-y-4">
+            {(() => {
+              // El resultado principal, a la vista: la disposición general para la venta (DGV) y su nivel.
+              const dgv = r.escalas[0];
+              const n = NIVEL_IPV[dgv.nivel];
+              return (
+                <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap border-b border-brand-border pb-3">
+                  <span className="font-display text-[34px] leading-none uppercase tabular-nums" style={{ color: n.color }}>DGV {dgv.decatipo}</span>
+                  <span className="font-display text-[24px] leading-none uppercase text-brand-ink">{n.nombre}</span>
+                  <span className="text-[12px] text-brand-slate w-full">Disposición general para la venta · decatipo de 1 a 10</span>
+                </div>
+              );
+            })()}
             <p className="text-[15px] text-brand-ink leading-snug">{r.resumen}</p>
             {r.senales.length > 0 && (
               <div className="rounded-lg border border-brand-orange/40 bg-brand-orange/10 px-3 py-2.5 text-sm text-[#8A5200] space-y-1">
@@ -140,7 +161,7 @@ function FichaPostulante() {
       </Seccion>
 
       {hoja === "estado" && <HojaEstado p={p} onClose={() => setHoja(null)} onListo={(x) => { setHoja(null); cargar(); avisar(`Ahora: ${ESTADOS[x.estado].nombre}`); }} />}
-      {hoja === "link" && <HojaEnlace p={p} onClose={() => setHoja(null)} onCambio={cargar} />}
+      {hoja === "link" && <HojaEnlace p={p} gestiona={f.puede.link} onClose={() => setHoja(null)} onCambio={cargar} />}
       {hoja === "datos" && <HojaPostulante grupoId={f.grupo.id} editar={p} onClose={() => setHoja(null)} onListo={() => { setHoja(null); cargar(); avisar("Datos corregidos"); }} />}
     </div>
   );

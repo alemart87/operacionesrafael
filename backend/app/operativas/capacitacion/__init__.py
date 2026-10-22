@@ -13,9 +13,9 @@
 """
 from __future__ import annotations
 
-from . import api, audios, en_vivo, entrenamientos, entrenamientos_publico, publico_api
+from . import api, audios, en_vivo, entrenamientos, entrenamientos_publico, ficha_pdf, publico_api
 from .migraciones import MIGRACIONES
 
-ROUTERS = [api.router, publico_api.router, entrenamientos.router, entrenamientos_publico.router, en_vivo.router]
+ROUTERS = [api.router, publico_api.router, entrenamientos.router, entrenamientos_publico.router, en_vivo.router, ficha_pdf.router]
 WORKERS = {"capacitacion_audios": audios.worker, "capacitacion_entrenamientos": entrenamientos.worker}
 MIGRACIONES_DATOS = list(MIGRACIONES)

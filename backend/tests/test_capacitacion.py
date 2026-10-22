@@ -3,10 +3,12 @@ seguro con el IPV que se corrige solo, la ficha, el seguimiento dictado y las es
 from __future__ import annotations
 
 import asyncio
+import io
 import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pypdf import PdfReader
 
 from app.core.config import settings
 from app.core.database import Base, engine
@@ -227,6 +229,21 @@ async def test_grupo_postulantes_ipv_y_seguimiento(monkeypatch, tmp_path):
         assert all(c["texto"] for c in f["comentarios"])                           # el dictado se completó solo
         assert {h["tipo"] for h in f["historial"]} >= {"alta", "link", "ipv_inicio", "ipv_terminado"}
         assert not f["puede"]["link"] and f["rol"] == "mentor"
+        # El link lo ve también el mentor (manda entrenamientos por ahí); generarlo o anularlo, no.
+        assert f["puede"]["ver_link"] and (await ac.get(f"{B}/postulantes/{diego}/enlace", headers=men)).status_code == 200
+        assert (await ac.delete(f"{B}/postulantes/{diego}/enlace", headers=men)).status_code == 403
+
+        # La ficha en PDF: con el resultado del IPV como título y los mismos permisos que la ficha.
+        r = await ac.get(f"{B}/postulantes/{diego}/pdf", headers=men)
+        assert r.status_code == 200 and r.content.startswith(b"%PDF") and r.headers["content-type"] == "application/pdf"
+        assert "Ficha_Diego-Espinola_" in r.headers["content-disposition"] and r.headers["cache-control"] == "no-store"
+        texto = " ".join(pg.extract_text() for pg in PdfReader(io.BytesIO(r.content)).pages)
+        dgv = f["ipv"]["resultado"]["escalas"][0]
+        assert f"DGV {dgv['decatipo']}" in texto and ipv.NIVELES_IPV[dgv["nivel"]].upper() in texto
+        assert "FICHA DEL POSTULANTE" in texto and "Escuchar más antes de ofrecer" in texto and "7123456" in texto
+        assert (await ac.get(f"{B}/postulantes/{diego}/pdf", headers=men2)).status_code == 404
+        _, sup = await _nuevo(ac, admin, "supervisor")
+        assert (await ac.get(f"{B}/postulantes/{diego}/pdf", headers=sup)).status_code == 403
 
         # Borrar: solo una carga por error (sin IPV ni comentarios).
         assert (await ac.delete(f"{B}/postulantes/{diego}", headers=cap)).status_code == 409
@@ -476,6 +493,9 @@ async def test_entrenamientos_flujo(monkeypatch):
         hist = (await ac.get(f"{B}/postulantes/{pids[0]}", headers=cap)).json()["historial"]
         assert any(h["tipo"] == "entrenamiento" and h["a"] == "no_aprobado" and h["detalle"] == "Portabilidad" for h in hist)
         assert any(h["tipo"] == "entrenamiento_enviado" and h["detalle"] == "Portabilidad" for h in hist)
+        texto = " ".join(pg.extract_text() for pg in PdfReader(io.BytesIO(
+            (await ac.get(f"{B}/postulantes/{pids[0]}/pdf", headers=men)).content)).pages)
+        assert "Portabilidad" in texto and "No recomendado" in texto and "Para mejorar" in texto
 
         # Reiniciar y quitar.
         assert (await ac.delete(f"{B}/asignaciones/{aid}", headers=cap)).status_code == 409

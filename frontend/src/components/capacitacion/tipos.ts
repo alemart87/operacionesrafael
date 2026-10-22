@@ -109,7 +109,7 @@ export interface Ficha {
   postulante: Postulante;
   grupo: { id: string; nombre: string; estado: EstadoGrupo; fecha_inicio: string; capacitador: string; dia: number };
   roles: string[]; rol: string;
-  puede: { datos: boolean; link: boolean; comentar: boolean };
+  puede: { datos: boolean; link: boolean; ver_link?: boolean; comentar: boolean };
   ipv: IpvFila & { resultado: ResultadoIpv | null; iniciado_at: string | null; vence_at: string | null; dispositivo: string | null };
   escalas: { clave: string; nombre: string; romano: string | null; grupo: string; descripcion: string }[];
   comentarios: Comentario[]; conteo: Feedback; historial: Evento[];
