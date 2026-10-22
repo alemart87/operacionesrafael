@@ -7,6 +7,7 @@
 import { CircleCheck, ChevronRight, LoaderCircle, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export const PORTAL = "/televentas-claro/portal";
 
@@ -102,7 +103,7 @@ export function Boton({ children, onClick, href, tipo = "primario", icono: I, di
     fantasma: "text-brand-slate hover:bg-brand-bg hover:text-brand-ink",
     peligro: "bg-white text-brand-primary border border-brand-primary/50 hover:bg-brand-primary hover:text-white",
   }[tipo];
-  const contenido = <>{ocupado ? <LoaderCircle size={20} className="animate-spin" aria-hidden /> : I && <I size={20} aria-hidden strokeWidth={2.3} />}{children}</>;
+  const contenido = <>{ocupado ? <LoaderCircle size={20} className="animate-spin" aria-hidden /> : I && <I size={20} aria-hidden strokeWidth={2.3} className="shrink-0" />}{children}</>;
   if (href) return <Link href={href} className={cx(base, estilo, className)} {...rest}>{contenido}</Link>;
   return <button type={type} onClick={onClick} disabled={disabled || ocupado} className={cx(base, estilo, className)} {...rest}>{contenido}</button>;
 }
@@ -143,6 +144,27 @@ export function Chips<T extends string>({ opciones, valor, onChange, multiple, e
   );
 }
 
+/** Vistas excluyentes de una misma pantalla (control segmentado): una sola fila a lo ancho en el celular. */
+export function Segmentos<T extends string>({ opciones, valor, onChange, etiqueta }: {
+  opciones: { v: T; label: string; n?: number }[]; valor: T; onChange: (v: T) => void; etiqueta: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={etiqueta} className="grid md:inline-grid grid-flow-col auto-cols-fr gap-1 rounded-xl border border-brand-border bg-brand-bg p-1">
+      {opciones.map((o) => {
+        const on = o.v === valor;
+        return (
+          <button key={o.v} type="button" role="radio" aria-checked={on} onClick={() => onChange(o.v)}
+            className={cx("min-h-[44px] min-w-0 px-2 md:px-4 rounded-lg text-[13px] md:text-sm font-semibold inline-flex items-center justify-center gap-1 transition-colors",
+              on ? "bg-white text-brand-ink shadow-sm" : "text-brand-slate hover:text-brand-ink")}>
+            <span className="truncate">{o.label}</span>
+            {o.n != null && <span className={cx("tabular-nums font-normal", on ? "text-brand-slate" : "text-brand-mist")}>{o.n}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Etiqueta({ children, tono = "gris", icono: I }: { children: ReactNode; tono?: Tono; icono?: LucideIcon }) {
   const c = {
     rojo: "bg-brand-primary-light text-brand-primary-dark border-brand-primary/30",
@@ -172,16 +194,22 @@ export function Hoja({ titulo, sobre, onClose, children, pie, ocupada }: {
   // hoja ni sacarle el foco al texto que se está escribiendo.
   const cerrar = useRef({ onClose, ocupada });
   cerrar.current = { onClose, ocupada };
+  // Se dibuja en el cliente (el portal necesita el documento).
+  const [montado, setMontado] = useState(false);
+  useEffect(() => setMontado(true), []);
   useEffect(() => {
+    if (!montado) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const tecla = (e: KeyboardEvent) => { if (e.key === "Escape" && !cerrar.current.ocupada) cerrar.current.onClose(); };
     window.addEventListener("keydown", tecla);
     if (!panel.current?.contains(document.activeElement)) panel.current?.focus();
     return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", tecla); };
-  }, []);
-  return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" role="dialog" aria-modal="true">
+  }, [montado]);
+  if (!montado) return null;
+  // Sobre todo lo demás (fuera del contenido de la página, que tiene su propia capa por las transiciones).
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center" role="dialog" aria-modal="true">
       <button type="button" aria-label="Cerrar" tabIndex={-1} className="absolute inset-0 bg-brand-ink/45 animate-fade"
         onClick={() => { if (!ocupada) onClose(); }} />
       <div ref={panel} tabIndex={-1}
@@ -200,7 +228,8 @@ export function Hoja({ titulo, sobre, onClose, children, pie, ocupada }: {
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
         {pie && <div className="border-t border-brand-border px-5 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))] md:pb-4 flex flex-col-reverse sm:flex-row gap-2">{pie}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

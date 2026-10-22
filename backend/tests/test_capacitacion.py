@@ -263,3 +263,270 @@ async def test_grupo_postulantes_ipv_y_seguimiento(monkeypatch, tmp_path):
 
         # Links inválidos: 404 y, repetidos, límite por IP.
         assert (await ac.get(f"{P}/{'x' * 43}")).status_code == 404
+
+
+# ------------------------------------------------------------------ entrenamientos con IA
+from types import SimpleNamespace  # noqa: E402
+
+from app.operativas.capacitacion import entrenamiento_ia as eia  # noqa: E402
+from app.operativas.capacitacion import entrenamientos as ent  # noqa: E402
+
+CASO = {"titulo": "Portabilidad desconfiada", "cliente_nombre": "Rosa Benítez", "cliente_edad": 52,
+        "situacion": "Tiene Tigo hace 10 años y le llegó una promo de Claro.", "objetivo": "Saber si le conviene pasarse.",
+        "actitud": {"rasgos": ["desconfiado", "detallista"], "paciencia": 2, "cordialidad": 3, "desconfianza": 5, "interes": 3,
+                    "habla": 2, "tecnologia": 2},
+        "objeciones": ["¿Y si después me suben el precio?", "No quiero perder mi número"],
+        "info_correcta": ["El plan cuesta 99.000 Gs por mes", "Conserva su número con la portabilidad"], "max_turnos": 6}
+
+
+def _respuesta(*textos):
+    """Una respuesta falsa de la Responses API con varios bloques de texto (como cuando el modelo agrega uno de más)."""
+    return SimpleNamespace(output=[SimpleNamespace(type="message", content=[SimpleNamespace(type="output_text", text=t)]) for t in textos],
+                           output_text="".join(textos), usage=SimpleNamespace(input_tokens=120, output_tokens=30))
+
+
+def test_extraer_json_robusto():
+    ok = '{"mensajes": ["Hola", "¿Cuánto sale?"], "fin": false, "motivo": "sigue"}'
+    assert eia.extraer_json(_respuesta("Pensando...", ok), ["mensajes", "fin", "motivo"])["mensajes"] == ["Hola", "¿Cuánto sale?"]
+    assert eia.extraer_json(_respuesta('{"otro": 1}'), ["mensajes"]) is None
+    assert "desconfía" in eia.describir_cliente(CASO) and "Paciencia: poca" in eia.describir_cliente(CASO)
+    ins = eia.instrucciones_cliente({**CASO, "entrenamiento": {}}, empresa="Claro", canal="whatsapp", restantes=1)
+    assert "Rosa Benítez" in ins and "último mensaje" in ins and "99.000" not in ins     # el cliente no conoce los precios
+    assert "99.000" in eia.instrucciones_eval(CASO, empresa="Claro", producto="Plan 99.000 Gs")
+
+
+@pytest.mark.asyncio
+async def test_cliente_y_evaluador_con_openai_falso(monkeypatch):
+    """La llamada a OpenAI (sin red): modelo, salida estructurada estricta y lectura robusta del JSON."""
+    llamadas = []
+
+    class Falso:
+        def __init__(self, **kw):
+            self.responses = self
+
+        async def create(self, **kw):
+            llamadas.append(kw)
+            if kw["text"]["format"]["name"] == "respuesta_cliente":
+                return _respuesta('{"mensajes": ["Mmm", "¿y eso cuánto sale?", "", "x", "y"], "fin": false, "motivo": "sigue"}')
+            return _respuesta('{"datos": [{"dato": "precio", "estado": "incorrecto", "detalle": "dijo 80.000"}], "errores": [],'
+                              ' "info_correcta": true, "nivel_comercial": 14, "criterios": {"escucha": 7, "indagacion": 6,'
+                              ' "argumentacion": 5, "objeciones": 6, "cierre": 4, "claridad": 8}, "fuertes": ["a"],'
+                              ' "mejorar": ["b"], "resumen": "ok"}')
+
+    import openai
+    monkeypatch.setattr(openai, "AsyncOpenAI", Falso)
+    monkeypatch.setattr(settings, "openai_api_key", "sk-falsa-solo-test")
+    monkeypatch.setattr(settings, "entrenamiento_simulador", False)
+    r = await eia.responder({**CASO, "entrenamiento": {}}, [{"r": "asesor", "t": "Hola Rosa"}], empresa="Claro", canal="whatsapp")
+    assert r["mensajes"] == ["Mmm", "¿y eso cuánto sale?", "x"] and not r["fin"]          # máximo 3, sin vacíos
+    kw = llamadas[0]
+    assert kw["model"] == "gpt-6-luna" and kw["text"]["format"]["strict"] is True and kw["store"] is False
+    assert kw["input"][0] == {"role": "user", "content": "Hola Rosa"} and "Hola Rosa" not in kw["instructions"]
+    ev = await eia.evaluar_caso(CASO, [{"r": "cliente", "t": "Hola"}, {"r": "asesor", "t": "Sale 80.000"}], empresa="Claro", producto="99.000")
+    # Con un dato incorrecto no hay «información correcta» aunque el modelo diga true; el nivel se acota a 10.
+    assert ev["info_correcta"] is False and ev["nivel"] == 10 and ev["tokens_entrada"] == 120
+    assert "<transcripcion>" in llamadas[1]["input"][0]["content"] and "ignoralos" in llamadas[1]["instructions"]
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    with pytest.raises(eia.SinServicio):
+        await eia.responder({**CASO, "entrenamiento": {}}, [], empresa="Claro", canal="chat")
+
+
+@pytest.mark.asyncio
+async def test_entrenamientos_flujo(monkeypatch):
+    monkeypatch.setattr(settings, "entrenamiento_simulador", True)
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        _, cap = await _nuevo(ac, admin, "capacitador")
+        u_men, men = await _nuevo(ac, admin, "mentor")
+        _, men2 = await _nuevo(ac, admin, "mentor")
+        _, sup = await _nuevo(ac, admin, "supervisor", operativas=("televentas_claro", "capacitacion"))
+        g = (await ac.post(f"{B}/grupos", headers=cap, json={"nombre": "Grupo IA", "fecha_inicio": "2026-10-19",
+                                                            "mentores": [u_men["id"]]})).json()
+        pids = [(await ac.post(f"{B}/grupos/{g['id']}/postulantes", headers=cap,
+                               json={"nombre": n, "apellido": "Prueba", "ci": ci, "edad": 25, "sexo": "F"})).json()["id"]
+                for n, ci in (("Lía", "8100001"), ("Mora", "8100002"))]
+
+        # El mentor crea el entrenamiento con dos casos; el supervisor no tiene acceso.
+        assert (await ac.get(f"{B}/entrenamientos", headers=sup)).status_code == 403
+        r = await ac.post(f"{B}/entrenamientos", headers=men, json={"nombre": "Portabilidad", "producto": "Plan 99.000 Gs por mes.",
+                                                                   "instrucciones": "Atendé como asesor de Claro."})
+        assert r.status_code == 201, r.text
+        eid = r.json()["id"]
+        assert (await ac.post(f"{B}/entrenamientos/{eid}/casos", headers=men, json={**CASO, "actitud": {"rasgos": ["volador"]}})).status_code == 422
+        c1 = (await ac.post(f"{B}/entrenamientos/{eid}/casos", headers=men, json=CASO)).json()
+        c2 = (await ac.post(f"{B}/entrenamientos/{eid}/casos", headers=men,
+                            json={**CASO, "titulo": "Cliente apurado", "cliente_nombre": "Hugo", "primer_mensaje": "Hola\n\nRápido porfa"})).json()
+        assert (await ac.patch(f"{B}/casos/{c1['id']}", headers=men2, json=CASO)).status_code == 403   # solo quien lo creó
+        lista = (await ac.get(f"{B}/entrenamientos", headers=cap)).json()
+        assert lista["ia"]["simulador"] and next(x for x in lista["entrenamientos"] if x["id"] == eid)["casos"] == 2
+
+        # Probar un caso: el mentor hace de asesor y ve la evaluación al momento.
+        s = (await ac.post(f"{B}/casos/{c2['id']}/probar", headers=men)).json()
+        assert [m["t"] for m in s["mensajes"]] == ["Hola", "Rápido porfa"]                       # dos mensajes seguidos
+        r = (await ac.post(f"{B}/sesiones/{s['id']}/mensajes", headers=men, json={"texto": "Hola Hugo, ¿en qué te ayudo?"})).json()
+        assert r["nuevos"] and not r["fin"]
+        assert (await ac.post(f"{B}/sesiones/{s['id']}/mensajes", headers=cap, json={"texto": "x"})).status_code == 404
+        ev = (await ac.post(f"{B}/sesiones/{s['id']}/terminar", headers=men)).json()
+        assert ev["estado"] == "terminada" and 1 <= ev["evaluacion"]["nivel"] <= 10
+
+        # Enviar a los postulantes: se les arma el link y aparece en su página.
+        r = await ac.post(f"{B}/entrenamientos/{eid}/enviar", headers=men, json={"postulante_ids": pids, "origen": ORIGEN})
+        assert r.status_code == 200, r.text
+        env = r.json()["enviados"]
+        assert all(x["url"].startswith(f"{ORIGEN}/postulante/") for x in env)
+        assert (await ac.post(f"{B}/entrenamientos/{eid}/enviar", headers=men2, json={"postulante_ids": pids, "origen": ORIGEN})).status_code == 404
+        token = env[0]["url"].rsplit("/", 1)[1]
+        pub = (await ac.get(f"{P}/{token}")).json()
+        assert pub["entrenamientos"][0]["nombre"] == "Portabilidad" and pub["entrenamientos"][0]["pct"] == 0
+        aid = pub["entrenamientos"][0]["id"]
+        det = (await ac.get(f"{P}/{token}/entrenamientos/{aid}")).json()
+        assert det["total"] == 2 and "producto" not in det and "info_correcta" not in str(det)
+
+        # Caso 1: chat del postulante. No puede escribir dos veces sin respuesta ni ver la evaluación.
+        s1 = (await ac.post(f"{P}/{token}/entrenamientos/{aid}/casos/{c1['id']}")).json()
+        assert s1["mensajes"][0]["r"] == "cliente" and "evaluacion" not in s1
+        again = (await ac.post(f"{P}/{token}/entrenamientos/{aid}/casos/{c1['id']}")).json()
+        assert again["id"] == s1["id"]                                                          # retoma la misma
+        textos = ["Hola Rosa, soy Ana de Claro. ¿Qué plan tenés hoy?", "El plan cuesta 99.000 Gs por mes y conservás tu número con la portabilidad.",
+                  "¿Te parece si lo dejamos listo hoy?"]
+        for t in textos:
+            r = (await ac.post(f"{P}/{token}/sesiones/{s1['id']}/mensajes", json={"texto": t})).json()
+            if r["fin"]:
+                break
+        assert (await ac.post(f"{P}/{token}/sesiones/{s1['id']}/mensajes", json={"texto": "x" * 1001})).status_code == 422
+        fin = (await ac.post(f"{P}/{token}/sesiones/{s1['id']}/terminar")).json()
+        assert fin["estado"] == "terminada" and "evaluacion" not in fin
+        assert (await ac.post(f"{P}/{token}/sesiones/{s1['id']}/mensajes", json={"texto": "hola"})).status_code == 409
+        # El otro postulante no puede ver esta conversación con su link.
+        token2 = env[1]["url"].rsplit("/", 1)[1]
+        assert (await ac.get(f"{P}/{token2}/sesiones/{s1['id']}")).status_code == 404
+
+        # Avance: 1 de 2 casos (el IPV no cuenta).
+        grupo = (await ac.get(f"{B}/grupos/{g['id']}", headers=cap)).json()
+        lia = next(p for p in grupo["postulantes"] if p["id"] == pids[0])
+        assert lia["avance"]["pct"] == 50 and lia["avance"]["casos"] == 2 and grupo["avance"] == 25
+
+        # Caso 2 y evaluación en segundo plano.
+        s2 = (await ac.post(f"{P}/{token}/entrenamientos/{aid}/casos/{c2['id']}")).json()
+        await ac.post(f"{P}/{token}/sesiones/{s2['id']}/mensajes", json={"texto": "Hola Hugo, ¿qué necesitás?"})
+        await ac.post(f"{P}/{token}/sesiones/{s2['id']}/terminar")
+        assert await ent.procesar_pendientes() >= 2
+        await ent.procesar_pendientes()
+        ficha = (await ac.get(f"{B}/postulantes/{pids[0]}/entrenamientos", headers=men)).json()["entrenamientos"][0]
+        res = ficha["resultado"]
+        assert ficha["estado"] == "terminado" and ficha["pct"] == 100 and res["casos"] == 2
+        assert set(res) >= {"perfil_comercial", "informacion_correcta", "aprobado", "recomendacion", "resumen", "mejorar", "nivel_promedio"}
+        assert res["aprobado"] == (res["perfil_comercial"] and res["informacion_correcta"])
+        assert res["info_ok"] == 1 and res["info_pct"] == 50.0 and res["aprobado"] is False   # el caso 2 no dio la información
+        conv = (await ac.get(f"{B}/sesiones/{ficha['casos_detalle'][0]['sesion']['id']}", headers=cap)).json()
+        assert conv["evaluacion"]["info_correcta"] is True and any(m["r"] == "asesor" for m in conv["mensajes"])
+        assert (await ac.get(f"{B}/sesiones/{conv['id']}", headers=men2)).status_code == 404
+        # La guía del equipo (15 entrenamientos por postulante) y el historial de la ficha.
+        grupo = (await ac.get(f"{B}/grupos/{g['id']}", headers=cap)).json()
+        lia = next(p for p in grupo["postulantes"] if p["id"] == pids[0])
+        assert lia["avance"]["terminados"] == 1 and lia["avance"]["meta"] == 15 and lia["avance"]["meta_cumplida"] is False
+        assert grupo["meta"]["entrenamientos"] == 15 and grupo["meta"]["cumplen"] == 0
+        hist = (await ac.get(f"{B}/postulantes/{pids[0]}", headers=cap)).json()["historial"]
+        assert any(h["tipo"] == "entrenamiento" and h["a"] == "no_aprobado" and h["detalle"] == "Portabilidad" for h in hist)
+        assert any(h["tipo"] == "entrenamiento_enviado" and h["detalle"] == "Portabilidad" for h in hist)
+
+        # Reiniciar y quitar.
+        assert (await ac.delete(f"{B}/asignaciones/{aid}", headers=cap)).status_code == 409
+        assert (await ac.post(f"{B}/asignaciones/{aid}/reiniciar", headers=cap)).json() == {"ok": True}
+        assert (await ac.get(f"{P}/{token}")).json()["entrenamientos"][0]["pct"] == 0
+        assert (await ac.delete(f"{B}/asignaciones/{aid}", headers=cap)).json() == {"ok": True}
+        # Un entrenamiento enviado se archiva en vez de borrarse.
+        assert (await ac.delete(f"{B}/entrenamientos/{eid}", headers=men)).json()["archivado"] is True
+
+
+@pytest.mark.asyncio
+async def test_entrenamientos_en_lote_en_vivo_y_repetir(monkeypatch):
+    from app.operativas.capacitacion import entrenamientos as ent
+
+    monkeypatch.setattr(settings, "entrenamiento_simulador", True)
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        _, cap = await _nuevo(ac, admin, "capacitador")
+        u_men, men = await _nuevo(ac, admin, "mentor")
+        _, men2 = await _nuevo(ac, admin, "mentor")
+        _, sup = await _nuevo(ac, admin, "supervisor", operativas=("televentas_claro", "capacitacion"))
+        g = (await ac.post(f"{B}/grupos", headers=cap, json={"nombre": "Grupo Vivo", "fecha_inicio": "2026-10-19",
+                                                            "mentores": [u_men["id"]]})).json()
+        pid = (await ac.post(f"{B}/grupos/{g['id']}/postulantes", headers=cap,
+                             json={"nombre": "Sol", "apellido": "Vivo", "ci": "8200001", "edad": 22, "sexo": "F"})).json()["id"]
+        eid = (await ac.post(f"{B}/entrenamientos", headers=men, json={"nombre": "Upgrade", "producto": "Plan 99.000 Gs."})).json()["id"]
+        c1 = (await ac.post(f"{B}/entrenamientos/{eid}/casos", headers=men, json=CASO)).json()
+        env = (await ac.post(f"{B}/entrenamientos/{eid}/enviar", headers=men, json={"postulante_ids": [pid], "origen": ORIGEN})).json()
+        token = env["enviados"][0]["url"].rsplit("/", 1)[1]
+        aid = (await ac.get(f"{P}/{token}")).json()["entrenamientos"][0]["id"]
+        s = (await ac.post(f"{P}/{token}/entrenamientos/{aid}/casos/{c1['id']}")).json()
+
+        # En vivo: el mentor y el capacitador del grupo la ven; otro mentor no; el supervisor no tiene acceso.
+        vivo = (await ac.get(f"{B}/en-vivo", headers=men)).json()
+        fila = next(x for x in vivo["sesiones"] if x["id"] == s["id"])
+        assert fila["estado"] == "responde_asesor" and fila["postulante"]["nombre"] == "Sol" and fila["entrenamiento"] == "Upgrade"
+        assert vivo["kpis"]["en_chat"] == 1 and vivo["postulantes"][0]["vivo"] == "en_chat"
+        assert (await ac.get(f"{B}/en-vivo", headers=cap, params={"grupo": g["id"]})).json()["kpis"]["en_chat"] == 1
+        otro = (await ac.get(f"{B}/en-vivo", headers=men2)).json()
+        assert otro["sesiones"] == [] and otro["grupos"] == []
+        assert (await ac.get(f"{B}/en-vivo", headers=men2, params={"grupo": g["id"]})).status_code == 404
+        assert (await ac.get(f"{B}/en-vivo", headers=sup)).status_code == 403
+        monitor = (await ac.get(f"{B}/sesiones/{s['id']}", headers=men)).json()
+        assert monitor["objetivo"] == CASO["objetivo"] and monitor["info_correcta"] == CASO["info_correcta"]
+        assert (await ac.get(f"{B}/sesiones/{s['id']}", headers=men2)).status_code == 404
+
+        # Varios mensajes seguidos en un lote: el cliente contesta una vez y cuenta como un turno.
+        lote = "lote-0001-abc"
+        textos = ["Hola Rosa!", "Soy Sol de Claro.", "¿Qué plan tenés hoy?"]
+        r = (await ac.post(f"{P}/{token}/sesiones/{s['id']}/mensajes", json={"textos": textos, "lote": lote})).json()
+        assert r["nuevos"] and r["sesion"]["turnos"] == 1
+        asesor = [m for m in r["sesion"]["mensajes"] if m["r"] == "asesor"]
+        assert [m["t"] for m in asesor] == textos and all(m["lote"] == lote for m in asesor)
+        # El mismo lote reenviado (se cortó la conexión): devuelve lo mismo y no duplica.
+        again = (await ac.post(f"{P}/{token}/sesiones/{s['id']}/mensajes", json={"textos": textos, "lote": lote})).json()
+        assert again["repetido"] and again["nuevos"] == r["nuevos"] and len(again["sesion"]["mensajes"]) == len(r["sesion"]["mensajes"])
+        assert (await ac.post(f"{P}/{token}/sesiones/{s['id']}/mensajes", json={"textos": ["x"] * 7})).status_code == 422
+        assert (await ac.post(f"{P}/{token}/sesiones/{s['id']}/mensajes", json={"textos": ["   "]})).status_code == 400
+        assert (await ac.post(f"{P}/{token}/sesiones/{s['id']}/mensajes", json={"textos": ["ok"], "lote": "<script>"})).status_code == 422
+        from app.core.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            assert await ent.respuestas_hoy(db, pid) == 1
+        vivo = (await ac.get(f"{B}/en-vivo", headers=men)).json()
+        fila = next(x for x in vivo["sesiones"] if x["id"] == s["id"])
+        assert fila["turnos"] == 1 and fila["ultimo"]["r"] == "cliente" and fila["resp_media"] is not None
+
+        # Termina el caso y se evalúa: aparece en lo de hoy.
+        await ac.post(f"{P}/{token}/sesiones/{s['id']}/terminar")
+        while await ent.procesar_pendientes():
+            pass
+        vivo = (await ac.get(f"{B}/en-vivo", headers=men)).json()
+        assert vivo["kpis"]["en_chat"] == 0 and vivo["kpis"]["casos_hoy"] == 1 and vivo["kpis"]["entrenamientos_hoy"] == 1
+        assert vivo["recientes"][0]["id"] == s["id"] and vivo["recientes"][0]["nivel"] is not None
+        assert vivo["postulantes"][0]["casos_hoy"] == 1 and vivo["postulantes"][0]["terminados"] == 1
+
+        # Sin tope: lo puede repetir (otro intento) y el anterior queda con su resultado.
+        ya = (await ac.post(f"{B}/entrenamientos/{eid}/enviar", headers=men, json={"postulante_ids": [pid], "origen": ORIGEN})).json()
+        assert ya["enviados"][0]["ya_enviado"] is True
+        rep = (await ac.post(f"{B}/entrenamientos/{eid}/enviar", headers=men,
+                             json={"postulante_ids": [pid], "origen": ORIGEN, "repetir": True})).json()
+        assert rep["enviados"][0]["ya_enviado"] is False and rep["enviados"][0]["intento"] == 2
+        otra = (await ac.post(f"{B}/entrenamientos/{eid}/enviar", headers=men,
+                              json={"postulante_ids": [pid], "origen": ORIGEN, "repetir": True})).json()
+        assert otra["enviados"][0]["ya_enviado"] is True                                  # el 2.º todavía no lo terminó
+        pub = (await ac.get(f"{P}/{token}")).json()["entrenamientos"]
+        assert sorted((x["intento"], x["estado"]) for x in pub) == [(1, "terminado"), (2, "pendiente")]
+        ficha = (await ac.get(f"{B}/postulantes/{pid}/entrenamientos", headers=cap)).json()["entrenamientos"]
+        assert len(ficha) == 2 and ficha[0]["resultado"] is not None
+        lista = next(x for x in (await ac.get(f"{B}/entrenamientos", headers=men)).json()["entrenamientos"] if x["id"] == eid)
+        assert lista["enviados"] == 1 and lista["terminados"] == 1                          # personas, no intentos
+        a2 = next(x["id"] for x in pub if x["intento"] == 2)
+        s2 = (await ac.post(f"{P}/{token}/entrenamientos/{a2}/casos/{c1['id']}")).json()
+        assert s2["id"] != s["id"]
+        await ac.post(f"{P}/{token}/sesiones/{s2['id']}/mensajes", json={"texto": "Hola, ¿cómo estás?"})
+        await ac.post(f"{P}/{token}/sesiones/{s2['id']}/terminar")
+        while await ent.procesar_pendientes():
+            pass
+        grupo = (await ac.get(f"{B}/grupos/{g['id']}", headers=cap)).json()
+        assert grupo["postulantes"][0]["avance"]["terminados"] == 2                         # cada intento terminado suma

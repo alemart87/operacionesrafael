@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ChevronRight, Flag, Link2, Pencil, Search, UserPlus } from "lucide-react";
+import { ArrowLeft, Bot, ChevronRight, Flag, Link2, Pencil, Radio, Search, Send, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -8,10 +8,11 @@ import { AppShell } from "@/components/AppShell";
 import { Pestanas } from "@/components/capacitacion/pestanas";
 import {
   CAP_API, CAP_HREF, ESTADOS, ESTADOS_GRUPO, NIVEL_IPV, diasTexto, fecha, pct,
-  type EstadoGrupo, type GrupoDetalle, type Postulante, type ResumenIpv,
+  type EntrenamientoFila, type EstadoGrupo, type GrupoDetalle, type Postulante, type ResumenIpv,
 } from "@/components/capacitacion/tipos";
 import { Barra, Dato, EmbudoVista, EstadoTag, GrupoTag, HojaEnlace, HojaEstado, HojaGrupo, HojaPostulante, TablaDemo } from "@/components/capacitacion/ui";
 import { Boton, Cargando, Chips, Encabezado, Etiqueta, Fallo, Hoja, Seccion, cx, hace, useAviso } from "@/components/portal/ui";
+import { HojaEnviar, HojaEnviarA, MetaEntrenamientos } from "@/components/capacitacion/entrenamientos";
 import { apiFetch } from "@/lib/api";
 
 export default function GrupoPage() {
@@ -35,7 +36,8 @@ function Grupo() {
   const [error, setError] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [buscar, setBuscar] = useState("");
-  const [hoja, setHoja] = useState<null | { t: "nuevo" } | { t: "editar" } | { t: "estado_grupo" } | { t: "estado"; p: Postulante } | { t: "link"; p: Postulante }>(null);
+  const [hoja, setHoja] = useState<null | { t: "nuevo" } | { t: "editar" } | { t: "estado_grupo" } | { t: "estado"; p: Postulante } | { t: "link"; p: Postulante }
+    | { t: "enviar"; p: Postulante } | { t: "entrenamiento"; p: Postulante } | { t: "entrenar_grupo" }>(null);
   const [aviso, avisar] = useAviso();
   const cargar = useCallback(() => {
     apiFetch<GrupoDetalle>(`${CAP_API}/grupos/${id}`).then((x) => { setG(x); setError(null); }).catch((e) => setError(e.message));
@@ -70,11 +72,19 @@ function Grupo() {
       </Encabezado>
       <Pestanas />
 
-      {(g.puede.postulantes || g.puede.editar) && (
-        <div className="flex flex-wrap gap-2 mb-5">
-          {g.puede.postulantes && <Boton icono={UserPlus} onClick={() => setHoja({ t: "nuevo" })} className="sm:w-auto flex-1 sm:flex-none">Agregar postulante</Boton>}
-          {g.puede.estados.length > 0 && <Boton tipo="secundario" icono={Flag} onClick={() => setHoja({ t: "estado_grupo" })} className="sm:w-auto flex-1 sm:flex-none">Estado del grupo</Boton>}
-          {g.puede.editar && <Boton tipo="fantasma" icono={Pencil} onClick={() => setHoja({ t: "editar" })} className="sm:w-auto">Editar</Boton>}
+      {/* Las acciones del día, simples y a la vista (también en el celular) */}
+      {g.estado !== "cancelada" && (
+        <div className="grid grid-cols-2 md:flex gap-2 mb-2">
+          {g.puede.postulantes && <Boton icono={UserPlus} onClick={() => setHoja({ t: "nuevo" })} className="!min-h-[52px] !px-3 !text-[15px] md:!w-auto">Postulante</Boton>}
+          <Boton tipo={g.puede.postulantes ? "secundario" : "primario"} icono={Bot} onClick={() => setHoja({ t: "entrenar_grupo" })}
+            className={cx("!min-h-[52px] !px-3 !text-[15px] md:!w-auto", !g.puede.postulantes && "col-span-2")}>Entrenamiento</Boton>
+        </div>
+      )}
+      {(g.puede.estados.length > 0 || g.puede.editar || g.estado === "en_curso") && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mb-5">
+          {g.estado === "en_curso" && <Link href={`${CAP_HREF}/vivo?grupo=${g.id}`} className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-semibold text-brand-slate hover:text-brand-ink"><Radio size={15} aria-hidden /> En vivo</Link>}
+          {g.puede.estados.length > 0 && <button type="button" onClick={() => setHoja({ t: "estado_grupo" })} className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-semibold text-brand-slate hover:text-brand-ink"><Flag size={15} aria-hidden /> Estado del grupo</button>}
+          {g.puede.editar && <button type="button" onClick={() => setHoja({ t: "editar" })} className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-semibold text-brand-slate hover:text-brand-ink"><Pencil size={15} aria-hidden /> Editar grupo</button>}
         </div>
       )}
 
@@ -83,8 +93,8 @@ function Grupo() {
         {[
           { v: g.embudo.total, l: "personas" },
           { v: pct(g.efectividad), l: "efectividad", verde: true },
+          { v: g.avance === null ? "—" : `${g.avance}%`, l: "entrenam." },
           { v: `${g.ipv_detalle.realizados}/${g.ipv_detalle.total}`, l: "IPV" },
-          { v: g.feedback_detalle.total, l: "feedback" },
         ].map((x) => (
           <div key={x.l} className="py-2.5 px-1 min-w-0">
             <div className={cx("font-display text-xl leading-none tabular-nums", x.verde ? "text-emerald-700" : "text-brand-ink")}>{x.v}</div>
@@ -92,9 +102,10 @@ function Grupo() {
           </div>
         ))}
       </div>
-      <div className="hidden md:grid grid-cols-4 gap-2.5 mb-6">
+      <div className="hidden md:grid grid-cols-5 gap-2.5 mb-6">
         <Dato label="Postulantes" valor={g.embudo.total} sub={`${g.embudo.activos} activos · ${g.embudo.en_piso} en piso`} />
         <Dato label="Efectividad" valor={pct(g.efectividad)} sub={`${g.embudo.altas} altas operativas`} tono="verde" />
+        <Dato label="Entrenamientos" valor={g.avance === null ? "—" : `${g.avance}%`} sub={`avance · ${g.meta.cumplen} de ${g.meta.activos} llegaron al mínimo de ${g.meta.entrenamientos}`} />
         <Dato label="Hicieron el IPV" valor={`${g.ipv_detalle.realizados}/${g.ipv_detalle.total}`} sub={`${pct(g.ipv_detalle.porcentaje)}${g.ipv_detalle.en_curso ? ` · ${g.ipv_detalle.en_curso} haciéndolo` : ""}`} />
         <Dato label="Feedback" valor={g.feedback_detalle.total} sub={g.feedback_detalle.sin_feedback ? `${g.feedback_detalle.sin_feedback} sin feedback del equipo` : "Todos con feedback"} tono={g.feedback_detalle.sin_feedback ? "rojo" : undefined} />
       </div>
@@ -119,9 +130,9 @@ function Grupo() {
         ) : (
           <>
             <ul className="md:hidden card divide-y divide-brand-border overflow-hidden">
-              {lista.map((p) => <TarjetaPostulante key={p.id} p={p} link={capacitador && g.estado !== "cancelada"} onEstado={() => setHoja({ t: "estado", p })} onLink={() => setHoja({ t: "link", p })} />)}
+              {lista.map((p) => <TarjetaPostulante key={p.id} p={p} link={g.estado !== "cancelada"} onEstado={() => setHoja({ t: "estado", p })} onLink={() => setHoja({ t: "enviar", p })} />)}
             </ul>
-            <TablaPostulantes lista={lista} link={capacitador && g.estado !== "cancelada"} onEstado={(p) => setHoja({ t: "estado", p })} onLink={(p) => setHoja({ t: "link", p })} />
+            <TablaPostulantes lista={lista} link={g.estado !== "cancelada"} onEstado={(p) => setHoja({ t: "estado", p })} onLink={(p) => setHoja({ t: "enviar", p })} />
           </>
         )}
       </Seccion>
@@ -153,6 +164,28 @@ function Grupo() {
       {hoja?.t === "estado_grupo" && <HojaEstadoGrupo g={g} onClose={() => setHoja(null)} onListo={(x) => { setG(x); setHoja(null); avisar(`El grupo quedó ${ESTADOS_GRUPO[x.estado].nombre.toLowerCase()}`); }} />}
       {hoja?.t === "estado" && <HojaEstado p={hoja.p} onClose={() => setHoja(null)} onListo={(p) => { setHoja(null); cargar(); avisar(`${p.nombre}: ${ESTADOS[p.estado].nombre}`); }} />}
       {hoja?.t === "link" && <HojaEnlace p={hoja.p} onClose={() => setHoja(null)} onCambio={cargar} />}
+      {hoja?.t === "enviar" && (
+        <Hoja titulo="Enviar" sobre={`${hoja.p.nombre} ${hoja.p.apellido}`} onClose={() => setHoja(null)}>
+          <div className="space-y-2.5">
+            <button type="button" onClick={() => setHoja({ t: "entrenamiento", p: hoja.p })} className="w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[72px] hover:border-brand-ink">
+              <span className="w-11 h-11 rounded-xl bg-brand-ink text-white flex items-center justify-center shrink-0"><Bot size={22} aria-hidden /></span>
+              <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">Un entrenamiento</span>
+                <span className="block text-[13px] text-brand-slate">Lleva {hoja.p.avance.terminados} hechos (mínimo {hoja.p.avance.meta}, puede hacer más)</span></span>
+              <ChevronRight size={18} className="text-brand-mist" aria-hidden />
+            </button>
+            {capacitador && (
+              <button type="button" onClick={() => setHoja({ t: "link", p: hoja.p })} className="w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[72px] hover:border-brand-ink">
+                <span className="w-11 h-11 rounded-xl bg-brand-primary text-white flex items-center justify-center shrink-0"><Link2 size={22} aria-hidden /></span>
+                <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">El link del test IPV</span>
+                  <span className="block text-[13px] text-brand-slate">QR, copiar o WhatsApp</span></span>
+                <ChevronRight size={18} className="text-brand-mist" aria-hidden />
+              </button>
+            )}
+          </div>
+        </Hoja>
+      )}
+      {hoja?.t === "entrenamiento" && <HojaEnviarA pid={hoja.p.id} nombre={`${hoja.p.nombre} ${hoja.p.apellido}`} onClose={() => { setHoja(null); cargar(); }} />}
+      {hoja?.t === "entrenar_grupo" && <EnviarAlGrupo grupoId={g.id} onClose={() => { setHoja(null); cargar(); }} />}
     </div>
   );
 }
@@ -174,6 +207,11 @@ function TarjetaPostulante({ p, link, onEstado, onLink }: { p: Postulante; link:
           <div className="text-[13px] text-brand-slate">CI {p.ci} · {p.edad} años · {SEXO_CORTO[p.sexo]}</div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1"><EstadoTag estado={p.estado} /><IpvChip p={p} />
             <span className="text-[12px] text-brand-slate">{p.comentarios.feedback + p.comentarios.oportunidad} feedback</span></div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <MetaEntrenamientos hechos={p.avance.terminados} meta={p.avance.meta} compacta />
+            {p.avance.pct !== null && p.avance.pct < 100 && <span className="text-[12px] text-brand-slate tabular-nums">avance {p.avance.pct}%</span>}
+            {p.avance.aprobados > 0 && <span className="text-[12px] text-emerald-700 font-semibold">{p.avance.aprobados} recomendado{p.avance.aprobados > 1 ? "s" : ""}</span>}
+          </div>
         </div>
         <ChevronRight size={18} className="text-brand-mist mt-1 shrink-0" aria-hidden />
       </Link>
@@ -181,7 +219,7 @@ function TarjetaPostulante({ p, link, onEstado, onLink }: { p: Postulante; link:
         <div className="mt-2 grid grid-cols-2 gap-2">
           {p.puede.length > 0 && <button type="button" onClick={onEstado} className="btn min-h-[44px] text-sm border border-brand-border bg-white">Cambiar estado</button>}
           {link && p.estado !== "abandono" && p.estado !== "baja" && (
-            <button type="button" onClick={onLink} className="btn min-h-[44px] text-sm border border-brand-border bg-white"><Link2 size={16} aria-hidden /> Link IPV</button>
+            <button type="button" onClick={onLink} className="btn min-h-[44px] text-sm border border-brand-border bg-white"><Send size={16} aria-hidden /> Enviar</button>
           )}
         </div>
       )}
@@ -198,7 +236,8 @@ function TablaPostulantes({ lista, link, onEstado, onLink }: { lista: Postulante
           <tr className="text-left text-[10px] uppercase tracking-wider2 text-brand-slate border-b border-brand-border">
             <th className="px-4 py-2.5 font-semibold">Postulante</th><th className="px-3 py-2.5 font-semibold">CI</th>
             <th className="px-3 py-2.5 font-semibold">Edad · sexo</th><th className="px-3 py-2.5 font-semibold">Estado</th>
-            <th className="px-3 py-2.5 font-semibold">IPV</th><th className="px-3 py-2.5 font-semibold text-right">Feedback</th>
+            <th className="px-3 py-2.5 font-semibold">Entrenamientos</th><th className="px-3 py-2.5 font-semibold">IPV</th>
+            <th className="px-3 py-2.5 font-semibold text-right">Feedback</th>
             <th className="px-4 py-2.5 font-semibold text-right">Acciones</th>
           </tr>
         </thead>
@@ -209,12 +248,14 @@ function TablaPostulantes({ lista, link, onEstado, onLink }: { lista: Postulante
               <td className="px-3 py-2.5 tabular-nums">{p.ci}</td>
               <td className="px-3 py-2.5 tabular-nums">{p.edad} · {SEXO_CORTO[p.sexo]}</td>
               <td className="px-3 py-2.5"><EstadoTag estado={p.estado} />{p.motivo && <div className="text-xs text-brand-slate mt-0.5 max-w-[220px] truncate" title={p.motivo}>{p.motivo}</div>}</td>
+              <td className="px-3 py-2.5"><MetaEntrenamientos hechos={p.avance.terminados} meta={p.avance.meta} compacta />
+                {p.avance.pct !== null && <div className="text-[11px] text-brand-slate tabular-nums">avance {p.avance.pct}%{p.avance.aprobados > 0 && ` · ${p.avance.aprobados} recomendado${p.avance.aprobados > 1 ? "s" : ""}`}</div>}</td>
               <td className="px-3 py-2.5"><IpvChip p={p} /></td>
               <td className="px-3 py-2.5 text-right tabular-nums">{p.comentarios.feedback + p.comentarios.oportunidad}
                 {p.comentarios.postulante > 0 && <span className="text-xs text-brand-slate"> · {p.comentarios.postulante} suyo{p.comentarios.postulante > 1 ? "s" : ""}</span>}</td>
               <td className="px-4 py-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                 {p.puede.length > 0 && <button type="button" onClick={() => onEstado(p)} className="btn-ghost text-xs">Estado</button>}
-                {link && p.estado !== "abandono" && p.estado !== "baja" && <button type="button" onClick={() => onLink(p)} className="btn-ghost text-xs">Link IPV</button>}
+                {link && p.estado !== "abandono" && p.estado !== "baja" && <button type="button" onClick={() => onLink(p)} className="btn-ghost text-xs">Enviar</button>}
               </td>
             </tr>
           ))}
@@ -267,6 +308,36 @@ function HojaEstadoGrupo({ g, onClose, onListo }: { g: GrupoDetalle; onClose: ()
         )}
         {error && <Fallo>{error}</Fallo>}
       </div>
+    </Hoja>
+  );
+}
+
+/** Enviar un entrenamiento al grupo: primero se elige cuál, después los postulantes. */
+function EnviarAlGrupo({ grupoId, onClose }: { grupoId: string; onClose: () => void }) {
+  const [d, setD] = useState<{ entrenamientos: EntrenamientoFila[]; meta: number } | null>(null);
+  const [elegido, setElegido] = useState<EntrenamientoFila | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { apiFetch<{ entrenamientos: EntrenamientoFila[]; meta: number }>(`${CAP_API}/entrenamientos`).then(setD).catch((e) => setError(e.message)); }, []);
+  if (elegido && d) return <HojaEnviar eid={elegido.id} nombre={elegido.nombre} meta={d.meta} grupoInicial={grupoId} onClose={onClose} />;
+  const lista = (d?.entrenamientos ?? []).filter((e) => e.estado !== "archivado" && e.casos > 0);
+  return (
+    <Hoja titulo="Enviar entrenamiento" sobre="Elegí cuál" onClose={onClose}>
+      {error && <Fallo>{error}</Fallo>}
+      {!d && !error && <div className="h-32 rounded-lg bg-brand-bg animate-pulse" />}
+      {d && lista.length === 0 && (
+        <p className="text-sm text-brand-slate">No hay entrenamientos listos. <Link href={`${CAP_HREF}/entrenamientos`} className="font-semibold text-brand-primary">Crear uno</Link></p>
+      )}
+      <ul className="space-y-2">
+        {lista.map((e) => (
+          <li key={e.id}>
+            <button type="button" onClick={() => setElegido(e)} className="w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[60px] hover:border-brand-ink">
+              <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">{e.nombre}</span>
+                <span className="block text-[12px] text-brand-slate">{e.casos} casos · enviado a {e.enviados}{e.estado === "borrador" && " · borrador: se activa al enviarlo"}</span></span>
+              <ChevronRight size={18} className="text-brand-mist" aria-hidden />
+            </button>
+          </li>
+        ))}
+      </ul>
     </Hoja>
   );
 }

@@ -6,7 +6,7 @@
  * del día y el analizador; el resto, sus módulos. «Menú» abre la navegación completa.
  */
 import {
-  BarChart3, ChartPie, ClipboardCheck, GraduationCap, Gauge, House, LayoutGrid, Menu, MessageSquareText, Siren, Sparkles, Truck, Users,
+  BarChart3, Bot, ClipboardCheck, GraduationCap, Gauge, House, LayoutGrid, Menu, MessageSquareText, Radio, Siren, Sparkles, Truck, Users,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -17,7 +17,7 @@ import { OPERATIVA_ROUTES } from "@/lib/operativas";
 const SUP = "/televentas-claro/supervision";
 const TC = "televentas_claro";
 
-interface Item { href: string; label: string; icono: LucideIcon; central?: boolean; exacto?: boolean }
+interface Item { href: string; label: string; corto?: string; icono: LucideIcon; central?: boolean; exacto?: boolean }
 
 const ICONOS: Record<string, LucideIcon> = {
   ventas_netas: BarChart3, productividad: Gauge, sph: Sparkles, supervision: Users, logistica: Truck,
@@ -25,18 +25,22 @@ const ICONOS: Record<string, LucideIcon> = {
 };
 
 const CAP = "/capacitacion";
-/** Capacitación y Mentoría: los grupos, el grupo en curso a un toque y las estadísticas. */
+/** Capacitación y Mentoría: los grupos, el grupo en curso a un toque, los entrenamientos y el tablero en vivo
+ * (las estadísticas quedan en el menú). */
 const ITEMS_CAP: Item[] = [
   { href: CAP, label: "Grupos", icono: GraduationCap, exacto: true },
   { href: `${CAP}/en-curso`, label: "Mi grupo", icono: Users, central: true },
-  { href: `${CAP}/estadisticas`, label: "Estadísticas", icono: ChartPie },
+  { href: `${CAP}/entrenamientos`, label: "Entrenar", icono: Bot },
+  { href: `${CAP}/vivo`, label: "En vivo", icono: Radio },
 ];
 /** Perfiles que solo ven Capacitación: sin «Inicio» (los lleva al mismo lugar que «Grupos»). */
 const SOLO_CAP = ["capacitador", "mentor", "rrhh"];
 
 export function itemsDe(user: CurrentUserInfo, ruta = ""): Item[] {
   const ok = (u: string) => can(user, `${TC}.${u}`);
-  if (can(user, "capacitacion.ver") && (SOLO_CAP.includes(user.role) || ruta === CAP || ruta.startsWith(`${CAP}/`))) return ITEMS_CAP;
+  // Quien solo ve Capacitación tiene las cuatro; los jefes, dentro del módulo, sin «En vivo» (está en el menú) para dejar «Inicio».
+  if (can(user, "capacitacion.ver") && SOLO_CAP.includes(user.role)) return ITEMS_CAP;
+  if (can(user, "capacitacion.ver") && (ruta === CAP || ruta.startsWith(`${CAP}/`))) return ITEMS_CAP.slice(0, 3);
   if (ok("control_supervisores")) {
     return [
       { href: `${SUP}/control`, label: "Control", icono: Users },
@@ -76,10 +80,10 @@ export function NavInferior({ user, onMenu, menuAbierto }: { user: CurrentUserIn
           }
           return (
             <li key={i.href} className="flex-1 min-w-0">
-              <Link href={i.href} aria-current={on ? "page" : undefined}
+              <Link href={i.href} aria-current={on ? "page" : undefined} aria-label={i.corto ? i.label : undefined}
                 className={`h-full flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold px-1 ${on ? "text-brand-primary" : "text-brand-slate"}`}>
                 <I size={22} strokeWidth={on ? 2.5 : 2} aria-hidden />
-                <span className="truncate max-w-full">{i.label}</span>
+                <span className="truncate max-w-full">{i.corto ?? i.label}</span>
               </Link>
             </li>
           );

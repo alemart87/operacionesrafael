@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { CAP_API, CAP_HREF, ESTADOS, fecha, type Ficha } from "@/components/capacitacion/tipos";
+import { CAP_API, CAP_HREF, CRITERIOS, ESTADOS, fecha, type Evento, type Ficha } from "@/components/capacitacion/tipos";
+import { EntrenamientosFicha } from "@/components/capacitacion/entrenamientos";
 import { BarrasIpv, Dato, EstadoTag, HojaEnlace, HojaEstado, HojaPostulante, ListaComentarios, NuevoComentario } from "@/components/capacitacion/ui";
 import { Boton, Cargando, Encabezado, Fallo, Seccion, hace, useAviso } from "@/components/portal/ui";
 import { apiFetch } from "@/lib/api";
@@ -22,7 +23,15 @@ const SEXO = { F: "Femenino", M: "Masculino", X: "Otro" };
 const EVENTO: Record<string, string> = {
   alta: "Ingresó al grupo", estado: "Cambio de estado", link: "Link del test generado", link_anulado: "Link anulado",
   ipv_inicio: "Empezó el IPV", ipv_terminado: "Terminó el IPV", datos: "Datos corregidos",
+  entrenamiento_enviado: "Entrenamiento enviado", entrenamiento_reiniciado: "Entrenamiento reiniciado",
 };
+/** El texto de un evento del historial; los tipos nuevos que no estén acá se muestran legibles igual. */
+function textoEvento(h: Evento) {
+  if (h.tipo === "estado" && h.a) return <>Pasó a <b>{ESTADOS[h.a as keyof typeof ESTADOS]?.nombre ?? h.a}</b></>;
+  if (h.tipo === "entrenamiento") return <>Entrenamiento evaluado: <b>{h.a === "aprobado" ? "recomendado" : "no recomendado"}</b></>;
+  const t = EVENTO[h.tipo] ?? h.tipo.replace(/_/g, " ");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
 
 function FichaPostulante() {
   const { id } = useParams<{ id: string }>();
@@ -73,7 +82,12 @@ function FichaPostulante() {
         <Dato label="Su feedback" valor={p.comentarios.postulante} />
       </div>
 
-      <Seccion titulo="Test IPV" sub="Inventario de Personalidad para Vendedores · se corrige solo al terminar." className="mb-8">
+      <Seccion titulo="Entrenamientos" sub="Chats de práctica con clientes simulados: la IA evalúa el perfil comercial y si da la información correcta." className="mb-8">
+        <EntrenamientosFicha pid={p.id} nombre={`${p.nombre} ${p.apellido}`} meta={p.avance?.meta ?? 15} criterios={CRITERIOS}
+          puedeEnviar={f.grupo.estado !== "cancelada" && p.estado !== "abandono" && p.estado !== "baja"} />
+      </Seccion>
+
+      <Seccion titulo="Test IPV" sub="Independiente de los entrenamientos · Inventario de Personalidad para Vendedores, se corrige solo al terminar." className="mb-8">
         {r ? (
           <div className="card p-4 space-y-4">
             <p className="text-[15px] text-brand-ink leading-snug">{r.resumen}</p>
@@ -115,10 +129,11 @@ function FichaPostulante() {
       <Seccion titulo="Historial">
         <ol className="card divide-y divide-brand-border">
           {f.historial.map((h, i) => (
-            <li key={i} className="px-4 py-2.5 text-sm flex justify-between gap-3">
-              <span className="text-brand-ink">{h.tipo === "estado" && h.a ? <>Pasó a <b>{ESTADOS[h.a as keyof typeof ESTADOS]?.nombre ?? h.a}</b></> : EVENTO[h.tipo] ?? h.tipo}
+            <li key={i} className="px-4 py-2.5 text-sm flex flex-col sm:flex-row sm:justify-between gap-0.5 sm:gap-3">
+              <span className="text-brand-ink">{textoEvento(h)}
+                {h.detalle && <span className="text-brand-slate"> · {h.detalle}</span>}
                 {h.motivo && <span className="text-brand-slate"> · {h.motivo}</span>}</span>
-              <span className="text-brand-slate text-xs shrink-0 text-right">{h.por ?? (h.tipo.startsWith("ipv") ? "El postulante" : "")} · {hace(h.at)}</span>
+              <span className="text-brand-slate text-xs shrink-0 sm:text-right">{[h.por ?? (h.tipo.startsWith("ipv") ? "El postulante" : h.tipo === "entrenamiento" ? "La IA" : ""), hace(h.at)].filter(Boolean).join(" · ")}</span>
             </li>
           ))}
         </ol>

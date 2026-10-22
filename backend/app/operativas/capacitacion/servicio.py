@@ -19,11 +19,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...api.deps import CurrentUser, effective_permissions
+from ...core.config import settings
 from ...models.profile import Profile
 from ...models.user import User
 from . import ipv
-from .models import (DE_CAPACITADOR, ESTADOS_GRUPO, ESTADOS_POSTULANTE, CapComentario, CapEnlace, CapEvento, CapGrupo,
-                     CapPostulante)
+from .models import (DE_CAPACITADOR, ESTADOS_GRUPO, ESTADOS_POSTULANTE, CapAsignacion, CapCaso, CapComentario, CapEnlace,
+                     CapEntrenamiento, CapEvento, CapGrupo, CapPostulante, CapSesion)
 
 ZONA = ZoneInfo("America/Asuncion")
 OPERATIVA = "capacitacion"
@@ -53,6 +54,11 @@ def ahora() -> datetime:
 
 def hoy() -> date:
     return datetime.now(ZONA).date()
+
+
+def inicio_del_dia() -> datetime:
+    """Las 00:00 de hoy en Asunción, en UTC (para filtrar lo de hoy en la base)."""
+    return datetime.now(ZONA).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
 
 def iso(d: datetime | date | None) -> str | None:
@@ -176,6 +182,7 @@ class Datos:
         self.postulantes: dict[str, list[CapPostulante]] = defaultdict(list)
         self.enlaces: dict[str, CapEnlace] = {}
         self.comentarios: dict[str, Counter] = defaultdict(Counter)
+        self.entrenamientos: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     def todos(self) -> list[CapPostulante]:
         return [p for ps in self.postulantes.values() for p in ps]
@@ -197,7 +204,72 @@ async def cargar(db: AsyncSession, grupo_ids: list[str]) -> Datos:
                                   .where(CapComentario.grupo_id.in_(grupo_ids)))).all()
         for pid, tipo in filas:
             d.comentarios[pid][tipo] += 1
+        d.entrenamientos.update(await entrenamientos_de(db, pids))
     return d
+
+
+# ------------------------------------------------------------------ entrenamientos y su avance (el IPV es independiente)
+HECHOS = ("evaluando", "terminada", "error")     # sesiones cerradas (cuentan como caso hecho)
+
+
+async def entrenamientos_de(db: AsyncSession, pids: list[str]) -> dict[str, list[dict[str, Any]]]:
+    """Por postulante, sus entrenamientos con el avance (casos hechos sobre casos del entrenamiento) y el resultado."""
+    out: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    if not pids:
+        return out
+    asig = (await db.execute(select(CapAsignacion).where(CapAsignacion.postulante_id.in_(pids))
+                             .order_by(CapAsignacion.asignado_at))).scalars().all()
+    if not asig:
+        return out
+    eids = list({a.entrenamiento_id for a in asig})
+    ents = {e.id: e for e in (await db.execute(select(CapEntrenamiento).where(CapEntrenamiento.id.in_(eids)))).scalars().all()}
+    casos: dict[str, set[str]] = defaultdict(set)
+    for eid, cid in (await db.execute(select(CapCaso.entrenamiento_id, CapCaso.id).where(CapCaso.entrenamiento_id.in_(eids)))).all():
+        casos[eid].add(cid)
+    hechos: dict[str, set[str]] = defaultdict(set)
+    en_curso: set[str] = set()
+    q = select(CapSesion.asignacion_id, CapSesion.caso_id, CapSesion.estado).where(CapSesion.asignacion_id.in_([a.id for a in asig]))
+    for aid, cid, est in (await db.execute(q)).all():
+        if est in HECHOS:
+            hechos[aid].add(cid)
+        else:
+            en_curso.add(aid)
+    for a in asig:
+        e = ents.get(a.entrenamiento_id)
+        if e is None:
+            continue
+        total = len(casos[e.id])
+        n = total if a.estado == "terminado" else len(hechos[a.id] & casos[e.id])
+        r = a.resultado or {}
+        out[a.postulante_id].append({
+            "id": a.id, "entrenamiento_id": e.id, "nombre": e.nombre, "intento": a.intento or 1, "estado": a.estado,
+            "casos": total, "hechos": n,
+            "archivado": e.estado == "archivado",
+            "pct": 100 if a.estado == "terminado" else (round(n / total * 100) if total else 0),
+            "en_chat": a.id in en_curso, "aprobado": r.get("aprobado"), "nivel": r.get("nivel_promedio"),
+            "info_pct": r.get("info_pct"), "asignado_at": iso(a.asignado_at), "terminado_at": iso(a.terminado_at),
+        })
+    return out
+
+
+def avance(p: CapPostulante, d: Datos) -> dict[str, Any]:
+    """El % de avance de sus entrenamientos (casos hechos sobre casos enviados). El IPV es independiente: no cuenta acá.
+    `meta` es el mínimo que se espera por postulante, no un tope: cada entrenamiento terminado suma, también si lo repite."""
+    ents = d.entrenamientos.get(p.id, [])
+    casos = sum(x["casos"] for x in ents)
+    hechos = sum(min(x["hechos"], x["casos"]) for x in ents)
+    terminados = sum(1 for x in ents if x["estado"] == "terminado")
+    return {"pct": round(hechos / casos * 100) if casos else None, "casos": casos, "hechos": hechos,
+            "entrenamientos": len(ents), "terminados": terminados,
+            "aprobados": sum(1 for x in ents if x["aprobado"] is True),
+            # La guía del equipo: al menos N entrenamientos por postulante (puede hacer más).
+            "meta": settings.entrenamiento_meta_postulante, "meta_cumplida": terminados >= settings.entrenamiento_meta_postulante}
+
+
+def avance_grupo(ps: list[CapPostulante], d: Datos) -> Optional[int]:
+    """Avance promedio de los entrenamientos de los postulantes activos que tienen alguno enviado."""
+    xs = [x for p in ps if p.estado not in SALIDAS and (x := avance(p, d)["pct"]) is not None]
+    return round(mean(xs)) if xs else None
 
 
 def ipv_de(e: CapEnlace | None) -> dict[str, Any]:
@@ -222,7 +294,7 @@ def postulante_fila(p: CapPostulante, d: Datos, g: CapGrupo, roles: set[str]) ->
             "sexo": p.sexo, "estado": p.estado, "estado_nombre": ESTADO_NOMBRE[p.estado], "estado_at": iso(p.estado_at),
             "motivo": p.motivo, "etapa_max": p.etapa_max, "en_piso": p.estado in ("aprobo_escrita", "aprobo_mentoria"),
             "ipv": ipv_de(d.enlaces.get(p.id)), "comentarios": conteo(d.comentarios[p.id]),
-            "puede": destinos(p, roles, g)}
+            "entrenamientos": d.entrenamientos.get(p.id, []), "avance": avance(p, d), "puede": destinos(p, roles, g)}
 
 
 # ------------------------------------------------------------------ embudo, IPV y estadísticas
@@ -318,7 +390,10 @@ def grupo_dict(g: CapGrupo, ps: list[CapPostulante], d: Datos, user: CurrentUser
         "capacitador": {"id": g.capacitador_id, "nombre": quien.get(g.capacitador_id, "—")},
         "mentores": [{"id": m, "nombre": quien.get(m, "—")} for m in (g.mentores or [])],
         "embudo": e, "efectividad": e["efectividad"], "ipv": {k: r[k] for k in ("realizados", "total", "porcentaje")},
-        "feedback": feedback_total(ps, d)["total"],
+        "feedback": feedback_total(ps, d)["total"], "avance": avance_grupo(ps, d),
+        "meta": {"entrenamientos": settings.entrenamiento_meta_postulante,
+                 "cumplen": sum(1 for p in ps if p.estado not in SALIDAS and avance(p, d)["meta_cumplida"]),
+                 "activos": sum(1 for p in ps if p.estado not in SALIDAS)},
         "roles": sorted(roles), "puede": {"estados": destinos_grupo(g, roles), "editar": bool({"capacitador", "gestion"} & roles),
                                           "postulantes": g.estado == "en_curso" and bool({"capacitador", "gestion"} & roles)},
     }
