@@ -656,3 +656,57 @@ async def test_entrenamientos_en_lote_en_vivo_y_repetir(monkeypatch):
             pass
         grupo = (await ac.get(f"{B}/grupos/{g['id']}", headers=cap)).json()
         assert grupo["postulantes"][0]["avance"]["terminados"] == 2                         # cada intento terminado suma
+
+
+# ------------------------------------------------------------------ IPV con tiempo límite
+@pytest.mark.asyncio
+async def test_ipv_con_tiempo_limite(monkeypatch):
+    """45 minutos desde que empieza (pausar no lo detiene): vencido sin terminar, se reinicia completo y el postulante
+    recibe el informe para volver a empezar. El equipo lo ve en el historial, aunque el postulante no vuelva a entrar."""
+    from datetime import timedelta
+
+    from app.operativas.capacitacion import publico_api
+    from app.operativas.capacitacion import servicio as cap_srv
+    monkeypatch.setattr(settings, "ipv_minutos", 45)
+    real = cap_srv.ahora
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        _, cap = await _nuevo(ac, admin, "capacitador")
+        gid = (await ac.post(f"{B}/grupos", headers=cap, json={"nombre": "Grupo Reloj", "fecha_inicio": "2026-10-19"})).json()["id"]
+        pid = (await ac.post(f"{B}/grupos/{gid}/postulantes", headers=cap,
+                             json={"nombre": "Rita", "apellido": "Reloj", "ci": "8800001", "edad": 22, "sexo": "F"})).json()["id"]
+        token = (await ac.post(f"{B}/postulantes/{pid}/enlace", headers=cap, json={"origen": ORIGEN})).json()["url"].rsplit("/", 1)[1]
+        resp = {str(n): ops[0] for n, ops in ipv.OPCIONES.items()}
+
+        # Empieza: corre el reloj (lo pone el servidor); se puede responder mientras tanto.
+        est = (await ac.post(f"{P}/{token}/ipv/iniciar")).json()["ipv"]
+        assert est["estado"] == "en_curso" and est["minutos"] == 45 and est["limite_at"] and est["ahora"]
+        assert (await ac.post(f"{P}/{token}/ipv/iniciar")).json()["ipv"]["limite_at"] == est["limite_at"]   # no reinicia el reloj
+        assert (await ac.put(f"{P}/{token}/ipv", json={"respuestas": {k: resp[k] for k in ("1", "2", "3")}})).status_code == 200
+
+        # A los 45 minutos y unos segundos, la respuesta mandada a tiempo todavía entra; pasado el margen, no.
+        monkeypatch.setattr(cap_srv, "ahora", lambda: real() + timedelta(minutes=45, seconds=10))
+        assert (await ac.put(f"{P}/{token}/ipv", json={"respuestas": {"4": resp["4"]}})).status_code == 200
+        monkeypatch.setattr(cap_srv, "ahora", lambda: real() + timedelta(minutes=46))
+        r = await ac.put(f"{P}/{token}/ipv", json={"respuestas": {"5": resp["5"]}})
+        assert r.status_code == 410 and r.json()["detail"]["code"] == "ipv_vencido"
+        ver = (await ac.get(f"{P}/{token}")).json()["ipv"]
+        assert ver["estado"] == "pendiente" and ver["respondidas"] == 0 and ver["limite_at"] is None
+        assert ver["vencido"]["respondidas"] == 4 and ver["vencido"]["minutos"] == 45 and ver["vencido"]["total"] == 87
+        assert (await ac.get(f"{P}/{token}/ipv")).json()["respuestas"] == {}
+        r = await ac.post(f"{P}/{token}/ipv/terminar", json={"respuestas": resp})                 # sin empezar, no se termina
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "ipv_sin_empezar"
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # Vuelve a empezar desde cero: el informe se va y el reloj arranca de nuevo.
+        monkeypatch.setattr(cap_srv, "ahora", real)
+        est = (await ac.post(f"{P}/{token}/ipv/iniciar")).json()["ipv"]
+        assert est["estado"] == "en_curso" and est["vencido"] is None and est["respondidas"] == 0
+        assert (await ac.put(f"{P}/{token}/ipv", json={"respuestas": {"1": resp["1"]}})).status_code == 200
+        # Si no vuelve a entrar, el trabajo de fondo lo reinicia igual y el equipo lo ve.
+        monkeypatch.setattr(cap_srv, "ahora", lambda: real() + timedelta(minutes=50))
+        assert await publico_api.vencer_pendientes() >= 1
+        f = (await ac.get(f"{B}/postulantes/{pid}", headers=cap)).json()
+        assert f["ipv"]["estado"] == "pendiente" and f["ipv"]["reinicios"] == 2
+        assert sum(1 for h in f["historial"] if h["tipo"] == "ipv_vencido") == 2
+        assert "respondió 1 de 87" in next(h["motivo"] for h in f["historial"] if h["tipo"] == "ipv_vencido")

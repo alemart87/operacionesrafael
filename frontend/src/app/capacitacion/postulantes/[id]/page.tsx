@@ -22,7 +22,7 @@ export default function FichaPage() {
 const SEXO = { F: "Femenino", M: "Masculino", X: "Otro" };
 const EVENTO: Record<string, string> = {
   alta: "Ingresó al grupo", estado: "Cambio de estado", link: "Link del test generado", link_anulado: "Link anulado",
-  ipv_inicio: "Empezó el IPV", ipv_terminado: "Terminó el IPV", datos: "Datos corregidos",
+  ipv_inicio: "Empezó el IPV", ipv_terminado: "Terminó el IPV", ipv_vencido: "IPV reiniciado: se terminó el tiempo", datos: "Datos corregidos",
   entrenamiento_enviado: "Entrenamiento enviado", entrenamiento_reiniciado: "Entrenamiento reiniciado",
 };
 /** El texto de un evento del historial; los tipos nuevos que no estén acá se muestran legibles igual. */
@@ -132,9 +132,11 @@ function FichaPostulante() {
           </div>
         ) : (
           <div className="card p-5 text-sm text-brand-slate">
-            {f.ipv.estado === "en_curso" ? <>Lo está haciendo: lleva <b className="text-brand-ink">{f.ipv.respondidas} de {f.ipv.total}</b> respondidas (última vez {hace(f.ipv.iniciado_at)}).</>
+            {f.ipv.estado === "en_curso" ? <>Lo está haciendo: lleva <b className="text-brand-ink">{f.ipv.respondidas} de {f.ipv.total}</b> respondidas
+              (empezó {hace(f.ipv.iniciado_at)}{f.ipv.limite_at ? `; tiene hasta las ${new Date(f.ipv.limite_at).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", timeZone: "America/Asuncion" })}` : ""}).</>
               : f.ipv.estado === "pendiente" ? "Tiene el link pero todavía no empezó."
                 : "Todavía no tiene link para el test. No es obligatorio, pero ayuda a conocerlo desde el día 1."}
+            {(f.ipv.reinicios ?? 0) > 0 && <p className="mt-2 text-[13px] text-brand-primary-dark">Se le reinició {f.ipv.reinicios === 1 ? "una vez" : `${f.ipv.reinicios} veces`} por no terminarlo en el tiempo (ver el historial).</p>}
             {f.puede.link && p.estado !== "abandono" && p.estado !== "baja" && <div className="mt-3"><Boton tipo="secundario" icono={Link2} onClick={() => setHoja("link")} className="sm:w-auto">{f.ipv.estado === "sin_link" ? "Generar link" : "Ver link y QR"}</Boton></div>}
           </div>
         )}

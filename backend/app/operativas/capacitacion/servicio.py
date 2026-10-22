@@ -10,7 +10,7 @@ Visibilidad:
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from statistics import mean
 from typing import Any, Iterable, Optional
 from zoneinfo import ZoneInfo
@@ -301,6 +301,33 @@ def avance_grupo(ps: list[CapPostulante], d: Datos) -> Optional[int]:
     return round(mean(xs)) if xs else None
 
 
+# ------------------------------------------------------------------ IPV con tiempo límite
+GRACIA_IPV = timedelta(seconds=30)      # lo que puede tardar en llegar la última respuesta, mandada a tiempo
+
+
+def ipv_limite(e: CapEnlace | None) -> Optional[datetime]:
+    """Hasta cuándo puede responder el test que empezó (None si no empezó o ya terminó)."""
+    if e is None or e.ipv_estado != "en_curso" or not e.iniciado_at:
+        return None
+    return utc(e.iniciado_at) + timedelta(minutes=settings.ipv_minutos)
+
+
+def vencer_ipv(db: AsyncSession, e: CapEnlace, grupo_id: str, *, gracia: timedelta = timedelta(0)) -> bool:
+    """Si se le terminó el tiempo sin terminar el test, se reinicia completo: se borran las respuestas y queda el
+    informe para el postulante (y el evento en el historial). Devuelve si venció."""
+    limite = ipv_limite(e)
+    if limite is None or ahora() < limite + gracia:
+        return False
+    n = len(e.respuestas or {})
+    e.ipv_vencido = {"iniciado_at": iso(e.iniciado_at), "vencio_at": iso(limite), "respondidas": n, "total": ipv.TOTAL,
+                     "minutos": settings.ipv_minutos}
+    e.respuestas, e.ipv_estado, e.iniciado_at = {}, "pendiente", None
+    e.ipv_reinicios = (e.ipv_reinicios or 0) + 1
+    evento(db, grupo_id=grupo_id, postulante_id=e.postulante_id, tipo="ipv_vencido", por=None,
+           motivo=f"respondió {n} de {ipv.TOTAL} en {settings.ipv_minutos} min", respondidas=n)
+    return True
+
+
 def ipv_de(e: CapEnlace | None) -> dict[str, Any]:
     """Cómo va el IPV del postulante (sin los puntajes: solo el DGV, para la tabla)."""
     if e is None:
@@ -310,7 +337,8 @@ def ipv_de(e: CapEnlace | None) -> dict[str, Any]:
         x = e.resultado["escalas"][0]
         dgv = {"decatipo": x["decatipo"], "nivel": x["nivel"]}
     return {"estado": e.ipv_estado, "respondidas": len(e.respuestas or {}), "total": ipv.TOTAL, "dgv": dgv,
-            "terminado_at": iso(e.terminado_at), "link_activo": bool(e.activo and utc(e.vence_at) > ahora())}
+            "terminado_at": iso(e.terminado_at), "link_activo": bool(e.activo and utc(e.vence_at) > ahora()),
+            "limite_at": iso(ipv_limite(e)), "reinicios": e.ipv_reinicios or 0}
 
 
 def conteo(c: Counter) -> dict[str, int]:

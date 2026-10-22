@@ -70,6 +70,8 @@ export interface Grupo {
 export interface IpvFila {
   estado: "sin_link" | "pendiente" | "en_curso" | "terminado"; respondidas: number; total: number;
   dgv: { decatipo: number; nivel: NivelIpv } | null; terminado_at: string | null; link_activo?: boolean;
+  /** Hasta cuándo puede responder el test en curso y cuántas veces se reinició por tiempo. */
+  limite_at?: string | null; reinicios?: number;
 }
 export interface Postulante {
   id: string; grupo_id: string; nombre: string; apellido: string; ci: string; edad: number; sexo: Sexo; estado: EstadoPostulante;

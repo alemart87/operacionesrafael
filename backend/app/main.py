@@ -96,6 +96,9 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_cap_asignacion_intento ON cap_asignaciones (entrenamiento_id, postulante_id, intento)",
     # v1.5.1 · el historial de Capacitación admite los tipos largos (entrenamiento_enviado, entrenamiento_reiniciado)
     "ALTER TABLE cap_eventos ALTER COLUMN tipo TYPE VARCHAR(40)",
+    # v1.5.2 · IPV con tiempo límite: cuántas veces se reinició por tiempo y el informe del último vencimiento
+    "ALTER TABLE cap_enlaces ADD COLUMN IF NOT EXISTS ipv_reinicios INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE cap_enlaces ADD COLUMN IF NOT EXISTS ipv_vencido JSON",
 ]
 
 
