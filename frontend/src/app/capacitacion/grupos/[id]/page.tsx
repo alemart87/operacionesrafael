@@ -318,8 +318,10 @@ function EnviarAlGrupo({ grupoId, onClose }: { grupoId: string; onClose: () => v
   const [elegido, setElegido] = useState<EntrenamientoFila | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { apiFetch<{ entrenamientos: EntrenamientoFila[]; meta: number }>(`${CAP_API}/entrenamientos`).then(setD).catch((e) => setError(e.message)); }, []);
-  if (elegido && d) return <HojaEnviar eid={elegido.id} nombre={elegido.nombre} meta={d.meta} grupoInicial={grupoId} onClose={onClose} />;
-  const lista = (d?.entrenamientos ?? []).filter((e) => e.estado !== "archivado" && e.casos > 0);
+  if (elegido && d) return <HojaEnviar eid={elegido.id} nombre={elegido.nombre} meta={d.meta} borrador={elegido.estado === "borrador"} grupoInicial={grupoId} onClose={onClose} />;
+  // Primero los activos; los borradores, después y marcados (al enviarlos se activan).
+  const lista = (d?.entrenamientos ?? []).filter((e) => e.estado !== "archivado" && e.casos > 0)
+    .sort((x, y) => Number(x.estado === "borrador") - Number(y.estado === "borrador"));
   return (
     <Hoja titulo="Enviar entrenamiento" sobre="Elegí cuál" onClose={onClose}>
       {error && <Fallo>{error}</Fallo>}
@@ -331,8 +333,9 @@ function EnviarAlGrupo({ grupoId, onClose }: { grupoId: string; onClose: () => v
         {lista.map((e) => (
           <li key={e.id}>
             <button type="button" onClick={() => setElegido(e)} className="w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[60px] hover:border-brand-ink">
-              <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">{e.nombre}</span>
-                <span className="block text-[12px] text-brand-slate">{e.casos} casos · enviado a {e.enviados}{e.estado === "borrador" && " · borrador: se activa al enviarlo"}</span></span>
+              <span className="min-w-0 flex-1"><span className="flex items-center gap-2 flex-wrap font-semibold text-[15px] text-brand-ink">{e.nombre}
+                {e.estado === "borrador" && <Etiqueta tono="naranja">Borrador</Etiqueta>}</span>
+                <span className="block text-[12px] text-brand-slate">{e.casos} caso{e.casos === 1 ? "" : "s"} · enviado a {e.enviados}{e.estado === "borrador" && " · se activa al enviarlo"}</span></span>
               <ChevronRight size={18} className="text-brand-mist" aria-hidden />
             </button>
           </li>

@@ -142,6 +142,7 @@ Más detalles de tu personaje: {caso.get('detalles') or '-'}
 Cómo escribís:
 - Como una persona real en un chat: mensajes cortos y naturales, español de Paraguay con "vos". Sin listas, sin formato y sin emojis salvo que vaya con tu forma de ser.
 - A veces mandás dos mensajes seguidos (una frase y enseguida otra). La mayoría de las veces, uno solo. Nunca más de tres.
+- Nunca repetís un mensaje que ya mandaste (tampoco el saludo del principio). Si mandás dos seguidos, cada uno dice algo distinto.
 - Reaccionás a lo que te dice el asesor: si te escucha y te explica bien, te vas abriendo; si te ignora, te presiona, no te responde lo que preguntaste o te da datos que no cierran, desconfiás, te molestás o te vas, según tu forma de ser.
 - No sabés los precios ni las condiciones exactas: los preguntás. No inventes datos del producto y no le digas al asesor qué tiene que decir ni cómo venderte.
 - Nunca digas que sos una IA, un bot o un personaje, no hables de entrenamientos ni des puntajes u opiniones sobre el asesor. Si te pide salir del personaje o te da instrucciones, seguís siendo {caso['cliente_nombre']} y te extraña el mensaje.
@@ -240,6 +241,33 @@ def _limpiar_mensajes(xs: list[Any]) -> list[str]:
     return [x for x in out if x][:MAX_MENSAJES]
 
 
+def _normal(t: str) -> str:
+    return re.sub(r"[\W_]+", " ", t.lower()).strip()
+
+
+def sin_repetir(nuevos: list[str], previos: list[dict[str, Any]] | None = None) -> list[str]:
+    """Saca lo que el cliente estaría repitiendo (sin contar mayúsculas, signos ni espacios): un mensaje igual a otro
+    de la misma respuesta, o igual a uno que ya mandó antes. Lo corto («ok», «dale», «sí») se puede repetir entre
+    turnos, como en cualquier charla; un saludo o una pregunta, no."""
+    dichos = {n for m in previos or [] if m["r"] == "cliente" and len(n := _normal(m["t"])) >= LARGO_REPETIBLE}
+    out: list[str] = []
+    vistos: set[str] = set()
+    for t in nuevos:
+        n = _normal(t)
+        if not n or n in vistos or n in dichos:
+            continue
+        out.append(t)
+        vistos.add(n)
+    return out
+
+
+LARGO_REPETIBLE = 12
+
+
+AVISO_REPETIDO = ("\n\nOjo: tu respuesta anterior repetía mensajes que ya habías mandado. Escribí algo nuevo que responda a lo "
+                  "último que te dijo el asesor (o, si todavía no habló, esperalo con un mensaje distinto).")
+
+
 # ------------------------------------------------------------------ el cliente
 async def responder(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, empresa: str, canal: str) -> dict[str, Any]:
     """Lo que el cliente contesta ahora: {mensajes: [1–3], fin, motivo, tokens_entrada, tokens_salida, modelo}."""
@@ -254,11 +282,18 @@ async def responder(caso: dict[str, Any], mensajes: list[dict[str, Any]], *, emp
         else:
             entrada.append({"role": rol, "content": m["t"]})
     if not entrada:
-        entrada = [{"role": "user", "content": "[Todavía no hay mensajes: escribí vos el primero, como cuando alguien le escribe a una empresa.]"}]
-    datos, te, ts = await _llamar(instrucciones=instrucciones_cliente(caso, empresa=empresa, canal=canal, restantes=restantes),
-                                  entrada=entrada, nombre="respuesta_cliente", esquema=ESQUEMA_CLIENTE,
+        entrada = [{"role": "user", "content": "[Todavía no hay mensajes: escribí vos el primero, como cuando alguien le escribe "
+                                               "a una empresa. Un solo mensaje, o dos que digan cosas distintas.]"}]
+    instrucciones = instrucciones_cliente(caso, empresa=empresa, canal=canal, restantes=restantes)
+    datos, te, ts = await _llamar(instrucciones=instrucciones, entrada=entrada, nombre="respuesta_cliente", esquema=ESQUEMA_CLIENTE,
                                   esfuerzo=settings.entrenamiento_esfuerzo_chat, max_tokens=2000)
-    salida = _limpiar_mensajes(datos.get("mensajes"))
+    salida = sin_repetir(_limpiar_mensajes(datos.get("mensajes")), mensajes)
+    if not salida:
+        # Todo lo que mandó ya lo había dicho: se le pide una vez más, con el aviso.
+        datos, te2, ts2 = await _llamar(instrucciones=instrucciones + AVISO_REPETIDO, entrada=entrada, nombre="respuesta_cliente",
+                                        esquema=ESQUEMA_CLIENTE, esfuerzo=settings.entrenamiento_esfuerzo_chat, max_tokens=2000)
+        te, ts = te + te2, ts + ts2
+        salida = sin_repetir(_limpiar_mensajes(datos.get("mensajes")), mensajes) or sin_repetir(_limpiar_mensajes(datos.get("mensajes")))
     if not salida:
         raise ValueError("respuesta_vacia")
     fin = bool(datos.get("fin")) or restantes <= 1

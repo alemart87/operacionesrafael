@@ -1,11 +1,13 @@
 """Async SQLAlchemy engine and session factory."""
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from .config import settings
 
@@ -18,6 +20,8 @@ engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,
+    # Solo para los tests contra PostgreSQL: cada test tiene su propio event loop y no puede reusar conexiones.
+    **({"poolclass": NullPool} if os.environ.get("DB_NULLPOOL") else {}),
 )
 
 AsyncSessionLocal = async_sessionmaker(

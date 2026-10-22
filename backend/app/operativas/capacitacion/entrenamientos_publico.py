@@ -59,11 +59,15 @@ async def iniciar(token: str, aid: str, cid: str, request: Request, db: AsyncSes
     c = await db.get(CapCaso, cid)
     if not c or c.entrenamiento_id != e.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Caso no encontrado")
-    existente = (await db.execute(select(CapSesion).where(CapSesion.asignacion_id == a.id, CapSesion.caso_id == c.id)
-                                  .order_by(CapSesion.iniciado_at.desc()))).scalars().first()
-    if existente:
-        return ent.sesion_publica(existente)
+    async def existente() -> CapSesion | None:
+        return (await db.execute(select(CapSesion).where(CapSesion.asignacion_id == a.id, CapSesion.caso_id == c.id)
+                                 .order_by(CapSesion.iniciado_at.desc()))).scalars().first()
+    if (s := await existente()) is not None:
+        return ent.sesion_publica(s)
     async with ent.candado(f"{a.id}:{c.id}"):
+        # Se vuelve a mirar adentro del candado: dos toques seguidos no abren dos conversaciones del mismo caso.
+        if (s := await existente()) is not None:
+            return ent.sesion_publica(s)
         s = await ent.abrir(db, e=e, c=c, asignacion=a, postulante_id=p.id)
         if a.estado == "pendiente":
             a.estado, a.iniciado_at = "en_curso", srv.ahora()

@@ -332,6 +332,39 @@ async def test_cliente_y_evaluador_con_openai_falso(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_el_cliente_no_repite_su_saludo(monkeypatch):
+    """El modelo a veces manda el mismo saludo dos veces (o repite el del principio): se saca; si todo era repetido,
+    se le pide una vez más."""
+    respuestas = iter([
+        '{"mensajes": ["Hola, buenas tardes.", "hola buenas tardes", "Quería consultar por un plan"], "fin": false, "motivo": "sigue"}',
+        '{"mensajes": ["Hola, quería consultar por un plan."], "fin": false, "motivo": "sigue"}',
+        '{"mensajes": ["¿Y cuánto me sale por mes?"], "fin": false, "motivo": "sigue"}',
+    ])
+    llamadas = []
+
+    class Falso:
+        def __init__(self, **kw):
+            self.responses = self
+
+        async def create(self, **kw):
+            llamadas.append(kw)
+            return _respuesta(next(respuestas))
+
+    import openai
+    monkeypatch.setattr(openai, "AsyncOpenAI", Falso)
+    monkeypatch.setattr(settings, "openai_api_key", "sk-falsa-solo-test")
+    monkeypatch.setattr(settings, "entrenamiento_simulador", False)
+    caso = {**CASO, "entrenamiento": {}}
+    r = await eia.responder(caso, [], empresa="Claro", canal="whatsapp")
+    assert r["mensajes"] == ["Hola, buenas tardes.", "Quería consultar por un plan"]          # el saludo, una sola vez
+    hist = [{"r": "cliente", "t": "Hola, quería consultar por un plan"}, {"r": "asesor", "t": "Hola, ¿en qué te ayudo?"}]
+    r = await eia.responder(caso, hist, empresa="Claro", canal="whatsapp")
+    assert r["mensajes"] == ["¿Y cuánto me sale por mes?"] and len(llamadas) == 3              # repetía: se pidió de nuevo
+    assert "Ojo" in llamadas[2]["instructions"] and "Nunca repetís" in llamadas[0]["instructions"]
+    assert eia.sin_repetir(["Ok"], [{"r": "cliente", "t": "Ok"}]) == ["Ok"]                  # lo corto se puede repetir
+
+
+@pytest.mark.asyncio
 async def test_entrenamientos_flujo(monkeypatch):
     monkeypatch.setattr(settings, "entrenamiento_simulador", True)
     monkeypatch.setattr(settings, "openai_api_key", "")
@@ -364,6 +397,10 @@ async def test_entrenamientos_flujo(monkeypatch):
         # Probar un caso: el mentor hace de asesor y ve la evaluación al momento.
         s = (await ac.post(f"{B}/casos/{c2['id']}/probar", headers=men)).json()
         assert [m["t"] for m in s["mensajes"]] == ["Hola", "Rápido porfa"]                       # dos mensajes seguidos
+        c3 = (await ac.post(f"{B}/entrenamientos/{eid}/casos", headers=men, json={**CASO, "primer_mensaje": "Hola!\n\nhola"})).json()
+        s3 = (await ac.post(f"{B}/casos/{c3['id']}/probar", headers=men)).json()
+        assert [m["t"] for m in s3["mensajes"]] == ["Hola!"]                                     # sin el saludo repetido
+        assert (await ac.delete(f"{B}/casos/{c3['id']}", headers=men)).status_code == 200
         r = (await ac.post(f"{B}/sesiones/{s['id']}/mensajes", headers=men, json={"texto": "Hola Hugo, ¿en qué te ayudo?"})).json()
         assert r["nuevos"] and not r["fin"]
         assert (await ac.post(f"{B}/sesiones/{s['id']}/mensajes", headers=cap, json={"texto": "x"})).status_code == 404

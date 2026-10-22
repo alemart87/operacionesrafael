@@ -294,8 +294,8 @@ async function enviarA(eid: string, pids: string[]) {
     { method: "POST", body: JSON.stringify({ postulante_ids: pids, origen: window.location.origin, repetir: true }) });
 }
 
-export function HojaEnviar({ eid, nombre, meta, grupoInicial, onClose, onListo }: {
-  eid: string; nombre: string; meta: number; grupoInicial?: string; onClose: () => void; onListo?: () => void;
+export function HojaEnviar({ eid, nombre, meta, borrador, grupoInicial, onClose, onListo }: {
+  eid: string; nombre: string; meta: number; borrador?: boolean; grupoInicial?: string; onClose: () => void; onListo?: () => void;
 }) {
   const [grupos, setGrupos] = useState<Resumen["grupos"] | null>(null);
   const [gid, setGid] = useState<string | null>(grupoInicial ?? null);
@@ -358,8 +358,10 @@ export function HojaEnviar({ eid, nombre, meta, grupoInicial, onClose, onListo }
   }
   return (
     <Hoja titulo="Enviar entrenamiento" sobre={nombre} onClose={onClose} ocupada={ocupado}
-      pie={<Boton icono={Send} onClick={enviar} ocupado={ocupado} disabled={!sel.length}>Enviar a {sel.length} postulante{sel.length === 1 ? "" : "s"}</Boton>}>
+      pie={<Boton icono={Send} onClick={enviar} ocupado={ocupado} disabled={!sel.length}>
+        {borrador ? `Activar y enviar (${sel.length})` : `Enviar a ${sel.length} postulante${sel.length === 1 ? "" : "s"}`}</Boton>}>
       <div className="space-y-4">
+        {borrador && <AvisoBorrador />}
         {!grupoInicial && (
           <div><span className="label">Grupo</span>
             {grupos === null ? <div className="h-11 rounded-lg bg-brand-bg animate-pulse" /> : grupos.length === 0 ? <p className="text-sm text-brand-slate">No tenés grupos en curso.</p> : (
@@ -412,6 +414,15 @@ export function MetaEntrenamientos({ hechos, meta, compacta }: { hechos: number;
 }
 
 
+/** Un entrenamiento en borrador se puede enviar: al enviarlo se activa (y lo ven los postulantes). */
+export function AvisoBorrador() {
+  return (
+    <p className="rounded-lg border border-brand-orange/40 bg-brand-orange/10 px-3 py-2 text-[13px] text-[#5C3700]">
+      <b>Está en borrador.</b> Al enviarlo se activa y lo ven los postulantes.
+    </p>
+  );
+}
+
 // ------------------------------------------------------------------ en la ficha del postulante
 /** Enviarle un entrenamiento a un postulante (desde su ficha o desde el grupo). */
 export function HojaEnviarA({ pid, nombre, onClose, onListo }: { pid: string; nombre: string; onClose: () => void; onListo?: () => void }) {
@@ -423,7 +434,9 @@ export function HojaEnviarA({ pid, nombre, onClose, onListo }: { pid: string; no
     Promise.all([apiFetch<{ entrenamientos: EntrenamientoFila[] }>(`${CAP_API}/entrenamientos`),
       apiFetch<{ entrenamientos: EntPostulante[] }>(`${CAP_API}/postulantes/${pid}/entrenamientos`)])
       .then(([a, b]) => {
-        setLista(a.entrenamientos.filter((e) => e.estado !== "archivado" && e.casos > 0).map((e) => ({ ...e, ya: conEste(b.entrenamientos, e.id) })));
+        // Primero los activos; los borradores, después y marcados (al enviarlos se activan).
+        setLista(a.entrenamientos.filter((e) => e.estado !== "archivado" && e.casos > 0).map((e) => ({ ...e, ya: conEste(b.entrenamientos, e.id) }))
+          .sort((x, y) => Number(x.estado === "borrador") - Number(y.estado === "borrador")));
       }).catch((e) => setError(e.message));
   }, [pid]);
   const enviar = async (e: EntrenamientoFila) => {
@@ -454,9 +467,11 @@ export function HojaEnviarA({ pid, nombre, onClose, onListo }: { pid: string; no
               <li key={e.id}>
                 <button type="button" disabled={!!ocupado || bloqueado} onClick={() => enviar(e)}
                   className={cx("w-full text-left card px-4 py-3 flex items-center gap-3 min-h-[60px]", bloqueado ? "opacity-60" : "hover:border-brand-ink active:bg-brand-bg-soft")}>
-                  <span className="min-w-0 flex-1"><span className="block font-semibold text-[15px] text-brand-ink">{e.nombre}</span>
-                    <span className="block text-[12px] text-brand-slate">{e.casos} casos
-                      {e.ya.terminado ? ` · lo terminó: tocá para repetirlo (${e.ya.intento + 1}.º intento)` : bloqueado ? " · ya lo tiene, sin terminar" : ""}</span></span>
+                  <span className="min-w-0 flex-1"><span className="flex items-center gap-2 flex-wrap font-semibold text-[15px] text-brand-ink">{e.nombre}
+                    {e.estado === "borrador" && <Etiqueta tono="naranja">Borrador</Etiqueta>}</span>
+                    <span className="block text-[12px] text-brand-slate">{e.casos} caso{e.casos === 1 ? "" : "s"}
+                      {e.ya.terminado ? ` · lo terminó: tocá para repetirlo (${e.ya.intento + 1}.º intento)` : bloqueado ? " · ya lo tiene, sin terminar" : ""}
+                      {e.estado === "borrador" && !bloqueado && " · se activa al enviarlo"}</span></span>
                   {ocupado === e.id ? <span className="text-[12px] text-brand-slate">Enviando…</span>
                     : e.ya.terminado ? <RotateCcw size={18} className="text-brand-primary" aria-hidden />
                     : !bloqueado && <Send size={18} className="text-brand-primary" aria-hidden />}

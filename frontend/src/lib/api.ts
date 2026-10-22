@@ -282,7 +282,8 @@ export async function apiFetch<T = any>(path: string, opts: RequestInit = {}, re
     }
   }
   if (!res.ok) {
-    let detail = `Error ${res.status}`;
+    // Si el servidor no explica qué pasó (un error interno), se dice en palabras y con el código para soporte.
+    let detail = res.status >= 500 ? `Algo falló en el servidor (error ${res.status}). Probá de nuevo en un momento; si sigue, avisá al administrador.` : `Error ${res.status}`;
     let raw: unknown = null;
     try {
       const body = await res.json();

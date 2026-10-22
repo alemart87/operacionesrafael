@@ -73,10 +73,29 @@ function Detalle() {
         {e.casos.length} caso{e.casos.length === 1 ? "" : "s"} · {e.empresa} · creado por {e.creado_por}
       </Encabezado>
 
+      {/* Qué falta para poder enviarlo, dicho claro. */}
+      {e.estado === "borrador" && (
+        <div role="status" className="mb-4 rounded-xl border border-brand-orange/40 bg-brand-orange/10 px-4 py-3 flex items-start gap-3 flex-wrap">
+          <div className="min-w-0 flex-1 text-[14px] text-[#5C3700]">
+            <b>Borrador:</b>{" "}
+            {e.casos.length === 0 ? "agregá al menos un caso. Sin casos no se puede activar ni enviar."
+              : "los postulantes todavía no lo ven. Probá los casos y activalo, o envialo directamente: al enviarlo se activa."}
+          </div>
+          {e.puede_editar && e.casos.length > 0 && <Boton tipo="secundario" onClick={activar} className="!w-auto !min-h-[40px] !px-4 !text-sm">Activar</Boton>}
+        </div>
+      )}
+      {e.estado === "archivado" && (
+        <div role="status" className="mb-4 rounded-xl border border-brand-border bg-white px-4 py-3 text-[14px] text-brand-slate">
+          <b className="text-brand-ink">Archivado:</b> ya no se envía ni aparece en los links. Los resultados quedan en las fichas.
+        </div>
+      )}
       <div className="flex flex-wrap gap-2 mb-5">
-        {e.estado !== "archivado" && <Boton icono={Send} onClick={() => setHoja({ t: "enviar" })} disabled={!e.casos.length} className="md:!w-auto">Enviar a postulantes</Boton>}
+        {e.estado !== "archivado" && (
+          <Boton icono={Send} onClick={() => setHoja({ t: "enviar" })} disabled={!e.casos.length} className="md:!w-auto">
+            {e.estado === "borrador" ? "Activar y enviar" : "Enviar a postulantes"}
+          </Boton>
+        )}
         {editable && <Boton tipo="secundario" icono={Pencil} onClick={() => setHoja({ t: "datos" })} className="!w-auto">Datos</Boton>}
-        {e.puede_editar && e.estado === "borrador" && e.casos.length > 0 && <Boton tipo="fantasma" onClick={activar} className="!w-auto">Activar</Boton>}
         {e.puede_editar && e.estado !== "archivado" && <Boton tipo="fantasma" icono={Archive} onClick={archivar} className="!w-auto">{e.asignaciones.length ? "Archivar" : "Borrar"}</Boton>}
       </div>
 
@@ -154,7 +173,7 @@ function Detalle() {
       {hoja?.t === "caso" && <EditorCaso eid={e.id} caso={hoja.c} catalogo={cat} onClose={() => setHoja(null)} onListo={() => { setHoja(null); cargar(); avisar("Caso guardado"); }} />}
       {hoja?.t === "probar" && <ProbarCaso caso={hoja.c} criterios={cat.criterios} onClose={() => setHoja(null)} />}
       {hoja?.t === "datos" && <HojaDatosEntrenamiento ent={e} onClose={() => setHoja(null)} onListo={() => { setHoja(null); cargar(); avisar("Guardado"); }} />}
-      {hoja?.t === "enviar" && <HojaEnviar eid={e.id} nombre={e.nombre} meta={cat.meta} onClose={() => { setHoja(null); cargar(); }} />}
+      {hoja?.t === "enviar" && <HojaEnviar eid={e.id} nombre={e.nombre} meta={cat.meta} borrador={e.estado === "borrador"} onClose={() => { setHoja(null); cargar(); }} />}
       {hoja?.t === "resultado" && hoja.a.resultado && (
         <Hoja titulo={`${hoja.a.postulante.nombre} ${hoja.a.postulante.apellido}`} sobre={e.nombre} onClose={() => setHoja(null)}
           pie={<>

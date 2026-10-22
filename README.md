@@ -72,7 +72,7 @@ operacionesrafaelmartinez/
 │   │           ├── informe_diario/ # informe diario: api · models · informe (reglas y firma) · importar · palabras · seguimiento · pdf · migraciones
 │   │           └── facturacion/ # submódulo: api · agent_api · models/ · schemas
 │   │                            #   parser · analyzers/ · agent/ · jobs/
-│   ├── tests/                   # pytest (SQLite)
+│   ├── tests/                   # pytest (SQLite; con TEST_DATABASE_URL, contra PostgreSQL como en Render)
 │   └── requirements.txt
 ├── frontend/
 │   ├── public/                  # logo-voicenter-color.png
@@ -1959,7 +1959,9 @@ Chats de práctica en los que el postulante atiende a un **cliente simulado por 
   trato, desconfianza, interés en comprar, cuánto escribe y manejo de la tecnología de 1 a 5, más rasgos como apurado,
   comparador, enojado o indeciso). Sugerido: de 3 a 5 casos; puede tener 10 o 20. Cada caso se **prueba** antes de enviarlo
   (el chat y «cómo te evaluaría la IA»). Lo edita quien lo creó o la gestión; uno ya enviado se archiva en vez de borrarse.
-- **Enviar**: a un grupo entero, a algunos postulantes o a uno desde su ficha. El postulante lo hace desde **el mismo
+- **Enviar**: a un grupo entero, a algunos postulantes o a uno desde su ficha. Un **borrador** se marca como tal en todas
+  las listas de envío y el botón dice «Activar y enviar»: al enviarlo se activa (también se puede activar antes, desde
+  su detalle, después de probar los casos). El postulante lo hace desde **el mismo
   link del IPV** (si venció, se genera uno nuevo y se puede mandar por WhatsApp o copiar todos los links). Solo
   postulantes activos de grupos donde quien envía tiene un papel.
 - **Repetir**: un entrenamiento terminado se puede volver a mandar (botón *Repetir este entrenamiento* en la ficha, o
@@ -1974,6 +1976,8 @@ Chats de práctica en los que el postulante atiende a un **cliente simulado por 
     reintentan solos con la misma marca y el servidor no los duplica. El borrador se guarda en el teléfono y la pantalla
     se acomoda al teclado del celular.
   - Al terminar un caso pasa directo al siguiente cliente («Atender a Hugo») sin volver a la lista.
+  - El cliente no repite mensajes: si la IA manda dos veces el mismo (por ejemplo, el saludo) o repite algo que ya dijo,
+    se saca; si todo era repetido, se le pide una vez más. Lo corto («ok», «dale») sí se puede repetir entre turnos.
   - Se mide el **tiempo** de cada caso. Cada mensaje tiene hasta 1000 caracteres (hasta 6 por lote), una respuesta a
     la vez por conversación y un tope de respuestas del cliente por día (429). Cada conversación guarda el caso tal
     como era al empezar. El postulante sabe, desde las instrucciones, que su equipo puede verlo en vivo.
