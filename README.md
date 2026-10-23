@@ -58,7 +58,7 @@ operacionesrafaelmartinez/
 │   │   │   └── v1/              # auth · users · perfiles · audit · operativas (plataforma)
 │   │   ├── models/              # User, Profile, AuditLog, Agente, MigracionDatos (plataforma)
 │   │   ├── schemas/             # Pydantic (plataforma)
-│   │   ├── jobs/                # queue.py (cola genérica) · isolated.py (subproceso aislado)
+│   │   ├── jobs/                # queue.py (cola genérica) · isolated.py (subproceso aislado) · proceso_ventas_netas.py
 │   │   ├── services/            # audit · agent (motor del agente IA, compartido)
 │   │   ├── asistente/           # Voi (Claude Managed Agents): claude/ (agente, entorno, habilidades) · herramientas/ · conocimiento
 │   │   │                        #   publicacion · sesiones · consumidor · memoria · consumo · api · admin_api · simulador
@@ -202,6 +202,19 @@ por contenido (CARGAS tiene `SDS_ESTADO`; de las que tienen `FECHA_ACTIVACION`, 
 segunda portabilidad), y las columnas renombradas por `ALIAS_COLUMNAS`. El corte nunca es anterior a la última
 activación del archivo (el 19/10 trae activaciones del 18 y 19 con `FECHA_DATO` 17). Los tres formatos (septiembre,
 14/10 y 19/10) conviven y tienen prueba.
+Desde el **22/10/2026** (`NETAS_2210.xlsx`: hojas DDI, PORTAS y CARGAS) **CARGAS trae las ventas de todo el año** (de
+enero al corte, ~21.500 filas; con `FECHA_DATO` por fila y `CARGA`), no solo las del mes. Por eso el **período sale de
+las activaciones** (el mes mayoritario de DDI); CARGAS ya no vota (antes ganaba el mes con más cargas y el informe salía
+de marzo con 0 netas). Sin activaciones, el período es el mes de la venta finalizada más reciente. Las cargas de otros
+meses quedan fuera del informe y se cuentan aparte (`kpis.fuera_periodo_cargas`, con un aviso en Visión Negocio).
+
+**Cortes grandes sin tumbar el servidor.** Cada corte se lee en un subproceso aislado (`spawn`, con timeout) que carga
+solo `parser.py` y `analyzer.py` desde su archivo (`app/jobs/proceso_ventas_netas.py`), no toda la app, y devuelve los
+datos leídos **ya comprimidos** (`parsed_gz`) junto con el análisis; recalcular un informe desde lo guardado también
+corre ahí. Antes, con el corte del 22/10, el subproceso llegaba a ~240 MB (importaba más de mil módulos) y el servidor
+sumaba ~120 MB al reconstruir las filas que volvían: con la instancia de Render al límite, se reiniciaba todo el
+servicio y el corte quedaba «interrumpido». Ahora el subproceso usa ~110 MB y el servidor casi nada (medido con ese
+archivo: 21.520 cargas, 9 s).
 
 Reglas del análisis (`analyzer.py`):
 

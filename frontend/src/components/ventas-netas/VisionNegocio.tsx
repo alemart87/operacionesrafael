@@ -34,7 +34,9 @@ export function VisionNegocio({ d, hrefSinUso }: { d: InformeData; hrefSinUso?: 
 
       {k.fuera_periodo > 0 && (
         <div className="rounded-md border border-brand-orange/40 bg-brand-orange/10 text-sm text-brand-graphite p-3">
-          El archivo trae <b>{n(k.fuera_periodo)}</b> filas de otro mes. No entran en este informe.
+          El archivo trae <b>{n(k.fuera_periodo)}</b> filas de otros meses
+          {(k.fuera_periodo_cargas ?? 0) > 0 && <> ({k.fuera_periodo_cargas === k.fuera_periodo ? "todas" : n(k.fuera_periodo_cargas!)} de la hoja CARGAS, que puede venir con el año entero)</>}.
+          No entran en este informe.
         </div>
       )}
 
