@@ -31,6 +31,8 @@ interface IpvEstado {
 interface Estado { nombre: string; grupo: string; ipv: IpvEstado; comentarios?: number; entrenamientos?: EntLink[] }
 interface Pregunta { n: number; texto: string; opciones: { letra: string; texto: string }[] }
 type Vista = "inicio" | "instrucciones" | "test" | "enviar" | "gracias" | "feedback" | "vencido" | { t: "entrenamiento"; id: string };
+/** El tiempo del test en palabras: «45 minutos» o «1 h 15 min». */
+const tiempoTest = (m: number) => (m < 60 ? `${m} minutos` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`);
 const horaPY = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", timeZone: "America/Asuncion" }) : "—");
 
 async function pub<T>(url: string, init?: RequestInit): Promise<T> {
@@ -83,7 +85,7 @@ export default function PostulantePage() {
         {info && vista === "inicio" && <Inicio info={info} onTest={() => setVista(info.ipv.vencido ? "vencido" : info.ipv.estado === "en_curso" ? "test" : "instrucciones")} onFeedback={() => setVista("feedback")}
           onEntrenamiento={(id) => setVista({ t: "entrenamiento", id })} />}
         {info && typeof vista === "object" && <EntrenamientoLink base={base} id={vista.id} onVolver={() => { setVista("inicio"); cargar(); }} />}
-        {info && vista === "instrucciones" && <Instrucciones nombre={info.nombre} minutos={info.ipv.minutos ?? 45} onEmpezar={empezar} />}
+        {info && vista === "instrucciones" && <Instrucciones nombre={info.nombre} minutos={info.ipv.minutos ?? 75} onEmpezar={empezar} />}
         {info && vista === "vencido" && info.ipv.vencido && <TestVencido v={info.ipv.vencido} nombre={info.nombre} onEmpezar={() => setVista("instrucciones")} onVolver={() => setVista("inicio")} />}
         {info && (vista === "test" || vista === "enviar") && (
           <Test base={base} token={token} onTerminado={() => { setVista("gracias"); cargar(); }}
@@ -119,7 +121,7 @@ function Inicio({ info, onTest, onFeedback, onEntrenamiento }: { info: Estado; o
               {hecho ? "¡Listo! Ya lo terminaste."
                 : info.ipv.vencido ? "Se terminó el tiempo: tenés que volver a empezar"
                 : info.ipv.estado === "en_curso" ? `Seguí donde quedaste · ${pct}% hecho · termina a las ${horaPY(info.ipv.limite_at)}`
-                : `${info.ipv.total} situaciones · ${info.ipv.minutos ?? 45} minutos para hacerlo`}
+                : `${info.ipv.total} situaciones · ${tiempoTest(info.ipv.minutos ?? 75)} para hacerlo`}
             </span>
           </span>
           {!hecho && <ChevronRight size={20} className="text-brand-mist shrink-0" aria-hidden />}
@@ -177,7 +179,7 @@ const PASOS_INSTRUCCIONES: { icono: typeof Clock3; titulo: string; texto: React.
 function Instrucciones({ nombre, minutos, onEmpezar }: { nombre: string; minutos: number; onEmpezar: () => void }) {
   const [empezando, setEmpezando] = useState(false);
   const pasos = [
-    { icono: Timer, titulo: `Tenés ${minutos} minutos`, texto: <>El tiempo empieza al tocar «Empezar el test» y <b className="text-brand-ink">no se detiene si pausás</b>. Si no terminás a tiempo, el test se reinicia completo y tenés que empezar de nuevo. Buscá un lugar tranquilo.</> },
+    { icono: Timer, titulo: `Tenés ${tiempoTest(minutos)}`, texto: <>El tiempo empieza al tocar «Empezar el test» y <b className="text-brand-ink">no se detiene si pausás</b>. Si no terminás a tiempo, el test se reinicia completo y tenés que empezar de nuevo. Buscá un lugar tranquilo.</> },
     ...PASOS_INSTRUCCIONES,
   ];
   return (
@@ -197,7 +199,7 @@ function Instrucciones({ nombre, minutos, onEmpezar }: { nombre: string; minutos
       </ul>
       <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg">
         <Boton icono={Play} ocupado={empezando} onClick={async () => { setEmpezando(true); try { await onEmpezar(); } finally { setEmpezando(false); } }}>
-          Empezar el test · {minutos} min
+          Empezar el test · {tiempoTest(minutos)}
         </Boton>
       </div>
     </div>
@@ -318,7 +320,9 @@ function Test({ base, token, onTerminado, onSalir, onVencido }: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quedan]);
-  const reloj = quedan === null ? "--:--" : `${Math.floor(quedan / 60)}:${String(quedan % 60).padStart(2, "0")}`;
+  const dos = (n: number) => String(n).padStart(2, "0");
+  const reloj = quedan === null ? "--:--" : quedan >= 3600
+    ? `${Math.floor(quedan / 3600)}:${dos(Math.floor((quedan % 3600) / 60))}:${dos(quedan % 60)}` : `${Math.floor(quedan / 60)}:${dos(quedan % 60)}`;
 
   const total = preguntas?.length ?? 87;
   const respondidas = Object.keys(resp).length;
@@ -483,7 +487,7 @@ function TestVencido({ v, nombre, onEmpezar, onVolver }: { v: Vencido; nombre: s
         <h1 className="font-display text-[30px] uppercase text-brand-ink leading-tight">Se terminó el tiempo</h1>
       </div>
       <div className="card mt-5 divide-y divide-brand-border" aria-label="Informe">
-        {[["Empezaste", horaPY(v.iniciado_at)], ["Se terminó el tiempo", horaPY(v.vencio_at)], ["Tiempo disponible", `${v.minutos} minutos`],
+        {[["Empezaste", horaPY(v.iniciado_at)], ["Se terminó el tiempo", horaPY(v.vencio_at)], ["Tiempo disponible", tiempoTest(v.minutos)],
           ["Respondiste", `${v.respondidas} de ${v.total} situaciones`]].map(([k, x]) => (
           <div key={k} className="px-4 py-3 flex items-center justify-between gap-3 text-[15px]">
             <span className="text-brand-slate">{k}</span><span className="font-semibold text-brand-ink tabular-nums text-right">{x}</span>
@@ -491,9 +495,9 @@ function TestVencido({ v, nombre, onEmpezar, onVolver }: { v: Vencido; nombre: s
         ))}
       </div>
       <div className="mt-4 rounded-xl border border-brand-primary/30 bg-brand-primary-light/60 px-4 py-3 text-[14px] text-brand-ink leading-snug">
-        {nombre}, por seguridad el test tiene que hacerse completo en {v.minutos} minutos. Como no lo terminaste a tiempo,
+        {nombre}, por seguridad el test tiene que hacerse completo en {tiempoTest(v.minutos)}. Como no lo terminaste a tiempo,
         <b> se reinició y tus respuestas se borraron</b>. Tenés que <b>volver a empezar desde la situación 1</b>; vas a tener
-        otros {v.minutos} minutos. Antes de empezar, buscá un lugar tranquilo y tiempo suficiente.
+        otra vez {tiempoTest(v.minutos)}. Antes de empezar, buscá un lugar tranquilo y tiempo suficiente.
       </div>
       <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg space-y-2">
         <Boton icono={Play} onClick={onEmpezar}>Volver a empezar el test</Boton>

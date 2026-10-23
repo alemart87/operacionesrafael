@@ -1932,10 +1932,10 @@ cancelado queda de solo lectura y cierra los links.
   primera sin responder. Lo garantiza el servidor (`_sumar` en `publico_api.py`): una respuesta guardada no se cambia
   (409 `respuesta_fija`; reenviar la misma, por un reintento sin señal, no es error) y las situaciones se responden en
   orden, sin saltear (400 `fuera_de_orden`). Si lo del teléfono no coincide con lo guardado, manda lo del servidor.
-- **Tiempo límite: 45 minutos** (`IPV_MINUTOS`) desde que toca *Empezar el test* (`POST /publico/{token}/ipv/iniciar`); el
+- **Tiempo límite: 1 hora y 15 minutos** (`IPV_MINUTOS=75`) desde que toca *Empezar el test* (`POST /publico/{token}/ipv/iniciar`); el
   reloj lo pone el servidor y **no se detiene al pausar**. En pantalla se ve la cuenta regresiva (ámbar a los 10 minutos,
   roja a los 5, con aviso). Si vence sin terminar, **se reinicia completo**: se borran las respuestas y el postulante ve un
-  **informe** (cuándo empezó, cuándo venció, cuántas respondió) que le pide volver a empezar, con otros 45 minutos. Se
+  **informe** (cuándo empezó, cuándo venció, cuántas respondió) que le pide volver a empezar, con el tiempo completo otra vez. Se
   aplica al entrar, al guardar (410 `ipv_vencido`; una respuesta mandada a tiempo tiene 30 s de margen para llegar), al
   terminar (que además exige haber empezado) y en un trabajo de fondo cada minuto (`capacitacion_ipv`), así el equipo ve
   el estado real aunque no vuelva. Queda en el historial («IPV reiniciado: se terminó el tiempo», con cuántas respondió)

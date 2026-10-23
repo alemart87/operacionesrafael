@@ -6,7 +6,7 @@ puede seguir después) y deja su feedback escrito o dictado. Nunca ve sus result
 Seguridad: el token (256 bits) se busca por su SHA-256; los tokens inválidos se limitan por IP. El link vale mientras
 esté activo, no haya vencido, el postulante siga activo (no abandonó ni fue dado de baja) y el grupo no esté cancelado.
 Solo se muestran el nombre de pila y el grupo. El IPV se responde una vez: terminado, se corrige solo y ya no se puede
-cambiar. Tiene tiempo límite (IPV_MINUTOS, 45 por defecto) desde que empieza, y pausar no lo detiene: si vence sin
+cambiar. Tiene tiempo límite (IPV_MINUTOS, 75 por defecto: 1 h 15 min) desde que empieza, y pausar no lo detiene: si vence sin
 terminar, se reinicia completo y el postulante ve un informe que le pide volver a empezar.
 """
 from __future__ import annotations

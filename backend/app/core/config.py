@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     entrenamiento_esfuerzo_eval: str = "medium"
     entrenamiento_respuestas_dia: int = 300            # respuestas del cliente por postulante y por día: tope de costo
     entrenamiento_meta_postulante: int = 15            # mínimo por postulante (guía, no tope: pueden hacer más)
-    ipv_minutos: int = 45                             # tiempo del test IPV desde que empieza; vencido, se reinicia completo
+    ipv_minutos: int = 75                             # tiempo del test IPV (1 h 15 min) desde que empieza; vencido, se reinicia completo
     # Precio (US$ por 1M tokens) para el costo estimado de cada conversación; confirmalo en la consola de OpenAI.
     entrenamiento_precio_entrada_mtok: float = 0.10
     entrenamiento_precio_salida_mtok: float = 0.50

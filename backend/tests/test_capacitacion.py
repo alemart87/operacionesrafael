@@ -663,13 +663,15 @@ async def test_entrenamientos_en_lote_en_vivo_y_repetir(monkeypatch):
 # ------------------------------------------------------------------ IPV con tiempo límite
 @pytest.mark.asyncio
 async def test_ipv_con_tiempo_limite(monkeypatch):
-    """45 minutos desde que empieza (pausar no lo detiene): vencido sin terminar, se reinicia completo y el postulante
+    """El tiempo límite (acá, 45 minutos) desde que empieza (pausar no lo detiene): vencido sin terminar, se reinicia completo y el postulante
     recibe el informe para volver a empezar. El equipo lo ve en el historial, aunque el postulante no vuelva a entrar."""
     from datetime import timedelta
 
     from app.operativas.capacitacion import publico_api
     from app.operativas.capacitacion import servicio as cap_srv
     monkeypatch.setattr(settings, "ipv_minutos", 45)
+    from app.core.config import Settings
+    assert Settings.model_fields["ipv_minutos"].default == 75          # 1 h 15 min por defecto
     real = cap_srv.ahora
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
