@@ -2057,6 +2057,77 @@ Chats de práctica en los que el postulante atiende a un **cliente simulado por 
   ni los criterios. Los links son los del IPV (token de 256 bits, SHA-256, vencimiento) y un postulante no puede ver
   conversaciones de otro. Cada conversación registra tokens y costo estimado.
 
+### Entrenamiento guiado (práctica con el entrenador IA)
+
+Un entrenamiento puede ser **evaluado** (el de siempre) o **guiado** (`cap_entrenamientos.modo`). El guiado funciona
+igual (casos, cliente simulado, chat, devolución), pero un **entrenador IA** acompaña al postulante mientras chatea:
+
+- **La guía**: al crearlo se elige *Guiado · práctica* y se escribe la **guía del entrenador**, un paso por línea («Saludá
+  por el nombre», «Preguntá qué plan tiene hoy», «Ofrecé el plan con el precio exacto»…). El entrenador la sigue en
+  orden. Sin guía usa la de siempre (saludar, indagar, ofrecer, manejar objeciones, cerrar). Ya enviado, no cambia de
+  modo (las prácticas no se mezclan con las evaluaciones).
+- **Burbujas flotantes**: al empezar y después de cada respuesta del cliente, salen como burbujas sobre la caja de
+  texto hasta 2 consejos cortos para el próximo mensaje: *Sugerencia* (azul, el próximo paso), *¡Bien!* (verde, algo que
+  acaba de hacer bien) u *Ojo* (rojo, un error a corregir). Suben flotando, se mecen, una línea marca cuánto les queda y se
+  van solas (o con un toque); mientras están a la vista, la charla deja lugar para que no tapen el último mensaje. El botón
+  del entrenador (con el número) y, en la computadora, el panel del costado muestran todos los consejos para volver a
+  leerlos. Respetan *reducir movimiento*.
+- **Sin demorar la charla**: los consejos se piden aparte (`POST /publico/{token}/sesiones/{id}/consejo`, y
+  `/sesiones/{id}/consejo` en la prueba del mentor), **uno por turno**: si se pide de nuevo devuelve el mismo, sin otra
+  llamada; con la charla cerrada ya no habla; tope de 40 por conversación. Si el entrenador falla, la charla sigue igual.
+  El entrenador no le escribe el mensaje ni le revela lo que piensa el cliente, y lo que dice la conversación va como
+  dato (se ignoran instrucciones dentro de ella). Mismo modelo, con esfuerzo bajo; suma tokens y costo a la conversación.
+- **No suma al baremo general**: se evalúa cada caso y el postulante recibe su devolución, pero el resultado es una
+  **práctica** (`aprobado` vacío, `recomendacion: "practica"`): no cuenta para la media, el % de avance, el mínimo de 15
+  ni los recomendados, y la IA del informe la lee aparte. En la ficha, el grupo, *Enviados*, el PDF y el historial se ve
+  como *Guiado · práctica*.
+
+### Conversaciones de los entrenamientos (capacitador y mentor)
+
+- En la ficha del postulante, la sección **Conversaciones** lista todas las que tuvo (la más nueva primero; filtro
+  *Evaluadas / Guiadas*): cliente y caso, entrenamiento e intento, cuándo, cuánto duró, respuestas, nivel e información.
+  Las que están en curso aparecen *En vivo*.
+- Tocando una se lee completa: quién dijo qué y a qué hora, **los consejos del entrenador donde salieron** (en las
+  guiadas), el caso (qué tenía que lograr y los datos a dar bien) y la evaluación de la IA con lo que leyó el postulante.
+  Si está en curso se actualiza sola.
+- En *Enviados* de un entrenamiento, cada postulante abre su resultado y **las conversaciones de ese envío**.
+- Endpoints: `GET /postulantes/{id}/conversaciones` y `GET /asignaciones/{id}/conversaciones`; los ve el equipo del grupo
+  (capacitador, mentores) y la gestión (RRHH incluida); nadie más.
+
+### Informe IA del postulante
+
+En la ficha, **Informe IA** (código en `informe_ia.py` y `components/capacitacion/informe-ia.tsx`): la IA lee el **IPV
+con su baremo** (decatipos: 1–3 inferior, 4–7 término medio, 8–10 superior; DGV, escalas, fortalezas, a trabajar y señales
+de calidad) y **los entrenamientos evaluados con el baremo del equipo** (media del nivel comercial en tramos, % de
+información correcta contra el umbral, el mínimo de 15, recomendados y el promedio de cada criterio), más los
+comentarios del equipo. Las prácticas guiadas van aparte.
+
+- **Qué devuelve**: un titular, un resumen, la lectura del IPV, del desempeño y si se confirman o contradicen,
+  fortalezas, qué desarrollar, un **plan de dos semanas** con responsable (capacitador, mentor o postulante), alertas y
+  una **sugerencia**: *avanzar*, *seguir entrenando* o *reforzar y revisar*. El servidor calcula además la **referencia
+  del baremo** sin IA (avanzar solo con nivel *listo para vender*, información en el umbral y el mínimo cumplido;
+  reforzar con nivel bajo o DGV inferior sin buen desempeño); si la IA se aparta, se muestra y lo justifica. Es una
+  sugerencia: **la decisión es del equipo**.
+- **Cómo se pide**: botón *Generar informe*; se arma en segundo plano (worker `capacitacion_informes`, hasta 3
+  intentos) y la tarjeta se actualiza sola. Queda guardado (`cap_informes_ia`) con los datos que se usaron y su
+  **huella SHA-256**: si después hay datos nuevos (un entrenamiento, el IPV, un comentario), avisa que está
+  desactualizado y se actualiza con un toque; mientras, se ve el anterior. Con los mismos datos no se genera otro (sin
+  costo). Tope: 8 por postulante y 40 por usuario por día (429). Sale también en el **PDF de la ficha**.
+- **Cuidados**: a la IA **no van el CI, el apellido, la edad ni el sexo** (no tienen que pesar en una sugerencia de
+  incorporación) **ni nada escrito por el postulante** (sus mensajes del chat o su feedback); los datos van delimitados y
+  con la instrucción de ignorar órdenes dentro de ellos. Salida con JSON Schema estricto y saneada. Lo ven y lo piden el
+  capacitador, los mentores del grupo y la gestión; cada pedido queda en el registro (`capacitacion_informe_ia`) con
+  tokens y costo. Mismo modelo y clave que los entrenamientos (`gpt-6-luna`, esfuerzo medio); en desarrollo, con
+  `ENTRENAMIENTO_SIMULADOR`, se arma sin llamar a la IA.
+
+### En el celular
+
+- **El postulante**: en el detalle del entrenamiento lo primero es **su próximo cliente** (avatar, «Caso 2 de 4» y el
+  botón *Atender a…*), arriba la cola en segmentos, después su rol en una tarjeta corta y **Cómo funciona** plegado; no
+  hay botón fijo que tape la lista. En la lista de inicio, los guiados llevan su etiqueta.
+- **El equipo**: la ficha tiene un **índice** deslizable (Informe IA, Entrenamientos, Conversaciones, IPV, Seguimiento,
+  Historial) para saltar a cada parte; el informe se lee resumido y se despliega completo.
+
 ### En vivo (tablero tipo Pulse)
 
 `/capacitacion/vivo` (código en `en_vivo.py` y `components/capacitacion/vivo.tsx`): el mentor y el capacitador ven los

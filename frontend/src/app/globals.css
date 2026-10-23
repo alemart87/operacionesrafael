@@ -731,3 +731,21 @@ body:has(main .fixed.inset-0) .barra-inferior { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .entra-der, .entra-izq, .opcion-elegida { animation: none; }
 }
+
+/* Entrenamiento guiado: las burbujas del entrenador suben flotando, se mecen suave mientras están a la vista (una
+   línea marca el tiempo que les queda) y se van hacia arriba. */
+@keyframes vc-consejo-entra { from { opacity: 0; transform: translateY(18px) scale(0.94); } to { opacity: 1; transform: none; } }
+@keyframes vc-consejo-flota { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes vc-consejo-sale { to { opacity: 0; transform: translateY(-16px) scale(0.97); } }
+@keyframes vc-consejo-tiempo { from { width: 100%; } to { width: 0%; } }
+.consejo-entra { animation: vc-consejo-entra 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.consejo-flota { animation: vc-consejo-flota 3.4s ease-in-out 0.5s infinite; }
+.consejo-sale { animation: vc-consejo-sale 0.4s cubic-bezier(0.4, 0, 1, 1) forwards; }
+.consejo-tiempo { animation-name: vc-consejo-tiempo; animation-timing-function: linear; animation-fill-mode: forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .consejo-entra, .consejo-flota, .consejo-sale { animation: none; }
+}
+
+/* Filas que se deslizan de costado (índices de chips en el celular) sin la barra de desplazamiento. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

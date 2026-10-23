@@ -248,6 +248,8 @@ async def entrenamientos_de(db: AsyncSession, pids: list[str]) -> dict[str, list
         r = a.resultado or {}
         out[a.postulante_id].append({
             "id": a.id, "entrenamiento_id": e.id, "nombre": e.nombre, "intento": a.intento or 1, "estado": a.estado,
+            # Guiado: práctica con el entrenador IA; no suma al baremo general (media, mínimo ni recomendados).
+            "guiado": e.modo == "guiado",
             "casos": total, "hechos": n,
             "archivado": e.estado == "archivado",
             "pct": 100 if a.estado == "terminado" else (round(n / total * 100) if total else 0),
@@ -272,6 +274,7 @@ def tramo_nivel(nivel: float) -> tuple[str, str]:
 def resultado_medio(ents: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     """La media de todas sus conversaciones evaluadas (de todos sus entrenamientos e intentos, aunque sea una sola):
     nivel comercial y % con la información correcta. Cada conversación pesa lo mismo."""
+    ents = [x for x in ents if not x.get("guiado")]          # las prácticas guiadas no cuentan
     n = sum(x.get("evaluados", 0) for x in ents)
     if not n:
         return None
@@ -284,13 +287,16 @@ def resultado_medio(ents: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
 def avance(p: CapPostulante, d: Datos) -> dict[str, Any]:
     """El % de avance de sus entrenamientos (casos hechos sobre casos enviados). El IPV es independiente: no cuenta acá.
     `meta` es el mínimo que se espera por postulante, no un tope: cada entrenamiento terminado suma, también si lo repite."""
-    ents = d.entrenamientos.get(p.id, [])
+    todos = d.entrenamientos.get(p.id, [])
+    ents = [x for x in todos if not x.get("guiado")]          # el baremo general: solo los evaluados
+    practica = [x for x in todos if x.get("guiado")]
     casos = sum(x["casos"] for x in ents)
     hechos = sum(min(x["hechos"], x["casos"]) for x in ents)
     terminados = sum(1 for x in ents if x["estado"] == "terminado")
     return {"pct": round(hechos / casos * 100) if casos else None, "casos": casos, "hechos": hechos,
             "entrenamientos": len(ents), "terminados": terminados,
             "aprobados": sum(1 for x in ents if x["aprobado"] is True), "resultado": resultado_medio(ents),
+            "practica": {"entrenamientos": len(practica), "terminados": sum(1 for x in practica if x["estado"] == "terminado")},
             # La guía del equipo: al menos N entrenamientos por postulante (puede hacer más).
             "meta": settings.entrenamiento_meta_postulante, "meta_cumplida": terminados >= settings.entrenamiento_meta_postulante}
 

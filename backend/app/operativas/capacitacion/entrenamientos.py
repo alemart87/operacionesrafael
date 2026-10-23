@@ -102,7 +102,15 @@ def caso_dict(c: CapCaso) -> dict[str, Any]:
 def snapshot(c: CapCaso, e: CapEntrenamiento) -> dict[str, Any]:
     """El caso y el contexto del entrenamiento tal como estaban al empezar la conversación."""
     return {**caso_dict(c), "entrenamiento": {"id": e.id, "nombre": e.nombre, "producto": e.producto, "empresa": e.empresa,
-                                              "canal": e.canal}}
+                                              "canal": e.canal, "modo": modo(e), "guia": e.guia or ""}}
+
+
+def modo(e: CapEntrenamiento) -> str:
+    return "guiado" if e.modo == "guiado" else "evaluado"
+
+
+def es_guiada(s: CapSesion) -> bool:
+    return ((s.caso or {}).get("entrenamiento") or {}).get("modo") == "guiado"
 
 
 def sesion_publica(s: CapSesion) -> dict[str, Any]:
@@ -111,7 +119,9 @@ def sesion_publica(s: CapSesion) -> dict[str, Any]:
     return {"id": s.id, "caso_id": s.caso_id, "titulo": c.get("titulo"), "cliente": c.get("cliente_nombre"),
             "estado": "terminada" if s.estado in srv.HECHOS else s.estado, "fin_motivo": s.fin_motivo,
             "mensajes": s.mensajes or [], "iniciado_at": srv.iso(s.iniciado_at), "terminado_at": srv.iso(s.terminado_at),
-            "turnos": ia.turnos(s.mensajes or []), "max_turnos": c.get("max_turnos")}
+            "turnos": ia.turnos(s.mensajes or []), "max_turnos": c.get("max_turnos"),
+            # Entrenamiento guiado: los consejos del entrenador que ya vio (para volver a leerlos).
+            "guiado": es_guiada(s), "consejos": s.consejos or []}
 
 
 def sesion_staff(s: CapSesion) -> dict[str, Any]:
@@ -126,6 +136,7 @@ def sesion_staff(s: CapSesion) -> dict[str, Any]:
 def entrenamiento_dict(e: CapEntrenamiento, casos: list[CapCaso], user: CurrentUser, quien: dict[str, str]) -> dict[str, Any]:
     return {"id": e.id, "nombre": e.nombre, "instrucciones": e.instrucciones, "producto": e.producto, "empresa": e.empresa,
             "canal": e.canal, "umbral_info": e.umbral_info, "umbral_nivel": e.umbral_nivel, "estado": e.estado,
+            "modo": modo(e), "guia": e.guia or "",
             "creado_por": quien.get(e.created_by, "—"), "created_at": srv.iso(e.created_at), "updated_at": srv.iso(e.updated_at),
             "casos": [caso_dict(c) for c in casos], "puede_editar": puede_editar(user, e)}
 
@@ -213,6 +224,41 @@ async def turno(db: AsyncSession, s: CapSesion, textos: list[str], lote: Optiona
     return {"nuevos": r["mensajes"], "fin": r["fin"], "motivo": r["motivo"] if r["fin"] else None}
 
 
+MAX_CONSEJOS_SESION = 40       # tope de consejos del entrenador por conversación (costo)
+
+
+async def consejo(db: AsyncSession, s: CapSesion) -> dict[str, Any]:
+    """Los consejos del entrenador (entrenamiento guiado) para el próximo mensaje del asesor: uno por turno; si ya se
+    dio para este turno, se devuelve el mismo. Se pide después de cada respuesta del cliente (y al empezar), aparte de
+    la charla, para no demorarla."""
+    if not es_guiada(s):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este entrenamiento no es guiado")
+    # Un pedido de consejo a la vez por conversación: si llegan dos para el mismo turno, el segundo recibe el primero.
+    async with candado(f"{s.id}:consejo"):
+        await db.refresh(s)
+        n = ia.turnos(s.mensajes or [])
+        if s.estado != "en_curso":                       # cerrada: el entrenador ya no habla
+            return {"turno": n, "consejos": []}
+        previos = list(s.consejos or [])
+        if previos and previos[-1].get("turno") == n:
+            return {"turno": n, "consejos": previos[-1].get("items") or []}
+        ms = list(s.mensajes or [])
+        if (ms and ms[-1]["r"] == "asesor") or len(previos) >= MAX_CONSEJOS_SESION:
+            return {"turno": n, "consejos": []}
+        c = s.caso
+        try:
+            r = await ia.aconsejar(c, ms, guia=(c.get("entrenamiento") or {}).get("guia") or "")
+        except Exception as exc:  # noqa: BLE001
+            raise _error_ia(exc) from exc
+        # Se guarda con el candado de la charla: la respuesta del cliente también suma consumo a la misma fila.
+        async with candado(s.id):
+            await db.refresh(s)
+            s.consejos = list(s.consejos or []) + [{"turno": n, "at": srv.iso(srv.ahora()), "items": r["consejos"]}]
+            _sumar_consumo(s, r)
+            await db.commit()
+    return {"turno": n, "consejos": r["consejos"]}
+
+
 def cerrar(s: CapSesion, motivo: str) -> None:
     s.estado, s.fin_motivo, s.terminado_at = "evaluando", motivo, srv.ahora()
     s.segundos = max(0, int((s.terminado_at - srv.utc(s.iniciado_at)).total_seconds()))
@@ -271,10 +317,13 @@ async def evaluar_asignacion(db: AsyncSession, a: CapAsignacion) -> None:
         ultima[s.caso_id] = s
     evals = [s.evaluacion for s in ultima.values() if s.evaluacion]
     m = metricas(evals, e)
+    practica = modo(e) == "guiado"
+    if practica:          # una práctica guiada no se aprueba ni se recomienda: solo se resume
+        m = {**m, "aprobado": None, "recomendacion": "practica", "guiado": True}
     a.intentos_eval = (a.intentos_eval or 0) + 1
     try:
-        r = await ia.evaluar_final(evals, empresa=e.empresa, nombre=e.nombre, aprobado=m["aprobado"],
-                                   umbral_info=e.umbral_info, umbral_nivel=e.umbral_nivel)
+        r = await ia.evaluar_final(evals, empresa=e.empresa, nombre=e.nombre, aprobado=bool(m["aprobado"]),
+                                   umbral_info=e.umbral_info, umbral_nivel=e.umbral_nivel, practica=practica)
     except Exception as exc:  # noqa: BLE001
         if a.intentos_eval < MAX_INTENTOS:
             logger.warning("Entrenamiento: falló la evaluación final de %s (%s)", a.id, type(exc).__name__)
@@ -287,7 +336,8 @@ async def evaluar_asignacion(db: AsyncSession, a: CapAsignacion) -> None:
     a.estado, a.terminado_at = "terminado", srv.ahora()
     p = await db.get(CapPostulante, a.postulante_id)
     if p:
-        srv.evento(db, grupo_id=a.grupo_id, postulante_id=p.id, tipo="entrenamiento", por=None, a="aprobado" if m["aprobado"] else "no_aprobado",
+        srv.evento(db, grupo_id=a.grupo_id, postulante_id=p.id, tipo="entrenamiento", por=None,
+                   a="practica" if practica else "aprobado" if m["aprobado"] else "no_aprobado",
                    entrenamiento=e.nombre, nivel=m["nivel_promedio"], info_pct=m["info_pct"])
 
 
@@ -344,6 +394,8 @@ class EntrenamientoDatos(BaseModel):
     canal: Literal["chat", "whatsapp", "llamada"] = "whatsapp"
     umbral_info: int = Field(90, ge=50, le=100)
     umbral_nivel: int = Field(8, ge=1, le=10)
+    modo: Literal["evaluado", "guiado"] = "evaluado"
+    guia: Optional[str] = Field(None, max_length=4000)        # lo que el entrenador IA le va a ir marcando (guiado)
 
 
 class EntrenamientoEditar(BaseModel):
@@ -355,6 +407,8 @@ class EntrenamientoEditar(BaseModel):
     umbral_info: Optional[int] = Field(None, ge=50, le=100)
     umbral_nivel: Optional[int] = Field(None, ge=1, le=10)
     estado: Optional[Literal["borrador", "activo", "archivado"]] = None
+    modo: Optional[Literal["evaluado", "guiado"]] = None
+    guia: Optional[str] = Field(None, max_length=4000)
 
 
 def _lista(v: list[str], maximo: int, largo: int) -> list[str]:
@@ -423,7 +477,7 @@ async def listar(user: CurrentUser = Depends(require_ver), db: AsyncSession = De
             x["aprobados"].add(a.postulante_id)
     stats = {eid: {k: len(v) for k, v in x.items()} for eid, x in personas.items()}
     quien = await srv.nombres(db, [e.created_by for e in ents])
-    return {"entrenamientos": [{"id": e.id, "nombre": e.nombre, "estado": e.estado, "empresa": e.empresa, "casos": casos.get(e.id, 0),
+    return {"entrenamientos": [{"id": e.id, "nombre": e.nombre, "estado": e.estado, "modo": modo(e), "empresa": e.empresa, "casos": casos.get(e.id, 0),
                                 "creado_por": quien.get(e.created_by, "—"), "updated_at": srv.iso(e.updated_at or e.created_at),
                                 "puede_editar": puede_editar(user, e), **stats.get(e.id, {"enviados": 0, "terminados": 0, "aprobados": 0})}
                                for e in ents],
@@ -474,6 +528,9 @@ async def editar(eid: str, payload: EntrenamientoEditar, request: Request, user:
     cambios = payload.model_dump(exclude_unset=True, exclude_none=True)
     if cambios.get("estado") == "activo" and not await _casos(db, e.id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Agregá al menos un caso antes de activarlo")
+    if "modo" in cambios and cambios["modo"] != modo(e) and (await db.execute(
+            select(func.count()).select_from(CapAsignacion).where(CapAsignacion.entrenamiento_id == e.id))).scalar():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ya se envió: no se puede cambiar entre evaluado y guiado (creá otro)")
     for k, v in cambios.items():
         setattr(e, k, v.strip() if isinstance(v, str) and k != "estado" else v)
     e.updated_at = srv.ahora()
@@ -691,6 +748,43 @@ async def de_postulante(pid: str, user: CurrentUser = Depends(require_ver), db: 
     return {"entrenamientos": salida, "resultado": srv.resultado_medio(progreso)}
 
 
+# ------------------------------------------------------------------ las conversaciones, para el equipo
+def _fila_conversacion(s: CapSesion, a: Optional[CapAsignacion]) -> dict[str, Any]:
+    c, ev = s.caso or {}, s.evaluacion or {}
+    return {"id": s.id, "asignacion_id": s.asignacion_id, "entrenamiento": (c.get("entrenamiento") or {}).get("nombre"),
+            "intento": (a.intento or 1) if a else 1, "guiado": es_guiada(s), "caso": c.get("titulo"), "cliente": c.get("cliente_nombre"),
+            "estado": s.estado, "nivel": ev.get("nivel"), "info_correcta": ev.get("info_correcta"), "segundos": s.segundos,
+            "turnos": ia.turnos(s.mensajes or []), "mensajes": len(s.mensajes or []), "consejos": len(s.consejos or []),
+            "iniciado_at": srv.iso(s.iniciado_at), "terminado_at": srv.iso(s.terminado_at)}
+
+
+async def _conversaciones(db: AsyncSession, *condiciones: Any) -> list[dict[str, Any]]:
+    sesiones = (await db.execute(select(CapSesion).where(CapSesion.asignacion_id.isnot(None), *condiciones)
+                                 .order_by(CapSesion.iniciado_at.desc()))).scalars().all()
+    ids = list({s.asignacion_id for s in sesiones})
+    asig = {a.id: a for a in (await db.execute(select(CapAsignacion).where(CapAsignacion.id.in_(ids or [""])))).scalars().all()}
+    return [_fila_conversacion(s, asig.get(s.asignacion_id)) for s in sesiones]
+
+
+@router.get("/postulantes/{pid}/conversaciones")
+async def conversaciones_postulante(pid: str, user: CurrentUser = Depends(require_ver), db: AsyncSession = Depends(get_db)) -> dict:
+    """Todas las conversaciones de entrenamiento del postulante (las más nuevas primero), para leerlas una por una."""
+    _exigir_staff(user)
+    p = await db.get(CapPostulante, pid)
+    g = await db.get(CapGrupo, p.grupo_id) if p else None
+    if not p or not g or not srv.roles_en(g, user):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Postulante no encontrado")
+    return {"conversaciones": await _conversaciones(db, CapSesion.postulante_id == p.id)}
+
+
+@router.get("/asignaciones/{aid}/conversaciones")
+async def conversaciones_envio(aid: str, user: CurrentUser = Depends(require_ver), db: AsyncSession = Depends(get_db)) -> dict:
+    """Las conversaciones de un envío (un entrenamiento de un postulante)."""
+    _exigir_staff(user)
+    a, _ = await _asignacion(db, aid, user)
+    return {"conversaciones": await _conversaciones(db, CapSesion.asignacion_id == a.id)}
+
+
 async def _sesion_staff(db: AsyncSession, sid: str, user: CurrentUser) -> CapSesion:
     _exigir_staff(user)
     s = await db.get(CapSesion, sid)
@@ -742,6 +836,15 @@ async def probar_mensaje(sid: str, payload: Mensaje, user: CurrentUser = Depends
         r = await turno(db, s, payload.lista(), payload.lote)
         await db.commit()
     return {**r, "sesion": sesion_staff(s)}
+
+
+@router.post("/sesiones/{sid}/consejo")
+async def probar_consejo(sid: str, user: CurrentUser = Depends(require_ver), db: AsyncSession = Depends(get_db)) -> dict:
+    """El consejo del entrenador en la prueba de un caso guiado (el mentor ve lo mismo que verá el postulante)."""
+    s = await _sesion_staff(db, sid, user)
+    if not s.prueba_por:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo en una prueba")
+    return await consejo(db, s)
 
 
 @router.post("/sesiones/{sid}/terminar")
