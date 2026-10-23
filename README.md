@@ -1907,7 +1907,30 @@ la tarde en piso con el mentor. Código en `backend/app/operativas/capacitacion/
 
 ### Postulantes y estados
 
-Nombre, apellido, CI (no se repite en el grupo), edad y sexo. Alta rápida: «Guardar y cargar otro».
+Nombre, apellido, CI (no se repite en el grupo), edad y sexo. Alta rápida: «Guardar y cargar otro», o que se
+registren solos con la **creación rápida** (abajo).
+
+### Creación rápida de postulantes (link o QR de 20 minutos)
+
+Para no cargarlos uno por uno: en el grupo, **Creación rápida** (capacitador, mentor o gestión; grupo en curso) habilita
+con un toque un **link de 20 minutos** (`CAPACITACION_REGISTRO_MINUTOS`) con su **QR**. Código en `registro_rapido.py`,
+`components/capacitacion/registro-rapido.tsx` y la página pública `/unirme/{token}`.
+
+- **En la sala**: el QR se proyecta en **pantalla completa** (grande, con el nombre del grupo, el tiempo que queda y
+  cuántos se registraron) o se comparte el link por WhatsApp. La hoja muestra la cuenta regresiva y **quiénes se van
+  registrando** (se actualiza sola y el grupo de atrás también). Mientras está vigente, todo el equipo del grupo ve el
+  mismo QR; *Link nuevo* abre otro de 20 minutos (el anterior deja de valer) y *Cerrar link* lo corta antes.
+- **El postulante** escanea o abre el link en su celular: ve solo el nombre del grupo y cuánto le queda al link, carga
+  nombre, apellido, cédula, edad y sexo y toca *Crear mi perfil*. Queda en el grupo (en capacitación) con **su link
+  personal ya armado** (el del IPV y los entrenamientos, 21 días); le damos la **bienvenida al grupo** y a los pocos
+  segundos lo llevamos a **su perfil de postulante** (o con *Ir a mi perfil*), sin dejar el formulario en el historial.
+- **En el historial** queda «Ingresó al grupo · Se registró con el link rápido de Mario», por *El postulante*.
+- **Seguridad**: token aleatorio de 256 bits; se busca por su SHA-256 y en claro solo se guarda cifrado mientras está
+  vigente (para volver a mostrar el QR). **Cupo** de 60 por link (`CAPACITACION_REGISTRO_MAX`), descontado de forma
+  atómica. Los links inválidos se limitan por IP (429). Con una cédula que ya está en el grupo **no se crea nada ni se
+  entrega ningún link** (así nadie consigue el link de otro escribiendo su cédula): se le pide hablar con su
+  capacitador. Campo trampa contra programas. Auditoría: link habilitado (`capacitacion_registro_rapido`), cerrado y
+  cada registro (`capacitacion_postulante_autoregistro`, con IP y dispositivo).
 
 `En capacitación → Aprobó prueba escrita → Aprobó mentoría y OJT → Alta operativa`, con **Abandonó** o **Dado de baja**
 (con motivo) en cualquier etapa. Se guarda hasta qué etapa llegó cada uno (embudo) y el historial de cada cambio. Un grupo
@@ -2153,7 +2176,8 @@ para un televisor.
 `POST /grupos/{id}/estado`, `POST /grupos/{id}/postulantes`, `GET|PATCH|DELETE /postulantes/{id}`,
 `POST /postulantes/{id}/estado`, `GET|POST|DELETE /postulantes/{id}/enlace` (`GET` también el mentor),
 `GET /postulantes/{id}/pdf`,
-`POST /postulantes/{id}/comentarios`, `POST /postulantes/{id}/audios`, `GET /audios/{id}[/archivo]`.
+`POST /postulantes/{id}/comentarios`, `POST /postulantes/{id}/audios`, `GET /audios/{id}[/archivo]`,
+`GET|POST /grupos/{id}/registro-rapido` (`{origen, nuevo}`), `POST /grupos/{id}/registro-rapido/cerrar`.
 Entrenamientos: `GET|POST /entrenamientos`, `GET|PATCH|DELETE /entrenamientos/{id}`, `POST /entrenamientos/{id}/casos`,
 `PATCH|DELETE /casos/{id}`, `POST /entrenamientos/{id}/orden`, `POST /entrenamientos/{id}/enviar`,
 `DELETE /asignaciones/{id}`, `POST /asignaciones/{id}/reiniciar`, `GET /postulantes/{id}/entrenamientos`,
@@ -2163,7 +2187,8 @@ a quien ya lo terminó).
 Público (sin sesión): `/api/v1/capacitacion/publico/{token}` (`GET`, `GET|PUT /ipv`, `POST /ipv/terminar`,
 `POST /comentarios`, `POST /audios`, `GET /audios/{id}`, `GET /entrenamientos/{id}`,
 `POST /entrenamientos/{id}/casos/{caso}`, `GET /sesiones/{id}`, `POST /sesiones/{id}/mensajes`,
-`POST /sesiones/{id}/terminar`). Todo cambio queda en la auditoría.
+`POST /sesiones/{id}/terminar`) y la creación rápida `/api/v1/capacitacion/unirme/{token}` (`GET`, `POST`). Todo cambio
+queda en la auditoría.
 
 ## Sistema de login y seguridad de acceso
 

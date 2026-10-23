@@ -103,6 +103,8 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     "ALTER TABLE cap_entrenamientos ADD COLUMN IF NOT EXISTS modo VARCHAR(12) DEFAULT 'evaluado'",
     "ALTER TABLE cap_entrenamientos ADD COLUMN IF NOT EXISTS guia TEXT",
     "ALTER TABLE cap_sesiones ADD COLUMN IF NOT EXISTS consejos JSON",
+    # v1.5.4 · creación rápida de postulantes (link o QR de 20 minutos por grupo)
+    "ALTER TABLE cap_postulantes ADD COLUMN IF NOT EXISTS registro_id VARCHAR(36)",
 ]
 
 

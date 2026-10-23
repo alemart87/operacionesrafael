@@ -184,7 +184,7 @@ function FichaPostulante() {
               <span className="text-brand-ink">{textoEvento(h)}
                 {h.detalle && <span className="text-brand-slate"> · {h.detalle}</span>}
                 {h.motivo && <span className="text-brand-slate"> · {h.motivo}</span>}</span>
-              <span className="text-brand-slate text-xs shrink-0 sm:text-right">{[h.por ?? (h.tipo.startsWith("ipv") ? "El postulante" : h.tipo === "entrenamiento" ? "La IA" : ""), hace(h.at)].filter(Boolean).join(" · ")}</span>
+              <span className="text-brand-slate text-xs shrink-0 sm:text-right">{[h.por ?? (h.tipo.startsWith("ipv") || h.tipo === "alta" ? "El postulante" : h.tipo === "entrenamiento" ? "La IA" : ""), hace(h.at)].filter(Boolean).join(" · ")}</span>
             </li>
           ))}
         </ol>

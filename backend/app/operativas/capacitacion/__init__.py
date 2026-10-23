@@ -11,14 +11,15 @@
   chat, evaluación por caso y final) para el equipo y desde el link del postulante.
 - `en_vivo.py`: el tablero en vivo de los entrenamientos (conversaciones en curso e indicadores del día).
 - `informe_ia.py`: el informe de la IA sobre un postulante (IPV con su baremo y entrenamientos) para el equipo.
+- `registro_rapido.py`: creación rápida de postulantes (link o QR de 20 minutos por grupo; se registran solos).
 """
 from __future__ import annotations
 
-from . import api, audios, en_vivo, entrenamientos, entrenamientos_publico, ficha_pdf, informe_ia, publico_api
+from . import api, audios, en_vivo, entrenamientos, entrenamientos_publico, ficha_pdf, informe_ia, publico_api, registro_rapido
 from .migraciones import MIGRACIONES
 
 ROUTERS = [api.router, publico_api.router, entrenamientos.router, entrenamientos_publico.router, en_vivo.router, ficha_pdf.router,
-           informe_ia.router]
+           informe_ia.router, registro_rapido.router, registro_rapido.publico]
 WORKERS = {"capacitacion_audios": audios.worker, "capacitacion_entrenamientos": entrenamientos.worker,
            "capacitacion_ipv": publico_api.worker, "capacitacion_informes": informe_ia.worker}
 MIGRACIONES_DATOS = list(MIGRACIONES)

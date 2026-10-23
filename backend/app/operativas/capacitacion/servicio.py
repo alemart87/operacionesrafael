@@ -459,5 +459,7 @@ def grupo_dict(g: CapGrupo, ps: list[CapPostulante], d: Datos, user: CurrentUser
                  "cumplen": sum(1 for p in ps if p.estado not in SALIDAS and avance(p, d)["meta_cumplida"]),
                  "activos": sum(1 for p in ps if p.estado not in SALIDAS)},
         "roles": sorted(roles), "puede": {"estados": destinos_grupo(g, roles), "editar": bool({"capacitador", "gestion"} & roles),
-                                          "postulantes": g.estado == "en_curso" and bool({"capacitador", "gestion"} & roles)},
+                                          "postulantes": g.estado == "en_curso" and bool({"capacitador", "gestion"} & roles),
+                                          # Creación rápida (link o QR para que se registren solos): también el mentor.
+                                          "registro_rapido": g.estado == "en_curso" and bool({"capacitador", "mentor", "gestion"} & roles)},
     }

@@ -309,7 +309,7 @@ export function abrirWhatsapp(mensaje: string) {
  * El link del postulante a la vista para mandárselo: el texto (se puede seleccionar), copiar, WhatsApp, compartir y el
  * QR si lo hay. No es un enlace que se abra desde acá: es personal y quien lo abre entra como el postulante.
  */
-export function CompartirLink({ url, mensaje, qr }: { url: string; mensaje: string; qr?: string | null }) {
+export function CompartirLink({ url, mensaje, qr, etiqueta = "Su link personal" }: { url: string; mensaje: string; qr?: string | null; etiqueta?: string }) {
   const [copiado, setCopiado] = useState(false);
   const [puedeCompartir, setPuedeCompartir] = useState(false);
   useEffect(() => setPuedeCompartir(typeof navigator !== "undefined" && "share" in navigator), []);
@@ -321,7 +321,7 @@ export function CompartirLink({ url, mensaje, qr }: { url: string; mensaje: stri
     <div className="space-y-3">
       {qr && <div className="mx-auto w-52 h-52 bg-white p-2 rounded-lg border border-brand-border [&_svg]:w-full [&_svg]:h-full" dangerouslySetInnerHTML={{ __html: qr }} aria-label="Código QR del link" />}
       <div className="rounded-lg border border-brand-border bg-brand-bg-soft px-3 py-2">
-        <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">Su link personal</div>
+        <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">{etiqueta}</div>
         <p className="font-mono text-[13px] text-brand-ink break-all select-all">{url}</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
