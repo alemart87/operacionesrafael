@@ -99,6 +99,10 @@ MIGRATIONS_IDEMPOTENT: list[str] = [
     # v1.5.2 · IPV con tiempo límite: cuántas veces se reinició por tiempo y el informe del último vencimiento
     "ALTER TABLE cap_enlaces ADD COLUMN IF NOT EXISTS ipv_reinicios INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE cap_enlaces ADD COLUMN IF NOT EXISTS ipv_vencido JSON",
+    # v1.5.3 · entrenamientos guiados (entrenador IA con consejos; no suman al baremo general)
+    "ALTER TABLE cap_entrenamientos ADD COLUMN IF NOT EXISTS modo VARCHAR(12) DEFAULT 'evaluado'",
+    "ALTER TABLE cap_entrenamientos ADD COLUMN IF NOT EXISTS guia TEXT",
+    "ALTER TABLE cap_sesiones ADD COLUMN IF NOT EXISTS consejos JSON",
 ]
 
 

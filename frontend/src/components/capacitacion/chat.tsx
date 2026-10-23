@@ -11,12 +11,15 @@
  * - El borrador se guarda en el teléfono y la pantalla se acomoda al teclado del celular.
  * - En la computadora se ve como una consola: la conversación al centro y, al costado, el entrenamiento, el tiempo del
  *   caso, la cola de clientes y cómo escribir.
+ * - Entrenamiento guiado: al empezar y después de cada respuesta del cliente, el entrenador IA manda sus consejos para
+ *   el próximo mensaje; salen flotando como burbujas sobre la caja de texto, se van solas (o con un toque) y quedan
+ *   para volver a leerlas. Se piden aparte de la charla: no la demoran, y si fallan, la charla sigue.
  */
-import { ArrowLeft, Check, CheckCheck, Clock3, Flag, Keyboard, LoaderCircle, MessagesSquare, RotateCcw, SendHorizontal, TriangleAlert, WifiOff } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, Clock3, Flag, GraduationCap, Keyboard, Lightbulb, LoaderCircle, MessagesSquare, RotateCcw, SendHorizontal, ThumbsUp, TriangleAlert, WifiOff, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cx } from "@/components/portal/ui";
-import type { MensajeChat } from "./tipos";
+import type { Consejo, ConsejosTurno, MensajeChat, TipoConsejo } from "./tipos";
 
 const espera = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 /** Lo que tarda en «escribir» un mensaje según su largo (entre 0,7 y 2,6 s). */
@@ -48,6 +51,34 @@ const FONDO = { backgroundColor: "#EEF1F5", backgroundImage: "radial-gradient(rg
 /** Un caso del entrenamiento en la cola de clientes. */
 export interface PasoChat { estado: "hecho" | "actual" | "pendiente"; cliente?: string }
 
+/** El entrenador IA del entrenamiento guiado. */
+export interface Entrenador {
+  /** Los consejos para el próximo mensaje (uno por turno: si ya se dieron, devuelve los mismos sin costo). */
+  pedir: () => Promise<{ turno: number; consejos: Consejo[] }>;
+  /** Los que ya salieron (al volver a entrar a la conversación). */
+  previos?: ConsejosTurno[];
+}
+export const TIPO_CONSEJO: Record<TipoConsejo, { nombre: string; color: string; icono: LucideIcon }> = {
+  sugerencia: { nombre: "Sugerencia", color: "#2A78D6", icono: Lightbulb },
+  bien: { nombre: "¡Bien!", color: "#15803D", icono: ThumbsUp },
+  alerta: { nombre: "Ojo", color: "#E6332A", icono: TriangleAlert },
+};
+/** Cuánto queda a la vista una burbuja según su largo (entre 7 y 14 s). */
+const ALAVISTA = (t: string) => Math.min(14000, Math.max(7000, 4000 + t.length * 60));
+/** Cuándo salió un consejo; `de`: «tu» para el postulante, «su» para el equipo. */
+export const cuandoConsejo = (turno: number, de: "tu" | "su" = "tu") => (turno === 0 ? "Para empezar" : `Después de ${de} ${turno}.ª respuesta`);
+
+/** Un consejo en una línea (la lista para volver a leer y el visor del equipo). */
+export function ConsejoItem({ c }: { c: Consejo }) {
+  const x = TIPO_CONSEJO[c.tipo] ?? TIPO_CONSEJO.sugerencia;
+  return (
+    <li className="flex gap-2.5 text-[14px] leading-snug text-brand-ink">
+      <span className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white mt-px" style={{ background: x.color }}><x.icono size={13} aria-hidden /></span>
+      <span><span className="sr-only">{x.nombre}: </span>{c.texto}</span>
+    </li>
+  );
+}
+
 function guardado(clave: string): string {
   try { return window.localStorage.getItem(clave) ?? ""; } catch { return ""; }
 }
@@ -70,7 +101,7 @@ function Tilde({ estado }: { estado?: Estado }) {
   return <CheckCheck size={13} className="text-sky-300" aria-label="visto" />;
 }
 
-export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: iniciales, iniciado, terminado: terminadoInicial, enviar, onTerminar, onVolver, pie, aviso, cierre }: {
+export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: iniciales, iniciado, terminado: terminadoInicial, enviar, onTerminar, onVolver, pie, aviso, cierre, entrenador }: {
   /** La conversación (para guardar el borrador). */
   id: string;
   cliente: string; titulo?: string; mensajes: MensajeChat[]; iniciado: string; terminado: boolean;
@@ -84,6 +115,8 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
   /** Manda uno o varios mensajes seguidos con su marca de lote; devuelve lo que contestó el cliente. */
   enviar: (textos: string[], lote: string) => Promise<{ nuevos: string[]; fin: boolean }>;
   onTerminar?: () => Promise<void>; onVolver?: () => void; pie?: (terminado: boolean) => ReactNode; aviso?: ReactNode;
+  /** Entrenamiento guiado: el entrenador IA y sus consejos en burbujas. */
+  entrenador?: Entrenador;
 }) {
   const claveBorrador = `cap-chat-borrador:${id}`;
   const [msgs, setMsgs] = useState<Burbuja[]>(() => iniciales.map((m, i) => ({ ...m, k: `s${i}`, estado: m.r === "asesor" ? "visto" : undefined })));
@@ -107,6 +140,43 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
   const reloj = useRef<ReturnType<typeof setTimeout> | null>(null);
   const terminadoRef = useRef(terminadoInicial);
   useEffect(() => { terminadoRef.current = terminado; }, [terminado]);
+
+  // ---------------------------------------------------------------- el entrenador (guiado)
+  const [consejos, setConsejos] = useState<ConsejosTurno[]>(entrenador?.previos ?? []);
+  const [flotan, setFlotan] = useState<{ k: string; c: Consejo; dura: number; sale?: boolean }[]>([]);
+  const [pensando, setPensando] = useState(false);
+  const [verConsejos, setVerConsejos] = useState(false);
+  const entrenadorRef = useRef(entrenador);
+  entrenadorRef.current = entrenador;
+  const pidiendo = useRef(false);
+  const soltar = (k: string) => {
+    setFlotan((xs) => xs.map((x) => (x.k === k ? { ...x, sale: true } : x)));
+    setTimeout(() => { if (vivo.current) setFlotan((xs) => xs.filter((x) => x.k !== k)); }, 420);
+  };
+  const soltarRef = useRef(soltar);
+  soltarRef.current = soltar;
+  const pedirConsejo = useCallback(async () => {
+    const e = entrenadorRef.current;
+    if (!e || pidiendo.current || terminadoRef.current) return;
+    pidiendo.current = true; setPensando(true);
+    try {
+      const r = await e.pedir();
+      if (!vivo.current || terminadoRef.current || !r.consejos.length) return;
+      setConsejos((h) => (h.some((x) => x.turno === r.turno) ? h : [...h, { turno: r.turno, items: r.consejos }]));
+      // Salen de a una, flotando; como mucho dos a la vista (la más vieja se va).
+      r.consejos.forEach((c, i) => setTimeout(() => {
+        if (!vivo.current || terminadoRef.current) return;
+        const k = nuevoId(); const dura = ALAVISTA(c.texto);
+        setFlotan((xs) => { const quedan = xs.filter((x) => !x.sale); if (quedan.length >= 2) setTimeout(() => soltarRef.current(quedan[0].k), 0); return [...xs, { k, c, dura }]; });
+        setTimeout(() => soltarRef.current(k), dura);
+      }, 250 + i * 650));
+    } catch { /* el entrenador es una ayuda: si no responde, la charla sigue igual */ }
+    finally { pidiendo.current = false; if (vivo.current) setPensando(false); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (terminado) setFlotan([]); }, [terminado]);
+  // Mientras hay burbujas a la vista, la charla deja lugar abajo para que no tapen el último mensaje.
+  const capa = useRef<HTMLDivElement>(null);
+  const [altoCapa, setAltoCapa] = useState(0);
   useEffect(() => () => { vivo.current = false; if (reloj.current) clearTimeout(reloj.current); }, []);
   useEffect(() => { setTexto(guardado(claveBorrador)); }, [claveBorrador]);
   useEffect(() => { abajo.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, escribiendo, terminado]);
@@ -154,6 +224,7 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
         setEscribiendo(false);
         if (k < r.nuevos.length - 1) await espera(250);
       }
+      if (!r.fin) pedirConsejo();
       if (r.fin) {
         // El cliente se fue: lo que quedó en cola ya no se puede mandar.
         const pendientes = cola.current.items.map((x) => x.k);
@@ -204,6 +275,7 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
     cola.current.items.push(b);
     ultimoEnvio.current = Date.now();
     setTexto(""); guardar(claveBorrador, "");
+    flotan.forEach((x) => { if (!x.sale) soltar(x.k); });
     if (caja.current) caja.current.style.height = "auto";
     caja.current?.focus();
     if (!fallidoRef.current) programar(PAUSA);
@@ -247,6 +319,8 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
   const actual = pasos ? pasos.findIndex((p) => p.estado === "actual") + 1 : 0;
   const esperan = pasos?.filter((p) => p.estado === "pendiente").length ?? 0;
   const color = colorDe(cliente);
+  const totalConsejos = consejos.reduce((n, x) => n + x.items.length, 0);
+  const ultimoConsejo = consejos.length ? consejos.reduce((a, b) => (b.turno > a.turno ? b : a)) : null;
 
   // Pantalla completa sobre todo y del alto visible (con el teclado del celular abierto, el chat se acomoda arriba).
   const [montado, setMontado] = useState(false);
@@ -264,6 +338,16 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
   useEffect(() => { abajo.current?.scrollIntoView({ block: "end" }); }, [vista?.h]);
   // En la computadora, el cursor ya queda en la caja para escribir.
   useEffect(() => { if (montado && !terminadoRef.current && window.matchMedia("(pointer: fine)").matches) caja.current?.focus(); }, [montado]);
+  // Guiado: al entrar, el consejo para este momento de la charla (si ya se dio, vuelve el mismo).
+  useEffect(() => { if (montado) pedirConsejo(); }, [montado, pedirConsejo]);
+  useEffect(() => {
+    const el = capa.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setAltoCapa(el.offsetHeight > 20 ? el.offsetHeight : 0));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [montado, terminado]);
+  useEffect(() => { if (altoCapa) abajo.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [altoCapa]);
   if (!montado) return null;
 
   const botonTerminar = (clase: string) => onTerminar && !terminado && (
@@ -284,8 +368,9 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
                 <ArrowLeft size={16} aria-hidden /> Volver
               </button>
             )}
-            <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">{entrenamiento ? "Entrenamiento" : "Conversación de práctica"}</div>
+            <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate">{entrenador ? "Entrenamiento guiado" : entrenamiento ? "Entrenamiento" : "Conversación de práctica"}</div>
             <div className="font-display text-[22px] uppercase leading-tight text-brand-ink break-words">{entrenamiento ?? titulo ?? cliente}</div>
+            {entrenador && <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#2A78D6]/10 text-[#1D5BA6] text-[11px] font-semibold px-2 py-0.5"><GraduationCap size={12} aria-hidden /> Práctica · no suma a la evaluación</span>}
           </div>
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
             <div className="rounded-xl bg-brand-bg px-4 py-3">
@@ -295,6 +380,20 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
                 <div className="text-[12px] text-brand-slate mt-1.5">Caso {actual || pasos.length} de {pasos.length} · {esperan ? `${esperan} en espera` : "el último"}</div>
               )}
             </div>
+            {entrenador && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate inline-flex items-center gap-1"><GraduationCap size={13} aria-hidden /> Tu entrenador</span>
+                  {totalConsejos > 0 && <button type="button" onClick={() => setVerConsejos(true)} className="text-[12px] font-semibold text-brand-primary hover:underline">Ver todos ({totalConsejos})</button>}
+                </div>
+                {ultimoConsejo ? (
+                  <div className="rounded-xl border border-brand-border px-3 py-2.5">
+                    <div className="text-[11px] text-brand-slate mb-1.5">{cuandoConsejo(ultimoConsejo.turno)}</div>
+                    <ul className="space-y-2">{ultimoConsejo.items.map((c, i) => <ConsejoItem key={i} c={c} />)}</ul>
+                  </div>
+                ) : <p className="text-[13px] text-brand-slate leading-snug">{pensando ? "Está mirando la charla…" : "Te va a ir dando consejos para cada mensaje, en burbujas sobre la caja de texto."}</p>}
+              </div>
+            )}
             {pasos && pasos.length > 1 && (
               <div>
                 <div className="text-[10px] uppercase tracking-wider2 font-semibold text-brand-slate mb-1.5">Tus clientes</div>
@@ -355,6 +454,13 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
               </div>
             </div>
             {!(pasos && pasos.length > 1) && <span className="lg:hidden text-[13px] text-brand-slate shrink-0" title="Tiempo del caso"><Reloj desde={iniciado} parado={terminado} /></span>}
+            {entrenador && (
+              <button type="button" onClick={() => setVerConsejos(true)} aria-label={`Consejos del entrenador (${totalConsejos})`}
+                className="lg:hidden relative w-10 h-10 rounded-full border border-brand-border text-[#1D5BA6] flex items-center justify-center shrink-0">
+                <GraduationCap size={19} aria-hidden />
+                {totalConsejos > 0 && <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#2A78D6] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">{totalConsejos}</span>}
+              </button>
+            )}
             {botonTerminar("lg:hidden min-h-[36px] px-3 rounded-full border border-brand-border text-[13px] font-semibold text-brand-ink inline-flex items-center gap-1 shrink-0")}
           </header>
           {pasos && pasos.length > 1 && (
@@ -411,11 +517,42 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
                 </div>
               )}
               {terminado && cierre}
-              <div ref={abajo} className="h-1" />
+              {/* Al final de la charla; con burbujas del entrenador a la vista, crece para que no tapen el último mensaje. */}
+              <div ref={abajo} style={{ height: altoCapa ? altoCapa + 12 : 4 }} />
             </div>
           </div>
 
-          <div className="bg-white border-t border-brand-border px-3 lg:px-8 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom))] lg:pb-3">
+          <div className="relative bg-white border-t border-brand-border px-3 lg:px-8 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom))] lg:pb-3">
+            {entrenador && !terminado && (
+              // Las burbujas del entrenador: suben flotando sobre la caja de texto y se van solas (o con un toque).
+              <div ref={capa} className="absolute inset-x-0 bottom-full px-3 lg:px-8 pb-3 pointer-events-none z-10" aria-live="polite">
+                <div className="max-w-2xl lg:max-w-3xl mx-auto flex flex-col items-end gap-2">
+                  {pensando && !flotan.length && (
+                    <span className="consejo-entra inline-flex items-center gap-2 rounded-full bg-white/95 border border-brand-border shadow-sm px-3 py-1.5 text-[12px] text-brand-slate">
+                      <GraduationCap size={14} className="text-[#2A78D6]" aria-hidden /> Tu entrenador está mirando
+                      <span className="flex gap-0.5" aria-hidden>{[0, 1, 2].map((i) => <span key={i} className="w-1 h-1 rounded-full bg-brand-mist grabando-punto" style={{ animationDelay: `${i * 0.18}s` }} />)}</span>
+                    </span>
+                  )}
+                  {flotan.map((x) => {
+                    const tipo = TIPO_CONSEJO[x.c.tipo] ?? TIPO_CONSEJO.sugerencia;
+                    return (
+                      <div key={x.k} className={cx("pointer-events-auto w-full max-w-[380px]", x.sale ? "consejo-sale" : "consejo-entra")}>
+                        <button type="button" onClick={() => soltar(x.k)} title="Tocá para cerrar"
+                          className="consejo-flota relative w-full text-left overflow-hidden rounded-2xl rounded-br-md bg-white border pl-3 pr-3.5 pt-2.5 pb-3 flex gap-2.5 shadow-[0_14px_34px_-14px_rgba(15,17,22,0.5)]"
+                          style={{ borderColor: `${tipo.color}40` }}>
+                          <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white" style={{ background: tipo.color }}><tipo.icono size={16} aria-hidden /></span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[10px] uppercase tracking-wider2 font-semibold" style={{ color: tipo.color }}>Entrenador · {tipo.nombre}</span>
+                            <span className="block text-[14px] leading-snug text-brand-ink">{x.c.texto}</span>
+                          </span>
+                          <span className="absolute left-0 bottom-0 h-[3px] consejo-tiempo" style={{ background: tipo.color, animationDuration: `${x.dura}ms` }} aria-hidden />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="max-w-2xl lg:max-w-3xl mx-auto">
               {error && (
                 <div role="alert" className="mb-2 text-[13px] text-brand-primary-dark flex items-center gap-2">
@@ -462,6 +599,28 @@ export function Chat({ id, cliente, titulo, entrenamiento, pasos, mensajes: inic
           </div>
         </section>
       </div>
+      {verConsejos && (
+        <div className="absolute inset-0 z-20 bg-[rgba(15,17,22,0.45)] flex items-end lg:items-center justify-center animate-fade" onClick={() => setVerConsejos(false)}>
+          <div role="dialog" aria-label="Consejos del entrenador" onClick={(e) => e.stopPropagation()}
+            className="hoja-sube w-full lg:max-w-md max-h-[80%] bg-white rounded-t-2xl lg:rounded-2xl flex flex-col shadow-2xl pb-[env(safe-area-inset-bottom)]">
+            <div className="flex items-center gap-3 px-5 pt-4 pb-3 border-b border-brand-border">
+              <span className="w-9 h-9 rounded-full bg-[#2A78D6]/10 text-[#1D5BA6] flex items-center justify-center shrink-0"><GraduationCap size={18} aria-hidden /></span>
+              <div className="flex-1 min-w-0"><div className="font-semibold text-[16px] text-brand-ink">Tu entrenador</div>
+                <div className="text-[12px] text-brand-slate">Práctica guiada · no suma a tu evaluación</div></div>
+              <button type="button" onClick={() => setVerConsejos(false)} aria-label="Cerrar" className="w-10 h-10 rounded-full flex items-center justify-center text-brand-slate hover:bg-brand-bg"><X size={20} aria-hidden /></button>
+            </div>
+            <div className="overflow-y-auto px-5 py-4 space-y-4">
+              {consejos.length === 0 && <p className="text-[14px] text-brand-slate">{pensando ? "Está mirando la charla…" : "Todavía no hay consejos. Van a ir saliendo mientras chateás."}</p>}
+              {[...consejos].sort((a, b) => b.turno - a.turno).map((x) => (
+                <div key={x.turno}>
+                  <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate mb-1.5">{cuandoConsejo(x.turno)}</div>
+                  <ul className="space-y-2">{x.items.map((c, i) => <ConsejoItem key={i} c={c} />)}</ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>,
     document.body,
   );

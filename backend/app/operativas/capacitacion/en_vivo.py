@@ -108,7 +108,8 @@ async def en_vivo(grupo: Optional[str] = None, user: CurrentUser = Depends(requi
         ms = s.mensajes or []
         base = {"id": s.id, "postulante": _nombre(p), "grupo": {"id": p.grupo_id, "nombre": gmap[p.grupo_id].nombre},
                 "entrenamiento": (c.get("entrenamiento") or {}).get("nombre"), "intento": (a.intento or 1) if a else 1,
-                "caso": c.get("titulo"), "cliente": c.get("cliente_nombre")}
+                "caso": c.get("titulo"), "cliente": c.get("cliente_nombre"),
+                "guiado": ((c.get("entrenamiento") or {}).get("modo")) == "guiado"}
         x = por_postulante[p.id]
         ultima = _fecha(ms[-1].get("at")) if ms else None
         if ultima and ultima >= hoy and (x["ultima"] is None or ultima > x["ultima"]):

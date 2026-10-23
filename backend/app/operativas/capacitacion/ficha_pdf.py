@@ -25,7 +25,7 @@ from ...services.audit_service import record_action
 from ..televentas_claro.informe_diario.pdf import (
     _F, BORDE, FONDO, GRAFITO, LOGO, PIZARRA, ROJO, TA_RIGHT, TINTA, _cab, _e, _Lienzo, _limpio, _registrar, _seccion, _tabla,
 )
-from . import api, entrenamientos, ipv
+from . import api, entrenamientos, informe_ia, ipv
 from . import servicio as srv
 from .api import require_ver
 
@@ -131,7 +131,7 @@ def _n(n: int, palabra: str) -> str:
 
 
 def _nombre_ent(x: dict[str, Any]) -> str:
-    return x["nombre"] + (f" · intento {x['intento']}" if (x.get("intento") or 1) > 1 else "")
+    return x["nombre"] + (" · guiado" if x.get("guiado") else "") + (f" · intento {x['intento']}" if (x.get("intento") or 1) > 1 else "")
 
 
 def _entrenamientos(p: dict[str, Any], ents: list[dict[str, Any]], ancho: float) -> list[Any]:
@@ -156,14 +156,17 @@ def _entrenamientos(p: dict[str, Any], ents: list[dict[str, Any]], ancho: float)
               _cab("Info", derecha=True), _cab("Resultado")]]
     for x in ents:
         r = x.get("resultado") or {}
-        resultado = ("Recomendado" if r.get("aprobado") else "No recomendado") if r else "—"
+        if x.get("guiado"):              # práctica guiada: no suma al baremo ni se recomienda
+            resultado, color_res = ("Práctica (no suma)" if r else "Práctica"), PIZARRA
+        else:
+            resultado = ("Recomendado" if r.get("aprobado") else "No recomendado") if r else "—"
+            color_res = (colors.HexColor("#047857") if r.get("aprobado") else ROJO) if r else PIZARRA
         filas.append([Paragraph(_limpio(_nombre_ent(x)), _e("enom", fontName=_F["semi"])),
                       Paragraph(_limpio(ESTADO_ENT.get(x["estado"], x["estado"])), _e("eest")),
                       Paragraph(f"{x['hechos']}/{x['casos']}", _e("ecas", alignment=TA_RIGHT)),
                       Paragraph(f"{r['nivel_promedio']}" if r.get("nivel_promedio") is not None else "—", _e("eniv", alignment=TA_RIGHT)),
                       Paragraph(f"{round(r['info_pct'])}%" if r.get("info_pct") is not None else "—", _e("einf", alignment=TA_RIGHT)),
-                      Paragraph(_limpio(resultado), _e("eres", fontName=_F["semi"],
-                                                       textColor=(colors.HexColor("#047857") if r.get("aprobado") else ROJO) if r else PIZARRA))])
+                      Paragraph(_limpio(resultado), _e("eres", fontName=_F["semi"], textColor=color_res))])
     partes += [Spacer(1, 2.5 * mm), _tabla(filas, [ancho - 120 * mm, 24 * mm, 16 * mm, 16 * mm, 16 * mm, 48 * mm], zebra=True)]
     for x in ents:
         r = x.get("resultado") or {}
@@ -178,8 +181,51 @@ def _entrenamientos(p: dict[str, Any], ents: list[dict[str, Any]], ancho: float)
     return partes
 
 
-def generar(f: dict[str, Any], ents: list[dict[str, Any]], *, generado_por: str) -> bytes:
-    """`f`: la ficha como la devuelve la API; `ents`: los entrenamientos del postulante con su resultado."""
+RESPONSABLE = {"capacitador": "Capacitador", "mentor": "Mentor", "postulante": "Postulante"}
+COLOR_SUGERENCIA = {"avanzar": "#047857", "seguir_entrenando": "#2A78D6", "reforzar_y_revisar": "#B81F18"}
+
+
+def _informe_ia(inf: dict[str, Any], ancho: float) -> list[Any]:
+    """El último informe de la IA (si hay): titular, sugerencia frente al baremo, lectura y plan."""
+    c = inf["contenido"]
+    color = COLOR_SUGERENCIA.get(c["sugerencia"], "#0F1116")
+    partes: list[Any] = [Paragraph(_limpio(c["titular"]), _e("iat", fontName=_F["titulo"], fontSize=13.5, leading=17, textColor=TINTA))]
+    linea = f'<font name="{_F["semi"]}" color="{color}">Sugerencia: {_limpio(inf["sugerencia_nombre"] or "—")}</font>'
+    if inf.get("referencia") and inf["referencia"] != c["sugerencia"]:
+        linea += f' <font color="#5B6275">· según el baremo: {_limpio((inf.get("referencia_nombre") or "").lower())}</font>'
+    fecha = f'Redactado por la IA el {_fecha(inf.get("generado_at"), hora=True)}'
+    if inf.get("desactualizado"):
+        fecha += " · hay datos nuevos desde entonces"
+    partes += [Spacer(1, 1.5 * mm), Paragraph(linea, _e("ias", fontSize=9.5)), Paragraph(fecha, _e("iaf", fontSize=7.6, textColor=PIZARRA)),
+               Spacer(1, 2.5 * mm), Paragraph(_limpio(c["resumen"]), _e("iar"))]
+    for titulo, clave in (("Perfil IPV", "perfil_ipv"), ("Desempeño en los entrenamientos", "desempeno"), ("IPV y entrenamientos", "coherencia")):
+        if c.get(clave):
+            partes += [Spacer(1, 2 * mm), Paragraph(f'<font name="{_F["semi"]}" color="#0F1116">{titulo}:</font> {_limpio(c[clave])}', _e(f"ia{clave}"))]
+    if c.get("fortalezas") or c.get("a_desarrollar"):
+        def _lista(xs: list[str], tono: str) -> str:
+            return "<br/>".join(f'<font color="{tono}">•</font> {_limpio(x)}' for x in xs) or "—"
+        tabla = Table([[Paragraph(f'<font name="{_F["semi"]}" color="#047857">Fortalezas</font><br/>{_lista(c.get("fortalezas") or [], "#047857")}', _e("iafo")),
+                        Paragraph(f'<font name="{_F["semi"]}" color="#B81F18">A desarrollar</font><br/>{_lista(c.get("a_desarrollar") or [], "#B81F18")}', _e("iaad"))]],
+                      colWidths=[ancho / 2, ancho / 2])
+        tabla.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, 0), 8)]))
+        partes += [Spacer(1, 3 * mm), tabla]
+    if c.get("plan"):
+        filas = [[_cab("Plan de las próximas dos semanas"), _cab("Responsable")]]
+        filas += [[Paragraph(_limpio(x["accion"]), _e("iapa")), Paragraph(RESPONSABLE.get(x["responsable"], x["responsable"]), _e("iapr", fontName=_F["semi"]))]
+                  for x in c["plan"]]
+        partes += [Spacer(1, 3 * mm), _tabla(filas, [ancho - 34 * mm, 34 * mm], zebra=True)]
+    if c.get("justificacion"):
+        partes += [Spacer(1, 2.5 * mm), Paragraph(f'<font name="{_F["semi"]}" color="#0F1116">Por qué:</font> {_limpio(c["justificacion"])}', _e("iaj"))]
+    if c.get("alertas"):
+        partes += [Spacer(1, 2 * mm), Paragraph(f'<font name="{_F["semi"]}" color="#B81F18">Para mirar:</font> {_limpio(" · ".join(c["alertas"]))}', _e("iaal"))]
+    partes += [Spacer(1, 2 * mm), Paragraph("La IA lee el IPV con su baremo y los entrenamientos evaluados (las prácticas guiadas no suman). "
+                                            "Es una sugerencia: la decisión es del equipo.", _e("ian", fontSize=7.6, textColor=PIZARRA))]
+    return partes
+
+
+def generar(f: dict[str, Any], ents: list[dict[str, Any]], *, generado_por: str, informe: dict[str, Any] | None = None) -> bytes:
+    """`f`: la ficha como la devuelve la API; `ents`: los entrenamientos del postulante con su resultado; `informe`: el
+    último informe de la IA listo (opcional)."""
     _registrar()
     p, g = f["postulante"], f["grupo"]
     nombre = f"{p['nombre']} {p['apellido']}"
@@ -208,6 +254,9 @@ def generar(f: dict[str, Any], ents: list[dict[str, Any]], *, generado_por: str)
     story += [KeepTogether([_seccion("Test IPV"), Spacer(1, 3 * mm), *test[:4]]), *test[4:], Spacer(1, 7 * mm)]
     ent = _entrenamientos(p, ents, ancho)   # la sección no queda separada de su tabla
     story += [KeepTogether([_seccion("Entrenamientos"), Spacer(1, 3 * mm), *ent[:3]]), *ent[3:], Spacer(1, 7 * mm)]
+    if informe and informe.get("contenido"):
+        ia_partes = _informe_ia(informe, ancho)
+        story += [KeepTogether([_seccion("Informe IA"), Spacer(1, 3 * mm), *ia_partes[:5]]), *ia_partes[5:], Spacer(1, 7 * mm)]
 
     c = f.get("conteo") or {}
     seguimiento: list[Any] = [_seccion("Seguimiento"), Spacer(1, 2 * mm),
@@ -260,7 +309,10 @@ async def ficha_pdf(pid: str, request: Request, user: CurrentUser = Depends(requ
     """La ficha para imprimir o compartir: lo mismo que se ve en pantalla (mismos permisos), sin los audios."""
     f = await api.ficha(pid, user, db)
     ents = (await entrenamientos.de_postulante(pid, user, db))["entrenamientos"]
-    contenido = generar(f, ents, generado_por=user.full_name or user.email)
+    p, g, _ = await api._postulante(db, pid, user)
+    v = await informe_ia.vista(db, p, g)
+    informe = v["informe"] if v["informe"] and v["informe"]["estado"] == "listo" else v["anterior"]
+    contenido = generar(f, ents, generado_por=user.full_name or user.email, informe=informe)
     await record_action(db, user_id=user.id, action="capacitacion_ficha_pdf", resource_type="cap_postulante", resource_id=pid,
                         ip=client_ip(request))
     return Response(contenido, media_type="application/pdf",

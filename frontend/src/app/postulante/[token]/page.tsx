@@ -5,13 +5,13 @@
  * que contesta y se puede seguir después con el mismo link; y su feedback, escrito o dictado. No muestra resultados.
  */
 import {
-  ArrowLeft, ArrowRight, Check, ChevronRight, CircleCheck, ClipboardCheck, Clock3, CloudOff, ListChecks, LoaderCircle, Lock,
+  ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, CircleCheck, ClipboardCheck, Clock3, CloudOff, GraduationCap, ListChecks, LoaderCircle, Lock,
   Eye, MessageSquareHeart, MessagesSquare, Pause, Play, Save, Scale, Send, Timer, TriangleAlert, UserRound,
 } from "lucide-react";
-import { Chat, type PasoChat } from "@/components/capacitacion/chat";
-import { conIntento, type DevolucionCaso, type MensajeChat } from "@/components/capacitacion/tipos";
+import { Chat, type Entrenador, type PasoChat } from "@/components/capacitacion/chat";
+import { conIntento, type Consejo, type ConsejosTurno, type DevolucionCaso, type MensajeChat } from "@/components/capacitacion/tipos";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { subirDictado } from "@/components/capacitacion/tipos";
 import { Dictado } from "@/components/portal/grabadora";
@@ -20,7 +20,7 @@ import type { AudioCoaching } from "@/components/supervision/tipos";
 
 const API = "/api/v1/capacitacion/publico";
 
-interface EntLink { id: string; nombre: string; intento?: number; estado: string; casos: number; hechos: number; pct: number }
+interface EntLink { id: string; nombre: string; intento?: number; estado: string; casos: number; hechos: number; pct: number; guiado?: boolean }
 /** El informe de un test que venció sin terminar (se reinició completo). */
 interface Vencido { iniciado_at: string | null; vencio_at: string; respondidas: number; total: number; minutos: number }
 interface IpvEstado {
@@ -31,6 +31,8 @@ interface IpvEstado {
 interface Estado { nombre: string; grupo: string; ipv: IpvEstado; comentarios?: number; entrenamientos?: EntLink[] }
 interface Pregunta { n: number; texto: string; opciones: { letra: string; texto: string }[] }
 type Vista = "inicio" | "instrucciones" | "test" | "enviar" | "gracias" | "feedback" | "vencido" | { t: "entrenamiento"; id: string };
+/** El tiempo del test en palabras: «45 minutos» o «1 h 15 min». */
+const tiempoTest = (m: number) => (m < 60 ? `${m} minutos` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`);
 const horaPY = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", timeZone: "America/Asuncion" }) : "—");
 
 async function pub<T>(url: string, init?: RequestInit): Promise<T> {
@@ -83,7 +85,7 @@ export default function PostulantePage() {
         {info && vista === "inicio" && <Inicio info={info} onTest={() => setVista(info.ipv.vencido ? "vencido" : info.ipv.estado === "en_curso" ? "test" : "instrucciones")} onFeedback={() => setVista("feedback")}
           onEntrenamiento={(id) => setVista({ t: "entrenamiento", id })} />}
         {info && typeof vista === "object" && <EntrenamientoLink base={base} id={vista.id} onVolver={() => { setVista("inicio"); cargar(); }} />}
-        {info && vista === "instrucciones" && <Instrucciones nombre={info.nombre} minutos={info.ipv.minutos ?? 45} onEmpezar={empezar} />}
+        {info && vista === "instrucciones" && <Instrucciones nombre={info.nombre} minutos={info.ipv.minutos ?? 75} onEmpezar={empezar} />}
         {info && vista === "vencido" && info.ipv.vencido && <TestVencido v={info.ipv.vencido} nombre={info.nombre} onEmpezar={() => setVista("instrucciones")} onVolver={() => setVista("inicio")} />}
         {info && (vista === "test" || vista === "enviar") && (
           <Test base={base} token={token} onTerminado={() => { setVista("gracias"); cargar(); }}
@@ -119,7 +121,7 @@ function Inicio({ info, onTest, onFeedback, onEntrenamiento }: { info: Estado; o
               {hecho ? "¡Listo! Ya lo terminaste."
                 : info.ipv.vencido ? "Se terminó el tiempo: tenés que volver a empezar"
                 : info.ipv.estado === "en_curso" ? `Seguí donde quedaste · ${pct}% hecho · termina a las ${horaPY(info.ipv.limite_at)}`
-                : `${info.ipv.total} situaciones · ${info.ipv.minutos ?? 45} minutos para hacerlo`}
+                : `${info.ipv.total} situaciones · ${tiempoTest(info.ipv.minutos ?? 75)} para hacerlo`}
             </span>
           </span>
           {!hecho && <ChevronRight size={20} className="text-brand-mist shrink-0" aria-hidden />}
@@ -142,7 +144,8 @@ function Inicio({ info, onTest, onFeedback, onEntrenamiento }: { info: Estado; o
                     {listo ? <CircleCheck size={22} aria-hidden /> : <MessagesSquare size={22} aria-hidden />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-semibold text-[16px] text-brand-ink">{conIntento(x.nombre, x.intento)}</span>
+                    <span className="flex items-center gap-2 flex-wrap font-semibold text-[16px] text-brand-ink">{conIntento(x.nombre, x.intento)}
+                      {x.guiado && <span className="inline-flex items-center gap-1 rounded-full bg-[#2A78D6]/10 text-[#1D5BA6] text-[11px] font-semibold px-2 py-0.5"><GraduationCap size={12} aria-hidden /> Guiado</span>}</span>
                     <span className="block text-[13px] text-brand-slate">{listo ? "¡Listo! Ya lo hiciste." : x.hechos ? `Seguí · ${x.hechos} de ${x.casos} clientes` : `${x.casos} cliente${x.casos === 1 ? "" : "s"} para atender por chat`}</span>
                   </span>
                   <ChevronRight size={20} className="text-brand-mist shrink-0" aria-hidden />
@@ -176,7 +179,7 @@ const PASOS_INSTRUCCIONES: { icono: typeof Clock3; titulo: string; texto: React.
 function Instrucciones({ nombre, minutos, onEmpezar }: { nombre: string; minutos: number; onEmpezar: () => void }) {
   const [empezando, setEmpezando] = useState(false);
   const pasos = [
-    { icono: Timer, titulo: `Tenés ${minutos} minutos`, texto: <>El tiempo empieza al tocar «Empezar el test» y <b className="text-brand-ink">no se detiene si pausás</b>. Si no terminás a tiempo, el test se reinicia completo y tenés que empezar de nuevo. Buscá un lugar tranquilo.</> },
+    { icono: Timer, titulo: `Tenés ${tiempoTest(minutos)}`, texto: <>El tiempo empieza al tocar «Empezar el test» y <b className="text-brand-ink">no se detiene si pausás</b>. Si no terminás a tiempo, el test se reinicia completo y tenés que empezar de nuevo. Buscá un lugar tranquilo.</> },
     ...PASOS_INSTRUCCIONES,
   ];
   return (
@@ -196,7 +199,7 @@ function Instrucciones({ nombre, minutos, onEmpezar }: { nombre: string; minutos
       </ul>
       <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg">
         <Boton icono={Play} ocupado={empezando} onClick={async () => { setEmpezando(true); try { await onEmpezar(); } finally { setEmpezando(false); } }}>
-          Empezar el test · {minutos} min
+          Empezar el test · {tiempoTest(minutos)}
         </Boton>
       </div>
     </div>
@@ -317,7 +320,9 @@ function Test({ base, token, onTerminado, onSalir, onVencido }: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quedan]);
-  const reloj = quedan === null ? "--:--" : `${Math.floor(quedan / 60)}:${String(quedan % 60).padStart(2, "0")}`;
+  const dos = (n: number) => String(n).padStart(2, "0");
+  const reloj = quedan === null ? "--:--" : quedan >= 3600
+    ? `${Math.floor(quedan / 3600)}:${dos(Math.floor((quedan % 3600) / 60))}:${dos(quedan % 60)}` : `${Math.floor(quedan / 60)}:${dos(quedan % 60)}`;
 
   const total = preguntas?.length ?? 87;
   const respondidas = Object.keys(resp).length;
@@ -482,7 +487,7 @@ function TestVencido({ v, nombre, onEmpezar, onVolver }: { v: Vencido; nombre: s
         <h1 className="font-display text-[30px] uppercase text-brand-ink leading-tight">Se terminó el tiempo</h1>
       </div>
       <div className="card mt-5 divide-y divide-brand-border" aria-label="Informe">
-        {[["Empezaste", horaPY(v.iniciado_at)], ["Se terminó el tiempo", horaPY(v.vencio_at)], ["Tiempo disponible", `${v.minutos} minutos`],
+        {[["Empezaste", horaPY(v.iniciado_at)], ["Se terminó el tiempo", horaPY(v.vencio_at)], ["Tiempo disponible", tiempoTest(v.minutos)],
           ["Respondiste", `${v.respondidas} de ${v.total} situaciones`]].map(([k, x]) => (
           <div key={k} className="px-4 py-3 flex items-center justify-between gap-3 text-[15px]">
             <span className="text-brand-slate">{k}</span><span className="font-semibold text-brand-ink tabular-nums text-right">{x}</span>
@@ -490,9 +495,9 @@ function TestVencido({ v, nombre, onEmpezar, onVolver }: { v: Vencido; nombre: s
         ))}
       </div>
       <div className="mt-4 rounded-xl border border-brand-primary/30 bg-brand-primary-light/60 px-4 py-3 text-[14px] text-brand-ink leading-snug">
-        {nombre}, por seguridad el test tiene que hacerse completo en {v.minutos} minutos. Como no lo terminaste a tiempo,
+        {nombre}, por seguridad el test tiene que hacerse completo en {tiempoTest(v.minutos)}. Como no lo terminaste a tiempo,
         <b> se reinició y tus respuestas se borraron</b>. Tenés que <b>volver a empezar desde la situación 1</b>; vas a tener
-        otros {v.minutos} minutos. Antes de empezar, buscá un lugar tranquilo y tiempo suficiente.
+        otra vez {tiempoTest(v.minutos)}. Antes de empezar, buscá un lugar tranquilo y tiempo suficiente.
       </div>
       <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg space-y-2">
         <Boton icono={Play} onClick={onEmpezar}>Volver a empezar el test</Boton>
@@ -576,6 +581,8 @@ interface CasoLink {
 interface EntDetalle {
   id: string; nombre: string; intento?: number; instrucciones: string | null; empresa: string; canal: string; casos: CasoLink[]; hechos: number; total: number;
   pct: number; terminado: boolean; disponible: boolean; devolucion_final: { fuertes: string[]; mejorar: string[] } | null;
+  /** Guiado: práctica con el entrenador IA (no suma a la evaluación). */
+  guiado?: boolean;
 }
 
 /** La devolución corta de un caso: aparece apenas la IA lo evalúa (unos segundos después de terminar). */
@@ -633,7 +640,12 @@ function Devolucion({ base, sid, compacta }: { base: string; sid: string; compac
     </div>
   );
 }
-interface SesionLink { id: string; caso_id: string; titulo: string; cliente: string; estado: string; mensajes: MensajeChat[]; iniciado_at: string }
+interface SesionLink {
+  id: string; caso_id: string; titulo: string; cliente: string; estado: string; mensajes: MensajeChat[]; iniciado_at: string;
+  guiado?: boolean; consejos?: ConsejosTurno[];
+}
+const COLORES_CLIENTE = ["#334155", "#2A78D6", "#0E7490", "#7C3AED", "#B45309", "#BE185D", "#15803D"];
+const colorCliente = (n: string) => COLORES_CLIENTE[[...n].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % COLORES_CLIENTE.length];
 
 function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; onVolver: () => void }) {
   const [d, setD] = useState<EntDetalle | null>(null);
@@ -643,6 +655,7 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
   // Los casos que terminó en esta visita (la lista del servidor se actualiza al volver).
   const [listos, setListos] = useState<Set<string>>(new Set());
   const [verDev, setVerDev] = useState<string | null>(null);
+  const [comoFunciona, setComoFunciona] = useState(false);
   const cargar = useCallback(() => {
     pub<EntDetalle>(`${base}/entrenamientos/${id}`).then((x) => { setD(x); setError(null); }).catch((e) => setError(e.message));
   }, [base, id]);
@@ -662,6 +675,10 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
   const enviar = useCallback((textos: string[], lote: string) =>
     pub<{ nuevos: string[]; fin: boolean }>(`${base}/sesiones/${chat!.id}/mensajes`, { method: "POST", body: JSON.stringify({ textos, lote }) }), [base, chat]);
   const terminar = useCallback(async () => { await pub(`${base}/sesiones/${chat!.id}/terminar`, { method: "POST" }); }, [base, chat]);
+  // Guiado: el entrenador IA y los consejos que ya salieron en esta conversación.
+  const entrenador = useMemo<Entrenador | undefined>(() => (chat?.guiado ? {
+    pedir: () => pub<{ turno: number; consejos: Consejo[] }>(`${base}/sesiones/${chat.id}/consejo`, { method: "POST" }), previos: chat.consejos,
+  } : undefined), [base, chat?.id, chat?.guiado]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error && !d) return <p className="m-auto text-center text-brand-primary-dark font-semibold">{error}</p>;
   if (!d) return <div className="m-auto"><LoaderCircle size={32} className="animate-spin text-brand-slate" aria-label="Cargando" /></div>;
@@ -677,9 +694,10 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
     return (
       <Chat key={chat.id} id={chat.id} cliente={chat.cliente} pasos={pasos} entrenamiento={d.nombre}
         mensajes={chat.mensajes} iniciado={chat.iniciado_at} terminado={chat.estado !== "en_curso"}
-        enviar={enviar} onTerminar={terminar} onVolver={() => { setChat(null); cargar(); }}
+        enviar={enviar} onTerminar={terminar} onVolver={() => { setChat(null); cargar(); }} entrenador={entrenador}
         aviso={<p className="mx-auto mb-3 max-w-md rounded-lg bg-[#FFF8E1] px-3 py-2 text-center text-[12px] leading-snug text-[#6B5200] shadow-sm">
-          Sos asesor de {d.empresa}. Atendé a {chat.cliente.split(" ")[0]} como lo harías con un cliente real.</p>}
+          Sos asesor de {d.empresa}. Atendé a {chat.cliente.split(" ")[0]} como lo harías con un cliente real.
+          {chat.guiado && <><br /><b className="font-semibold">Práctica guiada:</b> tu entrenador te va dando consejos en burbujas. No suma a tu evaluación.</>}</p>}
         cierre={<Devolucion base={base} sid={chat.id} />}
         pie={() => (
           <div className="space-y-2">
@@ -696,99 +714,146 @@ function EntrenamientoLink({ base, id, onVolver }: { base: string; id: string; o
     );
   }
 
-  // En la computadora, en dos columnas: lo que tiene que saber y, al costado, sus clientes con el botón para empezar.
-  return (
-    <div className="flex-1 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-x-12 lg:items-start">
-      <div className="flex flex-col">
-      <button type="button" onClick={onVolver} className="self-start inline-flex items-center gap-1 text-sm text-brand-slate mb-3"><ArrowLeft size={16} aria-hidden /> Volver</button>
-      <div className="text-[11px] uppercase tracking-wider2 text-brand-slate">Entrenamiento</div>
-      <h1 className="font-display text-[30px] uppercase text-brand-ink leading-tight">{d.nombre}</h1>
-      {(d.intento ?? 1) > 1 && <div className="text-[13px] text-brand-slate">{d.intento}.º intento: lo hacés de nuevo para mejorar.</div>}
-      <div className="mt-3 flex items-center gap-3">
-        <div className="flex-1 h-2 rounded-full bg-white border border-brand-border overflow-hidden" aria-hidden><div className="h-full rounded-full bg-brand-ink" style={{ width: `${d.pct}%` }} /></div>
-        <span className="text-[13px] text-brand-slate tabular-nums">{d.hechos} de {d.total} casos hechos</span>
+  // En el celular: arriba el próximo cliente con su botón (sin nada fijo que tape), después la cola y «Cómo funciona»
+  // plegado. En la computadora, en dos columnas: lo que tiene que saber y, al costado, sus clientes.
+  const primerNombre = (n: string) => n.split(" ")[0];
+  const pasosComo = [
+    { icono: UserRound, t: "Son clientes simulados, tratalos como reales", x: "Cada uno tiene su forma de ser: algunos están apurados, otros desconfían. A veces mandan dos o tres mensajes seguidos." },
+    { icono: Send, t: "Escribí como en WhatsApp", x: "Podés mandar varios mensajes seguidos: el cliente contesta cuando hacés una pausa." },
+    ...(d.guiado ? [{ icono: GraduationCap, t: "Tu entrenador te guía", x: "Mientras chateás, te va dando consejos en burbujas: qué hacer en tu próximo mensaje, lo que hiciste bien y qué corregir." }] : []),
+    { icono: Timer, t: "Al terminar cada caso, tu devolución", x: "Se mide el tiempo. Cuando el cliente se despide (o tocás «Terminar»), te decimos qué mejorar y qué dato corregir." },
+    { icono: Eye, t: "Tu equipo te acompaña", x: "Tu capacitador o mentor puede ver las conversaciones para ayudarte a mejorar." },
+  ];
+  const proximo = !d.terminado && siguiente ? (
+    <div className="card p-4 lg:p-5 border-brand-ink/80">
+      <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">{siguiente.estado === "en_curso" ? "Tenés una charla abierta" : d.hechos === 0 ? "Tu primer cliente" : "Tu próximo cliente"}</div>
+      <div className="mt-2 flex items-center gap-3">
+        <span className="relative w-12 h-12 rounded-full text-white text-[18px] font-bold flex items-center justify-center shrink-0" style={{ background: colorCliente(siguiente.cliente) }} aria-hidden>
+          {siguiente.cliente.trim().charAt(0).toUpperCase()}
+          <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[17px] font-semibold text-brand-ink truncate">{siguiente.cliente}</span>
+          <span className="block text-[13px] text-brand-slate">Caso {siguiente.orden} de {d.total} · {siguiente.estado === "en_curso" ? "te está esperando" : "en línea"}</span>
+        </span>
       </div>
-      {d.terminado ? (
-        <div className="mt-5 card p-5">
-          <div className="text-center">
-            <CircleCheck size={44} className="mx-auto text-emerald-600" aria-hidden />
-            <p className="mt-2 text-[17px] font-semibold text-brand-ink">¡Terminaste este entrenamiento!</p>
+      <div className="mt-4">
+        <Boton icono={Play} onClick={() => abrir(siguiente)} ocupado={abriendo === siguiente.id} disabled={!d.disponible}>
+          {siguiente.estado === "en_curso" ? `Seguir con ${primerNombre(siguiente.cliente)}` : `Atender a ${primerNombre(siguiente.cliente)}`}
+        </Boton>
+      </div>
+    </div>
+  ) : null;
+  return (
+    <div className="flex-1 flex flex-col pb-6 lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-x-12 lg:items-start">
+      <div className="flex flex-col">
+        <button type="button" onClick={onVolver} className="self-start inline-flex items-center gap-1 text-sm text-brand-slate mb-3 min-h-[36px]"><ArrowLeft size={16} aria-hidden /> Volver</button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] uppercase tracking-wider2 text-brand-slate">{d.guiado ? "Entrenamiento guiado" : "Entrenamiento"}</span>
+          {d.guiado && <span className="inline-flex items-center gap-1 rounded-full bg-[#2A78D6]/10 text-[#1D5BA6] text-[11px] font-semibold px-2 py-0.5"><GraduationCap size={12} aria-hidden /> Práctica · no suma</span>}
+        </div>
+        <h1 className="font-display text-[28px] lg:text-[30px] uppercase text-brand-ink leading-tight">{d.nombre}</h1>
+        {(d.intento ?? 1) > 1 && <div className="text-[13px] text-brand-slate">{d.intento}.º intento: lo hacés de nuevo para mejorar.</div>}
+        <div className="mt-3 flex items-center gap-3">
+          <div className="flex-1 flex gap-1" aria-hidden>
+            {d.casos.map((c) => <span key={c.id} className={cx("h-2 flex-1 rounded-full", c.estado === "hecho" ? "bg-emerald-500" : c.id === siguiente?.id && !d.terminado ? "bg-brand-ink" : "bg-white border border-brand-border")} />)}
           </div>
-          {d.devolucion_final ? (
-            <div className="mt-4 space-y-3">
-              {d.devolucion_final.fuertes.length > 0 && (
-                <div><div className="text-[11px] uppercase tracking-wider2 font-bold text-emerald-800">Lo que hiciste bien</div>
-                  <ul className="mt-1 space-y-1 text-[15px] text-brand-ink">{d.devolucion_final.fuertes.map((x) => <li key={x} className="flex gap-2"><Check size={16} className="text-emerald-600 mt-0.5 shrink-0" aria-hidden />{x}</li>)}</ul></div>
-              )}
-              {d.devolucion_final.mejorar.length > 0 && (
-                <div><div className="text-[11px] uppercase tracking-wider2 font-bold text-amber-800">Para mejorar</div>
-                  <ul className="mt-1 space-y-1 text-[15px] text-brand-ink">{d.devolucion_final.mejorar.map((x) => <li key={x} className="flex gap-2"><ArrowRight size={16} className="text-amber-700 mt-0.5 shrink-0" aria-hidden />{x}</li>)}</ul></div>
-              )}
-              <p className="text-[13px] text-brand-slate">Tu equipo de capacitación ve tus conversaciones y lo va a repasar con vos.</p>
+          <span className="text-[13px] text-brand-slate tabular-nums shrink-0">{d.hechos} de {d.total} clientes</span>
+        </div>
+
+        {/* En el celular, lo primero es el próximo cliente. */}
+        {proximo && <div className="mt-4 lg:hidden">{proximo}</div>}
+
+        {d.terminado && (
+          <div className="mt-5 card p-5">
+            <div className="text-center">
+              <CircleCheck size={44} className="mx-auto text-emerald-600" aria-hidden />
+              <p className="mt-2 text-[17px] font-semibold text-brand-ink">¡Terminaste {d.guiado ? "esta práctica" : "este entrenamiento"}!</p>
             </div>
-          ) : (
-            <p className="mt-3 text-[14px] text-brand-slate flex items-center justify-center gap-2"><LoaderCircle size={16} className="animate-spin" aria-hidden /> Preparando tu devolución final…</p>
+            {d.devolucion_final ? (
+              <div className="mt-4 space-y-3">
+                {d.devolucion_final.fuertes.length > 0 && (
+                  <div><div className="text-[11px] uppercase tracking-wider2 font-bold text-emerald-800">Lo que hiciste bien</div>
+                    <ul className="mt-1 space-y-1 text-[15px] text-brand-ink">{d.devolucion_final.fuertes.map((x) => <li key={x} className="flex gap-2"><Check size={16} className="text-emerald-600 mt-0.5 shrink-0" aria-hidden />{x}</li>)}</ul></div>
+                )}
+                {d.devolucion_final.mejorar.length > 0 && (
+                  <div><div className="text-[11px] uppercase tracking-wider2 font-bold text-amber-800">Para mejorar</div>
+                    <ul className="mt-1 space-y-1 text-[15px] text-brand-ink">{d.devolucion_final.mejorar.map((x) => <li key={x} className="flex gap-2"><ArrowRight size={16} className="text-amber-700 mt-0.5 shrink-0" aria-hidden />{x}</li>)}</ul></div>
+                )}
+                <p className="text-[13px] text-brand-slate">Tu equipo de capacitación ve tus conversaciones y lo va a repasar con vos.</p>
+              </div>
+            ) : (
+              <p className="mt-3 text-[14px] text-brand-slate flex items-center justify-center gap-2"><LoaderCircle size={16} className="animate-spin" aria-hidden /> Preparando tu devolución final…</p>
+            )}
+          </div>
+        )}
+
+        {/* Tu rol, en una tarjeta corta; el resto, plegado. */}
+        <div className="mt-4 rounded-xl bg-white border border-brand-border px-4 py-3 order-last lg:order-none">
+          <div className="flex gap-3">
+            <span className="w-9 h-9 rounded-xl bg-brand-bg text-brand-ink flex items-center justify-center shrink-0"><MessagesSquare size={18} aria-hidden /></span>
+            <p className="min-w-0 text-[14px] text-brand-ink leading-snug">{d.instrucciones || `Sos asesor de ${d.empresa}: averiguá qué necesita cada cliente y ayudalo.`}</p>
+          </div>
+          {d.guiado && (
+            <p className="mt-3 rounded-lg bg-[#2A78D6]/[0.07] px-3 py-2 text-[13px] text-[#1D5BA6] leading-snug flex gap-2">
+              <GraduationCap size={16} className="shrink-0 mt-px" aria-hidden />
+              <span>Tu entrenador IA te va a ir dando consejos en burbujas mientras chateás. Es práctica: no suma a tu evaluación.</span>
+            </p>
+          )}
+          <button type="button" onClick={() => setComoFunciona(!comoFunciona)} aria-expanded={comoFunciona}
+            className="mt-2 w-full min-h-[40px] inline-flex items-center justify-between text-[14px] font-semibold text-brand-ink">
+            Cómo funciona <ChevronDown size={18} className={cx("transition-transform", comoFunciona && "rotate-180")} aria-hidden />
+          </button>
+          {comoFunciona && (
+            <ul className="pt-1 pb-1 space-y-3 animate-fade">
+              {pasosComo.map(({ icono: I, t: ti, x }) => (
+                <li key={ti} className="flex gap-3">
+                  <span className="w-8 h-8 rounded-lg bg-brand-bg text-brand-ink flex items-center justify-center shrink-0"><I size={16} aria-hidden /></span>
+                  <span className="min-w-0"><span className="block text-[14px] font-semibold text-brand-ink leading-snug">{ti}</span><span className="block text-[13px] text-brand-slate leading-snug">{x}</span></span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
-      ) : d.hechos === 0 && (
-        <ul className="mt-5 space-y-3">
-          {[
-            { icono: MessagesSquare, t: `Vas a atender ${d.total} cliente${d.total === 1 ? "" : "s"} por chat`, x: d.instrucciones || `Sos asesor de ${d.empresa}: averiguá qué necesita cada uno y ayudalo.` },
-            { icono: UserRound, t: "Son clientes simulados, pero tratalos como reales", x: "Cada uno tiene su forma de ser: algunos están apurados, otros desconfían. Como en WhatsApp, a veces mandan dos o tres mensajes seguidos." },
-            { icono: Send, t: "Escribí como en WhatsApp", x: "Podés mandar varios mensajes seguidos: el cliente contesta cuando hacés una pausa." },
-            { icono: Timer, t: "Al terminar cada caso, tu devolución", x: "Se mide el tiempo. Cuando el cliente se despide (o tocás «Terminar»), te decimos en pocas palabras qué mejorar y qué dato corregir." },
-            { icono: Eye, t: "Tu equipo te acompaña en vivo", x: "Tu capacitador o mentor puede ver las conversaciones mientras las hacés, para ayudarte a mejorar." },
-          ].map(({ icono: I, t, x }) => (
-            <li key={t} className="flex gap-3">
-              <span className="w-10 h-10 rounded-xl bg-white border border-brand-border text-brand-ink flex items-center justify-center shrink-0"><I size={20} aria-hidden /></span>
-              <span className="min-w-0"><span className="block text-[15px] font-semibold text-brand-ink leading-snug">{t}</span><span className="block text-[14px] text-brand-slate leading-snug">{x}</span></span>
+      </div>
+
+      <div className="flex flex-col lg:sticky lg:top-6 lg:mt-9">
+        {proximo && <div className="hidden lg:block mb-4">{proximo}</div>}
+        <div className="mt-5 lg:mt-0 text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Tus clientes</div>
+        <ol className="mt-2 card divide-y divide-brand-border overflow-hidden">
+          {d.casos.map((c) => (
+            <li key={c.id} className="px-4 py-3">
+              <div className="flex items-center gap-3">
+                <span className={cx("w-8 h-8 rounded-full text-sm font-bold flex items-center justify-center shrink-0",
+                  c.estado === "hecho" ? "bg-emerald-50 text-emerald-700" : c.id === siguiente?.id && !d.terminado ? "bg-brand-ink text-white" : "bg-brand-bg text-brand-ink")}>
+                  {c.estado === "hecho" ? <Check size={16} aria-hidden /> : c.orden}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-semibold text-brand-ink truncate">{c.cliente}</span>
+                  <span className="block text-[12px] text-brand-slate">
+                    {c.estado === "hecho" ? <>Atendido{c.segundos ? ` · ${c.segundos >= 5400 ? `${Math.round(c.segundos / 3600)} h` : `${Math.max(1, Math.round(c.segundos / 60))} min`}` : ""}
+                      {c.info_ok === true && <span className="text-emerald-700"> · información correcta</span>}
+                      {c.info_ok === false && <span className="text-amber-800"> · revisá la información</span>}</>
+                      : c.estado === "en_curso" ? "Charla abierta" : c.id === siguiente?.id ? "Es el próximo" : "En espera"}
+                  </span>
+                </span>
+                {c.estado === "hecho" && c.sesion_id && (
+                  <button type="button" onClick={() => setVerDev(verDev === c.id ? null : c.id)} aria-expanded={verDev === c.id}
+                    className="btn min-h-[40px] px-3 text-sm bg-white border border-brand-border text-brand-ink shrink-0">{verDev === c.id ? "Ocultar" : "Devolución"}</button>
+                )}
+                {c.estado !== "hecho" && !d.terminado && c.id !== siguiente?.id && (
+                  <button type="button" onClick={() => abrir(c)} disabled={!!abriendo || !d.disponible}
+                    className="btn min-h-[40px] px-3 text-sm bg-white border border-brand-border text-brand-ink shrink-0">
+                    {abriendo === c.id ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : c.estado === "en_curso" ? "Seguir" : "Atender"}
+                  </button>
+                )}
+              </div>
+              {verDev === c.id && c.sesion_id && <div className="mt-2 -mx-1"><Devolucion base={base} sid={c.sesion_id} compacta /></div>}
             </li>
           ))}
-        </ul>
-      )}
-      </div>
-      <div className="flex flex-col lg:sticky lg:top-6 lg:mt-9">
-      <div className="hidden lg:block text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Tus clientes</div>
-      <ol className="mt-5 lg:mt-2 space-y-2">
-        {d.casos.map((c) => (
-          <li key={c.id} className={cx("card px-4 py-3", c.id === siguiente?.id && "border-brand-ink")}>
-            <div className="flex items-center gap-3">
-              <span className={cx("w-8 h-8 rounded-full text-sm font-bold flex items-center justify-center shrink-0", c.estado === "hecho" ? "bg-emerald-50 text-emerald-700" : "bg-brand-bg text-brand-ink")}>
-                {c.estado === "hecho" ? <Check size={16} aria-hidden /> : c.orden}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-semibold text-brand-ink">{c.cliente}</span>
-                <span className="block text-[12px] text-brand-slate">
-                  {c.estado === "hecho" ? <>Hecho{c.segundos ? ` · ${c.segundos >= 5400 ? `${Math.round(c.segundos / 3600)} h` : `${Math.max(1, Math.round(c.segundos / 60))} min`}` : ""}
-                    {c.info_ok === true && <span className="text-emerald-700"> · información correcta</span>}
-                    {c.info_ok === false && <span className="text-amber-800"> · revisá la información</span>}</>
-                    : c.estado === "en_curso" ? "Empezado" : `Caso ${c.orden} de ${d.total} · en espera`}
-                </span>
-              </span>
-              {c.estado === "hecho" && c.sesion_id && (
-                <button type="button" onClick={() => setVerDev(verDev === c.id ? null : c.id)} aria-expanded={verDev === c.id}
-                  className="btn min-h-[40px] px-3 text-sm bg-white border border-brand-border text-brand-ink">{verDev === c.id ? "Ocultar" : "Devolución"}</button>
-              )}
-              {c.estado !== "hecho" && !d.terminado && (
-                <button type="button" onClick={() => abrir(c)} disabled={!!abriendo || !d.disponible}
-                  className={cx("btn min-h-[44px] px-4 text-sm", c.id === siguiente?.id ? "bg-brand-primary text-white" : "bg-white border border-brand-border text-brand-ink")}>
-                  {abriendo === c.id ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : c.estado === "en_curso" ? "Seguir" : "Empezar"}
-                </button>
-              )}
-            </div>
-            {verDev === c.id && c.sesion_id && <div className="mt-2 -mx-1"><Devolucion base={base} sid={c.sesion_id} compacta /></div>}
-          </li>
-        ))}
-      </ol>
-      {!d.disponible && <p className="mt-3 text-sm text-brand-primary-dark">Los entrenamientos no están disponibles en este momento. Probá más tarde.</p>}
-      {error && <p className="mt-3 text-sm text-brand-primary-dark" role="alert">{error}</p>}
-      {siguiente && !d.terminado && d.disponible && (
-        <div className="mt-auto pt-6 sticky bottom-0 pb-[env(safe-area-inset-bottom)] bg-brand-bg lg:static lg:mt-4 lg:pt-0">
-          <Boton icono={Play} onClick={() => abrir(siguiente)} ocupado={abriendo === siguiente.id}>
-            {siguiente.estado === "en_curso" ? `Seguir con ${siguiente.cliente.split(" ")[0]}` : d.hechos === 0 ? "Empezar con el primer cliente" : `Atender a ${siguiente.cliente.split(" ")[0]}`}
-          </Boton>
-        </div>
-      )}
+        </ol>
+        {!d.disponible && <p className="mt-3 text-sm text-brand-primary-dark">Los entrenamientos no están disponibles en este momento. Probá más tarde.</p>}
+        {error && <p className="mt-3 text-sm text-brand-primary-dark" role="alert">{error}</p>}
       </div>
     </div>
   );

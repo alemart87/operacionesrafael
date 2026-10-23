@@ -85,6 +85,8 @@ export interface EntResumen {
   info_pct: number | null; asignado_at: string; terminado_at: string | null;
   /** Sus conversaciones ya evaluadas (aunque el entrenamiento no haya terminado). */
   evaluados?: number; nivel_casos?: number | null; info_casos?: number | null;
+  /** Entrenamiento guiado: práctica con el entrenador IA; no suma al baremo general. */
+  guiado?: boolean;
 }
 /** Avance de los entrenamientos (el IPV es independiente) y el mínimo de entrenamientos por postulante (no es un tope). */
 export interface Avance {
@@ -92,6 +94,8 @@ export interface Avance {
   meta: number; meta_cumplida: boolean;
   /** La media de todas sus conversaciones evaluadas (aunque sea una); null si todavía no tiene ninguna. */
   resultado: ResultadoMedio | null;
+  /** Las prácticas guiadas (aparte: no suman). */
+  practica?: { entrenamientos: number; terminados: number };
 }
 /** Nivel comercial medio (1–10, en tres tramos) y % de conversaciones con la información correcta. */
 export interface ResultadoMedio { casos: number; nivel: number; info_pct: number; tramo: "alto" | "medio" | "bajo"; tramo_nombre: string }
@@ -161,8 +165,9 @@ export interface Caso {
   id: string; orden: number; titulo: string; cliente_nombre: string; cliente_edad: number | null; situacion: string; objetivo: string;
   actitud: Actitud; objeciones: string[]; info_correcta: string[]; primer_mensaje: string | null; detalles: string | null; max_turnos: number;
 }
+export type ModoEnt = "evaluado" | "guiado";
 export interface EntrenamientoFila {
-  id: string; nombre: string; estado: "borrador" | "activo" | "archivado"; empresa: string; casos: number; creado_por: string;
+  id: string; nombre: string; estado: "borrador" | "activo" | "archivado"; modo?: ModoEnt; empresa: string; casos: number; creado_por: string;
   updated_at: string; puede_editar: boolean; enviados: number; terminados: number; aprobados: number;
 }
 export interface Catalogo {
@@ -171,7 +176,8 @@ export interface Catalogo {
 }
 export interface ResultadoEnt {
   casos: number; info_ok: number; info_pct: number; nivel_promedio: number; perfil_comercial: boolean; informacion_correcta: boolean;
-  aprobado: boolean; recomendacion: "incorporar" | "no_incorporar"; umbral_info: number; umbral_nivel: number; resumen: string;
+  /** null en una práctica guiada (no se aprueba ni se recomienda). */
+  aprobado: boolean | null; recomendacion: "incorporar" | "no_incorporar" | "practica"; umbral_info: number; umbral_nivel: number; resumen: string;
   fuertes: string[]; mejorar: string[]; segundos: number; costo_usd: number; evaluado_at: string;
 }
 export interface Asignacion extends EntResumen {
@@ -182,6 +188,8 @@ export interface Entrenamiento {
   id: string; nombre: string; instrucciones: string | null; producto: string; empresa: string; canal: Canal; umbral_info: number;
   umbral_nivel: number; estado: "borrador" | "activo" | "archivado"; creado_por: string; casos: Caso[]; puede_editar: boolean;
   asignaciones: Asignacion[];
+  /** Guiado: el entrenador IA va dando consejos con la guía; no suma al baremo general. */
+  modo?: ModoEnt; guia?: string;
 }
 export interface MensajeChat { r: "cliente" | "asesor"; t: string; at: string; lote?: string }
 export interface EvaluacionCaso {
@@ -199,6 +207,39 @@ export interface Sesion {
   iniciado_at: string; terminado_at: string | null; turnos: number; max_turnos: number;
   evaluacion?: EvaluacionCaso | null; segundos?: number | null; error?: string | null; prueba?: boolean;
   entrenamiento?: string | null; objetivo?: string | null; situacion?: string | null; info_correcta?: string[];
+  /** Entrenamiento guiado: los consejos del entrenador que ya salieron (por turno). */
+  guiado?: boolean; consejos?: ConsejosTurno[];
+}
+export type TipoConsejo = "sugerencia" | "bien" | "alerta";
+export interface Consejo { tipo: TipoConsejo; texto: string }
+export interface ConsejosTurno { turno: number; at?: string; items: Consejo[] }
+/** Una conversación de entrenamiento para el equipo (la lista de la ficha o de un envío). */
+export interface ConversacionFila {
+  id: string; asignacion_id: string; entrenamiento: string | null; intento: number; guiado: boolean; caso: string | null; cliente: string | null;
+  estado: string; nivel: number | null; info_correcta: boolean | null; segundos: number | null; turnos: number; mensajes: number;
+  consejos: number; iniciado_at: string; terminado_at: string | null;
+}
+
+// ------------------------------------------------------------------ informe de la IA sobre el postulante
+export type SugerenciaIA = "avanzar" | "seguir_entrenando" | "reforzar_y_revisar";
+export const SUGERENCIA_IA: Record<SugerenciaIA, { nombre: string; color: string }> = {
+  avanzar: { nombre: "Avanzar a la siguiente etapa", color: "#15803D" },
+  seguir_entrenando: { nombre: "Seguir entrenando", color: "#2A78D6" },
+  reforzar_y_revisar: { nombre: "Reforzar y revisar con el equipo", color: "#E6332A" },
+};
+export interface InformeIA {
+  id: string; estado: "generando" | "listo" | "error"; error: string | null; desactualizado: boolean; modelo: string | null; costo_usd: number;
+  pedido_por: string; created_at: string; generado_at: string | null; referencia: SugerenciaIA; referencia_nombre: string;
+  sugerencia_nombre: string | null;
+  basado_en: { ipv: boolean; conversaciones: number; practicas: number; comentarios: number };
+  contenido: {
+    titular: string; resumen: string; perfil_ipv: string; desempeno: string; coherencia: string; fortalezas: string[];
+    a_desarrollar: string[]; plan: { accion: string; responsable: "capacitador" | "mentor" | "postulante" }[];
+    sugerencia: SugerenciaIA; justificacion: string; alertas: string[];
+  } | null;
+}
+export interface VistaInformeIA {
+  informe: InformeIA | null; anterior: InformeIA | null; hay_datos: boolean; disponible: boolean; referencia: SugerenciaIA; referencia_nombre: string;
 }
 export interface EntPostulante extends EntResumen {
   resultado: ResultadoEnt | null;
@@ -217,6 +258,8 @@ export interface SesionVivo {
   entrenamiento: string | null; intento: number; caso: string | null; cliente: string | null; estado: EstadoVivo; desde: string | null;
   iniciado_at: string; mensajes: number; turnos: number; max_turnos: number | null; ultimo: { r: "cliente" | "asesor"; t: string } | null;
   resp_media: number | null; progreso: { hechos: number; casos: number };
+  /** Práctica guiada (con el entrenador IA). */
+  guiado?: boolean;
 }
 export interface PostulanteVivo {
   id: string; nombre: string; apellido: string; grupo: { id: string; nombre: string }; estado: EstadoPostulante;
@@ -226,7 +269,7 @@ export interface PostulanteVivo {
 export interface RecienteVivo {
   id: string; postulante: { id: string; nombre: string; apellido: string }; grupo: { id: string; nombre: string };
   entrenamiento: string | null; intento: number; caso: string | null; cliente: string | null; estado: string; segundos: number | null;
-  fin_motivo: string | null; terminado_at: string; nivel: number | null; info_correcta: boolean | null;
+  fin_motivo: string | null; terminado_at: string; nivel: number | null; info_correcta: boolean | null; guiado?: boolean;
 }
 export interface EnVivo {
   ahora: string; grupos: { id: string; nombre: string }[];

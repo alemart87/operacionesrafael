@@ -54,6 +54,7 @@ async def ver(token: str, aid: str, request: Request, db: AsyncSession = Depends
     return {"id": a.id, "nombre": e.nombre, "intento": a.intento or 1, "instrucciones": e.instrucciones, "empresa": e.empresa, "canal": e.canal,
             "casos": lista, "hechos": hechos, "total": len(lista), "pct": round(hechos / len(lista) * 100) if lista else 0,
             "terminado": a.estado in ("evaluando", "terminado"), "disponible": ent.ia.servicio_disponible(),
+            "guiado": ent.modo(e) == "guiado",
             # La devolución final para el postulante: lo que hizo bien y qué mejorar (sin el resumen ni la recomendación).
             "devolucion_final": {"fuertes": r.get("fuertes") or [], "mejorar": r.get("mejorar") or []} if a.estado == "terminado" else None}
 
@@ -135,6 +136,14 @@ async def mensaje(token: str, sid: str, payload: ent.Mensaje, request: Request, 
     if r["fin"]:
         ent.despertar()
     return {**r, "sesion": ent.sesion_publica(s)}
+
+
+@router.post("/{token}/sesiones/{sid}/consejo")
+async def consejo(token: str, sid: str, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+    """Entrenamiento guiado: los consejos del entrenador para el próximo mensaje (burbujas en la pantalla)."""
+    e_link, p, g = await _vigente(db, token, request)
+    s = await _sesion(db, sid, p.id)
+    return await ent.consejo(db, s)
 
 
 async def _al_cerrar(db: AsyncSession, s: CapSesion) -> None:

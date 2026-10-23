@@ -62,10 +62,12 @@ function Biblioteca() {
                   <Link href={`${CAP_HREF}/entrenamientos/${e.id}`} className="card p-4 flex items-start gap-3 hover:shadow-elevated active:bg-brand-bg-soft h-full">
                     <span className="w-11 h-11 rounded-xl bg-brand-ink text-white flex items-center justify-center shrink-0"><Bot size={22} aria-hidden /></span>
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2 flex-wrap"><span className="font-semibold text-[15px] text-brand-ink">{e.nombre}</span><Etiqueta tono={ESTADO_ENT[e.estado].tono}>{ESTADO_ENT[e.estado].nombre}</Etiqueta></span>
+                      <span className="flex items-center gap-2 flex-wrap"><span className="font-semibold text-[15px] text-brand-ink">{e.nombre}</span><Etiqueta tono={ESTADO_ENT[e.estado].tono}>{ESTADO_ENT[e.estado].nombre}</Etiqueta>
+                        {e.modo === "guiado" && <Etiqueta tono="azul">Guiado</Etiqueta>}</span>
                       <span className="block text-[13px] text-brand-slate mt-0.5">{e.casos} caso{e.casos === 1 ? "" : "s"} · {e.empresa} · {e.creado_por}</span>
                       <span className="block text-[13px] text-brand-slate mt-1 tabular-nums">
-                        Enviado a <b className="text-brand-ink">{e.enviados}</b> · terminaron <b className="text-brand-ink">{e.terminados}</b> · recomendados <b className="text-emerald-700">{e.aprobados}</b>
+                        Enviado a <b className="text-brand-ink">{e.enviados}</b> · terminaron <b className="text-brand-ink">{e.terminados}</b>
+                        {e.modo === "guiado" ? " · práctica, no suma" : <> · recomendados <b className="text-emerald-700">{e.aprobados}</b></>}
                       </span>
                     </span>
                     <ChevronRight size={18} className="text-brand-mist shrink-0 mt-1" aria-hidden />

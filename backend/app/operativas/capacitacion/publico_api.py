@@ -6,7 +6,7 @@ puede seguir después) y deja su feedback escrito o dictado. Nunca ve sus result
 Seguridad: el token (256 bits) se busca por su SHA-256; los tokens inválidos se limitan por IP. El link vale mientras
 esté activo, no haya vencido, el postulante siga activo (no abandonó ni fue dado de baja) y el grupo no esté cancelado.
 Solo se muestran el nombre de pila y el grupo. El IPV se responde una vez: terminado, se corrige solo y ya no se puede
-cambiar. Tiene tiempo límite (IPV_MINUTOS, 45 por defecto) desde que empieza, y pausar no lo detiene: si vence sin
+cambiar. Tiene tiempo límite (IPV_MINUTOS, 75 por defecto: 1 h 15 min) desde que empieza, y pausar no lo detiene: si vence sin
 terminar, se reinicia completo y el postulante ve un informe que le pide volver a empezar.
 """
 from __future__ import annotations
@@ -94,7 +94,7 @@ async def ver(token: str, request: Request, db: AsyncSession = Depends(get_db)) 
     await db.commit()
     mios = (await db.execute(select(func.count()).select_from(CapComentario).where(
         CapComentario.postulante_id == p.id, CapComentario.tipo == "postulante"))).scalar() or 0
-    ents = [{k: x[k] for k in ("id", "nombre", "intento", "estado", "casos", "hechos", "pct")}
+    ents = [{k: x[k] for k in ("id", "nombre", "intento", "estado", "casos", "hechos", "pct", "guiado")}
             for x in (await srv.entrenamientos_de(db, [p.id])).get(p.id, []) if not x["archivado"]]
     return {**_estado(e, p, g), "comentarios": mios, "entrenamientos": ents}
 

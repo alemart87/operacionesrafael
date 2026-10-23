@@ -2,16 +2,17 @@
 
 /**
  * Entrenamientos con IA para el equipo: editor de casos (el cliente y su actitud al detalle), probar un caso, enviar a
- * postulantes (con su link para WhatsApp), la evaluación de cada conversación y el resultado final.
+ * postulantes (con su link para WhatsApp), la evaluación de cada conversación, el resultado final y las conversaciones
+ * de cada postulante para leerlas (en vivo si están en curso), con los consejos del entrenador en las guiadas.
  */
-import { Check, CircleCheck, CircleX, Copy, MessageCircle, Plus, RotateCcw, Send, Target, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Boton, Casilla, Chips, Etiqueta, Fallo, Hoja, cx } from "@/components/portal/ui";
+import { Check, ChevronDown, ChevronRight, CircleCheck, CircleX, Copy, GraduationCap, MessageCircle, MessagesSquare, Plus, RotateCcw, Send, Target, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Boton, Casilla, Chips, Etiqueta, Fallo, Hoja, Segmentos, cx, hace } from "@/components/portal/ui";
 import { apiFetch } from "@/lib/api";
-import { Chat } from "./chat";
+import { Chat, ConsejoItem, cuandoConsejo, type Entrenador } from "./chat";
 import {
-  CAP_API, COLOR_TRAMO, conIntento, decimal, duracion, type Caso, type Catalogo, type EntPostulante, type EntrenamientoFila, type EvaluacionCaso,
-  type GrupoDetalle, type EntResumen, type Resumen, type ResultadoEnt, type ResultadoMedio, type Sesion,
+  CAP_API, COLOR_TRAMO, conIntento, decimal, duracion, type Caso, type Catalogo, type Consejo, type ConversacionFila, type EntPostulante,
+  type EntrenamientoFila, type EvaluacionCaso, type GrupoDetalle, type EntResumen, type Resumen, type ResultadoEnt, type ResultadoMedio, type Sesion,
 } from "./tipos";
 import { CompartirLink, abrirWhatsapp } from "./ui";
 
@@ -187,6 +188,7 @@ export function EvaluacionVista({ ev, criterios }: { ev: EvaluacionCaso; criteri
 
 /** El resultado final de un entrenamiento: perfil comercial, información correcta y la recomendación. */
 export function ResultadoVista({ r }: { r: ResultadoEnt }) {
+  if (r.recomendacion === "practica") return <ResultadoPractica r={r} />;
   return (
     <div className="space-y-3">
       <div className={cx("rounded-xl px-4 py-3", r.aprobado ? "bg-emerald-50 border border-emerald-200" : "bg-brand-primary-light border border-brand-primary/25")}>
@@ -223,30 +225,232 @@ export function ResultadoVista({ r }: { r: ResultadoEnt }) {
   );
 }
 
+/** Una práctica guiada: se resume, pero no se aprueba ni suma al baremo. */
+function ResultadoPractica({ r }: { r: ResultadoEnt }) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl px-4 py-3 bg-[#2A78D6]/[0.07] border border-[#2A78D6]/25">
+        <div className="font-semibold text-[16px] inline-flex items-center gap-1.5 text-[#1D5BA6]"><GraduationCap size={18} aria-hidden /> Práctica guiada · no suma al baremo</div>
+        <p className="text-[14px] text-brand-ink mt-1 leading-snug">{r.resumen}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg border border-brand-border bg-white px-3 py-2">
+          <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Nivel en la práctica</div>
+          <div className="font-display text-2xl leading-none tabular-nums">{r.nivel_promedio}<span className="text-sm text-brand-slate"> / 10</span></div>
+        </div>
+        <div className="rounded-lg border border-brand-border bg-white px-3 py-2">
+          <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate">Información correcta</div>
+          <div className="font-display text-2xl leading-none tabular-nums">{r.info_ok}<span className="text-sm text-brand-slate"> de {r.casos} casos</span></div>
+        </div>
+      </div>
+      {r.mejorar.length > 0 && (
+        <div><div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate mb-1">Para seguir practicando</div>
+          <ul className="space-y-1">{r.mejorar.map((x) => <li key={x} className="text-[14px] text-brand-ink flex gap-2"><Target size={15} className="mt-0.5 shrink-0 text-brand-primary" aria-hidden />{x}</li>)}</ul></div>
+      )}
+      {r.fuertes.length > 0 && (
+        <div><div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate mb-1">Lo que hace bien</div>
+          <ul className="space-y-1">{r.fuertes.map((x) => <li key={x} className="text-[14px] text-brand-ink flex gap-2"><Check size={15} className="mt-0.5 shrink-0 text-emerald-700" aria-hidden />{x}</li>)}</ul></div>
+      )}
+      <p className="text-[11px] text-brand-mist">Tiempo total {duracion(r.segundos)}. Con el entrenador IA; no cuenta para la media, el mínimo ni los recomendados.</p>
+    </div>
+  );
+}
+
+/** La etiqueta del resultado de un envío: recomendado, no recomendado o práctica. */
+export function EtiquetaResultado({ r }: { r: ResultadoEnt }) {
+  if (r.recomendacion === "practica") return <Etiqueta tono="azul">Práctica</Etiqueta>;
+  return <Etiqueta tono={r.aprobado ? "verde" : "rojo"}>{r.aprobado ? "Recomendado" : "No recomendado"}</Etiqueta>;
+}
+
 // ------------------------------------------------------------------ ver una conversación
-export function VerConversacion({ sid, criterios, onClose }: { sid: string; criterios?: Record<string, string>; onClose: () => void }) {
+const horaCorta = (iso: string) => new Date(iso).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", timeZone: "America/Asuncion" });
+
+/** La conversación completa para el equipo: quién dijo qué y a qué hora, los consejos del entrenador (en las guiadas)
+ * donde salieron, qué tenía que lograr y la evaluación de la IA. Si está en curso, se actualiza sola (en vivo). */
+export function VerConversacion({ sid, criterios, asesor, onClose }: { sid: string; criterios?: Record<string, string>; asesor?: string; onClose: () => void }) {
   const [s, setS] = useState<Sesion | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { apiFetch<Sesion>(`${CAP_API}/sesiones/${sid}`).then(setS).catch((e) => setError(e.message)); }, [sid]);
+  const [caso, setCaso] = useState(false);
+  const cargar = useCallback(() => apiFetch<Sesion>(`${CAP_API}/sesiones/${sid}`).then((x) => { setS(x); setError(null); }).catch((e) => setError(e.message)), [sid]);
+  useEffect(() => { cargar(); }, [cargar]);
+  const vivo = s?.estado === "en_curso" || s?.estado === "evaluando";
+  useEffect(() => {
+    if (!vivo) return;
+    const x = setInterval(cargar, 4000);
+    return () => clearInterval(x);
+  }, [vivo, cargar]);
+  // Los consejos de cada turno van justo antes de la respuesta del asesor a la que apuntaban.
+  const porTurno = useMemo(() => new Map((s?.consejos ?? []).map((x) => [x.turno, x.items])), [s]);
+  const consejosEn = (items: Consejo[] | undefined, turno: number) => items?.length ? (
+    <div className="my-2 mx-auto max-w-[92%] rounded-xl border border-[#2A78D6]/25 bg-[#2A78D6]/[0.06] px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider2 font-semibold text-[#1D5BA6] mb-1 inline-flex items-center gap-1"><GraduationCap size={12} aria-hidden /> Entrenador · {cuandoConsejo(turno, "su").toLowerCase()}</div>
+      <ul className="space-y-1.5">{items.map((c, i) => <ConsejoItem key={i} c={c} />)}</ul>
+    </div>
+  ) : null;
+  const yo = asesor?.split(" ")[0] || "Postulante";
+  let turno = 0;
   return (
-    <Hoja titulo={s ? s.cliente : "Conversación"} sobre={s?.titulo} onClose={onClose}>
-      {error && <Fallo>{error}</Fallo>}
+    <Hoja titulo={s ? s.cliente : "Conversación"} sobre={s ? [s.entrenamiento, s.titulo].filter(Boolean).join(" · ") : undefined} onClose={onClose}>
+      {error && <Fallo onReintentar={cargar}>{error}</Fallo>}
       {!s && !error && <div className="h-40 rounded-lg bg-brand-bg animate-pulse" />}
       {s && (
         <div className="space-y-4">
-          <div className="text-[12px] text-brand-slate">{s.turnos} respuestas del asesor · {duracion(s.segundos)}</div>
-          <div className="rounded-xl bg-[#EEF0F3] p-3 space-y-1.5 max-h-[45vh] overflow-y-auto">
-            {s.mensajes.map((m, k) => (
-              <div key={k} className={cx("flex", m.r === "asesor" ? "justify-end" : "justify-start")}>
-                <div className={cx("max-w-[85%] px-3 py-1.5 text-[14px] leading-snug whitespace-pre-wrap rounded-2xl",
-                  m.r === "asesor" ? "bg-brand-ink text-white rounded-br-md" : "bg-white text-brand-ink rounded-bl-md")}>{m.t}</div>
-              </div>
-            ))}
+          <div className="flex items-center gap-2 flex-wrap text-[12px] text-brand-slate">
+            {s.estado === "en_curso" ? <Etiqueta tono="verde">● En vivo</Etiqueta> : s.estado === "evaluando" ? <Etiqueta tono="naranja">Evaluando</Etiqueta> : <Etiqueta>Terminada</Etiqueta>}
+            {s.guiado && <Etiqueta tono="azul" icono={GraduationCap}>Guiado · práctica</Etiqueta>}
+            <span>{s.turnos} respuesta{s.turnos === 1 ? "" : "s"} del asesor · {s.estado === "en_curso" ? `empezó ${hace(s.iniciado_at)}` : duracion(s.segundos)}</span>
+          </div>
+          {(s.objetivo || s.situacion || (s.info_correcta ?? []).length > 0) && (
+            <div className="rounded-xl border border-brand-border">
+              <button type="button" onClick={() => setCaso(!caso)} aria-expanded={caso} className="w-full px-3 py-2.5 flex items-center justify-between text-[13px] font-semibold text-brand-ink">
+                El caso: qué tenía que lograr {caso ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
+              </button>
+              {caso && (
+                <div className="px-3 pb-3 space-y-2 text-[13px] text-brand-ink">
+                  {s.situacion && <p><span className="text-brand-slate">Situación:</span> {s.situacion}</p>}
+                  {s.objetivo && <p><span className="text-brand-slate">Qué quiere el cliente:</span> {s.objetivo}</p>}
+                  {(s.info_correcta ?? []).length > 0 && <div><span className="text-brand-slate">Datos que tenía que dar bien:</span>
+                    <ul className="mt-1 space-y-0.5">{s.info_correcta!.map((x) => <li key={x} className="flex gap-1.5"><Check size={14} className="mt-0.5 shrink-0 text-emerald-700" aria-hidden />{x}</li>)}</ul></div>}
+                </div>
+              )}
+            </div>
+          )}
+          <div className="rounded-xl p-3" style={{ backgroundColor: "#EEF1F5", backgroundImage: "radial-gradient(rgba(15,17,22,0.055) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
+            {s.mensajes.map((m, k) => {
+              const propio = m.r === "asesor";
+              const primero = k === 0 || s.mensajes[k - 1].r !== m.r;
+              const antes = propio && primero ? consejosEn(porTurno.get(turno), turno) : null;
+              if (propio && primero) turno += 1;
+              return (
+                <Fragment key={k}>
+                  {antes}
+                  {primero && <div className={cx("text-[11px] font-semibold text-brand-slate px-1", propio ? "text-right" : "", k > 0 && "mt-2.5")}>{propio ? yo : s.cliente}</div>}
+                  <div className={cx("flex mt-0.5", propio ? "justify-end" : "justify-start")}>
+                    <div className={cx("max-w-[85%] pl-3 pr-2 pt-1.5 pb-1 text-[14px] leading-snug rounded-2xl shadow-[0_1px_1.5px_rgba(15,17,22,0.12)]",
+                      propio ? "bg-brand-ink text-white" : "bg-white text-brand-ink", primero && (propio ? "rounded-tr-[4px]" : "rounded-tl-[4px]"))}>
+                      <span className="whitespace-pre-wrap break-words">{m.t}</span>
+                      <span className={cx("float-right ml-2 mt-1 text-[10px] leading-none", propio ? "text-white/60" : "text-brand-mist")}>{horaCorta(m.at)}</span>
+                    </div>
+                  </div>
+                </Fragment>
+              );
+            })}
+            {consejosEn(porTurno.get(turno), turno)}
+            {s.estado === "en_curso" && <p className="text-center text-[12px] text-brand-slate pt-3">Se actualiza solo mientras chatea.</p>}
           </div>
           {s.evaluacion ? <EvaluacionVista ev={s.evaluacion} criterios={criterios} />
-            : <p className="text-sm text-brand-slate">{s.estado === "error" ? `No se pudo evaluar: ${s.error ?? ""}` : "Evaluando…"}</p>}
+            : <p className="text-sm text-brand-slate">{s.estado === "error" ? `No se pudo evaluar: ${s.error ?? ""}` : s.estado === "en_curso" ? "La IA la evalúa cuando termine." : "Evaluando…"}</p>}
         </div>
       )}
+    </Hoja>
+  );
+}
+
+// ------------------------------------------------------------------ la lista de conversaciones (ficha y envíos)
+function FilaConversacion({ c, onClick, conEntrenamiento = true }: { c: ConversacionFila; onClick: () => void; conEntrenamiento?: boolean }) {
+  const vivo = c.estado === "en_curso";
+  return (
+    <li>
+      <button type="button" onClick={onClick} className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-brand-bg-soft active:bg-brand-bg-soft min-h-[64px]">
+        <span className={cx("relative w-9 h-9 rounded-full flex items-center justify-center shrink-0", c.guiado ? "bg-[#2A78D6]/10 text-[#1D5BA6]" : "bg-brand-bg text-brand-ink")}>
+          {c.guiado ? <GraduationCap size={17} aria-hidden /> : <MessagesSquare size={17} aria-hidden />}
+          {vivo && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white animate-pulse" aria-hidden />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold text-brand-ink truncate">{c.cliente ?? "Cliente"}{c.caso && <span className="font-normal text-brand-slate"> · {c.caso}</span>}</span>
+          <span className="block text-[12px] text-brand-slate truncate">
+            {conEntrenamiento && c.entrenamiento && <>{conIntento(c.entrenamiento, c.intento)} · </>}
+            {vivo ? `chateando · empezó ${hace(c.iniciado_at)}` : `${hace(c.terminado_at ?? c.iniciado_at)} · ${duracion(c.segundos)}`} · {c.turnos} resp.
+            {c.guiado && c.consejos > 0 && ` · ${c.consejos} consejo${c.consejos === 1 ? "" : "s"}`}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          {c.nivel != null ? (
+            <span className="block leading-tight">
+              <b className="text-[15px] tabular-nums" style={{ color: COLOR_TRAMO[c.nivel >= 8 ? "alto" : c.nivel >= 5 ? "medio" : "bajo"] }}>{c.nivel}</b><span className="text-[11px] text-brand-slate">/10</span>
+              <span className={cx("block text-[11px] font-semibold", c.info_correcta ? "text-emerald-700" : "text-brand-primary-dark")}>{c.info_correcta ? "info ✓" : "info ✗"}</span>
+            </span>
+          ) : <Etiqueta tono={vivo ? "verde" : c.estado === "evaluando" ? "naranja" : "gris"}>{vivo ? "En vivo" : c.estado === "evaluando" ? "Evaluando" : c.estado === "error" ? "Sin evaluar" : "—"}</Etiqueta>}
+        </span>
+        <ChevronRight size={16} className="text-brand-mist shrink-0" aria-hidden />
+      </button>
+    </li>
+  );
+}
+
+function useConversaciones(url: string) {
+  const [lista, setLista] = useState<ConversacionFila[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const cargar = useCallback(() => apiFetch<{ conversaciones: ConversacionFila[] }>(url).then((r) => { setLista(r.conversaciones); setError(null); })
+    .catch((e) => setError(e.message)), [url]);
+  useEffect(() => { cargar(); }, [cargar]);
+  // Si alguna está en curso o evaluándose, la lista se refresca sola.
+  useEffect(() => {
+    if (!lista?.some((c) => c.estado === "en_curso" || c.estado === "evaluando")) return;
+    const x = setTimeout(cargar, 8000);
+    return () => clearTimeout(x);
+  }, [lista, cargar]);
+  return { lista, error, cargar };
+}
+
+const MOSTRAR = 8;
+type FiltroConv = "todas" | "evaluadas" | "guiadas";
+
+/** Todas las conversaciones de entrenamiento del postulante, para leerlas: las más nuevas primero. */
+export function ConversacionesFicha({ pid, asesor, criterios }: { pid: string; asesor?: string; criterios?: Record<string, string> }) {
+  const { lista, error, cargar } = useConversaciones(`${CAP_API}/postulantes/${pid}/conversaciones`);
+  const [ver, setVer] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<FiltroConv>("todas");
+  const [todas, setTodas] = useState(false);
+  if (error) return <Fallo onReintentar={cargar}>{error}</Fallo>;
+  if (!lista) return <div className="h-24 rounded-xl bg-brand-bg animate-pulse" />;
+  if (!lista.length) return <div className="card p-6 text-center text-sm text-brand-slate">Todavía no tiene conversaciones. Aparecen apenas empieza un caso.</div>;
+  const guiadas = lista.filter((c) => c.guiado).length;
+  const filtradas = lista.filter((c) => filtro === "todas" || (filtro === "guiadas" ? c.guiado : !c.guiado));
+  const visibles = todas ? filtradas : filtradas.slice(0, MOSTRAR);
+  return (
+    <div className="space-y-3">
+      {guiadas > 0 && guiadas < lista.length && (
+        <Segmentos etiqueta="Conversaciones" valor={filtro} onChange={(v) => { setFiltro(v); setTodas(false); }} opciones={[
+          { v: "todas", label: "Todas", n: lista.length }, { v: "evaluadas", label: "Evaluadas", n: lista.length - guiadas }, { v: "guiadas", label: "Guiadas", n: guiadas }]} />
+      )}
+      <ul className="card divide-y divide-brand-border overflow-hidden">
+        {visibles.map((c) => <FilaConversacion key={c.id} c={c} onClick={() => setVer(c.id)} />)}
+      </ul>
+      {filtradas.length > MOSTRAR && (
+        <button type="button" onClick={() => setTodas(!todas)} className="w-full min-h-[44px] text-sm font-semibold text-brand-primary">
+          {todas ? "Ver menos" : `Ver las ${filtradas.length} conversaciones`}
+        </button>
+      )}
+      {ver && <VerConversacion sid={ver} asesor={asesor} criterios={criterios} onClose={() => { setVer(null); cargar(); }} />}
+    </div>
+  );
+}
+
+/** Las conversaciones de un envío (un entrenamiento de un postulante), con su resultado si ya terminó. */
+export function HojaEnvio({ aid, titulo, sobre, asesor, resultado, criterios, pie, onClose }: {
+  aid: string; titulo: string; sobre?: string; asesor?: string; resultado?: ResultadoEnt | null; criterios?: Record<string, string>;
+  pie?: ReactNode; onClose: () => void;
+}) {
+  const { lista, error, cargar } = useConversaciones(`${CAP_API}/asignaciones/${aid}/conversaciones`);
+  const [ver, setVer] = useState<string | null>(null);
+  if (ver) return <VerConversacion sid={ver} asesor={asesor} criterios={criterios} onClose={() => { setVer(null); cargar(); }} />;
+  return (
+    <Hoja titulo={titulo} sobre={sobre} onClose={onClose} pie={pie}>
+      <div className="space-y-4">
+        {resultado && <ResultadoVista r={resultado} />}
+        <div>
+          <div className="text-[11px] uppercase tracking-wider2 font-semibold text-brand-slate mb-2">Conversaciones</div>
+          {error && <Fallo onReintentar={cargar}>{error}</Fallo>}
+          {!lista && !error && <div className="h-20 rounded-xl bg-brand-bg animate-pulse" />}
+          {lista && !lista.length && <p className="text-sm text-brand-slate">Todavía no empezó ningún caso.</p>}
+          {lista && lista.length > 0 && (
+            <ul className="card divide-y divide-brand-border overflow-hidden">
+              {lista.map((c) => <FilaConversacion key={c.id} c={c} conEntrenamiento={false} onClick={() => setVer(c.id)} />)}
+            </ul>
+          )}
+        </div>
+      </div>
     </Hoja>
   );
 }
@@ -260,6 +464,10 @@ export function ProbarCaso({ caso, criterios, onClose }: { caso: Caso; criterios
   useEffect(() => { apiFetch<Sesion>(`${CAP_API}/casos/${caso.id}/probar`, { method: "POST" }).then(setS).catch((e) => setError(e.message)); }, [caso.id]);
   const enviar = useCallback((textos: string[], lote: string) =>
     apiFetch<{ nuevos: string[]; fin: boolean }>(`${CAP_API}/sesiones/${s!.id}/mensajes`, { method: "POST", body: JSON.stringify({ textos, lote }) }), [s]);
+  // Guiado: el mentor ve los mismos consejos que va a ver el postulante.
+  const entrenador = useMemo<Entrenador | undefined>(() => (s?.guiado ? {
+    pedir: () => apiFetch<{ turno: number; consejos: Consejo[] }>(`${CAP_API}/sesiones/${s.id}/consejo`, { method: "POST" }), previos: s.consejos,
+  } : undefined), [s?.id, s?.guiado]); // eslint-disable-line react-hooks/exhaustive-deps
   const evaluar = async () => {
     setEvaluando(true);
     try { setEv(await apiFetch<Sesion>(`${CAP_API}/sesiones/${s!.id}/terminar`, { method: "POST" })); }
@@ -277,8 +485,8 @@ export function ProbarCaso({ caso, criterios, onClose }: { caso: Caso; criterios
   }
   return (
     <Chat id={s.id} cliente={s.cliente} titulo={`Prueba · ${caso.titulo}`} mensajes={s.mensajes} iniciado={s.iniciado_at} terminado={s.estado !== "en_curso"}
-      enviar={enviar} onVolver={onClose} onTerminar={evaluar}
-      aviso={<p className="text-center text-[12px] text-brand-slate pb-2">Prueba: vos hacés de asesor. No queda en ninguna ficha.</p>}
+      enviar={enviar} onVolver={onClose} onTerminar={evaluar} entrenador={entrenador}
+      aviso={<p className="text-center text-[12px] text-brand-slate pb-2">Prueba: vos hacés de asesor. No queda en ninguna ficha.{s.guiado && " Guiado: el entrenador te va dando consejos como al postulante."}</p>}
       pie={() => <Boton onClick={evaluar} ocupado={evaluando}>Ver cómo me evaluaría</Boton>} />
   );
 }
@@ -551,8 +759,11 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
     const t = setTimeout(cargar, 5000);
     return () => clearTimeout(t);
   }, [lista, cargar]);
-  const terminados = lista?.filter((x) => x.estado === "terminado").length ?? 0;
-  const pendientes = (lista?.length ?? 0) - terminados;
+  // El mínimo del equipo cuenta solo los evaluados; las prácticas guiadas van aparte.
+  const evaluados = lista?.filter((x) => !x.guiado) ?? [];
+  const terminados = evaluados.filter((x) => x.estado === "terminado").length;
+  const pendientes = evaluados.length - terminados;
+  const practicas = (lista ?? []).filter((x) => x.guiado);
   const [repitiendo, setRepitiendo] = useState<string | null>(null);
   const repetir = async (x: EntPostulante) => {
     setRepitiendo(x.id); setError(null);
@@ -586,7 +797,8 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
               : <><b>{terminados}</b> de <b>{meta}</b> entrenamientos hechos</>}
             {pendientes > 0 ? ` · ${pendientes} pendiente${pendientes === 1 ? "" : "s"}` : ""}
           </div>
-          <div className="text-[12px] text-brand-slate">{meta} es el mínimo: puede hacer más y repetir los que ya terminó.</div>
+          <div className="text-[12px] text-brand-slate">{meta} es el mínimo: puede hacer más y repetir los que ya terminó.
+            {practicas.length > 0 && <> Prácticas guiadas: <b className="text-brand-ink">{practicas.filter((x) => x.estado === "terminado").length} de {practicas.length}</b> (no suman).</>}</div>
           <div className="mt-2 h-2 rounded-full bg-brand-bg overflow-hidden" role="progressbar" aria-label="Entrenamientos hechos"
             aria-valuenow={terminados} aria-valuemin={0} aria-valuemax={meta}>
             <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, Math.round((terminados / Math.max(1, meta)) * 100))}%`, background: terminados >= meta ? "#15803D" : "#0F1116" }} />
@@ -602,14 +814,15 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
             <button type="button" onClick={() => setAbierto(abiertoX ? null : x.id)} className="w-full text-left px-4 py-3" aria-expanded={abiertoX}>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-[15px] text-brand-ink flex-1 min-w-0">{conIntento(x.nombre, x.intento)}</span>
-                {x.resultado ? <Etiqueta tono={x.resultado.aprobado ? "verde" : "rojo"}>{x.resultado.aprobado ? "Recomendado" : "No recomendado"}</Etiqueta>
+                {x.guiado && <Etiqueta tono="azul" icono={GraduationCap}>Guiado</Etiqueta>}
+                {x.resultado ? <EtiquetaResultado r={x.resultado} />
                   : <Etiqueta tono={ESTADO_ASIG[x.estado]?.tono ?? "gris"}>{ESTADO_ASIG[x.estado]?.label ?? x.estado}</Etiqueta>}
               </div>
               <div className="mt-2 flex items-center gap-2">
                 <div className="flex-1 h-2 rounded-full bg-brand-bg overflow-hidden"><div className="h-full rounded-full" style={{ width: `${x.pct}%`, background: x.estado === "terminado" ? "#15803D" : "#0F1116" }} /></div>
                 <span className="text-[12px] text-brand-slate tabular-nums">{x.pct}% · {x.hechos}/{x.casos} casos</span>
               </div>
-              {x.resultado && <div className="mt-1 text-[12px] text-brand-slate">Perfil comercial {x.resultado.nivel_promedio}/10 · información correcta en {x.resultado.info_ok} de {x.resultado.casos} casos</div>}
+              {x.resultado && <div className="mt-1 text-[12px] text-brand-slate">{x.guiado ? "En la práctica: nivel" : "Perfil comercial"} {x.resultado.nivel_promedio}/10 · información correcta en {x.resultado.info_ok} de {x.resultado.casos} casos</div>}
             </button>
             {abiertoX && (
               <div className="border-t border-brand-border px-4 py-3 space-y-3">
@@ -630,7 +843,7 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
                             : <>Nivel {c.sesion.nivel}/10 · {c.sesion.info_correcta ? "información correcta" : "información con errores"} · {duracion(c.sesion.segundos)}</>}
                         </span>
                       </span>
-                      {c.sesion && c.sesion.estado !== "en_curso" && <button type="button" onClick={() => setVer(c.sesion!.id)} className="btn-ghost text-sm shrink-0">Ver</button>}
+                      {c.sesion && <button type="button" onClick={() => setVer(c.sesion!.id)} className="btn-ghost text-sm shrink-0">{c.sesion.estado === "en_curso" ? "En vivo" : "Ver"}</button>}
                     </li>
                   ))}
                 </ul>
@@ -640,7 +853,7 @@ export function EntrenamientosFicha({ pid, nombre, meta, puedeEnviar, criterios 
         );
       })}
       {lista?.length === 0 && <div className="card p-6 text-center text-sm text-brand-slate">Todavía no tiene entrenamientos.</div>}
-      {ver && <VerConversacion sid={ver} criterios={criterios} onClose={() => setVer(null)} />}
+      {ver && <VerConversacion sid={ver} asesor={nombre} criterios={criterios} onClose={() => setVer(null)} />}
       {enviar && <HojaEnviarA pid={pid} nombre={nombre} onClose={() => { setEnviar(false); cargar(); }} />}
     </div>
   );

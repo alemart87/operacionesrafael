@@ -6,7 +6,8 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { CAP_API, CAP_HREF, CRITERIOS, ESTADOS, NIVEL_IPV, fecha, type Evento, type Ficha } from "@/components/capacitacion/tipos";
-import { EntrenamientosFicha } from "@/components/capacitacion/entrenamientos";
+import { ConversacionesFicha, EntrenamientosFicha } from "@/components/capacitacion/entrenamientos";
+import { InformeIAFicha } from "@/components/capacitacion/informe-ia";
 import { BarrasIpv, Dato, EstadoTag, HojaEnlace, HojaEstado, HojaPostulante, ListaComentarios, NuevoComentario } from "@/components/capacitacion/ui";
 import { Boton, Cargando, Encabezado, Fallo, Seccion, hace, useAviso } from "@/components/portal/ui";
 import { apiFetch, downloadFile } from "@/lib/api";
@@ -28,6 +29,7 @@ const EVENTO: Record<string, string> = {
 /** El texto de un evento del historial; los tipos nuevos que no estén acá se muestran legibles igual. */
 function textoEvento(h: Evento) {
   if (h.tipo === "estado" && h.a) return <>Pasó a <b>{ESTADOS[h.a as keyof typeof ESTADOS]?.nombre ?? h.a}</b></>;
+  if (h.tipo === "entrenamiento" && h.a === "practica") return <>Práctica guiada terminada <span className="text-brand-slate">(no suma)</span></>;
   if (h.tipo === "entrenamiento") return <>Entrenamiento evaluado: <b>{h.a === "aprobado" ? "recomendado" : "no recomendado"}</b></>;
   const t = EVENTO[h.tipo] ?? h.tipo.replace(/_/g, " ");
   return t.charAt(0).toUpperCase() + t.slice(1);
@@ -85,17 +87,39 @@ function FichaPostulante() {
         </div>
       </div>
 
+      {/* Índice de la ficha: en el celular es larga, así se salta directo a cada parte. */}
+      <nav aria-label="Partes de la ficha" className="-mx-4 px-4 mb-5 flex gap-2 overflow-x-auto no-scrollbar">
+        {[["informe", "Informe IA"], ["entrenamientos", "Entrenamientos"], ["conversaciones", "Conversaciones"], ["ipv", "IPV"], ["seguimiento", "Seguimiento"], ["historial", "Historial"]].map(([k, n]) => (
+          <a key={k} href={`#${k}`} className="shrink-0 min-h-[36px] px-3.5 rounded-full border border-brand-border bg-white text-[13px] font-semibold text-brand-ink inline-flex items-center hover:border-brand-ink">{n}</a>
+        ))}
+      </nav>
+
       <div className="grid grid-cols-3 gap-2.5 mb-6">
         <Dato label="Feedback" valor={p.comentarios.feedback} />
         <Dato label="A mejorar" valor={p.comentarios.oportunidad} />
         <Dato label="Su feedback" valor={p.comentarios.postulante} />
       </div>
 
-      <Seccion titulo="Entrenamientos" sub="Chats de práctica con clientes simulados: la IA evalúa el perfil comercial y si da la información correcta." className="mb-8">
+      <div id="informe" className="scroll-mt-24">
+      <Seccion titulo="Informe IA" sub="El IPV con su baremo y los entrenamientos evaluados, leídos por la IA para el capacitador y el mentor." className="mb-8">
+        <InformeIAFicha pid={p.id} />
+      </Seccion>
+      </div>
+
+      <div id="entrenamientos" className="scroll-mt-24">
+      <Seccion titulo="Entrenamientos" sub="Chats de práctica con clientes simulados: la IA evalúa el perfil comercial y si da la información correcta. Los guiados son práctica y no suman." className="mb-8">
         <EntrenamientosFicha pid={p.id} nombre={`${p.nombre} ${p.apellido}`} meta={p.avance?.meta ?? 15} criterios={CRITERIOS}
           puedeEnviar={f.grupo.estado !== "cancelada" && p.estado !== "abandono" && p.estado !== "baja"} />
       </Seccion>
+      </div>
 
+      <div id="conversaciones" className="scroll-mt-24">
+      <Seccion titulo="Conversaciones" sub="Todo lo que chateó en los entrenamientos, la más nueva primero. Las que están en curso se ven en vivo." className="mb-8">
+        <ConversacionesFicha pid={p.id} asesor={p.nombre} criterios={CRITERIOS} />
+      </Seccion>
+      </div>
+
+      <div id="ipv" className="scroll-mt-24">
       <Seccion titulo="Test IPV" sub="Independiente de los entrenamientos · Inventario de Personalidad para Vendedores, se corrige solo al terminar." className="mb-8">
         {r ? (
           <div className="card p-4 space-y-4">
@@ -141,14 +165,18 @@ function FichaPostulante() {
           </div>
         )}
       </Seccion>
+      </div>
 
+      <div id="seguimiento" className="scroll-mt-24">
       <Seccion titulo="Seguimiento" sub={`${f.conteo.total} comentarios: ${f.conteo.feedback} feedback, ${f.conteo.oportunidad} oportunidades y ${f.conteo.postulante} del postulante.`} className="mb-8">
         <div className="space-y-3">
           {f.puede.comentar && <NuevoComentario pid={p.id} onListo={() => { cargar(); avisar("Comentario guardado"); }} />}
           <ListaComentarios items={f.comentarios} />
         </div>
       </Seccion>
+      </div>
 
+      <div id="historial" className="scroll-mt-24">
       <Seccion titulo="Historial">
         <ol className="card divide-y divide-brand-border">
           {f.historial.map((h, i) => (
@@ -161,6 +189,7 @@ function FichaPostulante() {
           ))}
         </ol>
       </Seccion>
+      </div>
 
       {hoja === "estado" && <HojaEstado p={p} onClose={() => setHoja(null)} onListo={(x) => { setHoja(null); cargar(); avisar(`Ahora: ${ESTADOS[x.estado].nombre}`); }} />}
       {hoja === "link" && <HojaEnlace p={p} gestiona={f.puede.link} onClose={() => setHoja(null)} onCambio={cargar} />}

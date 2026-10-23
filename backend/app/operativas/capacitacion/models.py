@@ -172,6 +172,10 @@ class CapEntrenamiento(Base):
     canal: Mapped[str] = mapped_column(String(20), nullable=False, default="chat")         # chat | whatsapp | llamada
     umbral_info: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
     umbral_nivel: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    # «evaluado» (cuenta para el baremo general) o «guiado»: práctica con un entrenador IA que da consejos en el chat
+    # siguiendo la `guia` del capacitador; no suma a la media, al mínimo ni a la recomendación.
+    modo: Mapped[Optional[str]] = mapped_column(String(12), nullable=True, default="evaluado")
+    guia: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     estado: Mapped[str] = mapped_column(String(12), nullable=False, default="borrador", index=True)
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -245,3 +249,28 @@ class CapSesion(Base):
     modelo: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
     intentos_eval: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    # Entrenamiento guiado: los consejos del entrenador IA, uno por turno ({turno, at, items: [{tipo, texto}]}).
+    consejos: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
+
+
+class CapInformeIA(Base):
+    """El informe de la IA sobre un postulante para el capacitador y el mentor: el IPV (escalas y baremo) y los resultados
+    de sus entrenamientos evaluados. Se genera a pedido, en segundo plano; queda guardado con los datos que se usaron."""
+    __tablename__ = "cap_informes_ia"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    postulante_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    grupo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    estado: Mapped[str] = mapped_column(String(12), nullable=False, default="generando", index=True)  # generando | listo | error
+    huella: Mapped[str] = mapped_column(String(64), nullable=False)          # SHA-256 de los datos usados
+    datos: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    contenido: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    modelo: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    tokens_entrada: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_salida: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    costo_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    intentos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    generado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

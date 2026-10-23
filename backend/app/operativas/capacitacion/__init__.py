@@ -10,13 +10,15 @@
 - `entrenamientos.py` / `entrenamiento_ia.py` / `entrenamientos_publico.py`: entrenamientos con IA (clientes simulados por
   chat, evaluación por caso y final) para el equipo y desde el link del postulante.
 - `en_vivo.py`: el tablero en vivo de los entrenamientos (conversaciones en curso e indicadores del día).
+- `informe_ia.py`: el informe de la IA sobre un postulante (IPV con su baremo y entrenamientos) para el equipo.
 """
 from __future__ import annotations
 
-from . import api, audios, en_vivo, entrenamientos, entrenamientos_publico, ficha_pdf, publico_api
+from . import api, audios, en_vivo, entrenamientos, entrenamientos_publico, ficha_pdf, informe_ia, publico_api
 from .migraciones import MIGRACIONES
 
-ROUTERS = [api.router, publico_api.router, entrenamientos.router, entrenamientos_publico.router, en_vivo.router, ficha_pdf.router]
+ROUTERS = [api.router, publico_api.router, entrenamientos.router, entrenamientos_publico.router, en_vivo.router, ficha_pdf.router,
+           informe_ia.router]
 WORKERS = {"capacitacion_audios": audios.worker, "capacitacion_entrenamientos": entrenamientos.worker,
-           "capacitacion_ipv": publico_api.worker}
+           "capacitacion_ipv": publico_api.worker, "capacitacion_informes": informe_ia.worker}
 MIGRACIONES_DATOS = list(MIGRACIONES)

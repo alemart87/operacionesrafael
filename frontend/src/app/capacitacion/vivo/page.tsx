@@ -186,7 +186,7 @@ function Tablero() {
                       <button type="button" onClick={() => setVer(r.id)} className="w-full text-left px-4 py-2.5 flex items-center gap-3 min-h-[56px] hover:bg-brand-bg-soft">
                         <span className="min-w-0 flex-1">
                           <span className="block text-[14px] font-semibold text-brand-ink truncate">{r.postulante.nombre} {r.postulante.apellido}</span>
-                          <span className="block text-[12px] text-brand-slate truncate">{r.cliente} · {conIntento(r.entrenamiento ?? "", r.intento)} · {mmss(r.segundos)} · {hace(segDesde(r.terminado_at, ahora))}</span>
+                          <span className="block text-[12px] text-brand-slate truncate">{r.cliente} · {conIntento(r.entrenamiento ?? "", r.intento)}{r.guiado && " · guiado"} · {mmss(r.segundos)} · {hace(segDesde(r.terminado_at, ahora))}</span>
                         </span>
                         {r.estado === "evaluando" ? <span className="text-[12px] text-brand-slate shrink-0">Evaluando…</span>
                           : r.nivel !== null ? (
@@ -239,7 +239,7 @@ function TarjetaSesion({ s, d, ahora, onMirar }: { s: SesionVivo; d: EnVivo; aho
         </div>
         <div className="mt-2 font-semibold text-[16px] text-brand-ink truncate">{s.postulante.nombre} {s.postulante.apellido}</div>
         <div className="text-[12px] text-brand-slate truncate">
-          {conIntento(s.entrenamiento ?? "Entrenamiento", s.intento)} · caso {Math.min(s.progreso.hechos + 1, s.progreso.casos || 1)} de {s.progreso.casos || "?"}
+          {conIntento(s.entrenamiento ?? "Entrenamiento", s.intento)}{s.guiado && " · guiado"} · caso {Math.min(s.progreso.hechos + 1, s.progreso.casos || 1)} de {s.progreso.casos || "?"}
           {d.grupos.length > 1 && ` · ${s.grupo.nombre}`}
         </div>
         <div className="text-[12px] text-brand-slate truncate">Cliente: <b className="text-brand-ink font-semibold">{s.cliente}</b>{s.caso && ` · ${s.caso}`}</div>

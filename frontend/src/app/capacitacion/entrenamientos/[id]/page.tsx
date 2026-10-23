@@ -1,15 +1,15 @@
 "use client";
 
-import { Archive, ArrowDown, ArrowLeft, ArrowUp, Link2, MessageSquare, Pencil, Play, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
+import { Archive, ArrowDown, ArrowLeft, ArrowUp, GraduationCap, Link2, MessageSquare, MessagesSquare, Pencil, Play, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { HojaDatosEntrenamiento } from "@/components/capacitacion/entrenamiento-datos";
-import { EditorCaso, HojaEnviar, ProbarCaso, ResultadoVista } from "@/components/capacitacion/entrenamientos";
+import { EditorCaso, EtiquetaResultado, HojaEnviar, HojaEnvio, ProbarCaso } from "@/components/capacitacion/entrenamientos";
 import { CAP_API, CAP_HREF, ESTADO_ENT, type Asignacion, type Caso, type Catalogo, type Entrenamiento } from "@/components/capacitacion/tipos";
 import { Barra, HojaEnlace } from "@/components/capacitacion/ui";
-import { Boton, Cargando, Encabezado, Etiqueta, Fallo, Hoja, Seccion, Segmentos, useAviso } from "@/components/portal/ui";
+import { Boton, Cargando, Encabezado, Etiqueta, Fallo, Seccion, Segmentos, useAviso } from "@/components/portal/ui";
 import { apiFetch } from "@/lib/api";
 
 export default function EntrenamientoPage() {
@@ -69,7 +69,8 @@ function Detalle() {
     <div className="max-w-screen-lg mx-auto">
       {aviso}
       <Link href={`${CAP_HREF}/entrenamientos`} className="inline-flex items-center gap-1 text-sm text-brand-slate hover:text-brand-ink mb-2"><ArrowLeft size={16} aria-hidden /> Entrenamientos</Link>
-      <Encabezado sobre={<span className="inline-flex items-center gap-2">Entrenamiento <Etiqueta tono={ESTADO_ENT[e.estado].tono}>{ESTADO_ENT[e.estado].nombre}</Etiqueta></span>} titulo={e.nombre}>
+      <Encabezado sobre={<span className="inline-flex items-center gap-2 flex-wrap">Entrenamiento <Etiqueta tono={ESTADO_ENT[e.estado].tono}>{ESTADO_ENT[e.estado].nombre}</Etiqueta>
+        {e.modo === "guiado" && <Etiqueta tono="azul" icono={GraduationCap}>Guiado · práctica</Etiqueta>}</span>} titulo={e.nombre}>
         {e.casos.length} caso{e.casos.length === 1 ? "" : "s"} · {e.empresa} · creado por {e.creado_por}
       </Encabezado>
 
@@ -139,7 +140,10 @@ function Detalle() {
           <div className="card p-4 space-y-4 text-[14px]">
             <div><div className="label">Lo que lee el postulante</div><p className="text-brand-ink whitespace-pre-wrap">{e.instrucciones || "—"}</p></div>
             <div><div className="label">Información oficial (la usa la IA para evaluar)</div><p className="text-brand-ink whitespace-pre-wrap">{e.producto || "Sin cargar: sin esta información, la IA no puede verificar los datos que da el postulante."}</p></div>
-            <div><div className="label">Para aprobar</div><p className="text-brand-ink">Perfil comercial: nivel {e.umbral_nivel} o más · Información correcta en el {e.umbral_info}% de los casos</p></div>
+            {e.modo === "guiado" ? <>
+              <div><div className="label">Guía del entrenador</div><p className="text-brand-ink whitespace-pre-wrap">{e.guia || "Sin guía: el entrenador usa la de siempre (saludar, indagar, ofrecer, manejar objeciones y cerrar)."}</p></div>
+              <div><div className="label">Cómo cuenta</div><p className="text-brand-ink">Es práctica: recibe su devolución, pero no se aprueba ni suma a la media, al mínimo ni a los recomendados.</p></div>
+            </> : <div><div className="label">Para aprobar</div><p className="text-brand-ink">Perfil comercial: nivel {e.umbral_nivel} o más · Información correcta en el {e.umbral_info}% de los casos</p></div>}
           </div>
         </Seccion>
       )}
@@ -157,12 +161,15 @@ function Detalle() {
                     </div>
                     <button type="button" onClick={() => setHoja({ t: "link", p: a.postulante })} aria-label={`Link de ${a.postulante.nombre}`}
                       className="btn min-h-[40px] px-2.5 text-[13px] bg-white border border-brand-border text-brand-ink shrink-0"><Link2 size={15} aria-hidden /> Link</button>
-                    {a.estado === "terminado" && a.resultado ? (
-                      <button type="button" onClick={() => setHoja({ t: "resultado", a })}>
-                        <Etiqueta tono={a.resultado.aprobado ? "verde" : "rojo"}>{a.resultado.aprobado ? "Recomendado" : "No recomendado"}</Etiqueta>
-                      </button>
-                    ) : <Etiqueta tono={a.estado === "evaluando" ? "azul" : "gris"}>{a.estado === "evaluando" ? "Evaluando" : a.estado === "en_curso" ? "En curso" : "Sin empezar"}</Etiqueta>}
+                    {a.estado === "terminado" && a.resultado ? <EtiquetaResultado r={a.resultado} />
+                      : <Etiqueta tono={a.estado === "evaluando" ? "azul" : "gris"}>{a.estado === "evaluando" ? "Evaluando" : a.estado === "en_curso" ? "En curso" : "Sin empezar"}</Etiqueta>}
                   </div>
+                  {a.estado !== "pendiente" && (
+                    <button type="button" onClick={() => setHoja({ t: "resultado", a })}
+                      className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand-primary min-h-[36px]">
+                      <MessagesSquare size={15} aria-hidden /> {a.resultado ? "Resultado y conversaciones" : a.en_chat ? "Ver en vivo" : "Ver conversaciones"}
+                    </button>
+                  )}
                   <div className="mt-2"><Barra valor={a.pct} color={a.estado === "terminado" ? "#15803D" : "#0F1116"} /></div>
                 </li>
               ))}
@@ -177,14 +184,14 @@ function Detalle() {
       {hoja?.t === "datos" && <HojaDatosEntrenamiento ent={e} onClose={() => setHoja(null)} onListo={() => { setHoja(null); cargar(); avisar("Guardado"); }} />}
       {hoja?.t === "link" && <HojaEnlace p={hoja.p} gestiona={false} onClose={() => setHoja(null)} />}
       {hoja?.t === "enviar" && <HojaEnviar eid={e.id} nombre={e.nombre} meta={cat.meta} borrador={e.estado === "borrador"} onClose={() => { setHoja(null); cargar(); }} />}
-      {hoja?.t === "resultado" && hoja.a.resultado && (
-        <Hoja titulo={`${hoja.a.postulante.nombre} ${hoja.a.postulante.apellido}`} sobre={e.nombre} onClose={() => setHoja(null)}
+      {hoja?.t === "resultado" && (
+        <HojaEnvio aid={hoja.a.id} titulo={`${hoja.a.postulante.nombre} ${hoja.a.postulante.apellido}`} asesor={hoja.a.postulante.nombre}
+          sobre={hoja.a.intento > 1 ? `${e.nombre} · ${hoja.a.intento}.º intento` : e.nombre} resultado={hoja.a.resultado} criterios={cat.criterios}
+          onClose={() => setHoja(null)}
           pie={<>
-            <Boton tipo="secundario" icono={RotateCcw} onClick={() => reiniciar(hoja.a)}>Reiniciar</Boton>
-            <Boton icono={MessageSquare} href={`${CAP_HREF}/postulantes/${hoja.a.postulante.id}`}>Ver conversaciones</Boton>
-          </>}>
-          <ResultadoVista r={hoja.a.resultado} />
-        </Hoja>
+            {hoja.a.estado === "terminado" && <Boton tipo="secundario" icono={RotateCcw} onClick={() => reiniciar(hoja.a)}>Reiniciar</Boton>}
+            <Boton icono={MessageSquare} href={`${CAP_HREF}/postulantes/${hoja.a.postulante.id}`}>Ver su ficha</Boton>
+          </>} />
       )}
     </div>
   );
