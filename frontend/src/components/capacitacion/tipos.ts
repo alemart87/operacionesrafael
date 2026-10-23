@@ -62,7 +62,8 @@ export interface Grupo {
   fin_previsto: string | null; fecha_fin: string | null; duracion_dias: number; motivo: string | null;
   capacitador: Persona; mentores: Persona[]; embudo: Embudo; efectividad: number | null;
   ipv: { realizados: number; total: number; porcentaje: number | null }; feedback: number; roles: string[];
-  puede: { estados: EstadoGrupo[]; editar: boolean; postulantes: boolean };
+  /** `registro_rapido`: habilitar el link o QR para que los postulantes se registren solos (capacitador, mentor o gestión). */
+  puede: { estados: EstadoGrupo[]; editar: boolean; postulantes: boolean; registro_rapido?: boolean };
   avance: number | null; meta: { entrenamientos: number; cumplen: number; activos: number };
   /** La media de las conversaciones evaluadas de los postulantes activos. */
   resultado?: ResultadoMedio | null;
@@ -132,6 +133,13 @@ export interface Ficha {
   escalas: { clave: string; nombre: string; romano: string | null; grupo: string; descripcion: string }[];
   comentarios: Comentario[]; conteo: Feedback; historial: Evento[];
 }
+/** El link de creación rápida de un grupo (se registran solos) y quiénes se registraron con él. */
+export interface RegistroRapido {
+  id: string; estado: "vigente" | "vencido" | "cerrado" | "agotado"; vence_at: string; created_at: string; segundos: number;
+  usos: number; max_usos: number; creado_por: string; url: string | null; qr_svg: string | null;
+  registrados: { id: string; nombre: string; apellido: string; at: string }[];
+}
+export interface VistaRegistroRapido { link: RegistroRapido | null; minutos: number; puede: boolean }
 export interface Enlace {
   activo: boolean; vence_at?: string; ipv_estado: string | null; respondidas?: number; total?: number; url: string | null; qr_svg: string | null;
 }

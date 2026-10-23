@@ -749,3 +749,7 @@ body:has(main .fixed.inset-0) .barra-inferior { display: none; }
 /* Filas que se deslizan de costado (índices de chips en el celular) sin la barra de desplazamiento. */
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Creación rápida: la barra que se llena mientras se ve la bienvenida, antes de ir al perfil. */
+@keyframes vc-unirme-barra { from { width: 0%; } to { width: 100%; } }
+.unirme-barra { animation-name: vc-unirme-barra; animation-timing-function: linear; animation-fill-mode: forwards; }

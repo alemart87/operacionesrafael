@@ -959,3 +959,107 @@ async def test_informe_ia_del_postulante(monkeypatch):
         monkeypatch.setattr(informe_ia, "MAX_POR_POSTULANTE_DIA", 2)
         await ac.post(f"{B}/postulantes/{pid}/comentarios", headers=men, json={"tipo": "feedback", "texto": "Mejoró el cierre"})
         assert (await ac.post(url, headers=men)).status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_creacion_rapida_de_postulantes(monkeypatch):
+    """Link o QR de 20 minutos por grupo: lo habilita el capacitador o el mentor; cada postulante se registra solo y
+    queda con su link personal. Vence, se cierra, tiene cupo, y una cédula repetida no entrega ningún link."""
+    from datetime import timedelta
+
+    from app.core import rate_limit
+    from app.operativas.capacitacion import servicio as cap_srv
+    rate_limit.clear_all()
+    real = cap_srv.ahora
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = await _login(ac, "admin@voicenter.com.py", "Test1234!")
+        _, cap = await _nuevo(ac, admin, "capacitador")
+        u_men, men = await _nuevo(ac, admin, "mentor", nombre="Mario Mentor")
+        _, men2 = await _nuevo(ac, admin, "mentor")
+        _, sup = await _nuevo(ac, admin, "supervisor", operativas=("televentas_claro", "capacitacion"))
+        g = (await ac.post(f"{B}/grupos", headers=cap, json={"nombre": "Grupo Rápido", "fecha_inicio": "2026-10-19",
+                                                            "mentores": [u_men["id"]]})).json()
+        url = f"{B}/grupos/{g['id']}/registro-rapido"
+        assert g["puede"]["registro_rapido"] is True
+        assert (await ac.get(url, headers=men)).json() == {"link": None, "minutos": 20, "puede": True}
+
+        # Lo habilita el mentor del grupo; nadie de afuera.
+        assert (await ac.post(url, headers=men2, json={"origen": ORIGEN})).status_code == 404
+        assert (await ac.post(url, headers=sup, json={"origen": ORIGEN})).status_code == 403
+        assert (await ac.post(url, headers=men, json={"origen": "javascript:x"})).status_code == 400
+        link = (await ac.post(url, headers=men, json={"origen": ORIGEN})).json()["link"]
+        assert link["estado"] == "vigente" and 1190 <= link["segundos"] <= 1200 and link["url"].startswith(f"{ORIGEN}/unirme/")
+        assert "<svg" in link["qr_svg"] and link["creado_por"] == "Mario Mentor" and link["max_usos"] == 60
+        # Otro toque (o el capacitador) ve el mismo link mientras está vigente.
+        assert (await ac.post(url, headers=cap, json={"origen": ORIGEN})).json()["link"]["url"] == link["url"]
+        assert (await ac.get(url, headers=cap)).json()["link"]["url"] == link["url"]
+        token = link["url"].rsplit("/", 1)[1]
+        U = f"{B}/unirme"
+
+        # El postulante ve solo el grupo y el tiempo; se registra y queda con su link personal.
+        info = (await ac.get(f"{U}/{token}")).json()
+        assert info["grupo"] == "Grupo Rápido" and set(info) == {"grupo", "vence_at", "segundos"}
+        datos = {"nombre": " Ana  ", "apellido": "Rápida", "ci": "4.500.111", "edad": 22, "sexo": "F"}
+        r = await ac.post(f"{U}/{token}", json=datos)
+        assert r.status_code == 201, r.text
+        alta = r.json()
+        assert alta["nombre"] == "Ana" and alta["grupo"] == "Grupo Rápido" and alta["ruta"] == f"/postulante/{alta['token']}"
+        perfil = (await ac.get(f"{P}/{alta['token']}")).json()
+        assert perfil["nombre"] == "Ana" and perfil["ipv"]["estado"] == "pendiente"
+        # La misma cédula (aunque se escriba distinto): no se crea nada ni se entrega el link de otro.
+        r = await ac.post(f"{U}/{token}", json={**datos, "nombre": "Otra", "ci": "4500111"})
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "ci_registrada" and "token" not in r.text
+        assert (await ac.post(f"{U}/{token}", json={**datos, "ci": "4500112", "sitio": "http://spam"})).status_code == 400
+        assert (await ac.post(f"{U}/{token}", json={**datos, "ci": "12", "edad": 9})).status_code == 422
+
+        # El equipo lo ve en el grupo, con su origen en el historial; el registro y el link quedan en la auditoría.
+        grupo = (await ac.get(f"{B}/grupos/{g['id']}", headers=cap)).json()
+        ana = next(p for p in grupo["postulantes"] if p["nombre"] == "Ana")
+        assert ana["estado"] == "en_capacitacion" and ana["ipv"]["estado"] == "pendiente"
+        hist = (await ac.get(f"{B}/postulantes/{ana['id']}", headers=men)).json()["historial"]
+        assert any(h["tipo"] == "alta" and h["por"] is None and "link rápido de Mario Mentor" in (h["motivo"] or "") for h in hist)
+        vista = (await ac.get(url, headers=men)).json()["link"]
+        assert vista["usos"] == 1 and [x["nombre"] for x in vista["registrados"]] == ["Ana"]
+
+        # Link nuevo: el anterior deja de valer.
+        nuevo = (await ac.post(url, headers=cap, json={"origen": ORIGEN, "nuevo": True})).json()["link"]
+        assert nuevo["url"] != link["url"] and nuevo["usos"] == 0
+        r = await ac.get(f"{U}/{token}")
+        assert r.status_code == 410 and r.json()["detail"]["code"] == "link_cerrado"
+        token2 = nuevo["url"].rsplit("/", 1)[1]
+
+        # Cupo: con uno solo, el segundo ya no entra.
+        monkeypatch.setattr(settings, "capacitacion_registro_max", 1)
+        tercero = (await ac.post(url, headers=cap, json={"origen": ORIGEN, "nuevo": True})).json()["link"]
+        token3 = tercero["url"].rsplit("/", 1)[1]
+        assert (await ac.post(f"{U}/{token3}", json={**datos, "ci": "4500200"})).status_code == 201
+        r = await ac.post(f"{U}/{token3}", json={**datos, "ci": "4500201"})
+        assert r.status_code == 410 and r.json()["detail"]["code"] == "link_agotado"
+        monkeypatch.setattr(settings, "capacitacion_registro_max", 60)
+
+        # Vence a los 20 minutos.
+        cuarto = (await ac.post(url, headers=cap, json={"origen": ORIGEN, "nuevo": True})).json()["link"]
+        token4 = cuarto["url"].rsplit("/", 1)[1]
+        monkeypatch.setattr(cap_srv, "ahora", lambda: real() + timedelta(minutes=21))
+        r = await ac.post(f"{U}/{token4}", json={**datos, "ci": "4500300"})
+        assert r.status_code == 410 and r.json()["detail"]["code"] == "link_vencido"
+        vencido = (await ac.get(url, headers=cap)).json()["link"]
+        assert vencido["estado"] == "vencido" and vencido["url"] is None and vencido["segundos"] == 0
+        monkeypatch.setattr(cap_srv, "ahora", real)
+
+        # Cerrar a mano; con el grupo finalizado, tampoco.
+        quinto = (await ac.post(url, headers=men, json={"origen": ORIGEN})).json()["link"]
+        token5 = quinto["url"].rsplit("/", 1)[1]
+        assert (await ac.post(f"{url}/cerrar", headers=men)).json()["link"]["estado"] == "cerrado"
+        assert (await ac.get(f"{U}/{token5}")).status_code == 410
+        assert (await ac.post(url, headers=cap, json={"origen": ORIGEN})).json()["link"]["estado"] == "vigente"
+        await ac.post(f"{B}/grupos/{g['id']}/estado", headers=cap, json={"estado": "finalizada"})
+        assert (await ac.post(url, headers=cap, json={"origen": ORIGEN})).status_code == 400
+        assert (await ac.get(url, headers=cap)).json()["puede"] is False
+
+        # Un token inventado: 404, y muchos intentos desde la misma IP se bloquean.
+        assert (await ac.get(f"{U}/{'x' * 43}")).status_code == 404
+        for _ in range(12):
+            await ac.get(f"{U}/{'y' * 43}")
+        assert (await ac.get(f"{U}/{token2}")).status_code == 429
+        rate_limit.clear_all()

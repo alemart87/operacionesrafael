@@ -277,7 +277,8 @@ def generar(f: dict[str, Any], ents: list[dict[str, Any]], *, generado_por: str,
     if historial:
         filas = [[_cab("Fecha"), _cab("Evento"), _cab("Por")]]
         for h in historial[:MAX_HISTORIAL]:
-            por = h.get("por") or ("El postulante" if h["tipo"].startswith("ipv") else "La IA" if h["tipo"] == "entrenamiento" else "—")
+            por = h.get("por") or ("El postulante" if h["tipo"].startswith("ipv") or h["tipo"] == "alta"
+                                    else "La IA" if h["tipo"] == "entrenamiento" else "—")
             filas.append([Paragraph(_fecha(h.get("at"), hora=True), _e("hf", textColor=PIZARRA, fontSize=8)),
                           Paragraph(_limpio(_evento(h)), _e("he")), Paragraph(_limpio(por), _e("hp", textColor=PIZARRA, fontSize=8))])
         story.append(KeepTogether([_seccion("Historial"), Spacer(1, 3 * mm), _tabla(filas, [30 * mm, ancho - 80 * mm, 50 * mm], zebra=True)]))

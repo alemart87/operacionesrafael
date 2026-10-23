@@ -373,6 +373,52 @@ def test_lineas_en_espera_de_uso_no_son_alerta(tmp_path):
     assert "sin_uso_reciente" not in s["parametros"]["pesos"]
 
 
+def test_formato_22_octubre_2026_cargas_de_todo_el_año(tmp_path):
+    """Desde el 22/10/2026 CARGAS trae las ventas de todo el año (más cargas de marzo que de octubre): el período sale de
+    las activaciones, no del mes con más cargas, y las cargas de otros meses quedan fuera (y se informan)."""
+    from openpyxl import load_workbook
+
+    path = tmp_path / "data_2210.xlsx"
+    build_xlsx_1910(path)
+    wb = load_workbook(path)
+    for dia in range(1, 11):
+        wb["CARGAS"].append(_carga_1910(D(2026, 3, dia), "Vta_Finalizada"))
+    wb.save(path)
+    parsed = parse_ventas_netas(str(path))
+    assert len(parsed["cargas"]) == 14
+    k = analyze_ventas_netas(parsed)["kpis"]
+    assert k["periodo"] == "2026-10" and k["netas"] == 3 and k["cargas"] == 4 and k["fuera_periodo_cargas"] == 10
+    # Sin activaciones, el mes de la venta finalizada más reciente (no el que más cargas tiene).
+    from app.operativas.televentas_claro.ventas_netas.analyzer import detectar_periodo
+    assert detectar_periodo({"ddi": [], "cargas": parsed["cargas"]}) == "2026-10"
+
+
+def test_proceso_aislado_liviano(tmp_path):
+    """El subproceso solo carga el parser y el análisis (no la app) y devuelve los datos leídos ya comprimidos; un archivo
+    inválido vuelve como ValueError con su mensaje. Se prueba también en un subproceso de verdad."""
+    import gzip
+    import json
+
+    from app.jobs.proceso_ventas_netas import procesar
+    path = tmp_path / "data_1910.xlsx"
+    build_xlsx_1910(path)
+    r = procesar(str(path))
+    assert set(r) == {"parsed_gz", "analysis"} and isinstance(r["parsed_gz"], bytes)
+    parsed = json.loads(gzip.decompress(r["parsed_gz"]))
+    assert parsed == json.loads(json.dumps(parse_ventas_netas(str(path)), ensure_ascii=False))
+    assert r["analysis"]["kpis"] == analyze_ventas_netas(parsed)["kpis"]
+    wb = Workbook()
+    wb.active.title = "OTRA"
+    wb.save(tmp_path / "mal.xlsx")
+    with pytest.raises(ValueError, match="Falta la hoja 'DDI'") as exc:
+        procesar(str(tmp_path / "mal.xlsx"))
+    assert type(exc.value) is ValueError
+    # En un subproceso real ('spawn'): el mismo resultado.
+    real = asyncio.run(jobs.analizar_archivo(str(path)))
+    assert real["analysis"]["kpis"]["periodo"] == "2026-10" and json.loads(gzip.decompress(real["parsed_gz"])) == parsed
+    assert asyncio.run(jobs.run_isolated(jobs.analizar_comprimido, real["parsed_gz"]))["kpis"]["netas"] == 3
+
+
 def test_parser_valida_el_archivo(tmp_path):
     a = analyze_ventas_netas(parse_ventas_netas(build_xlsx(tmp_path / "sin-por.xlsx", sin_portabilidad=True)))
     assert a["kpis"]["fuera_de_netas"] == 0  # PORTABILIDAD es opcional

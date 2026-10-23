@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Bot, ChevronRight, Flag, Link2, Pencil, Radio, Search, Send, UserPlus } from "lucide-react";
+import { ArrowLeft, Bot, ChevronRight, Flag, Link2, Pencil, QrCode, Radio, Search, Send, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -13,6 +13,7 @@ import {
 import { Barra, Dato, EmbudoVista, EstadoTag, GrupoTag, HojaEnlace, HojaEstado, HojaGrupo, HojaPostulante, TablaDemo } from "@/components/capacitacion/ui";
 import { Boton, Cargando, Chips, Encabezado, Etiqueta, Fallo, Hoja, Seccion, cx, hace, useAviso } from "@/components/portal/ui";
 import { HojaEnviar, HojaEnviarA, MediaEntrenamientos, MetaEntrenamientos } from "@/components/capacitacion/entrenamientos";
+import { HojaRegistroRapido } from "@/components/capacitacion/registro-rapido";
 import { apiFetch } from "@/lib/api";
 
 export default function GrupoPage() {
@@ -37,7 +38,7 @@ function Grupo() {
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [buscar, setBuscar] = useState("");
   const [hoja, setHoja] = useState<null | { t: "nuevo" } | { t: "editar" } | { t: "estado_grupo" } | { t: "estado"; p: Postulante } | { t: "link"; p: Postulante }
-    | { t: "enviar"; p: Postulante } | { t: "entrenamiento"; p: Postulante } | { t: "entrenar_grupo" }>(null);
+    | { t: "enviar"; p: Postulante } | { t: "entrenamiento"; p: Postulante } | { t: "entrenar_grupo" } | { t: "registro_rapido" }>(null);
   const [aviso, avisar] = useAviso();
   const cargar = useCallback(() => {
     apiFetch<GrupoDetalle>(`${CAP_API}/grupos/${id}`).then((x) => { setG(x); setError(null); }).catch((e) => setError(e.message));
@@ -76,8 +77,11 @@ function Grupo() {
       {g.estado !== "cancelada" && (
         <div className="grid grid-cols-2 md:flex gap-2 mb-2">
           {g.puede.postulantes && <Boton icono={UserPlus} onClick={() => setHoja({ t: "nuevo" })} className="!min-h-[52px] !px-3 !text-[15px] md:!w-auto">Postulante</Boton>}
-          <Boton tipo={g.puede.postulantes ? "secundario" : "primario"} icono={Bot} onClick={() => setHoja({ t: "entrenar_grupo" })}
-            className={cx("!min-h-[52px] !px-3 !text-[15px] md:!w-auto", !g.puede.postulantes && "col-span-2")}>Entrenamiento</Boton>
+          {/* Creación rápida: un QR o link de 20 minutos para que se registren solos (también el mentor). */}
+          {g.puede.registro_rapido && <Boton tipo={g.puede.postulantes ? "secundario" : "primario"} icono={QrCode} onClick={() => setHoja({ t: "registro_rapido" })}
+            className="!min-h-[52px] !px-3 !text-[15px] md:!w-auto">Creación rápida</Boton>}
+          <Boton tipo={g.puede.postulantes || g.puede.registro_rapido ? "secundario" : "primario"} icono={Bot} onClick={() => setHoja({ t: "entrenar_grupo" })}
+            className={cx("!min-h-[52px] !px-3 !text-[15px] md:!w-auto", (Number(g.puede.postulantes) + Number(!!g.puede.registro_rapido)) % 2 === 0 && "col-span-2")}>Entrenamiento</Boton>
         </div>
       )}
       {(g.puede.estados.length > 0 || g.puede.editar || g.estado === "en_curso") && (
@@ -126,7 +130,9 @@ function Grupo() {
           )}
         </div>
         {g.postulantes.length === 0 ? (
-          <div className="card p-10 text-center text-sm text-brand-slate">{g.puede.postulantes ? "Cargá a los postulantes con «Agregar postulante»." : "Todavía no hay postulantes."}</div>
+          <div className="card p-10 text-center text-sm text-brand-slate">
+            {g.puede.postulantes || g.puede.registro_rapido ? <>Cargalos con «Postulante» o usá <b className="text-brand-ink">Creación rápida</b>: un QR para que se registren solos.</> : "Todavía no hay postulantes."}
+          </div>
         ) : lista.length === 0 ? (
           <div className="card p-6 text-center text-sm text-brand-slate">Nadie con este filtro.</div>
         ) : (
@@ -160,6 +166,7 @@ function Grupo() {
         </Seccion>
       )}
 
+      {hoja?.t === "registro_rapido" && <HojaRegistroRapido grupoId={g.id} grupo={g.nombre} onClose={() => { setHoja(null); cargar(); }} onCambio={cargar} />}
       {hoja?.t === "nuevo" && <HojaPostulante grupoId={g.id} onClose={() => { setHoja(null); cargar(); }}
         onListo={(p, otro) => { avisar(`${p.nombre} ${p.apellido} agregado`); if (!otro) setHoja(null); cargar(); }} />}
       {hoja?.t === "editar" && <HojaGrupo grupo={g} gestion={g.roles.includes("gestion")} onClose={() => setHoja(null)} onListo={() => { setHoja(null); cargar(); avisar("Grupo actualizado"); }} />}

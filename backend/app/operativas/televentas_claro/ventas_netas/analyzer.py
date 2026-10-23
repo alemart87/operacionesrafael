@@ -5,8 +5,10 @@ Reglas acordadas con el negocio:
   activación es el período del informe. Las líneas suspendidas y las portaciones
   que no llegaron a DDI se cuentan y se marcan, pero no se descartan, para que
   el total coincida con el reporte de Claro.
-* El período es el mes de la fecha de activación/venta (no de la carga). Se toma
-  el mes mayoritario; lo que queda fuera se informa aparte.
+* El período es el mes mayoritario de las activaciones (DDI); lo que queda fuera
+  se informa aparte. CARGAS no decide el período: desde el 22/10/2026 trae las
+  ventas de todo el año (no solo las del mes). Si el corte no trae activaciones,
+  el período es el mes de la venta finalizada más reciente.
 * Uso: `CONSUMO_DATOS` (SI/NO) solo aplica a Pospago. Una línea sin uso es una
   alerta de posible PFI (primera factura impaga).
 * Vendedor de una neta = `POS_NOMBRE` (sin el prefijo del subcanal). Las cargas
@@ -75,14 +77,13 @@ def _rango_antiguedad(dias: int) -> str:
 
 
 def detectar_periodo(parsed: dict[str, Any]) -> str | None:
-    meses: Counter = Counter()
-    for r in parsed.get("ddi", []):
-        if (m := _mes(r.get("fecha_activacion"))):
-            meses[m] += 1
-    for r in parsed.get("cargas", []):
-        if r.get("sds_estado") == ESTADO_FINALIZADA and (m := _mes(r.get("sds_fecha_venta"))):
-            meses[m] += 1
-    return meses.most_common(1)[0][0] if meses else None
+    """El mes mayoritario de las activaciones (DDI). CARGAS no vota: puede traer el año entero y el mes con más
+    cargas no es el del corte. Sin activaciones, el mes de la venta finalizada más reciente."""
+    meses = Counter(m for r in parsed.get("ddi", []) if (m := _mes(r.get("fecha_activacion"))))
+    if meses:
+        return meses.most_common(1)[0][0]
+    ventas = [m for r in parsed.get("cargas", []) if r.get("sds_estado") == ESTADO_FINALIZADA and (m := _mes(r.get("sds_fecha_venta")))]
+    return max(ventas) if ventas else None
 
 
 def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
@@ -314,6 +315,7 @@ def analyze_ventas_netas(parsed: dict[str, Any]) -> dict[str, Any]:
         "pendientes_portacion": pendientes["portacion"],
         "pendientes_mas_de_7_dias": pendientes["mas_de_7_dias"],
         "fuera_periodo": fuera_periodo_ddi + (len(cargas_all) - len(cargas)),
+        "fuera_periodo_cargas": len(cargas_all) - len(cargas),   # CARGAS puede traer el año entero
         "umbral_uso_pct": UMBRAL_USO_PCT,
         "umbral_critico_sin_uso_pct": UMBRAL_CRITICO_SIN_USO_PCT,
         "min_lineas_alerta": MIN_LINEAS_ALERTA,

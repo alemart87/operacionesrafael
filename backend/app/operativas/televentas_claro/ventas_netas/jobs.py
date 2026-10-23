@@ -1,9 +1,6 @@
 """Cola y runner de Ventas Netas: parsea cada corte en subproceso aislado y genera el informe (borrador)."""
 from __future__ import annotations
 
-import asyncio
-import gzip
-import json
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -11,25 +8,9 @@ from typing import Any
 from ....core.database import session_scope
 from ....core.logging import logger
 from ....jobs.isolated import friendly_error, run_isolated
+from ....jobs.proceso_ventas_netas import analizar_comprimido, procesar
 from ....jobs.queue import JobQueue
-from .analyzer import analyze_ventas_netas
 from .models import ESTADO_BORRADOR, VentasNetasReport, VentasNetasUpload
-from .parser import parse_ventas_netas
-
-
-def _build(path: str) -> dict[str, Any]:
-    """Trabajo pesado (sync) — corre en subproceso aislado. Devuelve los datos leídos y el análisis."""
-    parsed = parse_ventas_netas(path)
-    return {"parsed": parsed, "analysis": analyze_ventas_netas(parsed)}
-
-
-def comprimir_parsed(parsed: dict[str, Any]) -> bytes:
-    return gzip.compress(json.dumps(parsed, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-
-
-def analizar_guardado(parsed_gz: bytes) -> dict[str, Any]:
-    """Recalcula el análisis a partir de los datos leídos que quedaron en la base (rápido, sin archivo)."""
-    return analyze_ventas_netas(json.loads(gzip.decompress(parsed_gz).decode("utf-8")))
 
 
 ANALYSIS_VERSION = 9  # sube cuando el análisis agrega bloques: los informes viejos se pueden actualizar
@@ -49,8 +30,9 @@ def aplicar_analisis(report: VentasNetasReport, analysis: dict[str, Any]) -> Non
 
 
 async def analizar_archivo(path: str) -> dict[str, Any]:
-    """Parsea y analiza el archivo en subproceso aislado. Devuelve {"parsed", "analysis"}."""
-    return await run_isolated(_build, path)
+    """Parsea y analiza el archivo en un subproceso aislado y liviano (ver `jobs/proceso_ventas_netas.py`).
+    Devuelve {"parsed_gz": bytes, "analysis": dict}: los datos leídos vuelven ya comprimidos, nunca la lista de filas."""
+    return await run_isolated(procesar, path)
 
 
 def version_analisis(report: VentasNetasReport) -> int:
@@ -74,11 +56,12 @@ async def recalcular_informe(db: Any, report: VentasNetasReport) -> None:
     """
     upload = await db.get(VentasNetasUpload, report.upload_id)
     if upload and upload.parsed_gz:
-        analysis = await asyncio.to_thread(analizar_guardado, upload.parsed_gz)  # sin bloquear el servidor
+        # En el subproceso aislado: ni bloquea el servidor ni le suma la memoria de reconstruir las filas.
+        analysis = await run_isolated(analizar_comprimido, upload.parsed_gz)
     elif upload and upload.file_path and Path(upload.file_path).exists():
         resultado = await analizar_archivo(upload.file_path)
         analysis = resultado["analysis"]
-        upload.parsed_gz = comprimir_parsed(resultado["parsed"])  # de acá en más ya no depende del archivo
+        upload.parsed_gz = resultado["parsed_gz"]  # de acá en más ya no depende del archivo
     else:
         raise SinDatosGuardados(
             "Este corte se cargó antes de que el sistema guardara sus datos, y el archivo ya no está en el "
@@ -105,7 +88,7 @@ async def run_ventas_netas(upload_id: str) -> None:
             aplicar_analisis(report, analysis)
             db.add(report)
             up = await db.get(VentasNetasUpload, upload_id)
-            up.parsed_gz = comprimir_parsed(resultado["parsed"])
+            up.parsed_gz = resultado["parsed_gz"]
             up.status = "completed"
             up.completed_at = datetime.utcnow()
             up.last_error = None

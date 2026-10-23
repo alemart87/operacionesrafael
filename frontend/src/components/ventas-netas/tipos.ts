@@ -143,6 +143,8 @@ export interface Kpis {
   pendientes_portacion: number;
   pendientes_mas_de_7_dias: number;
   fuera_periodo: number;
+  /** Cuántas de esas son de CARGAS (puede venir con el año entero). */
+  fuera_periodo_cargas?: number;
   umbral_uso_pct: number;
   /** Vendedor crítico: más de este % de sus líneas evaluables sin uso (informes v7+; antes, 100 − umbral_uso_pct). */
   umbral_critico_sin_uso_pct?: number;

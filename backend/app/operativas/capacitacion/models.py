@@ -69,6 +69,28 @@ class CapPostulante(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Si se registró solo con el link rápido del grupo (cuál); vacío si lo cargó el capacitador.
+    registro_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+
+
+class CapRegistroRapido(Base):
+    """El link de creación rápida de un grupo: el capacitador o el mentor lo habilita por unos minutos (QR o link) y cada
+    postulante que lo abre se registra solo, con su link personal ya armado. Se guarda la huella del token (y el token
+    cifrado mientras está vigente, para volver a mostrar el QR); tiene cupo y se puede cerrar antes."""
+    __tablename__ = "cap_registros_rapidos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    grupo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    token_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    origen: Mapped[str] = mapped_column(String(200), nullable=False)                  # la dirección de la plataforma
+    vence_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    max_usos: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    usos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    creado_por: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    cerrado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cerrado_por: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
 
 
 class CapEnlace(Base):

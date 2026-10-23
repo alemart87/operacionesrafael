@@ -58,7 +58,7 @@ operacionesrafaelmartinez/
 │   │   │   └── v1/              # auth · users · perfiles · audit · operativas (plataforma)
 │   │   ├── models/              # User, Profile, AuditLog, Agente, MigracionDatos (plataforma)
 │   │   ├── schemas/             # Pydantic (plataforma)
-│   │   ├── jobs/                # queue.py (cola genérica) · isolated.py (subproceso aislado)
+│   │   ├── jobs/                # queue.py (cola genérica) · isolated.py (subproceso aislado) · proceso_ventas_netas.py
 │   │   ├── services/            # audit · agent (motor del agente IA, compartido)
 │   │   ├── asistente/           # Voi (Claude Managed Agents): claude/ (agente, entorno, habilidades) · herramientas/ · conocimiento
 │   │   │                        #   publicacion · sesiones · consumidor · memoria · consumo · api · admin_api · simulador
@@ -202,6 +202,19 @@ por contenido (CARGAS tiene `SDS_ESTADO`; de las que tienen `FECHA_ACTIVACION`, 
 segunda portabilidad), y las columnas renombradas por `ALIAS_COLUMNAS`. El corte nunca es anterior a la última
 activación del archivo (el 19/10 trae activaciones del 18 y 19 con `FECHA_DATO` 17). Los tres formatos (septiembre,
 14/10 y 19/10) conviven y tienen prueba.
+Desde el **22/10/2026** (`NETAS_2210.xlsx`: hojas DDI, PORTAS y CARGAS) **CARGAS trae las ventas de todo el año** (de
+enero al corte, ~21.500 filas; con `FECHA_DATO` por fila y `CARGA`), no solo las del mes. Por eso el **período sale de
+las activaciones** (el mes mayoritario de DDI); CARGAS ya no vota (antes ganaba el mes con más cargas y el informe salía
+de marzo con 0 netas). Sin activaciones, el período es el mes de la venta finalizada más reciente. Las cargas de otros
+meses quedan fuera del informe y se cuentan aparte (`kpis.fuera_periodo_cargas`, con un aviso en Visión Negocio).
+
+**Cortes grandes sin tumbar el servidor.** Cada corte se lee en un subproceso aislado (`spawn`, con timeout) que carga
+solo `parser.py` y `analyzer.py` desde su archivo (`app/jobs/proceso_ventas_netas.py`), no toda la app, y devuelve los
+datos leídos **ya comprimidos** (`parsed_gz`) junto con el análisis; recalcular un informe desde lo guardado también
+corre ahí. Antes, con el corte del 22/10, el subproceso llegaba a ~240 MB (importaba más de mil módulos) y el servidor
+sumaba ~120 MB al reconstruir las filas que volvían: con la instancia de Render al límite, se reiniciaba todo el
+servicio y el corte quedaba «interrumpido». Ahora el subproceso usa ~110 MB y el servidor casi nada (medido con ese
+archivo: 21.520 cargas, 9 s).
 
 Reglas del análisis (`analyzer.py`):
 
@@ -1907,7 +1920,30 @@ la tarde en piso con el mentor. Código en `backend/app/operativas/capacitacion/
 
 ### Postulantes y estados
 
-Nombre, apellido, CI (no se repite en el grupo), edad y sexo. Alta rápida: «Guardar y cargar otro».
+Nombre, apellido, CI (no se repite en el grupo), edad y sexo. Alta rápida: «Guardar y cargar otro», o que se
+registren solos con la **creación rápida** (abajo).
+
+### Creación rápida de postulantes (link o QR de 20 minutos)
+
+Para no cargarlos uno por uno: en el grupo, **Creación rápida** (capacitador, mentor o gestión; grupo en curso) habilita
+con un toque un **link de 20 minutos** (`CAPACITACION_REGISTRO_MINUTOS`) con su **QR**. Código en `registro_rapido.py`,
+`components/capacitacion/registro-rapido.tsx` y la página pública `/unirme/{token}`.
+
+- **En la sala**: el QR se proyecta en **pantalla completa** (grande, con el nombre del grupo, el tiempo que queda y
+  cuántos se registraron) o se comparte el link por WhatsApp. La hoja muestra la cuenta regresiva y **quiénes se van
+  registrando** (se actualiza sola y el grupo de atrás también). Mientras está vigente, todo el equipo del grupo ve el
+  mismo QR; *Link nuevo* abre otro de 20 minutos (el anterior deja de valer) y *Cerrar link* lo corta antes.
+- **El postulante** escanea o abre el link en su celular: ve solo el nombre del grupo y cuánto le queda al link, carga
+  nombre, apellido, cédula, edad y sexo y toca *Crear mi perfil*. Queda en el grupo (en capacitación) con **su link
+  personal ya armado** (el del IPV y los entrenamientos, 21 días); le damos la **bienvenida al grupo** y a los pocos
+  segundos lo llevamos a **su perfil de postulante** (o con *Ir a mi perfil*), sin dejar el formulario en el historial.
+- **En el historial** queda «Ingresó al grupo · Se registró con el link rápido de Mario», por *El postulante*.
+- **Seguridad**: token aleatorio de 256 bits; se busca por su SHA-256 y en claro solo se guarda cifrado mientras está
+  vigente (para volver a mostrar el QR). **Cupo** de 60 por link (`CAPACITACION_REGISTRO_MAX`), descontado de forma
+  atómica. Los links inválidos se limitan por IP (429). Con una cédula que ya está en el grupo **no se crea nada ni se
+  entrega ningún link** (así nadie consigue el link de otro escribiendo su cédula): se le pide hablar con su
+  capacitador. Campo trampa contra programas. Auditoría: link habilitado (`capacitacion_registro_rapido`), cerrado y
+  cada registro (`capacitacion_postulante_autoregistro`, con IP y dispositivo).
 
 `En capacitación → Aprobó prueba escrita → Aprobó mentoría y OJT → Alta operativa`, con **Abandonó** o **Dado de baja**
 (con motivo) en cualquier etapa. Se guarda hasta qué etapa llegó cada uno (embudo) y el historial de cada cambio. Un grupo
@@ -2153,7 +2189,8 @@ para un televisor.
 `POST /grupos/{id}/estado`, `POST /grupos/{id}/postulantes`, `GET|PATCH|DELETE /postulantes/{id}`,
 `POST /postulantes/{id}/estado`, `GET|POST|DELETE /postulantes/{id}/enlace` (`GET` también el mentor),
 `GET /postulantes/{id}/pdf`,
-`POST /postulantes/{id}/comentarios`, `POST /postulantes/{id}/audios`, `GET /audios/{id}[/archivo]`.
+`POST /postulantes/{id}/comentarios`, `POST /postulantes/{id}/audios`, `GET /audios/{id}[/archivo]`,
+`GET|POST /grupos/{id}/registro-rapido` (`{origen, nuevo}`), `POST /grupos/{id}/registro-rapido/cerrar`.
 Entrenamientos: `GET|POST /entrenamientos`, `GET|PATCH|DELETE /entrenamientos/{id}`, `POST /entrenamientos/{id}/casos`,
 `PATCH|DELETE /casos/{id}`, `POST /entrenamientos/{id}/orden`, `POST /entrenamientos/{id}/enviar`,
 `DELETE /asignaciones/{id}`, `POST /asignaciones/{id}/reiniciar`, `GET /postulantes/{id}/entrenamientos`,
@@ -2163,7 +2200,8 @@ a quien ya lo terminó).
 Público (sin sesión): `/api/v1/capacitacion/publico/{token}` (`GET`, `GET|PUT /ipv`, `POST /ipv/terminar`,
 `POST /comentarios`, `POST /audios`, `GET /audios/{id}`, `GET /entrenamientos/{id}`,
 `POST /entrenamientos/{id}/casos/{caso}`, `GET /sesiones/{id}`, `POST /sesiones/{id}/mensajes`,
-`POST /sesiones/{id}/terminar`). Todo cambio queda en la auditoría.
+`POST /sesiones/{id}/terminar`) y la creación rápida `/api/v1/capacitacion/unirme/{token}` (`GET`, `POST`). Todo cambio
+queda en la auditoría.
 
 ## Sistema de login y seguridad de acceso
 
